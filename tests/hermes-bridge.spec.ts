@@ -23,12 +23,14 @@ describe('Hermes agent bridge', () => {
       sessionName: 'Bot Chat',
       queryFile: '/tmp/message.txt',
       yolo: true,
+      model: 'openai/gpt-5.2',
+      reasoning: 'high',
     })).toEqual({
       command: 'hermes',
       args: [
         '-p', 'frontend', 'chat', '--in', '/Users/example/Developer/app',
         '-c', 'Bot Chat', '--create-if-missing', '-Q', '--query-file',
-        '/tmp/message.txt', '--source', 'tool', '--yolo',
+        '/tmp/message.txt', '--source', 'tool', '--model', 'openai/gpt-5.2', '--reasoning', 'high', '--yolo',
       ],
     })
   })

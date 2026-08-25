@@ -11,6 +11,18 @@ const defaults: StateDependencies = {
   now: () => new Date().toISOString(),
 }
 
+export function emptyChannelMemory() {
+  return { summary: '', decisions: [], openQuestions: [], threadIds: [], updatedAt: null }
+}
+
+export function defaultRunSettings() {
+  return { model: null, reasoning: null }
+}
+
+export function defaultCommonspaceDefaults() {
+  return { ...defaultRunSettings(), reasoning: 'max' as const, maxAgentsPerTurn: 4, memoryThreads: 12 }
+}
+
 function normalizedName(value: string, label: string): string {
   const name = value.normalize('NFKC').trim().replace(/\s+/g, ' ').slice(0, 80)
   if (name === '') throw new Error(`${label} name is required`)
@@ -36,6 +48,7 @@ export function createInitialState(): CommonspaceState {
   return {
     version: COMMONSPACE_STATE_VERSION,
     revision: 0,
+    defaults: defaultCommonspaceDefaults(),
     projects: [],
     channels: [],
     threads: [],
@@ -105,6 +118,9 @@ export function applyMutation(
           name,
           projectId: projectId ?? null,
           agentIds: [...new Set(mutation.agentIds.filter(Boolean))],
+          instructions: '',
+          memory: emptyChannelMemory(),
+          settings: defaultRunSettings(),
           createdAt: dependencies.now(),
         }],
       }
@@ -118,6 +134,45 @@ export function applyMutation(
       })
       if (!matched) throw new Error('unknown channel')
       return { ...state, revision: nextRevision(state), channels }
+    }
+    case 'set-channel-context': {
+      let matched = false
+      const instructions = mutation.instructions.normalize('NFKC').trim().slice(0, 8_000)
+      const channels = state.channels.map(channel => {
+        if (channel.id !== mutation.channelId) return channel
+        matched = true
+        return { ...channel, instructions }
+      })
+      if (!matched) throw new Error('unknown channel')
+      return { ...state, revision: nextRevision(state), channels }
+    }
+    case 'set-channel-settings': {
+      let matched = false
+      const channels = state.channels.map(channel => {
+        if (channel.id !== mutation.channelId) return channel
+        matched = true
+        return {
+          ...channel,
+          settings: {
+            model: mutation.model === undefined ? channel.settings.model : mutation.model === null || mutation.model.trim() === '' ? null : mutation.model.trim().slice(0, 200),
+            reasoning: mutation.reasoning === undefined ? channel.settings.reasoning : mutation.reasoning,
+          },
+        }
+      })
+      if (!matched) throw new Error('unknown channel')
+      return { ...state, revision: nextRevision(state), channels }
+    }
+    case 'set-defaults': {
+      return {
+        ...state,
+        revision: nextRevision(state),
+        defaults: {
+          model: mutation.model === undefined ? state.defaults.model : mutation.model === null || mutation.model.trim() === '' ? null : mutation.model.trim().slice(0, 200),
+          reasoning: mutation.reasoning ?? state.defaults.reasoning,
+          maxAgentsPerTurn: mutation.maxAgentsPerTurn === undefined ? state.defaults.maxAgentsPerTurn : Math.max(1, Math.min(8, Math.trunc(mutation.maxAgentsPerTurn))),
+          memoryThreads: mutation.memoryThreads === undefined ? state.defaults.memoryThreads : Math.max(1, Math.min(50, Math.trunc(mutation.memoryThreads))),
+        },
+      }
     }
     case 'remove-channel': {
       if (!state.channels.some(channel => channel.id === mutation.channelId)) return state

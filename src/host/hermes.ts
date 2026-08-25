@@ -1,4 +1,4 @@
-import type { CommonspaceMessage, HermesAgentProfile } from '../contracts.ts'
+import type { CommonspaceMessage, CommonspaceReasoning, HermesAgentProfile } from '../contracts.ts'
 
 const ESCAPE = String.fromCharCode(27)
 
@@ -24,6 +24,8 @@ export interface HermesInvocationInput {
   queryFile: string
   hermesPath?: string
   yolo?: boolean
+  model?: string
+  reasoning?: CommonspaceReasoning
 }
 
 export interface CommonspaceTags {
@@ -37,6 +39,10 @@ export interface RoomPromptInput {
   agent: string
   userText: string
   projectPaths?: string[]
+  instructions?: string
+  memorySummary?: string
+  decisions?: string[]
+  openQuestions?: string[]
   recent: Array<Pick<CommonspaceMessage, 'authorName' | 'text'> | { authorName: string; text: string }>
 }
 
@@ -101,6 +107,8 @@ export function buildHermesInvocation(input: HermesInvocationInput): { command: 
       '-Q',
       '--query-file', input.queryFile,
       '--source', 'tool',
+      ...(input.model === undefined ? [] : ['--model', input.model]),
+      ...(input.reasoning === undefined ? [] : ['--reasoning', input.reasoning]),
       ...(input.yolo === true ? ['--yolo'] : []),
     ],
   }
@@ -116,6 +124,10 @@ export function buildRoomPrompt(input: RoomPromptInput): string {
     `Commonspace channel #${input.channel}.`,
     `You are responding as @${input.agent}. Other Hermes profiles are peer agents, not subordinates.`,
     input.projectPaths?.length ? `Project workspaces:\n${input.projectPaths.map(path => `- ${path}`).join('\n')}` : 'Project workspaces: (none)',
+    input.instructions ? `Channel instructions:\n${input.instructions}` : 'Channel instructions: (none)',
+    input.memorySummary ? `Channel memory:\n${input.memorySummary}` : 'Channel memory: (empty)',
+    input.decisions?.length ? `Known decisions:\n${input.decisions.map(value => `- ${value}`).join('\n')}` : 'Known decisions: (none)',
+    input.openQuestions?.length ? `Open questions:\n${input.openQuestions.map(value => `- ${value}`).join('\n')}` : 'Open questions: (none)',
     'Respond with a concise, useful room message. Hand work directly to a named peer with @profile when appropriate. Do not narrate private chain-of-thought.',
     transcript === '' ? 'Recent room history: (empty)' : `Recent room history:\n${transcript}`,
     `New message from Ralph:\n${input.userText}`,
