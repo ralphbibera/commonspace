@@ -17,9 +17,10 @@ Commonspace extends the shipped DeepSeek Harness Web profile. It is not a separa
 The launcher:
 
 - preserves the stock sidebar and workspace/session browser;
-- portals the panel to `document.body` so sidebar overflow cannot clip it;
-- closes on Escape or outside pointer interaction;
-- follows the sidebar's wide and collapsed layouts;
+- embeds the navigation directly above the Commonspace row in the sidebar footer stack;
+- grows upward into the sidebar's available space without covering the conversation;
+- closes on Escape or when the stock sidebar collapses;
+- follows the sidebar's wide layout and keeps the collapsed rail compact;
 - uses Harness design tokens with safe fallbacks;
 - exposes Projects, Channels, and Direct Messages as disclosure buttons.
 

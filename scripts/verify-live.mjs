@@ -26,17 +26,24 @@ try {
   await trigger.waitFor({ state: 'visible', timeout: 30_000 })
   await trigger.click()
 
-  const panel = page.getByRole('dialog', { name: 'Commonspace navigation' })
-  await panel.waitFor({ state: 'visible' })
+  const navigation = page.getByRole('navigation', { name: 'Commonspace navigation' })
+  await navigation.waitFor({ state: 'visible' })
+  if ((await page.getByRole('dialog', { name: 'Commonspace navigation' }).count()) !== 0) {
+    throw new Error('Commonspace navigation must be embedded, not rendered as a dialog')
+  }
+  const launcher = page.locator('.csp-launcher')
+  if ((await launcher.getByRole('navigation', { name: 'Commonspace navigation' }).count()) !== 1) {
+    throw new Error('Commonspace navigation is not embedded inside the sidebar launcher')
+  }
   for (const name of ['Projects', 'Channels', 'Direct Messages']) {
-    const button = panel.getByRole('button', { name })
+    const button = navigation.getByRole('button', { name })
     if ((await button.count()) !== 1) throw new Error(`missing ${name} disclosure`)
   }
 
-  await panel.getByRole('button', { name: 'Projects' }).click()
-  await panel.getByText('No projects yet').waitFor({ state: 'visible' })
+  await navigation.getByRole('button', { name: 'Projects' }).click()
+  await navigation.getByText('No projects yet').waitFor({ state: 'visible' })
   await page.screenshot({ path: screenshot, fullPage: true })
-  await panel.screenshot({ path: panelScreenshot })
+  await navigation.screenshot({ path: panelScreenshot })
 
   if (pageErrors.length > 0) {
     throw new Error(`browser errors: ${pageErrors.join(' | ')}`)
