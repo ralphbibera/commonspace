@@ -8,11 +8,13 @@ Commonspace is a small DeepSeek Harness Web plugin that adds a Slack-like naviga
 
 ## What it adds
 
-Click **Commonspace** in the DeepSeek Harness sidebar to open three collapsible groups:
+Click **Commonspace** in the DeepSeek Harness sidebar to expand three inline groups:
 
 - **Projects**
 - **Channels**
 - **Direct Messages**
+
+Each group has an inline **+** action. Added items can be selected or removed, channel names are normalized into readable slugs, duplicates are prevented, and the versioned browser state survives reloads.
 
 The plugin is additive. It preserves the existing Harness workspace list, sessions, conversation UI, model controls, tools, and context management.
 
@@ -63,7 +65,7 @@ With a patched Web profile running locally:
 COMMONSPACE_TEST_URL=http://127.0.0.1:3080 pnpm verify:live
 ```
 
-The live check opens the real Harness Web UI, clicks the Commonspace launcher, verifies the three disclosure groups, expands Projects, checks browser errors, and captures screenshots.
+The live check opens the real Harness Web UI, creates one item in every group, verifies channel normalization, reloads the page, confirms persistence, checks browser errors, and captures screenshots.
 
 ## Architecture
 
@@ -71,14 +73,15 @@ Commonspace is one dual-face Cordis package:
 
 - `src/index.ts` is the host plugin face. The first release is intentionally a no-op.
 - `src/client/index.ts` registers one entry in `sidebar.footer.action`.
-- `src/client/CommonspaceLauncher.tsx` owns the accessible inline navigation and disclosure state.
+- `src/client/CommonspaceLauncher.tsx` owns the accessible inline navigation and item controls.
+- `src/client/navigation-state.ts` validates, normalizes, de-duplicates, selects, removes, and persists navigation items.
 - `commonspace.patch.yml` inserts the package into the Web profile.
 
 See [`docs/architecture.md`](docs/architecture.md) for boundaries and future extension points.
 
 ## Current boundary
 
-This first slice is navigation only. Projects, channels, direct-message records, persistence, and Harness-session mapping are not implemented yet. Those features should be added behind this UI without replacing Harness chat or compaction.
+This slice provides browser-local projects, channels, and direct-message records with reload persistence. Shared host persistence, multi-client synchronization, and Harness-session mapping are not implemented yet. Those features should be added behind this UI without replacing Harness chat or compaction.
 
 ## Contributing
 
