@@ -1,43 +1,97 @@
-/** Commonspace browser plugin: one additive action in the stock DSH sidebar. */
-import type {} from '@deepseek-ai/dsh-client-connection/client'
+/** Commonspace browser plugin: a first-class alternate sidebar and conversation mode. */
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
-import { CommonspaceLauncher } from './CommonspaceLauncher.tsx'
-import { createHarnessRuntime } from './harness-runtime.ts'
+import { CommonspaceClientStore } from './commonspace-store.ts'
+import { CommonspaceConversation } from './CommonspaceConversation.tsx'
+import { CommonspaceModeController } from './commonspace-mode.ts'
+import { CommonspaceModeSwitch } from './CommonspaceModeSwitch.tsx'
+import { CommonspaceSidebar } from './CommonspaceSidebar.tsx'
 import { commonspaceStyles } from './styles.ts'
 
-export { CommonspaceLauncher } from './CommonspaceLauncher.tsx'
-export type { CommonspaceLauncherProps } from './CommonspaceLauncher.tsx'
-export { createHarnessRuntime } from './harness-runtime.ts'
-export type { CommonspaceRuntime } from './harness-runtime.ts'
+export { CommonspaceConversation } from './CommonspaceConversation.tsx'
+export { CommonspaceModeSwitch } from './CommonspaceModeSwitch.tsx'
+export { CommonspaceSidebar } from './CommonspaceSidebar.tsx'
+export { CommonspaceClientStore } from './commonspace-store.ts'
+export { CommonspaceModeController } from './commonspace-mode.ts'
 
-/** The stock sidebar plus native workspace/session runtime services. */
-export const inject = ['slots', 'connection', 'sessions', 'workspaces']
+export const inject = ['slots']
 
 function mountStyles(): () => void {
   const style = document.createElement('style')
-  style.dataset.commonspace = 'navigation'
+  style.dataset.commonspace = 'workspace'
   style.textContent = commonspaceStyles
   document.head.append(style)
   return () => { style.remove() }
 }
 
-/** Register the Commonspace launcher without replacing the Harness sidebar. */
+/** Register the switch and dynamically shadow native sidebar/conversation slots. */
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => {
-    const runtime = createHarnessRuntime(ctx)
+    const mode = new CommonspaceModeController()
+    const store = new CommonspaceClientStore()
     const disposeStyles = mountStyles()
-    const disposeSlot = ctx.slots.inject('sidebar.footer.action', () =>
+
+    const disposeFooter = ctx.slots.inject('sidebar.footer.action', () =>
       ctx.slots.register({
         name: 'sidebar.footer.action',
-        id: 'commonspace',
+        id: 'commonspace-mode',
         order: -20,
-        inject: () => ({ runtime }),
-      }, CommonspaceLauncher))
+        inject: () => ({ mode }),
+      }, CommonspaceModeSwitch))
+
+    const disposeSidebar = ctx.slots.inject('sidebar.workspaces', () => {
+      let dispose: (() => void) | null = null
+      const sync = () => {
+        if (mode.getSnapshot() === 'commonspace' && dispose === null) {
+          dispose = ctx.slots.register({
+            name: 'sidebar.workspaces',
+            priority: -20,
+            inject: () => ({ store }),
+          }, CommonspaceSidebar)
+          void store.refresh()
+        } else if (mode.getSnapshot() === 'workspaces' && dispose !== null) {
+          dispose()
+          dispose = null
+        }
+      }
+      sync()
+      const unsubscribe = mode.subscribe(sync)
+      return () => {
+        unsubscribe()
+        dispose?.()
+        dispose = null
+      }
+    })
+
+    const disposeConversation = ctx.slots.inject('conversation', () => {
+      let dispose: (() => void) | null = null
+      const sync = () => {
+        if (mode.getSnapshot() === 'commonspace' && dispose === null) {
+          dispose = ctx.slots.register({
+            name: 'conversation',
+            priority: -20,
+            inject: () => ({ store }),
+          }, CommonspaceConversation)
+        } else if (mode.getSnapshot() === 'workspaces' && dispose !== null) {
+          dispose()
+          dispose = null
+        }
+      }
+      sync()
+      const unsubscribe = mode.subscribe(sync)
+      return () => {
+        unsubscribe()
+        dispose?.()
+        dispose = null
+      }
+    })
 
     return () => {
-      disposeSlot()
+      disposeConversation()
+      disposeSidebar()
+      disposeFooter()
       disposeStyles()
     }
-  }, 'commonspace: sidebar launcher')
+  }, 'commonspace: workspace mode')
 }
