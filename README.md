@@ -15,7 +15,7 @@ Commonspace has four first-class objects:
 - **Direct Messages** — persistent one-to-one conversations backed by each adapter's native session.
 - **Agents** — discovered Hermes profiles plus user-managed Codex CLI and Claude Code agents.
 
-There is no required captain. In channels, `@profile` routes a turn to that seated agent. A message without a valid mention is sent to the channel's selected members.
+There is no required captain. In channels, `@agent-id` routes a turn to that seated agent. A message without a valid mention is sent to the Channel's selected members.
 
 ## User experience
 
@@ -34,11 +34,24 @@ Use the footer switch to move between them. Commonspace does not stack underneat
 - Adds multiple local workspaces to one Project.
 - Creates Channels scoped to a Project.
 - Selects and edits the agent roster for each Channel.
-- Routes valid `@profile` mentions only to agents seated in that Channel.
-- Opens persistent DMs and resumes the exact native agent session; every Channel root starts a new session and replies stay in that thread's session.
+- Routes valid `@agent-id` mentions only to agents seated in that Channel.
+- Opens persistent DMs from a searchable agent picker and resumes the exact native agent session; every Channel root starts a new session and replies stay in that thread's session.
+- Autocompletes Commonspace slash commands in the composer without forwarding command text to an agent.
 - Stores Commonspace metadata and room messages in `~/.commonspace/state.json` using atomic writes.
 - Restores Commonspace metadata and conversations after browser reload.
 - Restores native DSH Workspaces/conversation immediately when switching back.
+
+## Chat commands
+
+Type `/` in the main composer to browse commands. Command matching is case-insensitive, and commands are handled by Commonspace rather than sent as agent prompts.
+
+| Command | What it does |
+| --- | --- |
+| `/help` (`/commands`) | Shows the commands available in the active Channel or DM. |
+| `/new` (`/clear`, `/reset`) | In a DM, confirms before clearing the transcript and starting fresh native agent context. Add `now`, `--yes`, or `-y` to skip confirmation. |
+| `/retry` (`/again`) | Resends the latest user message in the current conversation or thread. |
+| `/status` | Shows the active Channel or agent, model, adapter, and Project context. |
+| `/agents` (`/tasks`) | Lists the currently available agents. |
 
 ## Install from a checkout
 
@@ -104,7 +117,7 @@ COMMONSPACE_TEST_PROJECT="$PWD" \
 pnpm verify:live
 ```
 
-The live check verifies mode replacement, the real Hermes profile roster, a two-workspace Project, channel membership, a real Hermes profile DM, reload persistence, and restoration of native Workspaces.
+The live check verifies mode replacement, the real Hermes profile roster, a two-workspace Project, Channel membership/settings/memory, threaded execution, the DM picker, slash commands, a real Hermes DM, reload persistence, and restoration of native Workspaces.
 
 ## Architecture
 
@@ -117,11 +130,22 @@ Commonspace is a dual-face Cordis package:
 - `src/host/service.ts` owns validation, atomic persistence, API routes, native session mapping, and bounded adapter execution.
 - `src/client/commonspace-mode.ts` owns the Workspaces/Commonspace mode.
 - `src/client/commonspace-store.ts` is the observable browser store.
+- `src/client/slash-commands.ts` is the context-aware command registry and resolver.
 - `src/client/CommonspaceSidebar.tsx` renders Projects, Channels, DMs, and Agents.
 - `src/client/CommonspaceConversation.tsx` renders room messages and the composer.
 - `src/client/index.ts` dynamically shadows `sidebar.workspaces` and `conversation` only while Commonspace mode is active.
 
 See [`docs/architecture.md`](docs/architecture.md) for the detailed boundary.
+
+## Documentation
+
+- [Product model](docs/product.md)
+- [Architecture](docs/architecture.md)
+- [Agent adapter contract](docs/agent-adapters.md)
+- [Design system](docs/design-system.md)
+- [Development guide](docs/development.md)
+- [Operations and troubleshooting](docs/operations.md)
+- [Roadmap](docs/roadmap.md)
 
 ## Current boundary
 

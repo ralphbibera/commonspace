@@ -31,6 +31,7 @@ async function verifyAgentManagementSurface() {
   await page.getByRole('combobox', { name: 'Agent adapter' }).selectOption('claude-code')
   await page.getByRole('textbox', { name: 'Agent model' }).fill('claude-sonnet-4-6')
   await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await page.getByRole('textbox', { name: 'Agent name' }).waitFor({ state: 'hidden' })
 }
 
 async function ensureProject() {
@@ -78,6 +79,7 @@ async function ensureSettings() {
   await page.getByRole('spinbutton', { name: 'Default max agents' }).fill('2')
   await page.getByRole('spinbutton', { name: 'Default memory threads' }).fill('12')
   await page.getByRole('button', { name: 'Save defaults' }).click()
+  await page.getByRole('combobox', { name: 'Default reasoning' }).waitFor({ state: 'hidden', timeout: 60_000 })
 }
 
 async function ensureChannelContext() {
@@ -85,6 +87,7 @@ async function ensureChannelContext() {
   await page.getByRole('textbox', { name: 'Instructions for channel general' }).fill('Keep checkout work concise. Record decisions and unresolved questions explicitly.')
   await page.getByRole('combobox', { name: 'Reasoning for channel general' }).selectOption('high')
   await page.getByRole('button', { name: 'Save', exact: true }).click()
+  await page.getByRole('textbox', { name: 'Instructions for channel general' }).waitFor({ state: 'hidden', timeout: 60_000 })
 }
 
 try {
@@ -130,11 +133,17 @@ try {
   await page.getByText(rootText, { exact: false }).last().waitFor({ state: 'visible' })
   await channelContextForm.getByRole('button', { name: 'Cancel', exact: true }).click()
 
-  await page.getByRole('button', { name: 'Message agent Frontend' }).click()
+  await page.getByRole('button', { name: 'Add direct message' }).click()
+  await page.getByRole('textbox', { name: 'Find an agent to message' }).fill('Frontend')
+  await page.getByRole('button', { name: 'Start direct message with Frontend' }).click()
   await page.getByRole('heading', { name: 'Frontend' }).waitFor({ state: 'visible' })
+  const composer = page.getByRole('textbox', { name: 'Message Frontend' })
+  await composer.fill('/status')
+  await page.getByRole('button', { name: 'Run' }).click()
+  await page.getByRole('status', { name: 'Command result' }).getByText(/Frontend.*Hermes/m).waitFor({ state: 'visible' })
+  await page.getByRole('button', { name: 'Dismiss command result' }).click()
   const verifiedReply = page.getByText(/Commonspace Hermes DM works\./)
   if ((await verifiedReply.count()) === 0) {
-    const composer = page.getByPlaceholder('Message Frontend')
     await composer.fill('Reply with exactly: Commonspace Hermes DM works.')
     await page.getByRole('button', { name: 'Send' }).click()
   }
@@ -152,7 +161,7 @@ try {
   const dmSection = page.locator('.csp-browser-section').filter({
     has: page.getByRole('button', { name: /^Direct Messages/ }),
   })
-  await dmSection.getByRole('button', { name: /Frontend/ }).click()
+  await dmSection.getByRole('button', { name: 'Open direct message with Frontend' }).click()
   await page.getByText(/Commonspace Hermes DM works\./).last().waitFor({ state: 'visible' })
 
   await page.getByRole('button', { name: 'Switch to Workspaces' }).click()
@@ -179,7 +188,9 @@ try {
     channelMemory: true,
     immediateRoot: true,
     threadedReplies: true,
+    dmPicker: true,
     dm: 'frontend',
+    slashCommands: true,
     hermesReply: true,
     persistedAfterReload: true,
     nativeWorkspacesRestored: true,

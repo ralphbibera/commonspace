@@ -22,6 +22,7 @@
   "files": [
     "lib",
     "commonspace.patch.yml",
+    "docs",
     "README.md",
     "LICENSE"
   ],

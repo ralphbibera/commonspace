@@ -721,7 +721,8 @@ export const commonspaceStyles = String.raw`
   gap: 4px;
 }
 
-.csp-browser-form label input {
+.csp-browser-form label input[type='checkbox'],
+.csp-browser-form label input[type='radio'] {
   width: 12px;
   height: 12px;
 }

@@ -18,7 +18,7 @@ import type {
   SendMessageRequest,
   SendMessageResponse,
 } from '../contracts.ts'
-import { conversationKey } from '../contracts.ts'
+import { COMMONSPACE_STATE_VERSION, conversationKey } from '../contracts.ts'
 import {
   buildClaudeCodeInvocation,
   buildCodexInvocation,
@@ -37,6 +37,7 @@ const MAX_MESSAGE_CHARS = 16_000
 const MAX_CAPTURE_BYTES = 1024 * 1024
 const MANAGED_AGENT_ID_PATTERN = /^(?:codex|claude-code)-[\p{L}\p{N}][\p{L}\p{N}-]{0,79}$/u
 const THREAD_SESSION_SCOPE_PATTERN = /^Commonspace Thread: [0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const DM_SESSION_SCOPE_PATTERN = /^Commonspace DM: [0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 export interface CommonspaceHostConfig {
   root?: string
@@ -77,6 +78,7 @@ export interface AgentRunResult {
 interface SendDependencies {
   discoverAgents(): Promise<CommonspaceAgentProfile[]>
   runAgent(input: AgentRunInput): Promise<string | AgentRunResult>
+  beforeAcceptSend?(prepared: PreparedSend): Promise<void>
 }
 
 interface PreparedSend {
@@ -87,6 +89,7 @@ interface PreparedSend {
   channel?: CommonspaceState['channels'][number]
   project?: CommonspaceState['projects'][number]
   thread?: CommonspaceThread
+  dmSessionName?: string
 }
 
 function json(res: ServerResponse, status: number, body: unknown): void {
@@ -177,14 +180,25 @@ function sanitizeManagedAgents(value: unknown): CommonspaceState['agents'] {
   return [...new Map(agents.map(agent => [agent.id, agent])).values()]
 }
 
-function sanitizeAgentSessions(value: unknown, allowedAgentIds: ReadonlySet<string>): CommonspaceState['agentSessions'] {
+function sanitizeDmSessions(value: unknown): CommonspaceState['dmSessions'] {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return {}
+  return Object.fromEntries(Object.entries(value)
+    .filter((entry): entry is [string, string] => entry[0].length > 0 && entry[0].length <= 200 && typeof entry[1] === 'string' && DM_SESSION_SCOPE_PATTERN.test(entry[1]))
+    .slice(-500))
+}
+
+function sanitizeAgentSessions(
+  value: unknown,
+  allowedAgentIds: ReadonlySet<string>,
+  dmSessions: CommonspaceState['dmSessions'],
+): CommonspaceState['agentSessions'] {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return {}
   const sessions: CommonspaceState['agentSessions'] = {}
   for (const [agentId, rawScopes] of Object.entries(value)) {
     if (!allowedAgentIds.has(agentId)) continue
     if (typeof rawScopes !== 'object' || rawScopes === null || Array.isArray(rawScopes)) continue
     const scopes = Object.fromEntries(Object.entries(rawScopes)
-      .filter((entry): entry is [string, string] => (entry[0] === 'Bot Chat' || THREAD_SESSION_SCOPE_PATTERN.test(entry[0])) && isAgentSessionId(entry[1]))
+      .filter((entry): entry is [string, string] => ((entry[0] === 'Bot Chat' && dmSessions[agentId] === undefined) || THREAD_SESSION_SCOPE_PATTERN.test(entry[0]) || dmSessions[agentId] === entry[0]) && isAgentSessionId(entry[1]))
       .slice(-500))
     if (Object.keys(scopes).length > 0) sessions[agentId] = scopes
   }
@@ -471,7 +485,7 @@ function sanitizeMessages(
 
 function sanitizeLoadedState(value: unknown): CommonspaceState {
   const record = plainRecord(value)
-  if (record === null || (record.version !== 1 && record.version !== 2 && record.version !== 3 && record.version !== 4 && record.version !== 5)) {
+  if (record === null || (record.version !== 1 && record.version !== 2 && record.version !== 3 && record.version !== 4 && record.version !== 5 && record.version !== COMMONSPACE_STATE_VERSION)) {
     return createInitialState()
   }
   const fallbackDefaults = defaultCommonspaceDefaults()
@@ -491,12 +505,14 @@ function sanitizeLoadedState(value: unknown): CommonspaceState {
     memory: { ...channel.memory, threadIds: channel.memory.threadIds.filter(id => threadIds.has(id)) },
   }))
   const agents = sanitizeManagedAgents(record.agents)
+  const dmSessions = sanitizeDmSessions(record.dmSessions)
   return {
-    version: 5,
+    version: COMMONSPACE_STATE_VERSION,
     revision: loadedBoundedInteger(record.revision, 0, 0, Number.MAX_SAFE_INTEGER),
     defaults,
     agents,
-    agentSessions: sanitizeAgentSessions(record.agentSessions, new Set(agents.map(agent => agent.id))),
+    dmSessions,
+    agentSessions: sanitizeAgentSessions(record.agentSessions, new Set(agents.map(agent => agent.id)), dmSessions),
     projects,
     channels,
     threads,
@@ -593,7 +609,7 @@ export class CommonspaceHostService {
   }
 
   private publicSnapshot(): CommonspaceState {
-    return { ...this.snapshot(), agentSessions: {} }
+    return { ...this.snapshot(), dmSessions: {}, agentSessions: {} }
   }
 
   async whenIdle(): Promise<void> {
@@ -619,6 +635,7 @@ export class CommonspaceHostService {
 
   async send(request: SendMessageRequest): Promise<SendMessageResponse> {
     const prepared = await this.prepareSend(request)
+    await this.overrides.beforeAcceptSend?.(prepared)
     const response = await this.acceptSend(prepared)
     const executionKey = response.thread === undefined
       ? conversationKey(request.conversation)
@@ -707,6 +724,7 @@ export class CommonspaceHostService {
     let channel = undefined as PreparedSend['channel']
     let project = undefined as PreparedSend['project']
     let thread = undefined as PreparedSend['thread']
+    let dmSessionName = undefined as PreparedSend['dmSessionName']
     let agentIds: string[]
 
     if (request.conversation.kind === 'channel') {
@@ -730,11 +748,15 @@ export class CommonspaceHostService {
         if (project === undefined) throw new Error('unknown project')
       }
       agentIds = [request.conversation.id]
+      dmSessionName = this.state.dmSessions[request.conversation.id] ?? 'Bot Chat'
     }
-    return { request, text, agents, agentIds, ...(channel === undefined ? {} : { channel }), ...(project === undefined ? {} : { project }), ...(thread === undefined ? {} : { thread }) }
+    return { request, text, agents, agentIds, ...(channel === undefined ? {} : { channel }), ...(project === undefined ? {} : { project }), ...(thread === undefined ? {} : { thread }), ...(dmSessionName === undefined ? {} : { dmSessionName }) }
   }
 
   private async acceptSend(prepared: PreparedSend): Promise<SendMessageResponse> {
+    if (!this.conversationIsCurrent(prepared, prepared.thread)) {
+      throw new Error('conversation changed before message acceptance')
+    }
     const createdAt = now()
     const acceptedId = messageId()
     let thread = prepared.thread
@@ -813,7 +835,7 @@ export class CommonspaceHostService {
               recent: (this.state.messages[conversationKey(prepared.request.conversation)] ?? []).slice(-30),
             })
         const sessionName = prepared.request.conversation.kind === 'dm'
-          ? 'Bot Chat'
+          ? prepared.dmSessionName ?? 'Bot Chat'
           : `Commonspace Thread: ${thread?.id ?? crypto.randomUUID()}`
         const sessionId = this.state.agentSessions[agent.id]?.[sessionName]
         const agentModel = effectiveModel ?? (agent.adapter === 'hermes' ? undefined : agent.model ?? undefined)
@@ -884,7 +906,9 @@ export class CommonspaceHostService {
   }
 
   private conversationIsCurrent(prepared: PreparedSend, thread: CommonspaceThread | undefined): boolean {
-    if (prepared.request.conversation.kind === 'dm') return true
+    if (prepared.request.conversation.kind === 'dm') {
+      return (this.state.dmSessions[prepared.request.conversation.id] ?? 'Bot Chat') === (prepared.dmSessionName ?? 'Bot Chat')
+    }
     if (!this.state.channels.some(channel => channel.id === prepared.request.conversation.id)) return false
     return thread === undefined || this.state.threads.some(candidate => candidate.id === thread.id)
   }
@@ -1001,6 +1025,11 @@ export class CommonspaceHostService {
       const id = managedAgentId(mutation.adapter, mutation.displayName)
       const conflict = (await this.discoverAgents()).some(agent => agent.id === id && agent.adapter === 'hermes')
       if (conflict) throw new Error(`agent ${mutation.displayName.trim()} conflicts with a Hermes profile`)
+    }
+    if (mutation.action === 'reset-dm') {
+      if (typeof mutation.agentId !== 'string' || !(await this.discoverAgents()).some(agent => agent.id === mutation.agentId)) {
+        throw new Error('unknown agent')
+      }
     }
     return mutation
   }

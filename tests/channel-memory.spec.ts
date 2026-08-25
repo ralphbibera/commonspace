@@ -4,10 +4,11 @@ import { projectChannelMemory } from '../src/host/memory.ts'
 
 it('projects completed thread context into inspectable channel memory', () => {
   const state: CommonspaceState = {
-    version: 5,
+    version: 6,
     revision: 4,
     defaults: { model: null, reasoning: 'max', maxAgentsPerTurn: 4, memoryThreads: 12 },
     agents: [],
+    dmSessions: {},
     agentSessions: {},
     projects: [],
     channels: [{ id: 'general', name: 'general', projectId: null, agentIds: ['frontend'], instructions: '', memory: { summary: '', decisions: [], openQuestions: [], threadIds: [], updatedAt: null }, settings: { model: null, reasoning: null }, createdAt: '2026-08-25T00:00:00Z' }],

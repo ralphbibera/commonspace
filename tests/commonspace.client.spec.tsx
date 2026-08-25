@@ -25,7 +25,7 @@ describe('Commonspace workspace mode', () => {
   it('suggests the active tag type from the current word', () => {
     expect(tagSuggestions('Please ask @ba', {
       agents: [{ id: 'backend', displayName: 'Backend', adapter: 'hermes', model: 'x', status: 'running' }],
-      state: { version: 5, revision: 0, defaults: { model: null, reasoning: 'max', maxAgentsPerTurn: 4, memoryThreads: 12 }, agents: [], agentSessions: {}, projects: [{ id: 'commonspace', name: 'Commonspace', paths: [], createdAt: '' }], channels: [{ id: 'general', name: 'general', projectId: null, agentIds: [], instructions: '', memory: { summary: '', decisions: [], openQuestions: [], threadIds: [], updatedAt: null }, settings: { model: null, reasoning: null }, createdAt: '' }], threads: [], messages: {} },
+      state: { version: 6, revision: 0, defaults: { model: null, reasoning: 'max', maxAgentsPerTurn: 4, memoryThreads: 12 }, agents: [], dmSessions: {}, agentSessions: {}, projects: [{ id: 'commonspace', name: 'Commonspace', paths: [], createdAt: '' }], channels: [{ id: 'general', name: 'general', projectId: null, agentIds: [], instructions: '', memory: { summary: '', decisions: [], openQuestions: [], threadIds: [], updatedAt: null }, settings: { model: null, reasoning: null }, createdAt: '' }], threads: [], messages: {} },
     })).toEqual([{ kind: 'agent', id: 'backend', label: 'Backend', token: '@backend' }])
   })
 
@@ -47,10 +47,11 @@ describe('Commonspace workspace mode', () => {
       bootstrap: {
         agents: [{ id: 'codex-review-bot', displayName: 'Review Bot', adapter: 'codex', model: 'gpt-5.4', status: 'unknown' }],
         state: {
-          version: 5,
+          version: 6,
           revision: 1,
           defaults: { model: null, reasoning: 'max', maxAgentsPerTurn: 4, memoryThreads: 12 },
           agents: [{ id: 'codex-review-bot', displayName: 'Review Bot', adapter: 'codex', model: 'gpt-5.4', createdAt: '2026-08-25T00:00:00.000Z' }],
+          dmSessions: {},
           agentSessions: {},
           projects: [],
           channels: [],
@@ -74,7 +75,9 @@ describe('Commonspace workspace mode', () => {
       selectProject: vi.fn(),
     }
     render(<CommonspaceSidebar wide expandSidebar={() => undefined} store={store as never} />)
-    expect(screen.getByText('Codex CLI · gpt-5.4 · configured')).toBeTruthy()
+    expect(screen.getByText('Codex CLI', { selector: '.csp-adapter-badge' })).toBeTruthy()
+    expect(screen.getByText('configured', { selector: '.csp-agent-status' })).toBeTruthy()
+    expect(document.querySelector('.csp-agent-avatar[data-adapter="codex"]')).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: 'Add agent' }))
     fireEvent.change(screen.getByLabelText('Agent name'), { target: { value: 'Builder' } })
@@ -89,6 +92,43 @@ describe('Commonspace workspace mode', () => {
     await waitFor(() => {
       expect(mutate).toHaveBeenCalledWith({ action: 'remove-agent', agentId: 'codex-review-bot' })
     })
+  })
+
+  it('presents the Commonspace product model in the empty conversation state', () => {
+    const snapshot = {
+      bootstrap: {
+        agents: [],
+        state: {
+          version: 6,
+          revision: 0,
+          defaults: { model: null, reasoning: 'max', maxAgentsPerTurn: 4, memoryThreads: 12 },
+          agents: [],
+          dmSessions: {},
+          agentSessions: {},
+          projects: [],
+          channels: [],
+          threads: [],
+          messages: {},
+        },
+      },
+      loading: false,
+      sending: false,
+      error: null,
+      activeConversation: null,
+      activeProjectId: null,
+      activeThreadId: null,
+    } as const
+    const store = {
+      subscribe: () => () => undefined,
+      getSnapshot: () => snapshot,
+      messages: () => [],
+      send: vi.fn(),
+      selectThread: vi.fn(),
+    }
+
+    render(<CommonspaceConversation store={store as never} />)
+    expect(screen.getByRole('heading', { name: 'Make space for the whole team.' })).toBeTruthy()
+    expect(screen.getByText('Projects set context. Channels gather agents. Threads keep work focused.')).toBeTruthy()
   })
 
   it('shadows sidebar and conversation only while Commonspace mode is active', () => {
