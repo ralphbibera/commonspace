@@ -3,14 +3,14 @@
 ## Prerequisites
 
 - Node.js 22+
-- pnpm 10+
+- pnpm 10.34.5 (pnpm 10.26+ is required for Git dependency `allowBuilds`)
 - DeepSeek Harness Web `0.1.1-rc.2`+
 - At least one configured Hermes, Codex CLI, or Claude Code runtime for live execution tests
 
 ## Setup
 
 ```bash
-pnpm install
+pnpm install --frozen-lockfile
 pnpm check
 ```
 
@@ -70,6 +70,24 @@ pnpm verify:adapters:claude
 ```
 
 The real adapter checks are opt-in and consume the installed CLI's configured model access. A passing unit suite is not a substitute for a real start/resume smoke test, but an authentication failure is reported as an external blocker rather than fabricated success.
+
+## Packaging and cross-machine testing
+
+Create the same self-contained tarball that CI uploads:
+
+```bash
+pnpm pack:plugin
+```
+
+The resulting `commonspace-<version>.tgz` contains built host/client entry points, declarations, the bundle patch, documentation, and the checked-in image. Test it without linking the source checkout:
+
+```bash
+dsh plugin --profile web add ./commonspace-<version>.tgz
+dsh plugin --profile web list --depth 0
+dsh --profile web --dump-config
+```
+
+For source installs from GitHub, `prepare` builds `lib/`. Pin a full trusted commit SHA, run the add once, and copy the exact rejected build key printed by pnpm into the target profile's `allowBuilds`; do not guess a package-only key. Prefer the prebuilt CI artifact when the target machine should execute no package build.
 
 ## Live DSH verification
 

@@ -24,6 +24,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Generation-safe Direct Message resets that clear the transcript, rotate native context, and discard stale in-flight replies.
 - Projects, Channels, Direct Messages, Agents, and center Messages UI.
 - Unit, type, build, CI, and live-browser verification.
+- Self-contained plugin tarballs, optional in-box peer metadata, and a git-install `prepare` build for reproducible cross-machine installation.
+- Downloadable installable plugin artifacts on every successful push to `main`.
 
 ### Removed
 
