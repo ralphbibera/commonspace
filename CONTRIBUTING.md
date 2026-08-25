@@ -23,6 +23,8 @@ Then run:
 COMMONSPACE_TEST_URL=http://127.0.0.1:3080 pnpm verify:live
 ```
 
+The verifier writes ignored artifacts by default. Set `COMMONSPACE_UPDATE_DOCS=1` only when intentionally refreshing `docs/assets/commonspace-panel.png`.
+
 ## Pull requests
 
 - Keep changes focused and explain the user-visible behavior.
