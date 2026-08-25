@@ -7,6 +7,7 @@ import { CommonspaceConversation } from './CommonspaceConversation.tsx'
 import { CommonspaceModeController } from './commonspace-mode.ts'
 import { CommonspaceModeSwitch } from './CommonspaceModeSwitch.tsx'
 import { CommonspaceSidebar } from './CommonspaceSidebar.tsx'
+import { commonspacePolish } from './polish.ts'
 import { commonspaceStyles } from './styles.ts'
 
 export { CommonspaceConversation } from './CommonspaceConversation.tsx'
@@ -20,7 +21,7 @@ export const inject = ['slots']
 function mountStyles(): () => void {
   const style = document.createElement('style')
   style.dataset.commonspace = 'workspace'
-  style.textContent = commonspaceStyles
+  style.textContent = `${commonspaceStyles}\n${commonspacePolish}`
   document.head.append(style)
   return () => { style.remove() }
 }

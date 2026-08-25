@@ -19,8 +19,8 @@ function Section(props: {
     <section className="csp-browser-section">
       <div className="csp-browser-section-head">
         <button type="button" className="csp-browser-disclosure" aria-expanded={open} onClick={() => { setOpen(value => !value) }}>
-          <span aria-hidden="true">{open ? '⌄' : '›'}</span>
-          <span>{props.title}</span>
+          <span className={`csp-section-chevron${open ? ' is-open' : ''}`} aria-hidden="true">›</span>
+          <span className="csp-section-title">{props.title}</span>
           <span className="csp-browser-count">{props.count}</span>
         </button>
         {props.onAdd !== undefined && (
@@ -44,13 +44,18 @@ function agentStatusLabel(status: CommonspaceAgentProfile['status']): string {
   return 'available'
 }
 
-function AgentDot({ agent }: { agent: CommonspaceAgentProfile }) {
-  return <span className={`csp-agent-dot csp-agent-dot--${agent.status}`} aria-hidden="true" />
+function AgentAvatar({ agent }: { agent: CommonspaceAgentProfile }) {
+  return (
+    <span className="csp-agent-avatar" data-adapter={agent.adapter} aria-hidden="true">
+      {agent.displayName.slice(0, 1).toLocaleUpperCase()}
+      <i className={`csp-agent-presence csp-agent-presence--${agent.status}`} />
+    </span>
+  )
 }
 
 export function CommonspaceSidebar({ wide, expandSidebar, store }: CommonspaceSidebarProps) {
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot)
-  const [form, setForm] = useState<'project' | 'channel' | 'agent' | null>(null)
+  const [form, setForm] = useState<'project' | 'channel' | 'dm' | 'agent' | null>(null)
   const [name, setName] = useState('')
   const [path, setPath] = useState('')
   const [pathProjectId, setPathProjectId] = useState<string | null>(null)
@@ -59,6 +64,7 @@ export function CommonspaceSidebar({ wide, expandSidebar, store }: CommonspaceSi
   const [agentIds, setAgentIds] = useState<string[]>([])
   const [agentAdapter, setAgentAdapter] = useState<Exclude<AgentAdapterKind, 'hermes'>>('codex')
   const [agentModel, setAgentModel] = useState('')
+  const [dmSearch, setDmSearch] = useState('')
   const [editingChannelId, setEditingChannelId] = useState<string | null>(null)
   const [channelAgentIds, setChannelAgentIds] = useState<string[]>([])
   const [channelInstructions, setChannelInstructions] = useState('')
@@ -74,7 +80,14 @@ export function CommonspaceSidebar({ wide, expandSidebar, store }: CommonspaceSi
   const bootstrap = snapshot.bootstrap
   const state = bootstrap?.state
   const agents = bootstrap?.agents ?? []
-  const dmAgents = useMemo(() => agents.filter(agent => (state?.messages[`dm:${agent.id}`]?.length ?? 0) > 0), [agents, state])
+  const activeDmId = snapshot.activeConversation?.kind === 'dm' ? snapshot.activeConversation.id : null
+  const dmAgents = useMemo(
+    () => agents.filter(agent => agent.id === activeDmId || (state?.messages[`dm:${agent.id}`]?.length ?? 0) > 0),
+    [activeDmId, agents, state],
+  )
+  const normalizedDmSearch = dmSearch.trim().toLocaleLowerCase()
+  const matchingDmAgents = agents.filter(agent => normalizedDmSearch === '' ||
+    [agent.displayName, agent.id, agent.adapter, agent.model ?? ''].some(value => value.toLocaleLowerCase().includes(normalizedDmSearch)))
   const models = useMemo(() => [...new Set(agents.map(agent => agent.model).filter((model): model is string => model !== null && model !== ''))], [agents])
 
   if (!wide) {
@@ -134,12 +147,22 @@ export function CommonspaceSidebar({ wide, expandSidebar, store }: CommonspaceSi
     setSettingsOpen(false)
   }
 
+  const startDirectMessage = (agentId: string) => {
+    store.selectConversation({ kind: 'dm', id: agentId })
+    setDmSearch('')
+    setForm(null)
+  }
+
   return (
     <div className="csp-browser" aria-label="Commonspace browser">
       <header className="csp-browser-header">
-        <div>
-          <strong>Commonspace</strong>
-          <span>Local agent workspace</span>
+        <div className="csp-browser-brand">
+          <span className="csp-mark csp-mark--brand" aria-hidden="true"><span /><span /><span /><span /></span>
+          <div>
+            <strong>Commonspace</strong>
+            <span>Private agent field</span>
+          </div>
+          <em>LOCAL</em>
         </div>
         <div className="csp-browser-header-actions">
           <button type="button" className="csp-browser-refresh" aria-label="Commonspace settings" onClick={() => {
@@ -193,7 +216,7 @@ export function CommonspaceSidebar({ wide, expandSidebar, store }: CommonspaceSi
                     aria-pressed={active}
                     onClick={() => { store.selectProject(project.id) }}
                   >
-                    <span aria-hidden="true">▱</span>
+                    <span className="csp-project-glyph" aria-hidden="true"><span /></span>
                     <span className="csp-browser-row-main"><strong>{project.name}</strong><small>{project.paths.length} workspace{project.paths.length === 1 ? '' : 's'}</small></span>
                   </button>
                   <button
@@ -211,7 +234,7 @@ export function CommonspaceSidebar({ wide, expandSidebar, store }: CommonspaceSi
                   <div className="csp-project-workspaces">
                     {project.paths.map(projectPath => (
                       <div key={projectPath} className="csp-workspace-row" title={projectPath}>
-                        <span aria-hidden="true">▱</span>
+                        <span className="csp-workspace-glyph" aria-hidden="true" />
                         <span>{projectPath.split(/[\\/]/).filter(Boolean).at(-1) ?? projectPath}</span>
                         <small>{projectPath}</small>
                       </div>
@@ -287,13 +310,34 @@ export function CommonspaceSidebar({ wide, expandSidebar, store }: CommonspaceSi
           {(state?.channels.length ?? 0) === 0 && form !== 'channel' && <div className="csp-browser-empty">Create a channel and seat agents.</div>}
         </Section>
 
-        <Section title="Direct Messages" count={dmAgents.length}>
+        <Section title="Direct Messages" count={dmAgents.length} onAdd={() => {
+          setDmSearch('')
+          setForm(current => current === 'dm' ? null : 'dm')
+        }}>
+          {form === 'dm' && (
+            <div className="csp-browser-form csp-dm-picker">
+              <label className="csp-dm-search">
+                <span>Find an agent</span>
+                <input autoFocus aria-label="Find an agent to message" value={dmSearch} onChange={event => { setDmSearch(event.target.value) }} placeholder="Name, profile, or adapter" />
+              </label>
+              <div className="csp-dm-picker-results" aria-label="Agents available for direct messages">
+                {matchingDmAgents.length === 0 && <span className="csp-dm-picker-empty">No matching agents.</span>}
+                {matchingDmAgents.map(agent => (
+                  <button key={agent.id} type="button" className="csp-dm-picker-agent" aria-label={`Start direct message with ${agent.displayName}`} onClick={() => { startDirectMessage(agent.id) }}>
+                    <AgentAvatar agent={agent} />
+                    <span><strong>{agent.displayName}</strong><small>{adapterLabel(agent.adapter)} · {agent.model ?? 'default model'}</small></span>
+                  </button>
+                ))}
+              </div>
+              <div><button type="button" onClick={() => { setDmSearch(''); setForm(null) }}>Cancel</button></div>
+            </div>
+          )}
           {dmAgents.map(agent => (
-            <button key={agent.id} type="button" className="csp-browser-row" aria-pressed={snapshot.activeConversation?.kind === 'dm' && snapshot.activeConversation.id === agent.id} onClick={() => { store.selectConversation({ kind: 'dm', id: agent.id }) }}>
-              <AgentDot agent={agent} /><span className="csp-browser-row-main"><strong>{agent.displayName}</strong><small>{state?.messages[`dm:${agent.id}`]?.at(-1)?.text.slice(0, 34)}</small></span>
+            <button key={agent.id} type="button" className="csp-browser-row" aria-label={`Open direct message with ${agent.displayName}`} aria-pressed={snapshot.activeConversation?.kind === 'dm' && snapshot.activeConversation.id === agent.id} onClick={() => { startDirectMessage(agent.id) }}>
+              <AgentAvatar agent={agent} /><span className="csp-browser-row-main"><strong>{agent.displayName}</strong><small>{state?.messages[`dm:${agent.id}`]?.at(-1)?.text.slice(0, 34) ?? 'New direct message'}</small></span>
             </button>
           ))}
-          {dmAgents.length === 0 && <div className="csp-browser-empty">Start a DM from the Agents list.</div>}
+          {dmAgents.length === 0 && form !== 'dm' && <div className="csp-browser-empty">Use + to choose an agent.</div>}
         </Section>
 
         <Section title="Agents" count={agents.length} onAdd={() => { setForm('agent'); setName(''); setAgentAdapter('codex'); setAgentModel('') }}>
@@ -310,8 +354,12 @@ export function CommonspaceSidebar({ wide, expandSidebar, store }: CommonspaceSi
           )}
           {agents.map(agent => (
             <div key={agent.id} className="csp-agent-head">
-              <button type="button" className="csp-browser-row" aria-label={`Message agent ${agent.displayName}`} onClick={() => { store.selectConversation({ kind: 'dm', id: agent.id }) }}>
-                <AgentDot agent={agent} /><span className="csp-browser-row-main"><strong>{agent.displayName}</strong><small>{adapterLabel(agent.adapter)} · {agent.model ?? 'default model'} · {agentStatusLabel(agent.status)}</small></span>
+              <button type="button" className="csp-browser-row" aria-label={`Message agent ${agent.displayName}`} onClick={() => { startDirectMessage(agent.id) }}>
+                <AgentAvatar agent={agent} />
+                <span className="csp-browser-row-main">
+                  <strong>{agent.displayName}</strong>
+                  <small className="csp-agent-meta"><span className="csp-adapter-badge" data-adapter={agent.adapter}>{adapterLabel(agent.adapter)}</span><span>{agent.model ?? 'default model'}</span><span className="csp-agent-status">{agentStatusLabel(agent.status)}</span></small>
+                </span>
               </button>
               {state?.agents.some(candidate => candidate.id === agent.id) === true && (
                 <button type="button" className="csp-project-add" aria-label={`Remove agent ${agent.displayName}`} onClick={() => { void store.mutate({ action: 'remove-agent', agentId: agent.id }) }}>×</button>

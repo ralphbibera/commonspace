@@ -1,4 +1,4 @@
-export const COMMONSPACE_STATE_VERSION = 5 as const
+export const COMMONSPACE_STATE_VERSION = 6 as const
 
 export type AgentAdapterKind = 'hermes' | 'codex' | 'claude-code'
 
@@ -96,6 +96,8 @@ export interface CommonspaceState {
   revision: number
   defaults: CommonspaceDefaults
   agents: CommonspaceAgentDefinition[]
+  /** Host-private native session scope selected for each direct message. */
+  dmSessions: Record<string, string>
   agentSessions: Record<string, Record<string, string>>
   projects: CommonspaceProject[]
   channels: CommonspaceChannel[]
@@ -119,6 +121,7 @@ export type CommonspaceMutation =
   | { action: 'set-defaults'; model?: string | null; reasoning?: CommonspaceReasoning; maxAgentsPerTurn?: number; memoryThreads?: number }
   | { action: 'add-agent'; displayName: string; adapter: Exclude<AgentAdapterKind, 'hermes'>; model?: string | null }
   | { action: 'remove-agent'; agentId: string }
+  | { action: 'reset-dm'; agentId: string }
   | { action: 'remove-channel'; channelId: string }
 
 export interface SendMessageRequest {

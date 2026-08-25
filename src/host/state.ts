@@ -81,6 +81,7 @@ export function createInitialState(): CommonspaceState {
     revision: 0,
     defaults: defaultCommonspaceDefaults(),
     agents: [],
+    dmSessions: {},
     agentSessions: {},
     projects: [],
     channels: [],
@@ -234,9 +235,35 @@ export function applyMutation(
         ...state,
         revision: nextRevision(state),
         agents: state.agents.filter(agent => agent.id !== mutation.agentId),
+        dmSessions: Object.fromEntries(Object.entries(state.dmSessions).filter(([agentId]) => agentId !== mutation.agentId)),
         agentSessions: Object.fromEntries(Object.entries(state.agentSessions).filter(([agentId]) => agentId !== mutation.agentId)),
         channels: state.channels.map(channel => ({ ...channel, agentIds: channel.agentIds.filter(agentId => agentId !== mutation.agentId) })),
         messages: Object.fromEntries(Object.entries(state.messages).filter(([key]) => key !== `dm:${mutation.agentId}`)),
+      }
+    }
+    case 'reset-dm': {
+      const previousScope = state.dmSessions[mutation.agentId] ?? 'Bot Chat'
+      const scopes = state.agentSessions[mutation.agentId]
+      const remainingScopes = scopes === undefined
+        ? undefined
+        : Object.fromEntries(Object.entries(scopes).filter(([scope]) => scope !== previousScope))
+      const agentSessions = { ...state.agentSessions }
+      if (remainingScopes === undefined || Object.keys(remainingScopes).length === 0) {
+        delete agentSessions[mutation.agentId]
+      } else {
+        agentSessions[mutation.agentId] = remainingScopes
+      }
+      const messages = { ...state.messages }
+      delete messages[`dm:${mutation.agentId}`]
+      return {
+        ...state,
+        revision: nextRevision(state),
+        dmSessions: {
+          ...state.dmSessions,
+          [mutation.agentId]: `Commonspace DM: ${dependencies.ids()}`,
+        },
+        agentSessions,
+        messages,
       }
     }
     case 'remove-channel': {

@@ -70,7 +70,7 @@ describe('Commonspace host authority', () => {
     })
   })
 
-  it('sanitizes malformed legacy state, canonicalizes paths, and durably writes v5', async () => {
+  it('sanitizes malformed legacy state, canonicalizes paths, and durably writes v6', async () => {
     const root = await mkdtemp(join(tmpdir(), 'commonspace-migration-'))
     roots.push(root)
     const workspace = join(root, 'workspace')
@@ -102,7 +102,7 @@ describe('Commonspace host authority', () => {
 
     const state = service.snapshot()
     expect(state).toMatchObject({
-      version: 5,
+      version: 6,
       revision: 0,
       defaults: { model: null, reasoning: 'max', maxAgentsPerTurn: 8, memoryThreads: 1 },
       projects: [{ id: 'project-1', paths: [canonicalWorkspace] }],
@@ -117,7 +117,7 @@ describe('Commonspace host authority', () => {
       messages: {},
     })
     const persisted = JSON.parse(await readFile(join(root, 'state.json'), 'utf8')) as { version?: number; defaults?: { reasoning?: string } }
-    expect(persisted).toMatchObject({ version: 5, defaults: { reasoning: 'max' } })
+    expect(persisted).toMatchObject({ version: 6, defaults: { reasoning: 'max' } })
   })
 
   it('clears a stale native session and starts one bounded replacement session', async () => {

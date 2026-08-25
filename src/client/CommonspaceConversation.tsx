@@ -1,10 +1,18 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from 'react'
 import type { AgentAdapterKind, ConversationRef, CommonspaceMessage, CommonspaceThread } from '../contracts.ts'
 import type { CommonspaceClientStore } from './commonspace-store.ts'
+import { resolveSlashCommand, slashCommandSuggestions } from './slash-commands.ts'
 import { insertTag, tagReferenceParts, tagSuggestions, type TagSuggestion } from './tagging.ts'
 
 export interface CommonspaceConversationProps {
   store: CommonspaceClientStore
+}
+
+interface CommandFeedback {
+  tone: 'info' | 'success' | 'error'
+  title: string
+  body: string
+  action?: 'reset-dm'
 }
 
 function adapterLabel(adapter: AgentAdapterKind | undefined): string {
@@ -35,7 +43,7 @@ function renderMessageText(message: CommonspaceMessage) {
 
 function MessageRow({ message, compact = false }: { message: CommonspaceMessage; compact?: boolean }) {
   return (
-    <article className={`csp-message csp-message--${message.authorType}${compact ? ' csp-message--compact' : ''}`}>
+    <article className={`csp-message csp-message--${message.authorType}${compact ? ' csp-message--compact' : ''}`} data-author={message.authorType}>
       <div className="csp-message-avatar" aria-hidden="true">{message.authorName.slice(0, 1).toUpperCase()}</div>
       <div>
         <header><strong>{message.authorName}</strong><time>{new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time></header>
@@ -64,12 +72,17 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
   const [draft, setDraft] = useState('')
   const [threadDraft, setThreadDraft] = useState('')
   const [selectedSuggestion, setSelectedSuggestion] = useState(0)
+  const [commandFeedback, setCommandFeedback] = useState<CommandFeedback | null>(null)
   const bottom = useRef<HTMLDivElement>(null)
+  const composer = useRef<HTMLTextAreaElement>(null)
   const bootstrap = snapshot.bootstrap
   const messages = store.messages()
   const heading = conversationTitle(store, snapshot.activeConversation)
-  const suggestions = bootstrap === null ? [] : tagSuggestions(draft, bootstrap)
   const isChannel = snapshot.activeConversation?.kind === 'channel'
+  const slashSuggestions = snapshot.activeConversation === null ? [] : slashCommandSuggestions(draft, snapshot.activeConversation.kind)
+  const resolvedDraftCommand = snapshot.activeConversation === null ? null : resolveSlashCommand(draft, snapshot.activeConversation.kind)
+  const referenceSuggestions = bootstrap === null || draft.startsWith('/') ? [] : tagSuggestions(draft, bootstrap)
+  const suggestionCount = slashSuggestions.length + referenceSuggestions.length
   const channelThreads = isChannel && bootstrap !== null
     ? bootstrap.state.threads.filter(thread => thread.channelId === snapshot.activeConversation?.id)
     : []
@@ -83,10 +96,113 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
     : messages.filter(message => message.threadId === activeThread.id && message.parentMessageId === activeThread.rootMessageId)
 
   useEffect(() => { bottom.current?.scrollIntoView({ block: 'end' }) }, [messages.length, snapshot.sending])
+  useEffect(() => { composer.current?.focus(); setCommandFeedback(null) }, [snapshot.activeConversation?.id, snapshot.activeConversation?.kind])
 
   const selectSuggestion = (suggestion: TagSuggestion) => {
     setDraft(current => insertTag(current, suggestion.token))
     setSelectedSuggestion(0)
+  }
+
+  const selectSlashSuggestion = (name: string) => {
+    setDraft(name)
+    setSelectedSuggestion(0)
+  }
+
+  const resetDirectMessage = async () => {
+    const conversation = snapshot.activeConversation
+    if (conversation?.kind !== 'dm') return
+    setCommandFeedback({ tone: 'info', title: 'Starting a new chat…', body: 'Clearing this transcript and rotating the agent session.' })
+    try {
+      await store.mutate({ action: 'reset-dm', agentId: conversation.id })
+      setCommandFeedback({ tone: 'success', title: 'New chat started', body: 'The transcript is clear and your next message starts with fresh agent context.' })
+      composer.current?.focus()
+    } catch (error) {
+      setCommandFeedback({ tone: 'error', title: 'Could not start a new chat', body: error instanceof Error ? error.message : String(error) })
+    }
+  }
+
+  const executeSlashCommand = async (text: string, threadId?: string) => {
+    const conversation = snapshot.activeConversation
+    if (conversation === null || bootstrap === null) return
+    const resolved = resolveSlashCommand(text, conversation.kind)
+    if (resolved === null) {
+      const token = text.split(/\s+/, 1)[0] ?? text
+      setCommandFeedback({ tone: 'error', title: 'Unknown command', body: `${token} is not available here. Type /help to see Commonspace commands.` })
+      return
+    }
+
+    if (resolved.command.id === 'help') {
+      const commands = slashCommandSuggestions('/', conversation.kind)
+      setCommandFeedback({
+        tone: 'info',
+        title: 'Commonspace commands',
+        body: commands.map(command => `${command.name} — ${command.description}`).join('\n'),
+      })
+      return
+    }
+
+    if (resolved.command.id === 'status') {
+      if (conversation.kind === 'dm') {
+        const agent = bootstrap.agents.find(candidate => candidate.id === conversation.id)
+        const project = bootstrap.state.projects.find(candidate => candidate.id === snapshot.activeProjectId)
+        setCommandFeedback({
+          tone: 'info',
+          title: 'Direct-message status',
+          body: `${agent?.displayName ?? conversation.id} · ${adapterLabel(agent?.adapter)} · ${agent?.model ?? 'default model'} · ${agent?.status ?? 'unknown'}${project === undefined ? '' : `\nProject context: ${project.name}`}`,
+        })
+      } else {
+        const channel = bootstrap.state.channels.find(candidate => candidate.id === conversation.id)
+        const project = bootstrap.state.projects.find(candidate => candidate.id === channel?.projectId)
+        setCommandFeedback({
+          tone: 'info',
+          title: 'Channel status',
+          body: `${heading.title} · ${project?.name ?? 'No project'} · ${channel?.agentIds.length ?? 0} agents\nModel: ${channel?.settings.model ?? bootstrap.state.defaults.model ?? 'agent defaults'} · Reasoning: ${channel?.settings.reasoning ?? bootstrap.state.defaults.reasoning}`,
+        })
+      }
+      return
+    }
+
+    if (resolved.command.id === 'agents') {
+      setCommandFeedback({
+        tone: 'info',
+        title: 'Available agents',
+        body: bootstrap.agents.length === 0
+          ? 'No agents are configured.'
+          : bootstrap.agents.map(agent => `${agent.displayName} · ${adapterLabel(agent.adapter)} · ${agent.model ?? 'default model'}`).join('\n'),
+      })
+      return
+    }
+
+    if (resolved.command.id === 'retry') {
+      const previous = [...messages].reverse().find(message => message.authorType === 'user' &&
+        (threadId === undefined
+          ? conversation.kind === 'dm' || message.parentMessageId === undefined
+          : message.threadId === threadId))
+      if (previous === undefined) {
+        setCommandFeedback({ tone: 'error', title: 'Nothing to retry', body: 'Send a message first, then use /retry.' })
+        return
+      }
+      setCommandFeedback({ tone: 'info', title: 'Retrying message', body: previous.text })
+      try {
+        if (threadId === undefined) await store.send(previous.text)
+        else await store.send(previous.text, threadId)
+      } catch (error) {
+        setCommandFeedback({ tone: 'error', title: 'Retry failed', body: error instanceof Error ? error.message : String(error) })
+      }
+      return
+    }
+
+    const skipConfirmation = ['now', '--yes', '-y'].includes(resolved.args.toLocaleLowerCase())
+    if (skipConfirmation) {
+      await resetDirectMessage()
+    } else {
+      setCommandFeedback({
+        tone: 'info',
+        title: 'Start a new chat?',
+        body: 'This clears the visible transcript and starts a fresh native session for this agent.',
+        action: 'reset-dm',
+      })
+    }
   }
 
   const sendRoot = async (event: FormEvent) => {
@@ -94,6 +210,11 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
     const text = draft.trim()
     if (text === '') return
     setDraft('')
+    if (text.startsWith('/')) {
+      await executeSlashCommand(text)
+      return
+    }
+    setCommandFeedback(null)
     try { await store.send(text) } catch { setDraft(text) }
   }
 
@@ -102,20 +223,31 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
     const text = threadDraft.trim()
     if (text === '' || activeThread === undefined) return
     setThreadDraft('')
+    if (text.startsWith('/')) {
+      await executeSlashCommand(text, activeThread.id)
+      return
+    }
+    setCommandFeedback(null)
     try { await store.send(text, activeThread.id) } catch { setThreadDraft(text) }
   }
 
   return (
     <main className="csp-conversation" aria-label="Commonspace conversation">
       <header className="csp-conversation-header">
-        <div><h1>{heading.title}</h1><p>{heading.subtitle}</p></div>
+        <div className="csp-conversation-heading">
+          <span className="csp-conversation-kicker">{snapshot.activeConversation === null ? 'FIELD' : isChannel ? 'CHANNEL' : 'DIRECT'}</span>
+          <div><h1>{heading.title}</h1><p>{heading.subtitle}</p></div>
+        </div>
+        <span className="csp-header-mode">{snapshot.activeConversation === null ? 'local-first' : isChannel ? 'shared room' : 'private session'}</span>
       </header>
 
       {snapshot.activeConversation === null ? (
         <div className="csp-conversation-hero">
-          <span className="csp-mark csp-mark--large" aria-hidden="true"><span /><span /><span /><span /></span>
-          <h2>Humans and agents, one workspace.</h2>
-          <p>Choose a channel or an Agent from the Commonspace sidebar.</p>
+          <div className="csp-hero-constellation" aria-hidden="true"><span className="csp-mark csp-mark--large"><span /><span /><span /><span /></span><i /><i /></div>
+          <span className="csp-hero-eyebrow">COMMON CONTEXT · FOCUSED THREADS</span>
+          <h2>Make space for the whole team.</h2>
+          <p>Projects set context. Channels gather agents. Threads keep work focused.</p>
+          <div className="csp-hero-flow" aria-hidden="true"><span><b>01</b> Project</span><i /><span><b>02</b> Channel</span><i /><span><b>03</b> Thread</span></div>
         </div>
       ) : (
         <div className={`csp-conversation-layout${activeThread === undefined ? '' : ' has-thread'}`}>
@@ -140,43 +272,78 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
               <div ref={bottom} />
             </div>
 
+            {commandFeedback !== null && (
+              <section
+                className={`csp-command-result csp-command-result--${commandFeedback.tone}`}
+                role={commandFeedback.tone === 'error' ? 'alert' : 'status'}
+                aria-label="Command result"
+              >
+                <header><strong>{commandFeedback.title}</strong><button type="button" aria-label="Dismiss command result" onClick={() => { setCommandFeedback(null); composer.current?.focus() }}>×</button></header>
+                <p>{commandFeedback.body}</p>
+                {commandFeedback.action === 'reset-dm' && (
+                  <div><button type="button" onClick={() => { void resetDirectMessage() }}>Start new chat</button><button type="button" onClick={() => { setCommandFeedback(null); composer.current?.focus() }}>Cancel</button></div>
+                )}
+              </section>
+            )}
+
             <form className="csp-message-composer" onSubmit={(event) => { void sendRoot(event) }}>
               <div className="csp-composer-input-wrap">
                 <textarea
+                  ref={composer}
                   aria-label={isChannel ? `Post in ${heading.title}` : `Message ${heading.title}`}
-                  placeholder={isChannel ? `Post new work in ${heading.title}` : `Message ${heading.title}`}
+                  placeholder={isChannel ? `Post new work in ${heading.title} or type /` : `Message ${heading.title} or type /`}
                   value={draft}
                   disabled={snapshot.sending}
                   onChange={event => { setDraft(event.target.value); setSelectedSuggestion(0) }}
                   onKeyDown={event => {
-                    if (suggestions.length > 0 && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+                    if (suggestionCount > 0 && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
                       event.preventDefault()
-                      setSelectedSuggestion(current => event.key === 'ArrowDown' ? (current + 1) % suggestions.length : (current - 1 + suggestions.length) % suggestions.length)
-                    } else if (suggestions.length > 0 && (event.key === 'Tab' || (event.key === 'Enter' && !event.shiftKey))) {
+                      setSelectedSuggestion(current => event.key === 'ArrowDown' ? (current + 1) % suggestionCount : (current - 1 + suggestionCount) % suggestionCount)
+                    } else if (suggestionCount > 0 && event.key === 'Tab') {
                       event.preventDefault()
-                      selectSuggestion(suggestions[selectedSuggestion] ?? suggestions[0]!)
+                      if (slashSuggestions.length > 0) selectSlashSuggestion((slashSuggestions[selectedSuggestion] ?? slashSuggestions[0]!).name)
+                      else selectSuggestion(referenceSuggestions[selectedSuggestion] ?? referenceSuggestions[0]!)
                     } else if (event.key === 'Enter' && !event.shiftKey) {
                       event.preventDefault()
-                      event.currentTarget.form?.requestSubmit()
+                      if (slashSuggestions.length > 0 && resolvedDraftCommand === null) {
+                        selectSlashSuggestion((slashSuggestions[selectedSuggestion] ?? slashSuggestions[0]!).name)
+                      } else if (referenceSuggestions.length > 0) {
+                        selectSuggestion(referenceSuggestions[selectedSuggestion] ?? referenceSuggestions[0]!)
+                      } else {
+                        event.currentTarget.form?.requestSubmit()
+                      }
                     }
                   }}
                 />
-                {suggestions.length > 0 && (
-                  <div className="csp-tag-suggestions" role="listbox" aria-label="Tag suggestions">
-                    {suggestions.map((suggestion, index) => (
+                {suggestionCount > 0 && (
+                  <div className="csp-tag-suggestions" role="listbox" aria-label={slashSuggestions.length > 0 ? 'Slash commands' : 'Tag suggestions'}>
+                    {slashSuggestions.map((command, index) => (
                       <button
-                        key={`${suggestion.kind}-${suggestion.id}`}
+                        key={command.id}
                         type="button"
                         role="option"
                         aria-selected={index === selectedSuggestion}
                         className={index === selectedSuggestion ? 'is-selected' : ''}
+                        onMouseDown={event => { event.preventDefault(); selectSlashSuggestion(command.name) }}
+                      ><strong>{command.name}</strong><span>{command.description}</span></button>
+                    ))}
+                    {referenceSuggestions.map((suggestion, index) => (
+                      <button
+                        key={`${suggestion.kind}-${suggestion.id}`}
+                        type="button"
+                        role="option"
+                        aria-selected={index + slashSuggestions.length === selectedSuggestion}
+                        className={index + slashSuggestions.length === selectedSuggestion ? 'is-selected' : ''}
                         onMouseDown={event => { event.preventDefault(); selectSuggestion(suggestion) }}
                       ><strong>{suggestion.token}</strong><span>{suggestionLabel(suggestion)}</span></button>
                     ))}
                   </div>
                 )}
               </div>
-              <button type="submit" disabled={snapshot.sending || draft.trim() === ''}>{isChannel ? 'Post' : 'Send'}</button>
+              <div className="csp-composer-footer">
+                <span>{isChannel ? '@ agent · @@ project · # channel · / commands' : 'Enter to send · / for commands'}</span>
+                <button type="submit" disabled={snapshot.sending || draft.trim() === ''}><span aria-hidden="true">↑</span>{draft.startsWith('/') ? 'Run' : isChannel ? 'Post' : 'Send'}</button>
+              </div>
             </form>
           </section>
 

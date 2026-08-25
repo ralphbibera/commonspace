@@ -18,7 +18,7 @@ A Channel belongs to a Project and carries an explicit list of agent IDs. Valid 
 
 ### Direct Message
 
-A DM is derived from an agent ID and uses one persistent native session: Hermes uses its canonical `Bot Chat`; Codex and Claude Code resume the recorded CLI session UUID.
+A DM is derived from an agent ID and uses one persistent native session. It begins with Hermes' canonical `Bot Chat` scope or the equivalent adapter session. `/new` rotates to a generated `Commonspace DM` scope, clears the Commonspace transcript, and prevents an in-flight reply from the previous scope from being published.
 
 ### Agent
 
@@ -40,7 +40,8 @@ The host service:
 - persists `~/.commonspace/state.json` through temp-file + rename publication;
 - discovers Hermes profiles without reading credentials;
 - invokes every adapter with argument arrays and piped input, never a shell command;
-- scopes DMs and Channel threads to persisted native session IDs;
+- scopes DMs and Channel threads to persisted native session IDs and host-private session names;
+- rotates DM generations atomically so stale in-flight replies cannot cross a `/new` boundary;
 - retries a missing native session once with a fresh session and never retries unrelated failures;
 - serializes sends per conversation and serializes runs whose Project paths overlap;
 - bounds stdout, stderr, Codex output files, execution time, room history, and agents per turn;
@@ -67,16 +68,16 @@ When Commonspace mode activates, `src/client/index.ts` dynamically registers pri
 
 - Projects with expandable child filesystem workspaces and per-Project add-workspace controls;
 - Channels with Project binding and editable agent rosters;
-- Direct Messages derived from persisted DM activity;
+- Direct Messages derived from persisted DM activity, plus the active blank DM, with a searchable agent picker;
 - discovered Hermes agents and user-managed Codex CLI/Claude Code agents.
 
 ### Conversation
 
-`CommonspaceConversation` renders the selected Channel or DM, visible Channel membership, attributed messages, errors, and a bounded composer. It does not reuse DSH Session messages because adapter-backed Commonspace agents—not DSH agents—are the room members.
+`CommonspaceConversation` renders the selected Channel or DM, visible Channel membership, attributed messages, errors, and a bounded composer. `src/client/slash-commands.ts` supplies context-aware autocomplete and aliases; recognized commands execute locally and are never forwarded as agent prompts. It does not reuse DSH Session messages because adapter-backed Commonspace agents—not DSH agents—are the room members.
 
 ## Persistence
 
-The host state format is versioned. Commonspace state on disk holds Project definitions, Channel definitions, managed agent definitions, bounded message histories, and native session UUID mappings. Session content and credentials remain in each CLI's supported storage. Native session UUIDs are redacted from browser/API snapshots because only the host needs them.
+The host state format is versioned. State v6 holds Project definitions, Channel definitions, managed agent definitions, bounded message histories, DM session scopes, and native session UUID mappings. Session content and credentials remain in each CLI's supported storage. Native session names and UUIDs are redacted from browser/API snapshots because only the host needs them.
 
 ## Intentional omissions
 
@@ -94,10 +95,10 @@ These can be added later without changing the four core entities or the Workspac
 
 ## Rollback
 
-Before reverting to a host version that only understands state v4 or earlier, preserve the v5 state file:
+Before reverting to a host version that only understands state v5 or earlier, preserve the v6 state file:
 
 ```bash
-cp ~/.commonspace/state.json ~/.commonspace/state-v5.backup.json
+cp ~/.commonspace/state.json ~/.commonspace/state-v6.backup.json
 ```
 
 Then remove the profile bundle and restart DSH Web:
@@ -107,4 +108,4 @@ dsh plugin --profile web remove @ralphbibera/commonspace
 dsh web
 ```
 
-Commonspace metadata remains in `~/.commonspace/state.json` unless the operator deletes it explicitly. A pre-v5 host cannot load managed-agent/session fields and must not overwrite the backup.
+Commonspace metadata remains in `~/.commonspace/state.json` unless the operator deletes it explicitly. A pre-v6 host cannot preserve DM generation scopes and must not overwrite the backup.
