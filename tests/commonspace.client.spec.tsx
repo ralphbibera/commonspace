@@ -6,10 +6,29 @@ import { CommonspaceModeController } from '../src/client/commonspace-mode.ts'
 import { CommonspaceModeSwitch } from '../src/client/CommonspaceModeSwitch.tsx'
 import { CommonspaceSidebar } from '../src/client/CommonspaceSidebar.tsx'
 import { apply, inject } from '../src/client/index.ts'
+import { tagReferenceParts, tagSuggestions } from '../src/client/tagging.ts'
 
 afterEach(cleanup)
 
 describe('Commonspace workspace mode', () => {
+  it('highlights supported references without changing message text', () => {
+    expect(tagReferenceParts('Ask @backend about @@commonspace in #general')).toEqual([
+      { text: 'Ask ', kind: 'text' },
+      { text: '@backend', kind: 'agent' },
+      { text: ' about ', kind: 'text' },
+      { text: '@@commonspace', kind: 'project' },
+      { text: ' in ', kind: 'text' },
+      { text: '#general', kind: 'channel' },
+    ])
+  })
+
+  it('suggests the active tag type from the current word', () => {
+    expect(tagSuggestions('Please ask @ba', {
+      agents: [{ id: 'backend', displayName: 'Backend', model: 'x', status: 'running' }],
+      state: { version: 1, revision: 0, projects: [{ id: 'commonspace', name: 'Commonspace', paths: [], createdAt: '' }], channels: [{ id: 'general', name: 'general', projectId: null, agentIds: [], createdAt: '' }], messages: {} },
+    })).toEqual([{ kind: 'agent', id: 'backend', label: 'Backend', token: '@backend' }])
+  })
+
   it('switches between Commonspace and native Workspaces labels', () => {
     const mode = new CommonspaceModeController()
     render(<CommonspaceModeSwitch wide mode={mode} />)

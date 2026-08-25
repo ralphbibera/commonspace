@@ -53,5 +53,6 @@ describe('Hermes agent bridge', () => {
     const agents = [{ id: 'frontend' }, { id: 'backend' }, { id: 'infrastructure' }]
     expect(routeChannelAgents(['frontend', 'backend'], '@frontend please investigate', agents)).toEqual(['frontend'])
     expect(routeChannelAgents(['frontend', 'backend'], '@infrastructure please investigate', agents)).toEqual(['frontend', 'backend'])
+    expect(routeChannelAgents(['front.end'], '@front.end investigate', [...agents, { id: 'front.end' }])).toEqual(['front.end'])
   })
 })

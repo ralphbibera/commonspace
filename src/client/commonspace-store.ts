@@ -60,10 +60,8 @@ export class CommonspaceClientStore {
     this.set({ ...this.snapshot, loading: true, error: null })
     const task = requestJson<CommonspaceBootstrap>('/commonspace/api/bootstrap')
       .then((bootstrap) => {
-        const activeProjectId = this.snapshot.activeProjectId
-          ?? bootstrap.state.projects[0]?.id
-          ?? null
-        this.set({ ...this.snapshot, bootstrap, loading: false, activeProjectId })
+        const merged = this.mergeBootstrap(bootstrap)
+        this.set({ ...this.snapshot, bootstrap: merged, loading: false, activeProjectId: this.resolveActiveProject(merged) })
       })
       .catch((error: unknown) => {
         this.set({ ...this.snapshot, loading: false, error: error instanceof Error ? error.message : String(error) })
@@ -81,7 +79,10 @@ export class CommonspaceClientStore {
       })
       const bootstrap = this.snapshot.bootstrap
       if (bootstrap === null) await this.refresh()
-      else this.set({ ...this.snapshot, bootstrap: { ...bootstrap, state: result.state }, error: null })
+      else {
+        const merged = this.mergeBootstrap({ ...bootstrap, state: result.state })
+        this.set({ ...this.snapshot, bootstrap: merged, activeProjectId: this.resolveActiveProject(merged), error: null })
+      }
     } catch (error) {
       this.set({ ...this.snapshot, error: error instanceof Error ? error.message : String(error) })
       throw error
@@ -120,7 +121,8 @@ export class CommonspaceClientStore {
       })
       const bootstrap = this.snapshot.bootstrap
       if (bootstrap !== null) {
-        this.set({ ...this.snapshot, sending: false, bootstrap: { ...bootstrap, state: result.state } })
+        const merged = this.mergeBootstrap({ ...bootstrap, state: result.state })
+        this.set({ ...this.snapshot, sending: false, bootstrap: merged, activeProjectId: this.resolveActiveProject(merged) })
       } else {
         await this.refresh()
         this.set({ ...this.snapshot, sending: false })
@@ -134,5 +136,17 @@ export class CommonspaceClientStore {
   private set(snapshot: CommonspaceClientSnapshot): void {
     this.snapshot = snapshot
     for (const listener of this.listeners) listener()
+  }
+
+  private mergeBootstrap(candidate: CommonspaceBootstrap): CommonspaceBootstrap {
+    const current = this.snapshot.bootstrap
+    if (current !== null && candidate.state.revision < current.state.revision) return current
+    return candidate
+  }
+
+  private resolveActiveProject(bootstrap: CommonspaceBootstrap): string | null {
+    const current = this.snapshot.activeProjectId
+    if (current !== null && bootstrap.state.projects.some(project => project.id === current)) return current
+    return bootstrap.state.projects[0]?.id ?? null
   }
 }
