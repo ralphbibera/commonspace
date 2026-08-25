@@ -27,7 +27,11 @@ The launcher:
 
 ### Browser state
 
-`src/client/navigation-state.ts` owns a versioned `commonspace.navigation.v1` localStorage record. It validates unknown JSON before use, applies Unicode-aware channel slug normalization, prevents case-insensitive duplicates, restores a valid selection, and falls back safely when storage is unavailable or corrupt. This state is intentionally local to one browser profile and contains navigation labels only; it is not a shared collaboration database.
+`src/client/navigation-state.ts` owns a versioned `commonspace.navigation.v2` localStorage record and migrates the earlier label-only schema. It validates unknown JSON before use, applies Unicode-aware channel slug normalization, prevents case-insensitive duplicates, restores a valid selection, and stores opaque Harness `workspaceId`/`sessionId` bindings. Commonspace metadata is local to one browser profile; the referenced Harness Sessions remain durable Host state.
+
+### Harness runtime
+
+`src/client/harness-runtime.ts` uses the composed `workspaces` and `sessions` services. Projects select real Harness Workspaces. First channel/DM selection creates a dedicated Session, gives it a readable title, opens it, and records one concise Commonspace creation turn so DSH exposes the native Messages view. Later selections reopen the stored Session directly. The existing Harness conversation renderer, composer, model controls, tools, context injection, persistence, and compaction remain authoritative.
 
 ## Profile activation
 
@@ -37,10 +41,10 @@ The launcher:
 
 Future work can move browser-local data behind shared Harness services:
 
-1. a host-side Commonspace service and explicit persistence format;
-2. typed APIs for projects, channels, direct messages, and thread metadata;
-3. mapping a top-level channel message to a bounded Harness session;
-4. project-context injection into that session;
+1. a host-side Commonspace metadata service and explicit shared persistence format;
+2. typed APIs for synchronized projects, channels, direct messages, and thread metadata;
+3. Slack-style message threads inside each channel Session;
+4. reusable specialist presets and direct handoff presentation;
 5. work-inspection projections derived from real Harness events.
 
 Those additions must preserve Harness conversation rendering, compaction, credentials, and tool execution rather than reimplementing them.
