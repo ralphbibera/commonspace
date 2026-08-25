@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from 'react'
+import { useEffect, useId, useRef, useState, useSyncExternalStore, type FormEvent } from 'react'
 import type { AgentAdapterKind, ConversationRef, CommonspaceMessage, CommonspaceThread } from '../contracts.ts'
 import type { CommonspaceClientStore } from './commonspace-store.ts'
 import { resolveSlashCommand, slashCommandSuggestions } from './slash-commands.ts'
@@ -68,6 +68,7 @@ function threadStatus(thread: CommonspaceThread | undefined): string {
 }
 
 export function CommonspaceConversation({ store }: CommonspaceConversationProps) {
+  const suggestionListId = useId()
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot)
   const [draft, setDraft] = useState('')
   const [threadDraft, setThreadDraft] = useState('')
@@ -83,6 +84,7 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
   const resolvedDraftCommand = snapshot.activeConversation === null ? null : resolveSlashCommand(draft, snapshot.activeConversation.kind)
   const referenceSuggestions = bootstrap === null || draft.startsWith('/') ? [] : tagSuggestions(draft, bootstrap)
   const suggestionCount = slashSuggestions.length + referenceSuggestions.length
+  const activeSuggestionId = suggestionCount > 0 ? `${suggestionListId}-option-${String(selectedSuggestion)}` : undefined
   const channelThreads = isChannel && bootstrap !== null
     ? bootstrap.state.threads.filter(thread => thread.channelId === snapshot.activeConversation?.id)
     : []
@@ -291,6 +293,10 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
                 <textarea
                   ref={composer}
                   aria-label={isChannel ? `Post in ${heading.title}` : `Message ${heading.title}`}
+                  aria-autocomplete="list"
+                  aria-expanded={suggestionCount > 0}
+                  aria-controls={suggestionCount > 0 ? suggestionListId : undefined}
+                  aria-activedescendant={activeSuggestionId}
                   placeholder={isChannel ? `Post new work in ${heading.title} or type /` : `Message ${heading.title} or type /`}
                   value={draft}
                   disabled={snapshot.sending}
@@ -316,10 +322,11 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
                   }}
                 />
                 {suggestionCount > 0 && (
-                  <div className="csp-tag-suggestions" role="listbox" aria-label={slashSuggestions.length > 0 ? 'Slash commands' : 'Tag suggestions'}>
+                  <div id={suggestionListId} className="csp-tag-suggestions" role="listbox" aria-label={slashSuggestions.length > 0 ? 'Slash commands' : 'Tag suggestions'}>
                     {slashSuggestions.map((command, index) => (
                       <button
                         key={command.id}
+                        id={`${suggestionListId}-option-${String(index)}`}
                         type="button"
                         role="option"
                         aria-selected={index === selectedSuggestion}
@@ -330,6 +337,7 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
                     {referenceSuggestions.map((suggestion, index) => (
                       <button
                         key={`${suggestion.kind}-${suggestion.id}`}
+                        id={`${suggestionListId}-option-${String(index + slashSuggestions.length)}`}
                         type="button"
                         role="option"
                         aria-selected={index + slashSuggestions.length === selectedSuggestion}
