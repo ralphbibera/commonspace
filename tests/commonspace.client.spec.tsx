@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CommonspaceLauncher } from '../src/client/CommonspaceLauncher.tsx'
 import { apply, inject } from '../src/client/index.ts'
@@ -99,6 +99,50 @@ describe('Commonspace launcher', () => {
     expect(screen.getByText('No projects yet')).toBeTruthy()
   })
 
+  it('binds a project to a Harness workspace and reopens the mapped channel session', async () => {
+    const activate = vi.fn(async () => ({ sessionId: 'session-1', workspaceId: 'workspace-1' }))
+    const runtime = {
+      listWorkspaces: () => [{
+        workspaceId: 'workspace-1',
+        title: 'Developer',
+        path: '/workspace/apollo',
+        recent: true,
+      }],
+      activate,
+    }
+    const first = render(<CommonspaceLauncher wide runtime={runtime} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open Commonspace' }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add project' }))
+    expect(screen.getByRole('combobox', { name: 'Project workspace' })).toBeTruthy()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Project name' }), { target: { value: 'Apollo' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Create project' }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add channel' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Channel name' }), { target: { value: 'Delivery' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Create channel' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Select channel #delivery' }))
+
+    await waitFor(() => {
+      expect(activate).toHaveBeenCalledWith({
+        kind: 'channel',
+        label: 'delivery',
+        project: { label: 'Apollo', workspaceId: 'workspace-1' },
+      })
+    })
+
+    first.unmount()
+    activate.mockClear()
+    render(<CommonspaceLauncher wide runtime={runtime} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open Commonspace' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Channels' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Select channel #delivery' }))
+
+    await waitFor(() => {
+      expect(activate).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'session-1' }))
+    })
+  })
+
   it('registers additively in the stock sidebar footer and withdraws on dispose', () => {
     const disposeRegistration = vi.fn()
     const disposeInjection = vi.fn()
@@ -113,12 +157,17 @@ describe('Commonspace launcher', () => {
       effect: (mount: () => () => void) => { disposeEffect = mount() },
     }
 
-    expect(inject).toEqual(['slots'])
+    expect(inject).toEqual(['slots', 'connection', 'sessions', 'workspaces'])
     apply(ctx as never)
 
     expect(injectSlot).toHaveBeenCalledWith('sidebar.footer.action', expect.any(Function))
     expect(register).toHaveBeenCalledWith(
-      { name: 'sidebar.footer.action', id: 'commonspace', order: -20 },
+      expect.objectContaining({
+        name: 'sidebar.footer.action',
+        id: 'commonspace',
+        order: -20,
+        inject: expect.any(Function),
+      }),
       CommonspaceLauncher,
     )
 

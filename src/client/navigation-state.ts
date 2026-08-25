@@ -1,28 +1,53 @@
-export const COMMONSPACE_STORAGE_KEY = 'commonspace.navigation.v1'
+export const COMMONSPACE_STORAGE_KEY = 'commonspace.navigation.v2'
+const LEGACY_STORAGE_KEY = 'commonspace.navigation.v1'
 
 export const sectionIds = ['projects', 'channels', 'direct-messages'] as const
 export type SectionId = typeof sectionIds[number]
 
+export interface NavigationItem {
+  id: string
+  label: string
+  sessionId?: string
+  workspaceId?: string
+}
+
 export interface NavigationSelection {
   section: SectionId
-  value: string
+  itemId: string
 }
 
 export interface NavigationState {
-  version: 1
-  items: Record<SectionId, string[]>
+  version: 2
+  items: Record<SectionId, NavigationItem[]>
   selected: NavigationSelection | null
+  activeProjectId: string | null
+}
+
+export interface NavigationItemMetadata {
+  sessionId?: string
+  workspaceId?: string
+}
+
+const DEFAULT_SPECIALISTS = ['Frontend', 'Backend', 'Researcher', 'Designer', 'Reviewer'] as const
+
+function itemId(section: SectionId, label: string): string {
+  return `${section}:${encodeURIComponent(label.toLocaleLowerCase())}`
+}
+
+function makeItem(section: SectionId, label: string, metadata: NavigationItemMetadata = {}): NavigationItem {
+  return { id: itemId(section, label), label, ...metadata }
 }
 
 function defaultState(): NavigationState {
   return {
-    version: 1,
+    version: 2,
     items: {
       projects: [],
-      channels: ['general'],
-      'direct-messages': [],
+      channels: [makeItem('channels', 'general')],
+      'direct-messages': DEFAULT_SPECIALISTS.map(label => makeItem('direct-messages', label)),
     },
     selected: null,
+    activeProjectId: null,
   }
 }
 
@@ -45,58 +70,98 @@ export function normalizeItem(section: SectionId, input: string): string {
     .replace(/-$/g, '')
 }
 
-function sanitizeItems(section: SectionId, input: unknown, fallback: readonly string[]): string[] {
-  if (!Array.isArray(input)) return [...fallback]
-  const result: string[] = []
+function optionalString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() !== '' ? value : undefined
+}
+
+function sanitizeItems(
+  section: SectionId,
+  input: unknown,
+  fallback: readonly NavigationItem[],
+): NavigationItem[] {
+  if (!Array.isArray(input)) return fallback.map(item => ({ ...item }))
+  const result: NavigationItem[] = []
   for (const candidate of input) {
-    if (typeof candidate !== 'string') continue
-    const value = normalizeItem(section, candidate)
-    if (value === '' || result.some(existing => sameItem(existing, value))) continue
-    result.push(value)
+    const record = typeof candidate === 'object' && candidate !== null
+      ? candidate as Record<string, unknown>
+      : undefined
+    const rawLabel = typeof candidate === 'string' ? candidate : record?.label
+    if (typeof rawLabel !== 'string') continue
+    const label = normalizeItem(section, rawLabel)
+    if (label === '' || result.some(existing => sameItem(existing.label, label))) continue
+    const sessionId = optionalString(record?.sessionId)
+    const workspaceId = optionalString(record?.workspaceId)
+    result.push(makeItem(section, label, {
+      ...(sessionId === undefined ? {} : { sessionId }),
+      ...(workspaceId === undefined ? {} : { workspaceId }),
+    }))
   }
   return result
 }
 
-/** Load versioned Commonspace navigation state, falling back safely on corrupt or unknown data. */
+function findItem(state: NavigationState, section: SectionId, value: string): NavigationItem | undefined {
+  return state.items[section].find(item => item.id === value || sameItem(item.label, value))
+}
+
+function parseState(parsed: unknown, fallback: NavigationState): NavigationState {
+  if (typeof parsed !== 'object' || parsed === null) return fallback
+  const record = parsed as Record<string, unknown>
+  if (typeof record.items !== 'object' || record.items === null) return fallback
+  const rawItems = record.items as Record<string, unknown>
+  const items: NavigationState['items'] = {
+    projects: sanitizeItems('projects', rawItems.projects, fallback.items.projects),
+    channels: sanitizeItems('channels', rawItems.channels, fallback.items.channels),
+    'direct-messages': sanitizeItems(
+      'direct-messages',
+      rawItems['direct-messages'],
+      fallback.items['direct-messages'],
+    ),
+  }
+
+  // Version-one records stored selected labels. Version two stores stable ids.
+  let selected: NavigationSelection | null = null
+  if (typeof record.selected === 'object' && record.selected !== null) {
+    const candidate = record.selected as Record<string, unknown>
+    if (typeof candidate.section === 'string' && sectionIds.includes(candidate.section as SectionId)) {
+      const section = candidate.section as SectionId
+      const rawValue = optionalString(candidate.itemId) ?? optionalString(candidate.value)
+      const existing = rawValue === undefined ? undefined : findItem({ ...fallback, items }, section, rawValue)
+      if (existing !== undefined) selected = { section, itemId: existing.id }
+    }
+  }
+
+  const requestedProject = optionalString(record.activeProjectId)
+  const selectedProject = selected?.section === 'projects' ? selected.itemId : undefined
+  const activeProjectId = items.projects.some(project => project.id === (requestedProject ?? selectedProject))
+    ? requestedProject ?? selectedProject ?? null
+    : null
+
+  // Existing v1 users receive the reusable specialist roster once during migration.
+  if (record.version === 1) {
+    for (const label of DEFAULT_SPECIALISTS) {
+      if (!items['direct-messages'].some(item => sameItem(item.label, label))) {
+        items['direct-messages'].push(makeItem('direct-messages', label))
+      }
+    }
+  }
+
+  return { version: 2, items, selected, activeProjectId }
+}
+
+/** Load versioned Commonspace state, migrating v1 and falling back safely on corrupt data. */
 export function readNavigationState(storage: Pick<Storage, 'getItem'> | undefined = globalThis.localStorage): NavigationState {
   const fallback = defaultState()
   if (storage === undefined) return fallback
   try {
-    const encoded = storage.getItem(COMMONSPACE_STORAGE_KEY)
+    const encoded = storage.getItem(COMMONSPACE_STORAGE_KEY) ?? storage.getItem(LEGACY_STORAGE_KEY)
     if (encoded === null) return fallback
-    const parsed = JSON.parse(encoded) as unknown
-    if (typeof parsed !== 'object' || parsed === null) return fallback
-    const record = parsed as Record<string, unknown>
-    if (record.version !== 1 || typeof record.items !== 'object' || record.items === null) return fallback
-    const rawItems = record.items as Record<string, unknown>
-    const items: NavigationState['items'] = {
-      projects: sanitizeItems('projects', rawItems.projects, fallback.items.projects),
-      channels: sanitizeItems('channels', rawItems.channels, fallback.items.channels),
-      'direct-messages': sanitizeItems('direct-messages', rawItems['direct-messages'], fallback.items['direct-messages']),
-    }
-
-    let selected: NavigationSelection | null = null
-    if (typeof record.selected === 'object' && record.selected !== null) {
-      const candidate = record.selected as Record<string, unknown>
-      if (
-        typeof candidate.section === 'string'
-        && sectionIds.includes(candidate.section as SectionId)
-        && typeof candidate.value === 'string'
-      ) {
-        const section = candidate.section as SectionId
-        const value = normalizeItem(section, candidate.value)
-        const existing = items[section].find(item => sameItem(item, value))
-        if (existing !== undefined) selected = { section, value: existing }
-      }
-    }
-
-    return { version: 1, items, selected }
+    return parseState(JSON.parse(encoded) as unknown, fallback)
   } catch {
     return fallback
   }
 }
 
-/** Persist navigation state without allowing storage failures to break the DSH client. */
+/** Persist Commonspace state without allowing storage failures to break the DSH client. */
 export function writeNavigationState(
   state: NavigationState,
   storage: Pick<Storage, 'setItem'> | undefined = globalThis.localStorage,
@@ -110,33 +175,72 @@ export function writeNavigationState(
 }
 
 /** Add one normalized item, selecting the existing row when the name is a duplicate. */
-export function addNavigationItem(state: NavigationState, section: SectionId, input: string): NavigationState {
-  const value = normalizeItem(section, input)
-  if (value === '') return state
-  const existing = state.items[section].find(item => sameItem(item, value))
-  const selectedValue = existing ?? value
+export function addNavigationItem(
+  state: NavigationState,
+  section: SectionId,
+  input: string,
+  metadata: NavigationItemMetadata = {},
+): NavigationState {
+  const label = normalizeItem(section, input)
+  if (label === '') return state
+  const existing = state.items[section].find(item => sameItem(item.label, label))
+  const item = existing ?? makeItem(section, label, metadata)
   return {
     ...state,
     items: existing === undefined
-      ? { ...state.items, [section]: [...state.items[section], value] }
+      ? { ...state.items, [section]: [...state.items[section], item] }
       : state.items,
-    selected: { section, value: selectedValue },
+    selected: { section, itemId: item.id },
+    activeProjectId: section === 'projects' ? item.id : state.activeProjectId,
   }
 }
 
-/** Select one existing item. */
+/** Select one existing item, making a project the current context source. */
 export function selectNavigationItem(state: NavigationState, section: SectionId, value: string): NavigationState {
-  const existing = state.items[section].find(item => sameItem(item, value))
+  const existing = findItem(state, section, value)
   if (existing === undefined) return state
-  return { ...state, selected: { section, value: existing } }
+  return {
+    ...state,
+    selected: { section, itemId: existing.id },
+    activeProjectId: section === 'projects' ? existing.id : state.activeProjectId,
+  }
 }
 
-/** Remove one item and clear selection when that row was active. */
+/** Attach a real Harness workspace/session identity to one navigation item. */
+export function bindNavigationItem(
+  state: NavigationState,
+  section: SectionId,
+  value: string,
+  metadata: NavigationItemMetadata,
+): NavigationState {
+  const existing = findItem(state, section, value)
+  if (existing === undefined) return state
+  return {
+    ...state,
+    items: {
+      ...state.items,
+      [section]: state.items[section].map(item => item.id === existing.id ? { ...item, ...metadata } : item),
+    },
+  }
+}
+
+/** Resolve the currently active project context. */
+export function activeProject(state: NavigationState): NavigationItem | undefined {
+  return state.activeProjectId === null
+    ? undefined
+    : state.items.projects.find(item => item.id === state.activeProjectId)
+}
+
+/** Remove one item and clear selection/context when that row was active. */
 export function removeNavigationItem(state: NavigationState, section: SectionId, value: string): NavigationState {
-  const items = state.items[section].filter(item => !sameItem(item, value))
-  if (items.length === state.items[section].length) return state
-  const selected = state.selected?.section === section && sameItem(state.selected.value, value)
+  const existing = findItem(state, section, value)
+  if (existing === undefined) return state
+  const items = state.items[section].filter(item => item.id !== existing.id)
+  const selected = state.selected?.section === section && state.selected.itemId === existing.id
     ? null
     : state.selected
-  return { ...state, items: { ...state.items, [section]: items }, selected }
+  const activeProjectId = section === 'projects' && state.activeProjectId === existing.id
+    ? null
+    : state.activeProjectId
+  return { ...state, items: { ...state.items, [section]: items }, selected, activeProjectId }
 }

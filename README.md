@@ -16,6 +16,8 @@ Click **Commonspace** in the DeepSeek Harness sidebar to expand three inline gro
 
 Each group has an inline **+** action. Added items can be selected or removed, channel names are normalized into readable slugs, duplicates are prevented, and the versioned browser state survives reloads.
 
+Projects bind to real Harness workspaces. Selecting a channel or DM creates (or reopens) a dedicated Harness Session in that workspace and switches the center pane to the native **Chat** surface and composer.
+
 The plugin is additive. It preserves the existing Harness workspace list, sessions, conversation UI, model controls, tools, and context management.
 
 ## Install from a checkout
@@ -65,7 +67,7 @@ With a patched Web profile running locally:
 COMMONSPACE_TEST_URL=http://127.0.0.1:3080 pnpm verify:live
 ```
 
-The live check opens the real Harness Web UI, creates one item in every group, verifies channel normalization, reloads the page, confirms persistence, checks browser errors, and captures screenshots.
+The live check opens the real Harness Web UI, creates one item in every group, selects `#design-team`, requires the native active-chat composer, records the real Harness Session ID, reloads, reopens the same Session, checks browser errors, and captures screenshots.
 
 ## Architecture
 
@@ -74,6 +76,7 @@ Commonspace is one dual-face Cordis package:
 - `src/index.ts` is the host plugin face. The first release is intentionally a no-op.
 - `src/client/index.ts` registers one entry in `sidebar.footer.action`.
 - `src/client/CommonspaceLauncher.tsx` owns the accessible inline navigation and item controls.
+- `src/client/harness-runtime.ts` binds projects to Workspaces and channels/DMs to native Harness Sessions.
 - `src/client/navigation-state.ts` validates, normalizes, de-duplicates, selects, removes, and persists navigation items.
 - `commonspace.patch.yml` inserts the package into the Web profile.
 
@@ -81,7 +84,7 @@ See [`docs/architecture.md`](docs/architecture.md) for boundaries and future ext
 
 ## Current boundary
 
-This slice provides browser-local projects, channels, and direct-message records with reload persistence. Shared host persistence, multi-client synchronization, and Harness-session mapping are not implemented yet. Those features should be added behind this UI without replacing Harness chat or compaction.
+This slice provides browser-local Commonspace metadata with real Harness Workspace and Session bindings. Channel/DM selection switches the native chat and reopens the same durable Session after reload. Shared Commonspace metadata across browsers, channel message threads, and multi-agent handoff presentation remain future work.
 
 ## Contributing
 
