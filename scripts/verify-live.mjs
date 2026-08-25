@@ -4,9 +4,13 @@ import { chromium } from 'playwright'
 
 const url = process.env.COMMONSPACE_TEST_URL ?? 'http://127.0.0.1:3081'
 const screenshot = resolve('artifacts/commonspace-live.png')
-const panelScreenshot = resolve('docs/assets/commonspace-panel.png')
+const panelScreenshot = process.env.COMMONSPACE_UPDATE_DOCS === '1'
+  ? resolve('docs/assets/commonspace-panel.png')
+  : resolve('artifacts/commonspace-panel.png')
 await mkdir(resolve('artifacts'), { recursive: true })
-await mkdir(resolve('docs/assets'), { recursive: true })
+if (process.env.COMMONSPACE_UPDATE_DOCS === '1') {
+  await mkdir(resolve('docs/assets'), { recursive: true })
+}
 
 const browser = await chromium.launch({ headless: true })
 const page = await browser.newPage({ viewport: { width: 1180, height: 820 } })
