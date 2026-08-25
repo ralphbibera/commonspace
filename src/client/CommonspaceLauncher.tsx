@@ -1,10 +1,14 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
+import type { CommonspaceRuntime } from './harness-runtime.ts'
 import {
+  activeProject,
   addNavigationItem,
+  bindNavigationItem,
   readNavigationState,
   removeNavigationItem,
   selectNavigationItem,
   writeNavigationState,
+  type NavigationItem,
   type NavigationState,
   type SectionId,
 } from './navigation-state.ts'
@@ -12,6 +16,8 @@ import {
 export interface CommonspaceLauncherProps {
   /** Whether the stock DSH sidebar is in its expanded state. */
   wide: boolean
+  /** Native Harness session/workspace bridge supplied by the client plugin. */
+  runtime?: CommonspaceRuntime
 }
 
 interface SectionDefinition {
@@ -62,20 +68,24 @@ function Chevron({ open, className }: { open: boolean; className: string }) {
   )
 }
 
-function itemDisplay(section: SectionId, value: string): string {
-  return section === 'channels' ? `#${value}` : value
+function itemDisplay(section: SectionId, item: NavigationItem): string {
+  return section === 'channels' ? `#${item.label}` : item.label
 }
 
-function itemAria(section: SectionDefinition, value: string): string {
-  return `Select ${section.singular} ${itemDisplay(section.id, value)}`
+function itemAria(section: SectionDefinition, item: NavigationItem): string {
+  return `Select ${section.singular} ${itemDisplay(section.id, item)}`
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }
 
 /**
  * Additive Commonspace launcher for the stock DSH sidebar footer.
- * Navigation and item-management controls are embedded in the footer stack and
- * grow upward into available sidebar space; nothing floats over the application.
+ * Navigation and item-management controls are embedded in the footer stack;
+ * channels and DMs delegate to native Harness conversations through `runtime`.
  */
-export function CommonspaceLauncher({ wide }: CommonspaceLauncherProps) {
+export function CommonspaceLauncher({ wide, runtime }: CommonspaceLauncherProps) {
   const triggerRef = useRef<HTMLButtonElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const [open, setOpen] = useState(false)
@@ -83,6 +93,11 @@ export function CommonspaceLauncher({ wide }: CommonspaceLauncherProps) {
   const [navigation, setNavigation] = useState<NavigationState>(() => readNavigationState())
   const [composer, setComposer] = useState<SectionId | null>(null)
   const [draft, setDraft] = useState('')
+  const [draftWorkspaceId, setDraftWorkspaceId] = useState('')
+  const [pendingItemId, setPendingItemId] = useState<string | null>(null)
+  const [runtimeError, setRuntimeError] = useState<string | null>(null)
+
+  const workspaces = runtime?.listWorkspaces() ?? []
 
   useEffect(() => {
     writeNavigationState(navigation)
@@ -93,6 +108,7 @@ export function CommonspaceLauncher({ wide }: CommonspaceLauncherProps) {
     setOpen(false)
     setComposer(null)
     setDraft('')
+    setRuntimeError(null)
   }, [wide])
 
   useEffect(() => {
@@ -128,16 +144,69 @@ export function CommonspaceLauncher({ wide }: CommonspaceLauncherProps) {
     setExpanded(current => new Set(current).add(id))
     setComposer(id)
     setDraft('')
+    setRuntimeError(null)
+    if (id === 'projects') {
+      const currentProject = activeProject(navigation)
+      const preferred = workspaces.find(workspace => workspace.workspaceId === currentProject?.workspaceId)
+        ?? workspaces.find(workspace => workspace.recent)
+        ?? workspaces[0]
+      setDraftWorkspaceId(preferred?.workspaceId ?? '')
+    }
   }
 
   const submitComposer = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault()
     if (composer === null) return
-    const next = addNavigationItem(navigation, composer, draft)
+    if (composer === 'projects' && runtime !== undefined && draftWorkspaceId === '') {
+      setRuntimeError('Choose a real Harness workspace for this project.')
+      return
+    }
+    const next = addNavigationItem(
+      navigation,
+      composer,
+      draft,
+      composer === 'projects' && draftWorkspaceId !== '' ? { workspaceId: draftWorkspaceId } : {},
+    )
     if (next === navigation) return
     setNavigation(next)
     setComposer(null)
     setDraft('')
+    setRuntimeError(null)
+  }
+
+  const activateItem = async (section: SectionDefinition, item: NavigationItem): Promise<void> => {
+    const selected = selectNavigationItem(navigation, section.id, item.id)
+    setNavigation(selected)
+    setRuntimeError(null)
+    if (section.id === 'projects' || runtime === undefined) return
+
+    setPendingItemId(item.id)
+    try {
+      const project = activeProject(selected)
+      const result = await runtime.activate({
+        kind: section.id === 'channels' ? 'channel' : 'direct-message',
+        label: item.label,
+        ...(item.sessionId === undefined ? {} : { sessionId: item.sessionId }),
+        ...(project === undefined
+          ? {}
+          : {
+              project: {
+                label: project.label,
+                ...(project.workspaceId === undefined ? {} : { workspaceId: project.workspaceId }),
+              },
+            }),
+      })
+      setNavigation(current => bindNavigationItem(
+        selectNavigationItem(current, section.id, item.id),
+        section.id,
+        item.id,
+        { sessionId: result.sessionId },
+      ))
+    } catch (error: unknown) {
+      setRuntimeError(errorMessage(error))
+    } finally {
+      setPendingItemId(null)
+    }
   }
 
   const embeddedNavigation = open && wide
@@ -179,21 +248,25 @@ export function CommonspaceLauncher({ wide }: CommonspaceLauncherProps) {
                       <div className="csp-empty">{section.empty}</div>
                     )}
                     {items.map(item => {
-                      const selected = navigation.selected?.section === section.id
-                        && navigation.selected.value === item
+                      const selected = section.id === 'projects'
+                        ? navigation.activeProjectId === item.id
+                        : navigation.selected?.section === section.id && navigation.selected.itemId === item.id
+                      const pending = pendingItemId === item.id
                       return (
-                        <div key={item} className="csp-item-row">
+                        <div key={item.id} className="csp-item-row">
                           <button
                             type="button"
                             className="csp-item-button"
                             aria-label={itemAria(section, item)}
                             aria-pressed={selected}
-                            onClick={() => {
-                              setNavigation(current => selectNavigationItem(current, section.id, item))
-                            }}
+                            aria-busy={pending}
+                            onClick={() => { void activateItem(section, item) }}
                           >
                             {section.id === 'channels' && <span className="csp-item-prefix" aria-hidden="true">#</span>}
-                            <span>{item}</span>
+                            {section.id === 'projects' && <span className="csp-project-dot" aria-hidden="true" />}
+                            {section.id === 'direct-messages' && <span className="csp-presence-dot" aria-hidden="true" />}
+                            <span className="csp-item-label">{item.label}</span>
+                            {pending && <span className="csp-item-pending" aria-hidden="true">…</span>}
                           </button>
                           <button
                             type="button"
@@ -201,7 +274,7 @@ export function CommonspaceLauncher({ wide }: CommonspaceLauncherProps) {
                             aria-label={`Remove ${section.singular} ${itemDisplay(section.id, item)}`}
                             title={`Remove ${itemDisplay(section.id, item)}`}
                             onClick={() => {
-                              setNavigation(current => removeNavigationItem(current, section.id, item))
+                              setNavigation(current => removeNavigationItem(current, section.id, item.id))
                             }}
                           >
                             <span aria-hidden="true">×</span>
@@ -211,21 +284,44 @@ export function CommonspaceLauncher({ wide }: CommonspaceLauncherProps) {
                     })}
                     {composer === section.id && (
                       <form className="csp-composer" onSubmit={submitComposer}>
-                        {section.id === 'channels' && <span className="csp-composer-prefix" aria-hidden="true">#</span>}
-                        <input
-                          ref={inputRef}
-                          className="csp-composer-input"
-                          aria-label={section.inputLabel}
-                          placeholder={section.inputLabel}
-                          value={draft}
-                          maxLength={64}
-                          onChange={event => { setDraft(event.currentTarget.value) }}
-                        />
+                        <div className="csp-composer-fields">
+                          <div className="csp-composer-name-row">
+                            {section.id === 'channels' && <span className="csp-composer-prefix" aria-hidden="true">#</span>}
+                            <input
+                              ref={inputRef}
+                              className="csp-composer-input"
+                              aria-label={section.inputLabel}
+                              placeholder={section.inputLabel}
+                              value={draft}
+                              maxLength={64}
+                              onChange={event => { setDraft(event.currentTarget.value) }}
+                            />
+                          </div>
+                          {section.id === 'projects' && runtime !== undefined && (
+                            workspaces.length > 0
+                              ? (
+                                <select
+                                  className="csp-composer-select"
+                                  aria-label="Project workspace"
+                                  value={draftWorkspaceId}
+                                  onChange={event => { setDraftWorkspaceId(event.currentTarget.value) }}
+                                >
+                                  {workspaces.map(workspace => (
+                                    <option key={workspace.workspaceId} value={workspace.workspaceId}>
+                                      {workspace.title}
+                                    </option>
+                                  ))}
+                                </select>
+                                )
+                              : <div className="csp-workspace-empty">Add a Harness workspace first</div>
+                          )}
+                        </div>
                         <button
                           type="submit"
                           className="csp-composer-action"
                           aria-label={`Create ${section.singular}`}
                           title={`Create ${section.singular}`}
+                          disabled={section.id === 'projects' && runtime !== undefined && workspaces.length === 0}
                         >
                           <span aria-hidden="true">✓</span>
                         </button>
@@ -249,6 +345,7 @@ export function CommonspaceLauncher({ wide }: CommonspaceLauncherProps) {
             )
           })}
         </div>
+        {runtimeError !== null && <div className="csp-runtime-error" role="alert">{runtimeError}</div>}
       </nav>
       )
     : null

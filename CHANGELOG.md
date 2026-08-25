@@ -14,4 +14,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Accessible collapsible Projects, Channels, and Direct Messages groups.
 - Inline create, select, and remove controls for every navigation group.
 - Versioned browser persistence with channel normalization and duplicate prevention.
+- Real Harness Workspace bindings for Commonspace projects.
+- Native Harness Session creation/reopen when selecting channels and direct messages.
+- Main-chat switching with the standard Harness composer, tools, persistence, and compaction.
 - Unit, type, build, and live-browser verification.

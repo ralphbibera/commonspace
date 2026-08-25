@@ -52,6 +52,16 @@ async function addItem(
   }
 }
 
+async function channelSessionId(target, label) {
+  return target.evaluate(({ key, value }) => {
+    const encoded = globalThis.localStorage.getItem(key)
+    if (encoded === null) return null
+    const state = JSON.parse(encoded)
+    const item = state?.items?.channels?.find(candidate => candidate?.label === value)
+    return typeof item?.sessionId === 'string' ? item.sessionId : null
+  }, { key: 'commonspace.navigation.v2', value: label })
+}
+
 try {
   await page.goto(url, { waitUntil: 'domcontentloaded' })
   let navigation = await openNavigation(page)
@@ -89,6 +99,30 @@ try {
     await navigation.getByRole('button', { name }).waitFor({ state: 'visible' })
   }
 
+  await navigation.getByRole('button', { name: 'Select project Apollo' }).click()
+  await navigation.getByRole('button', { name: 'Select channel #design-team' }).click()
+  await page.waitForFunction(() => {
+    const encoded = globalThis.localStorage.getItem('commonspace.navigation.v2')
+    if (encoded === null) return false
+    const state = JSON.parse(encoded)
+    return typeof state?.items?.channels?.find(item => item?.label === 'design-team')?.sessionId === 'string'
+  }, undefined, { timeout: 30_000 })
+  const firstSessionId = await channelSessionId(page, 'design-team')
+  if (firstSessionId === null) throw new Error('channel selection did not bind a Harness session')
+  await page.getByPlaceholder('Message the agent').waitFor({ state: 'visible', timeout: 30_000 })
+  await page.getByText('#design-team · Apollo', { exact: true }).first().waitFor({ state: 'visible', timeout: 30_000 })
+
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  navigation = await openNavigation(page)
+  await navigation.getByRole('button', { name: 'Channels' }).click()
+  await navigation.getByRole('button', { name: 'Select channel #design-team' }).click()
+  await page.getByPlaceholder('Message the agent').waitFor({ state: 'visible', timeout: 30_000 })
+  await page.getByText('#design-team · Apollo', { exact: true }).first().waitFor({ state: 'visible', timeout: 30_000 })
+  const reopenedSessionId = await channelSessionId(page, 'design-team')
+  if (reopenedSessionId !== firstSessionId) {
+    throw new Error('channel selection did not reopen the same Harness session')
+  }
+
   await page.screenshot({ path: screenshot, fullPage: true })
   await navigation.screenshot({ path: panelScreenshot })
 
@@ -102,6 +136,8 @@ try {
     panelScreenshot,
     groups: ['Projects', 'Channels', 'Direct Messages'],
     persistedItems: ['Apollo', '#design-team', 'Ada'],
+    activeSessionId: firstSessionId,
+    chatSwitched: true,
   }))
 } finally {
   await browser.close()

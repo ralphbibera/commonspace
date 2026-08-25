@@ -215,9 +215,39 @@ export const commonspaceStyles = String.raw`
   font-weight: 600;
 }
 
+.csp-item-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .csp-item-prefix,
 .csp-composer-prefix {
   color: var(--dsw-alias-label-tertiary, #8a8f98);
+  font-weight: 700;
+}
+
+.csp-project-dot,
+.csp-presence-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.csp-project-dot {
+  border-radius: 2px;
+  background: var(--dsw-alias-interactive-brand, #4d6bfe);
+}
+
+.csp-presence-dot {
+  background: #24a148;
+  box-shadow: 0 0 0 1px var(--dsw-specific-sidebar-fill, #f8f9fb);
+}
+
+.csp-item-pending {
+  margin-left: auto;
+  color: var(--dsw-alias-interactive-brand, #4d6bfe);
   font-weight: 700;
 }
 
@@ -235,10 +265,24 @@ export const commonspaceStyles = String.raw`
 
 .csp-composer {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 3px;
   min-height: 30px;
   padding: 2px 0;
+}
+
+.csp-composer-fields {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.csp-composer-name-row {
+  display: flex;
+  align-items: center;
+  min-width: 0;
 }
 
 .csp-composer-prefix {
@@ -265,10 +309,48 @@ export const commonspaceStyles = String.raw`
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-interactive-brand, #4d6bfe) 14%, transparent);
 }
 
+.csp-composer-select {
+  width: 100%;
+  height: 27px;
+  box-sizing: border-box;
+  padding: 3px 6px;
+  border: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.14));
+  border-radius: 7px;
+  outline: none;
+  background: var(--dsw-alias-bg-base, #fff);
+  color: var(--dsw-alias-label-secondary, #666b74);
+  font: inherit;
+  font-size: 11px;
+}
+
+.csp-workspace-empty {
+  padding: 4px 6px;
+  border-radius: 6px;
+  background: rgba(197, 48, 48, 0.08);
+  color: #b42318;
+  font-size: 11px;
+  line-height: 15px;
+}
+
 .csp-composer-action {
   width: 26px;
   height: 26px;
   font-size: 13px;
+}
+
+.csp-composer-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.csp-runtime-error {
+  margin: 5px 5px 1px;
+  padding: 7px 8px;
+  border-radius: 7px;
+  background: rgba(197, 48, 48, 0.08);
+  color: #b42318;
+  font-size: 11px;
+  line-height: 15px;
 }
 
 @media (prefers-reduced-motion: reduce) {
