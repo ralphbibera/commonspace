@@ -48,9 +48,13 @@ describe('Commonspace direct messages', () => {
 
     expect(screen.getByRole('button', { name: 'Open direct message with Backend' })).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Add direct message' }))
-    fireEvent.change(screen.getByLabelText('Find an agent to message'), { target: { value: 'review' } })
+    const search = screen.getByLabelText('Find an agent to message')
+    const listbox = screen.getByRole('listbox', { name: 'Agents available for direct messages' })
+    expect(listbox.id).not.toBe('')
+    expect(search.getAttribute('aria-controls')).toBe(listbox.id)
+    fireEvent.change(search, { target: { value: 'review' } })
     expect(screen.queryByRole('button', { name: 'Start direct message with Backend' })).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'Start direct message with Review Bot' }))
+    fireEvent.click(screen.getByRole('option', { name: 'Start direct message with Review Bot' }))
 
     expect(selectConversation).toHaveBeenCalledWith({ kind: 'dm', id: 'codex-review-bot' })
     expect(screen.queryByLabelText('Find an agent to message')).toBeNull()

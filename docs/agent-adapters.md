@@ -6,7 +6,7 @@ Commonspace adapters translate one host-owned execution request into a bounded l
 
 | Adapter | Identity source | New session | Resume | Safe default |
 | --- | --- | --- | --- | --- |
-| Hermes | `hermes profile list` | Named `Bot Chat` or `Commonspace Thread: <uuid>` | Same named chat | Normal Hermes permissions |
+| Hermes | `hermes profile list` | Named `Bot Chat`, `Commonspace DM: <uuid>`, or `Commonspace Thread: <uuid>` | Same named chat | Normal Hermes permissions |
 | Codex CLI | Explicit Commonspace definition | `codex exec --json` | `codex exec resume --all <uuid>` | `workspace-write` sandbox |
 | Claude Code | Explicit Commonspace definition | `claude -p --session-id <uuid>` | `claude -p --resume <uuid>` | `acceptEdits` permission mode |
 

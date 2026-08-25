@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useSyncExternalStore, type FormEvent } from 'react'
+import { useEffect, useId, useMemo, useState, useSyncExternalStore, type FormEvent } from 'react'
 import type { AgentAdapterKind, CommonspaceAgentProfile, CommonspaceMutation, CommonspaceReasoning } from '../contracts.ts'
 import type { CommonspaceClientStore } from './commonspace-store.ts'
 
@@ -54,6 +54,7 @@ function AgentAvatar({ agent }: { agent: CommonspaceAgentProfile }) {
 }
 
 export function CommonspaceSidebar({ wide, expandSidebar, store }: CommonspaceSidebarProps) {
+  const dmPickerListId = useId()
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot)
   const [form, setForm] = useState<'project' | 'channel' | 'dm' | 'agent' | null>(null)
   const [name, setName] = useState('')
@@ -318,12 +319,12 @@ export function CommonspaceSidebar({ wide, expandSidebar, store }: CommonspaceSi
             <div className="csp-browser-form csp-dm-picker">
               <label className="csp-dm-search">
                 <span>Find an agent</span>
-                <input autoFocus aria-label="Find an agent to message" value={dmSearch} onChange={event => { setDmSearch(event.target.value) }} placeholder="Name, profile, or adapter" />
+                <input autoFocus aria-label="Find an agent to message" aria-autocomplete="list" aria-expanded="true" aria-controls={dmPickerListId} value={dmSearch} onChange={event => { setDmSearch(event.target.value) }} placeholder="Name, profile, or adapter" />
               </label>
-              <div className="csp-dm-picker-results" aria-label="Agents available for direct messages">
+              <div id={dmPickerListId} className="csp-dm-picker-results" role="listbox" aria-label="Agents available for direct messages">
                 {matchingDmAgents.length === 0 && <span className="csp-dm-picker-empty">No matching agents.</span>}
                 {matchingDmAgents.map(agent => (
-                  <button key={agent.id} type="button" className="csp-dm-picker-agent" aria-label={`Start direct message with ${agent.displayName}`} onClick={() => { startDirectMessage(agent.id) }}>
+                  <button key={agent.id} type="button" role="option" aria-selected="false" className="csp-dm-picker-agent" aria-label={`Start direct message with ${agent.displayName}`} onClick={() => { startDirectMessage(agent.id) }}>
                     <AgentAvatar agent={agent} />
                     <span><strong>{agent.displayName}</strong><small>{adapterLabel(agent.adapter)} · {agent.model ?? 'default model'}</small></span>
                   </button>

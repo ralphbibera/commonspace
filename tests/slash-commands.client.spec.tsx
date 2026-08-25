@@ -60,7 +60,10 @@ describe('Commonspace composer commands', () => {
     const composer = screen.getByLabelText('Message Review Bot')
 
     fireEvent.change(composer, { target: { value: '/' } })
-    expect(screen.getByRole('listbox', { name: 'Slash commands' })).toBeTruthy()
+    const listbox = screen.getByRole('listbox', { name: 'Slash commands' })
+    expect(listbox.id).not.toBe('')
+    expect(composer.getAttribute('aria-controls')).toBe(listbox.id)
+    expect(composer.getAttribute('aria-activedescendant')).toContain(`${listbox.id}-option-`)
     expect(screen.getByRole('option', { name: /\/help/i })).toBeTruthy()
     expect(screen.getByRole('option', { name: /\/new/i })).toBeTruthy()
 
