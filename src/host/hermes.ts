@@ -26,12 +26,38 @@ export interface HermesInvocationInput {
   yolo?: boolean
 }
 
+export interface CommonspaceTags {
+  agents: string[]
+  projects: string[]
+  channels: string[]
+}
+
 export interface RoomPromptInput {
   channel: string
   agent: string
   userText: string
   projectPaths?: string[]
   recent: Array<Pick<CommonspaceMessage, 'authorName' | 'text'> | { authorName: string; text: string }>
+}
+
+function unique(values: string[]): string[] {
+  return [...new Set(values.map(value => value.toLocaleLowerCase()))]
+}
+
+/** Parse exact Commonspace references: @agent, @@project, and #channel. */
+export function parseTags(text: string): CommonspaceTags {
+  const agents: string[] = []
+  const projects: string[] = []
+  const channels: string[] = []
+  const token = /(^|[^\p{L}\p{N}_@])(@@|@|#)([\p{L}\p{N}][\p{L}\p{N}_-]*)/gu
+  for (const match of text.matchAll(token)) {
+    const kind = match[2]
+    const value = match[3]
+    if (kind === '@@') projects.push(value!)
+    else if (kind === '@') agents.push(value!)
+    else channels.push(value!)
+  }
+  return { agents: unique(agents), projects: unique(projects), channels: unique(channels) }
 }
 
 export function parseHermesProfileList(output: string): HermesAgentProfile[] {
@@ -102,8 +128,10 @@ export function routeChannelAgents(
   agents: readonly Pick<HermesAgentProfile, 'id'>[],
 ): string[] {
   const members = new Set(memberIds)
-  const mentioned = agents
-    .filter(agent => members.has(agent.id) && new RegExp(`(^|\\s)@${agent.id}(?=\\s|$|[,.!?])`, 'i').test(text))
-    .map(agent => agent.id)
-  return mentioned.length > 0 ? mentioned : [...memberIds]
+  const knownAgents = new Set(agents.map(agent => agent.id))
+  const memberByNormalizedId = new Map(memberIds.map(id => [id.toLocaleLowerCase(), id]))
+  const mentioned = parseTags(text).agents
+    .map(id => memberByNormalizedId.get(id))
+    .filter((id): id is string => id !== undefined && members.has(id) && knownAgents.has(id))
+  return mentioned.length > 0 ? [...new Set(mentioned)] : [...memberIds]
 }

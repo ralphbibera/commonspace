@@ -52,18 +52,22 @@ function json(res: ServerResponse, status: number, body: unknown): void {
   res.end(encoded)
 }
 
-function requestIsSameOrigin(req: IncomingMessage): boolean {
-  const origin = req.headers.origin
+export function requestIsSameOrigin(req: IncomingMessage): boolean {
   const host = req.headers.host
-  if (origin === undefined || host === undefined) return true
-  try {
-    return new URL(origin).host === host
-  } catch {
-    return false
+  if (host === undefined) return false
+  const origin = req.headers.origin
+  if (origin !== undefined) {
+    try {
+      const url = new URL(origin)
+      return url.protocol === 'http:' && url.host === host
+    } catch {
+      return false
+    }
   }
+  return req.headers['sec-fetch-site'] === 'same-origin'
 }
 
-function requestIsLoopback(req: IncomingMessage): boolean {
+export function requestIsLoopback(req: IncomingMessage): boolean {
   const address = req.socket.remoteAddress
   return address === '127.0.0.1' || address === '::1' || address?.startsWith('::ffff:127.') === true
 }
@@ -184,6 +188,7 @@ export class CommonspaceHostService {
         path: '/commonspace/api/bootstrap',
         handler: async (req, res) => {
           if (!requestIsLoopback(req)) return json(res, 403, { code: 'loopback_required', error: 'Commonspace is local-only' })
+          if (!requestIsSameOrigin(req)) return json(res, 403, { code: 'origin_denied', error: 'same-origin request required' })
           if (req.method !== 'GET') return json(res, 405, { code: 'method_not_allowed', error: 'GET required' })
           json(res, 200, await this.bootstrap())
         },
@@ -224,9 +229,26 @@ export class CommonspaceHostService {
   private async sendNow(request: SendMessageRequest): Promise<SendMessageResponse> {
     const text = request.text.normalize('NFKC').trim().slice(0, MAX_MESSAGE_CHARS)
     if (text === '') throw new Error('message text is required')
-    const project = request.projectId === undefined
-      ? undefined
-      : this.state.projects.find(candidate => candidate.id === request.projectId)
+    const agents = await this.discoverAgents()
+    let channel = undefined as CommonspaceState['channels'][number] | undefined
+    let project = undefined as CommonspaceState['projects'][number] | undefined
+    if (request.conversation.kind === 'channel') {
+      channel = this.state.channels.find(candidate => candidate.id === request.conversation.id)
+      if (channel === undefined) throw new Error('unknown channel')
+      if (request.projectId !== undefined && request.projectId !== channel.projectId) {
+        throw new Error('channel project cannot be overridden')
+      }
+      if (channel.projectId !== null) {
+        project = this.state.projects.find(candidate => candidate.id === channel?.projectId)
+        if (project === undefined) throw new Error('channel references an unknown project')
+      }
+    } else {
+      if (!agents.some(agent => agent.id === request.conversation.id)) throw new Error('unknown Hermes profile')
+      if (request.projectId !== undefined) {
+        project = this.state.projects.find(candidate => candidate.id === request.projectId)
+        if (project === undefined) throw new Error('unknown project')
+      }
+    }
     const cwd = project?.paths[0] ?? process.cwd()
     const projectContext = project?.paths.length
       ? `Project workspaces:\n${project.paths.map(path => `- ${path}`).join('\n')}\n\n`
@@ -243,7 +265,6 @@ export class CommonspaceHostService {
     this.append(accepted)
     await this.persist()
 
-    const agents = await this.discoverAgents()
     const agentIds = request.conversation.kind === 'dm'
       ? [request.conversation.id]
       : this.channelAgents(request.conversation.id, text, agents)
@@ -254,7 +275,7 @@ export class CommonspaceHostService {
       const prompt = request.conversation.kind === 'dm'
         ? `${projectContext}Message from Ralph in Commonspace:\n\n${text}`
         : buildRoomPrompt({
-            channel: this.state.channels.find(channel => channel.id === request.conversation.id)?.name ?? 'channel',
+            channel: channel?.name ?? 'channel',
             agent: agent.id,
             userText: text,
             ...(project === undefined ? {} : { projectPaths: project.paths }),
@@ -265,7 +286,7 @@ export class CommonspaceHostService {
         cwd,
         sessionName: request.conversation.kind === 'dm'
           ? 'Bot Chat'
-          : `Commonspace Channel: ${this.state.channels.find(channel => channel.id === request.conversation.id)?.name ?? request.conversation.id}`,
+          : `Commonspace Channel: ${channel?.name ?? request.conversation.id}`,
         prompt,
       })
       const reply: CommonspaceMessage = {
@@ -335,8 +356,8 @@ export class CommonspaceHostService {
     const tempRoot = join(this.root, 'tmp')
     await mkdir(tempRoot, { recursive: true })
     const queryFile = join(tempRoot, `${crypto.randomUUID()}.txt`)
-    await writeFile(queryFile, input.prompt, { encoding: 'utf8', mode: 0o600 })
     try {
+      await writeFile(queryFile, input.prompt, { encoding: 'utf8', mode: 0o600 })
       const invocation = buildHermesInvocation({
         profile: input.profile,
         cwd: input.cwd,
@@ -363,12 +384,17 @@ export class CommonspaceHostService {
 
   private persist(): Promise<void> {
     const snapshot = JSON.stringify(this.state, null, 2)
-    this.writeTail = this.writeTail.then(async () => {
+    const task = this.writeTail.catch(() => undefined).then(async () => {
       const temporary = join(this.root, `state-${process.pid}-${crypto.randomUUID()}.tmp`)
-      await writeFile(temporary, snapshot, { encoding: 'utf8', mode: 0o600 })
-      await rename(temporary, this.statePath)
+      try {
+        await writeFile(temporary, snapshot, { encoding: 'utf8', mode: 0o600 })
+        await rename(temporary, this.statePath)
+      } finally {
+        await rm(temporary, { force: true })
+      }
     })
-    return this.writeTail
+    this.writeTail = task.catch(() => undefined)
+    return task
   }
 }
 
