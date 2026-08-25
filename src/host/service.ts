@@ -11,6 +11,7 @@ import type {
   CommonspaceMessage,
   CommonspaceMutation,
   CommonspaceState,
+  CommonspaceThread,
   HermesAgentProfile,
   SendMessageRequest,
   SendMessageResponse,
@@ -40,6 +41,16 @@ interface SendDependencies {
     sessionName: string
     prompt: string
   }): Promise<string>
+}
+
+interface PreparedSend {
+  request: SendMessageRequest
+  text: string
+  agents: HermesAgentProfile[]
+  agentIds: string[]
+  channel?: CommonspaceState['channels'][number]
+  project?: CommonspaceState['projects'][number]
+  thread?: CommonspaceThread
 }
 
 function json(res: ServerResponse, status: number, body: unknown): void {
@@ -103,14 +114,15 @@ function now(): string {
 function sanitizeLoadedState(value: unknown): CommonspaceState {
   if (typeof value !== 'object' || value === null) return createInitialState()
   const record = value as Record<string, unknown>
-  if (record.version !== 1 || !Array.isArray(record.projects) || !Array.isArray(record.channels)) {
+  if ((record.version !== 1 && record.version !== 2) || !Array.isArray(record.projects) || !Array.isArray(record.channels)) {
     return createInitialState()
   }
   return {
-    version: 1,
+    version: 2,
     revision: typeof record.revision === 'number' ? record.revision : 0,
     projects: record.projects as CommonspaceState['projects'],
     channels: record.channels as CommonspaceState['channels'],
+    threads: Array.isArray(record.threads) ? record.threads as CommonspaceState['threads'] : [],
     messages: typeof record.messages === 'object' && record.messages !== null
       ? record.messages as CommonspaceState['messages']
       : {},
@@ -123,6 +135,8 @@ export class CommonspaceHostService {
   private state: CommonspaceState = createInitialState()
   private writeTail = Promise.resolve()
   private readonly conversationTails = new Map<string, Promise<unknown>>()
+  private readonly eventClients = new Set<ServerResponse>()
+  private readonly backgroundRuns = new Set<Promise<void>>()
   private readonly hermesPath: string
   private readonly maxAgentsPerTurn: number
   private readonly yolo: boolean
@@ -166,19 +180,25 @@ export class CommonspaceHostService {
     const normalized = await this.normalizeMutation(mutation)
     this.state = applyMutation(this.state, normalized)
     await this.persist()
+    this.broadcastRevision()
     return this.snapshot()
   }
 
   async send(request: SendMessageRequest): Promise<SendMessageResponse> {
-    const key = conversationKey(request.conversation)
-    const previous = this.conversationTails.get(key) ?? Promise.resolve()
-    const operation = previous.catch(() => undefined).then(() => this.sendNow(request))
-    this.conversationTails.set(key, operation)
-    try {
-      return await operation
-    } finally {
-      if (this.conversationTails.get(key) === operation) this.conversationTails.delete(key)
-    }
+    const prepared = await this.prepareSend(request)
+    const response = await this.acceptSend(prepared)
+    const executionKey = response.thread === undefined
+      ? conversationKey(request.conversation)
+      : `thread:${response.thread.id}`
+    const previous = this.conversationTails.get(executionKey) ?? Promise.resolve()
+    const operation = previous.catch(() => undefined).then(() => this.processReplies(prepared, response))
+    this.conversationTails.set(executionKey, operation)
+    this.backgroundRuns.add(operation)
+    void operation.finally(() => {
+      this.backgroundRuns.delete(operation)
+      if (this.conversationTails.get(executionKey) === operation) this.conversationTails.delete(executionKey)
+    }).catch(() => undefined)
+    return response
   }
 
   registerRoutes(): () => void {
@@ -191,6 +211,23 @@ export class CommonspaceHostService {
           if (!requestIsSameOrigin(req)) return json(res, 403, { code: 'origin_denied', error: 'same-origin request required' })
           if (req.method !== 'GET') return json(res, 405, { code: 'method_not_allowed', error: 'GET required' })
           json(res, 200, await this.bootstrap())
+        },
+      }),
+      this.ctx.webServer.register({
+        kind: 'exact',
+        path: '/commonspace/api/events',
+        handler: async (req, res) => {
+          if (!requestIsLoopback(req)) return json(res, 403, { code: 'loopback_required', error: 'Commonspace is local-only' })
+          if (!requestIsSameOrigin(req)) return json(res, 403, { code: 'origin_denied', error: 'same-origin request required' })
+          if (req.method !== 'GET') return json(res, 405, { code: 'method_not_allowed', error: 'GET required' })
+          res.writeHead(200, {
+            'content-type': 'text/event-stream; charset=utf-8',
+            'cache-control': 'no-store',
+            connection: 'keep-alive',
+          })
+          res.write(`event: revision\ndata: ${JSON.stringify({ revision: this.state.revision })}\n\n`)
+          this.eventClients.add(res)
+          req.on('close', () => { this.eventClients.delete(res) })
         },
       }),
       this.ctx.webServer.register({
@@ -216,99 +253,187 @@ export class CommonspaceHostService {
           if (req.method !== 'POST') return json(res, 405, { code: 'method_not_allowed', error: 'POST required' })
           if (!requestIsSameOrigin(req)) return json(res, 403, { code: 'origin_denied', error: 'same-origin request required' })
           try {
-            json(res, 200, await this.send(asRecord(await readJsonBody(req)) as unknown as SendMessageRequest))
+            json(res, 202, await this.send(asRecord(await readJsonBody(req)) as unknown as SendMessageRequest))
           } catch (error) {
             json(res, 400, { code: 'send_failed', error: error instanceof Error ? error.message : String(error) })
           }
         },
       }),
     ]
-    return () => { for (const dispose of routes.reverse()) dispose() }
+    return () => {
+      for (const client of this.eventClients) client.end()
+      this.eventClients.clear()
+      for (const dispose of routes.reverse()) dispose()
+    }
   }
 
-  private async sendNow(request: SendMessageRequest): Promise<SendMessageResponse> {
+  private async prepareSend(request: SendMessageRequest): Promise<PreparedSend> {
     const text = request.text.normalize('NFKC').trim().slice(0, MAX_MESSAGE_CHARS)
     if (text === '') throw new Error('message text is required')
     const agents = await this.discoverAgents()
-    let channel = undefined as CommonspaceState['channels'][number] | undefined
-    let project = undefined as CommonspaceState['projects'][number] | undefined
+    let channel = undefined as PreparedSend['channel']
+    let project = undefined as PreparedSend['project']
+    let thread = undefined as PreparedSend['thread']
+    let agentIds: string[]
+
     if (request.conversation.kind === 'channel') {
       channel = this.state.channels.find(candidate => candidate.id === request.conversation.id)
       if (channel === undefined) throw new Error('unknown channel')
-      if (request.projectId !== undefined && request.projectId !== channel.projectId) {
-        throw new Error('channel project cannot be overridden')
-      }
+      if (request.projectId !== undefined && request.projectId !== channel.projectId) throw new Error('channel project cannot be overridden')
       if (channel.projectId !== null) {
         project = this.state.projects.find(candidate => candidate.id === channel?.projectId)
         if (project === undefined) throw new Error('channel references an unknown project')
       }
+      if (request.threadId !== undefined) {
+        thread = this.state.threads.find(candidate => candidate.id === request.threadId)
+        if (thread === undefined || thread.channelId !== channel.id) throw new Error('unknown channel thread')
+      }
+      agentIds = routeChannelAgents(thread?.agentIds ?? channel.agentIds, text, agents)
     } else {
+      if (request.threadId !== undefined) throw new Error('direct messages do not use channel threads')
       if (!agents.some(agent => agent.id === request.conversation.id)) throw new Error('unknown Hermes profile')
       if (request.projectId !== undefined) {
         project = this.state.projects.find(candidate => candidate.id === request.projectId)
         if (project === undefined) throw new Error('unknown project')
       }
+      agentIds = [request.conversation.id]
     }
-    const cwd = project?.paths[0] ?? process.cwd()
-    const projectContext = project?.paths.length
-      ? `Project workspaces:\n${project.paths.map(path => `- ${path}`).join('\n')}\n\n`
-      : ''
+    return { request, text, agents, agentIds, ...(channel === undefined ? {} : { channel }), ...(project === undefined ? {} : { project }), ...(thread === undefined ? {} : { thread }) }
+  }
+
+  private async acceptSend(prepared: PreparedSend): Promise<SendMessageResponse> {
+    const createdAt = now()
+    const acceptedId = messageId()
+    let thread = prepared.thread
+    if (prepared.request.conversation.kind === 'channel' && thread === undefined) {
+      const id = crypto.randomUUID()
+      thread = {
+        id,
+        channelId: prepared.request.conversation.id,
+        projectId: prepared.channel?.projectId ?? null,
+        rootMessageId: acceptedId,
+        agentIds: prepared.agentIds,
+        status: 'queued',
+        createdAt,
+        updatedAt: createdAt,
+      }
+    }
     const accepted: CommonspaceMessage = {
-      id: messageId(),
-      conversation: request.conversation,
+      id: acceptedId,
+      conversation: prepared.request.conversation,
       authorType: 'user',
       authorId: 'user',
       authorName: 'Ralph',
-      text,
-      createdAt: now(),
+      text: prepared.text,
+      createdAt,
+      ...(thread === undefined ? {} : { threadId: thread.id }),
+      ...(prepared.thread === undefined ? {} : { parentMessageId: prepared.thread.rootMessageId }),
     }
-    this.append(accepted)
+    const key = conversationKey(prepared.request.conversation)
+    const currentMessages = this.state.messages[key] ?? []
+    this.state = {
+      ...this.state,
+      revision: this.state.revision + 1,
+      messages: { ...this.state.messages, [key]: [...currentMessages, accepted].slice(-500) },
+      threads: prepared.thread === undefined && thread !== undefined
+        ? [...this.state.threads, thread]
+        : this.state.threads.map(existing => {
+            if (existing.id !== thread?.id) return existing
+            const updated: CommonspaceThread = { ...existing, status: 'queued', updatedAt: createdAt }
+            delete updated.error
+            return updated
+          }),
+    }
     await this.persist()
-
-    const agentIds = request.conversation.kind === 'dm'
-      ? [request.conversation.id]
-      : this.channelAgents(request.conversation.id, text, agents)
-    const replies: CommonspaceMessage[] = []
-    for (const agentId of agentIds.slice(0, this.maxAgentsPerTurn)) {
-      const agent = agents.find(candidate => candidate.id === agentId)
-      if (agent === undefined) continue
-      const prompt = request.conversation.kind === 'dm'
-        ? `${projectContext}Message from Ralph in Commonspace:\n\n${text}`
-        : buildRoomPrompt({
-            channel: channel?.name ?? 'channel',
-            agent: agent.id,
-            userText: text,
-            ...(project === undefined ? {} : { projectPaths: project.paths }),
-            recent: (this.state.messages[conversationKey(request.conversation)] ?? []).slice(-20),
-          })
-      const response = await this.runAgent({
-        profile: agent.id,
-        cwd,
-        sessionName: request.conversation.kind === 'dm'
-          ? 'Bot Chat'
-          : `Commonspace Channel: ${channel?.name ?? request.conversation.id}`,
-        prompt,
-      })
-      const reply: CommonspaceMessage = {
-        id: messageId(),
-        conversation: request.conversation,
-        authorType: 'agent',
-        authorId: agent.id,
-        authorName: agent.displayName,
-        text: response,
-        createdAt: now(),
-      }
-      this.append(reply)
-      replies.push(reply)
-      await this.persist()
-    }
-    return { accepted, replies, state: this.snapshot() }
+    this.broadcastRevision()
+    return { accepted, ...(thread === undefined ? {} : { thread }), state: this.snapshot() }
   }
 
-  private channelAgents(channelId: string, text: string, agents: HermesAgentProfile[]): string[] {
-    const channel = this.state.channels.find(candidate => candidate.id === channelId)
-    if (channel === undefined) throw new Error('unknown channel')
-    return routeChannelAgents(channel.agentIds, text, agents)
+  private async processReplies(prepared: PreparedSend, response: SendMessageResponse): Promise<void> {
+    const thread = response.thread
+    if (thread !== undefined) await this.setThreadStatus(thread.id, 'running')
+    const cwd = prepared.project?.paths[0] ?? process.cwd()
+    const projectContext = prepared.project?.paths.length
+      ? `Project workspaces:\n${prepared.project.paths.map(path => `- ${path}`).join('\n')}\n\n`
+      : ''
+    try {
+      for (const agentId of prepared.agentIds.slice(0, this.maxAgentsPerTurn)) {
+        const agent = prepared.agents.find(candidate => candidate.id === agentId)
+        if (agent === undefined) continue
+        const prompt = prepared.request.conversation.kind === 'dm'
+          ? `${projectContext}Message from Ralph in Commonspace:\n\n${prepared.text}`
+          : buildRoomPrompt({
+              channel: prepared.channel?.name ?? 'channel',
+              agent: agent.id,
+              userText: prepared.text,
+              ...(prepared.project === undefined ? {} : { projectPaths: prepared.project.paths }),
+              recent: (this.state.messages[conversationKey(prepared.request.conversation)] ?? []).slice(-30),
+            })
+        const agentResponse = await this.runAgent({
+          profile: agent.id,
+          cwd,
+          sessionName: prepared.request.conversation.kind === 'dm'
+            ? 'Bot Chat'
+            : `Commonspace Thread: ${thread?.id ?? crypto.randomUUID()}`,
+          prompt,
+        })
+        this.append({
+          id: messageId(),
+          conversation: prepared.request.conversation,
+          authorType: 'agent',
+          authorId: agent.id,
+          authorName: agent.displayName,
+          text: agentResponse,
+          createdAt: now(),
+          ...(thread === undefined ? {} : { threadId: thread.id, parentMessageId: thread.rootMessageId }),
+        })
+        await this.persist()
+        this.broadcastRevision()
+      }
+      if (thread !== undefined) await this.setThreadStatus(thread.id, 'complete')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      this.append({
+        id: messageId(),
+        conversation: prepared.request.conversation,
+        authorType: 'system',
+        authorId: 'system',
+        authorName: 'Commonspace',
+        text: `Agent run failed: ${message}`,
+        createdAt: now(),
+        ...(thread === undefined ? {} : { threadId: thread.id, parentMessageId: thread.rootMessageId }),
+      })
+      await this.persist()
+      this.broadcastRevision()
+      if (thread !== undefined) await this.setThreadStatus(thread.id, 'error', message)
+    }
+  }
+
+  private async setThreadStatus(id: string, status: CommonspaceThread['status'], error?: string): Promise<void> {
+    this.state = {
+      ...this.state,
+      revision: this.state.revision + 1,
+      threads: this.state.threads.map(thread => {
+        if (thread.id !== id) return thread
+        const updated: CommonspaceThread = { ...thread, status, updatedAt: now(), ...(error === undefined ? {} : { error }) }
+        if (error === undefined) delete updated.error
+        return updated
+      }),
+    }
+    await this.persist()
+    this.broadcastRevision()
+  }
+
+  private broadcastRevision(): void {
+    const payload = `event: revision\ndata: ${JSON.stringify({ revision: this.state.revision })}\n\n`
+    for (const client of this.eventClients) {
+      try {
+        client.write(payload)
+      } catch {
+        this.eventClients.delete(client)
+        client.end()
+      }
+    }
   }
 
   private append(message: CommonspaceMessage): void {

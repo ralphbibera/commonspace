@@ -79,7 +79,25 @@ try {
   await ensureChannel()
   await page.getByRole('button', { name: /general.*agent/ }).click()
   await page.getByRole('heading', { name: '#general' }).waitFor({ state: 'visible' })
-  await page.getByPlaceholder('Message #general').waitFor({ state: 'visible' })
+  const rootText = '@frontend Reply exactly: Threaded agent reply works.'
+  let rootCard = page.locator('.csp-thread-root').filter({ hasText: rootText })
+  if ((await rootCard.count()) === 0) {
+    const startedAt = Date.now()
+    const composer = page.getByPlaceholder('Post new work in #general')
+    await composer.fill(rootText)
+    await page.getByRole('button', { name: 'Post', exact: true }).click()
+    await page.locator('.csp-channel-feed').getByText(rootText, { exact: true }).waitFor({ state: 'visible', timeout: 3_000 })
+    if (Date.now() - startedAt > 3_000) throw new Error('channel root was not accepted immediately')
+    rootCard = page.locator('.csp-thread-root').filter({ hasText: rootText })
+  } else {
+    await rootCard.getByRole('button').click()
+  }
+  const threadPanel = page.getByLabel('Thread replies')
+  await threadPanel.waitFor({ state: 'visible' })
+  await threadPanel.getByText('Threaded agent reply works.', { exact: true }).waitFor({ state: 'visible', timeout: 240_000 })
+  if ((await page.locator('.csp-channel-feed').getByText('Threaded agent reply works.', { exact: true }).count()) !== 0) {
+    throw new Error('agent reply leaked into the main channel feed')
+  }
 
   await page.getByRole('button', { name: 'Message agent Frontend' }).click()
   await page.getByRole('heading', { name: 'Frontend' }).waitFor({ state: 'visible' })
@@ -96,6 +114,10 @@ try {
 
   await page.reload({ waitUntil: 'domcontentloaded' })
   await switchToCommonspace()
+  await page.getByRole('button', { name: /general.*agent/ }).click()
+  const persistedRoot = page.locator('.csp-thread-root').filter({ hasText: rootText })
+  await persistedRoot.getByRole('button').click()
+  await page.getByLabel('Thread replies').getByText('Threaded agent reply works.', { exact: true }).waitFor({ state: 'visible' })
   const dmSection = page.locator('.csp-browser-section').filter({
     has: page.getByRole('button', { name: /^Direct Messages/ }),
   })
@@ -120,6 +142,8 @@ try {
     project: { name: 'Commonspace', paths: [projectPath, '/Users/ralphbibera/Developer/deepseek-harness'] },
     channel: 'general',
     channelAgents: ['backend', 'frontend'],
+    immediateRoot: true,
+    threadedReplies: true,
     dm: 'frontend',
     hermesReply: true,
     persistedAfterReload: true,

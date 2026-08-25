@@ -1,4 +1,4 @@
-export const COMMONSPACE_STATE_VERSION = 1 as const
+export const COMMONSPACE_STATE_VERSION = 2 as const
 
 export interface HermesAgentProfile {
   id: string
@@ -35,6 +35,22 @@ export interface CommonspaceMessage {
   authorName: string
   text: string
   createdAt: string
+  threadId?: string
+  parentMessageId?: string
+}
+
+export type CommonspaceThreadStatus = 'queued' | 'running' | 'complete' | 'error'
+
+export interface CommonspaceThread {
+  id: string
+  channelId: string
+  projectId: string | null
+  rootMessageId: string
+  agentIds: string[]
+  status: CommonspaceThreadStatus
+  createdAt: string
+  updatedAt: string
+  error?: string
 }
 
 export interface CommonspaceState {
@@ -42,6 +58,7 @@ export interface CommonspaceState {
   revision: number
   projects: CommonspaceProject[]
   channels: CommonspaceChannel[]
+  threads: CommonspaceThread[]
   messages: Record<string, CommonspaceMessage[]>
 }
 
@@ -62,11 +79,12 @@ export interface SendMessageRequest {
   conversation: ConversationRef
   text: string
   projectId?: string
+  threadId?: string
 }
 
 export interface SendMessageResponse {
   accepted: CommonspaceMessage
-  replies: CommonspaceMessage[]
+  thread?: CommonspaceThread
   state: CommonspaceState
 }
 

@@ -7,10 +7,11 @@ function bootstrap(revision: number, projectName: string): CommonspaceBootstrap 
   return {
     agents: [],
     state: {
-      version: 1,
+      version: 2,
       revision,
       projects: [{ id: `project-${revision}`, name: projectName, paths: ['/workspace'], createdAt: '2026-08-25T00:00:00.000Z' }],
       channels: [],
+      threads: [],
       messages: {},
     },
   }

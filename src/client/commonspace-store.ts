@@ -16,6 +16,7 @@ export interface CommonspaceClientSnapshot {
   error: string | null
   activeConversation: ConversationRef | null
   activeProjectId: string | null
+  activeThreadId: string | null
 }
 
 type Listener = () => void
@@ -44,9 +45,11 @@ export class CommonspaceClientStore {
     error: null,
     activeConversation: null,
     activeProjectId: null,
+    activeThreadId: null,
   }
   private readonly listeners = new Set<Listener>()
   private refreshPromise: Promise<void> | null = null
+  private events: EventSource | null = null
 
   getSnapshot = (): CommonspaceClientSnapshot => this.snapshot
 
@@ -71,6 +74,26 @@ export class CommonspaceClientStore {
     return task
   }
 
+  connectEvents(): void {
+    if (this.events !== null || typeof EventSource === 'undefined') return
+    const events = new EventSource('/commonspace/api/events')
+    events.addEventListener('revision', (event) => {
+      try {
+        const value = JSON.parse((event as MessageEvent<string>).data) as { revision?: number }
+        if (typeof value.revision === 'number' && value.revision > (this.snapshot.bootstrap?.state.revision ?? -1)) void this.refresh()
+      } catch {
+        // Ignore malformed event frames; EventSource will continue.
+      }
+    })
+    events.onerror = () => { this.set({ ...this.snapshot, error: 'Commonspace live updates disconnected; retrying…' }) }
+    this.events = events
+  }
+
+  disconnectEvents(): void {
+    this.events?.close()
+    this.events = null
+  }
+
   async mutate(mutation: CommonspaceMutation): Promise<void> {
     try {
       const result = await requestJson<{ state: CommonspaceBootstrap['state'] }>('/commonspace/api/mutate', {
@@ -90,7 +113,11 @@ export class CommonspaceClientStore {
   }
 
   selectConversation(conversation: ConversationRef): void {
-    this.set({ ...this.snapshot, activeConversation: conversation, error: null })
+    this.set({ ...this.snapshot, activeConversation: conversation, activeThreadId: null, error: null })
+  }
+
+  selectThread(threadId: string | null): void {
+    this.set({ ...this.snapshot, activeThreadId: threadId, error: null })
   }
 
   selectProject(projectId: string): void {
@@ -102,7 +129,7 @@ export class CommonspaceClientStore {
     return this.snapshot.bootstrap?.state.messages[conversationKey(conversation)] ?? []
   }
 
-  async send(text: string): Promise<void> {
+  async send(text: string, threadId?: string): Promise<void> {
     const conversation = this.snapshot.activeConversation
     if (conversation === null || this.snapshot.sending) return
     const projectId = conversation.kind === 'channel'
@@ -112,6 +139,7 @@ export class CommonspaceClientStore {
       conversation,
       text,
       ...(projectId === undefined ? {} : { projectId }),
+      ...(threadId === undefined ? {} : { threadId }),
     }
     this.set({ ...this.snapshot, sending: true, error: null })
     try {
@@ -122,7 +150,13 @@ export class CommonspaceClientStore {
       const bootstrap = this.snapshot.bootstrap
       if (bootstrap !== null) {
         const merged = this.mergeBootstrap({ ...bootstrap, state: result.state })
-        this.set({ ...this.snapshot, sending: false, bootstrap: merged, activeProjectId: this.resolveActiveProject(merged) })
+        this.set({
+          ...this.snapshot,
+          sending: false,
+          bootstrap: merged,
+          activeProjectId: this.resolveActiveProject(merged),
+          activeThreadId: result.thread?.id ?? this.snapshot.activeThreadId,
+        })
       } else {
         await this.refresh()
         this.set({ ...this.snapshot, sending: false })

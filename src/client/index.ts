@@ -40,6 +40,17 @@ export function apply(ctx: ClientContext): void {
         inject: () => ({ mode }),
       }, CommonspaceModeSwitch))
 
+    const syncEvents = () => {
+      if (mode.getSnapshot() === 'commonspace') {
+        store.connectEvents()
+        void store.refresh()
+      } else {
+        store.disconnectEvents()
+      }
+    }
+    syncEvents()
+    const disposeEvents = mode.subscribe(syncEvents)
+
     const disposeSidebar = ctx.slots.inject('sidebar.workspaces', () => {
       let dispose: (() => void) | null = null
       const sync = () => {
@@ -49,7 +60,7 @@ export function apply(ctx: ClientContext): void {
             priority: -20,
             inject: () => ({ store }),
           }, CommonspaceSidebar)
-          void store.refresh()
+
         } else if (mode.getSnapshot() === 'workspaces' && dispose !== null) {
           dispose()
           dispose = null
@@ -88,6 +99,8 @@ export function apply(ctx: ClientContext): void {
     })
 
     return () => {
+      disposeEvents()
+      store.disconnectEvents()
       disposeConversation()
       disposeSidebar()
       disposeFooter()

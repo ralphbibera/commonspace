@@ -55,4 +55,37 @@ describe('Commonspace host authority', () => {
     expect((await service.bootstrap()).state.messages).toEqual({})
     expect(runAgent).not.toHaveBeenCalled()
   })
+
+  it('accepts a channel root immediately and appends agent replies inside its thread', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-thread-'))
+    roots.push(root)
+    const workspace = join(root, 'workspace')
+    await mkdir(workspace)
+    let release: ((value: string) => void) | undefined
+    const runAgent = vi.fn((input: { profile: string; cwd: string; sessionName: string; prompt: string }) => {
+      void input
+      return new Promise<string>((resolve) => { release = resolve })
+    })
+    const service = new CommonspaceHostService({} as never, { root }, {
+      discoverAgents: async () => [{ id: 'frontend', displayName: 'Frontend', model: 'test', status: 'stopped' }],
+      runAgent,
+    })
+    await service.initialize()
+    const project = (await service.mutate({ action: 'create-project', name: 'App', paths: [workspace] })).projects[0]!
+    const channel = (await service.mutate({ action: 'create-channel', name: 'general', projectId: project.id, agentIds: ['frontend'] })).channels[0]!
+
+    const accepted = await service.send({ conversation: { kind: 'channel', id: channel.id }, projectId: project.id, text: 'Investigate checkout.' })
+    expect(accepted.thread?.status).toBe('queued')
+    expect(accepted.accepted.parentMessageId).toBeUndefined()
+    await vi.waitFor(() => { expect(runAgent).toHaveBeenCalledOnce() })
+
+    release?.('Found the issue.')
+    await vi.waitFor(async () => {
+      const state = (await service.bootstrap()).state
+      expect(state.threads.find(thread => thread.id === accepted.thread?.id)?.status).toBe('complete')
+      const messages = state.messages[`channel:${channel.id}`] ?? []
+      expect(messages.some(message => message.text === 'Found the issue.' && message.parentMessageId === accepted.accepted.id)).toBe(true)
+    })
+    expect(runAgent.mock.calls[0]?.[0]?.sessionName).toBe(`Commonspace Thread: ${accepted.thread?.id ?? ''}`)
+  })
 })
