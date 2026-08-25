@@ -783,6 +783,10 @@ export const commonspaceStyles = String.raw`
 .csp-message header { display: flex; align-items: baseline; gap: 7px; }
 .csp-message time { color: var(--dsw-alias-label-tertiary, #8a8f98); font-size: 10px; }
 .csp-message p { margin: 3px 0 0; white-space: pre-wrap; font-size: 13px; line-height: 1.55; }
+.csp-tag { padding: 1px 4px; border-radius: 4px; font: inherit; font-weight: 600; }
+.csp-tag--agent { background: rgba(77, 107, 254, 0.14); color: #4058d8; }
+.csp-tag--project { background: rgba(137, 87, 229, 0.14); color: #7547bd; }
+.csp-tag--channel { background: rgba(16, 135, 98, 0.14); color: #087a59; }
 
 .csp-conversation-empty,
 .csp-agent-working {
@@ -814,6 +818,26 @@ export const commonspaceStyles = String.raw`
   font: inherit;
   font-size: 13px;
 }
+
+.csp-composer-input-wrap { position: relative; flex: 1; min-width: 0; }
+.csp-tag-suggestions {
+  position: absolute;
+  z-index: 2;
+  right: 0;
+  bottom: calc(100% + 8px);
+  left: 0;
+  display: grid;
+  gap: 2px;
+  padding: 5px;
+  border: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.14));
+  border-radius: 9px;
+  background: var(--dsw-alias-fill-l1, #fff);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+}
+.csp-tag-suggestions button { display: flex; align-items: center; gap: 8px; padding: 7px 9px; border: 0; border-radius: 6px; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+.csp-tag-suggestions button.is-selected, .csp-tag-suggestions button:hover { background: rgba(77, 107, 254, 0.1); }
+.csp-tag-suggestions button strong { min-width: 85px; font-size: 12px; }
+.csp-tag-suggestions button span { color: var(--dsw-alias-label-tertiary, #8a8f98); font-size: 11px; }
 
 .csp-message-composer button:disabled { opacity: 0.45; cursor: not-allowed; }
 
