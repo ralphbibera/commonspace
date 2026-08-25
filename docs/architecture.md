@@ -2,27 +2,27 @@
 
 ## Boundary
 
-Commonspace is a local Buzz-like agent workspace hosted inside DeepSeek Harness Web. DSH supplies the shell and extension points. Hermes profiles supply agent identities and execution. Commonspace owns only local Projects, Channels, DMs, Agents presentation, message metadata, and routing.
+Commonspace is a local Buzz-like agent workspace hosted inside DeepSeek Harness Web. DSH supplies the shell and extension points. Optional Hermes, Codex CLI, and Claude Code adapters supply agent identities and execution. Commonspace owns only local Projects, Channels, DMs, Agents presentation, message metadata, routing, and native-session references.
 
-Commonspace does not depend on OpenAgents, run another model provider, replace Hermes profile state, or modify DeepSeek Harness core files.
+Commonspace has no runtime package dependency on those CLIs or OpenAgents, does not copy their credentials or session content, and does not modify DeepSeek Harness core files.
 
 ## Core entities
 
 ### Project
 
-A Project is a named context container with one or more absolute local directory paths. The first path is the Hermes process working directory. Every path is listed in the room prompt so an agent can reason about the whole Project.
+A Project is a named context container with one or more absolute local directory paths. The first path is the agent process working directory. Other paths are exposed through the adapter's supported additional-directory flags and every path is listed in Channel prompts.
 
 ### Channel
 
-A Channel belongs to a Project and carries an explicit list of Hermes profile IDs. Valid `@profile` mentions route only to seated agents. If no seated agent is mentioned, the turn is sent to the full Channel roster. Agent calls are currently serial and capped by host configuration.
+A Channel belongs to a Project and carries an explicit list of agent IDs. Valid `@agent-id` mentions route only to seated agents. If no seated agent is mentioned, the turn is sent to the full Channel roster. Each root creates a new native session; replies reuse that thread's session. Agent calls are serial and capped by host configuration.
 
 ### Direct Message
 
-A DM is derived from a Hermes profile ID and uses that profile's canonical `Bot Chat` session. The profile therefore keeps its own role, model, memory, skills, and persistent conversation context.
+A DM is derived from an agent ID and uses one persistent native session: Hermes uses its canonical `Bot Chat`; Codex and Claude Code resume the recorded CLI session UUID.
 
 ### Agent
 
-An Agent is a real Hermes profile discovered through `hermes profile list`. Commonspace never synthesizes fake specialists. The profile ID is routing authority; the display name and model are presentation metadata.
+An Agent is either a real Hermes profile discovered through `hermes profile list` or an explicit user-managed Codex CLI/Claude Code definition. Commonspace never synthesizes specialists. The namespaced agent ID is routing authority; display name, adapter, and optional model are presentation/execution metadata.
 
 ## Host face
 
@@ -36,16 +36,18 @@ The host service:
 
 - rejects cross-origin mutation requests;
 - caps JSON body and message sizes;
-- validates Project paths as absolute existing directories;
+- structurally sanitizes loaded state, validates reasoning/settings at API boundaries, and canonicalizes Project paths as absolute existing directories;
 - persists `~/.commonspace/state.json` through temp-file + rename publication;
 - discovers Hermes profiles without reading credentials;
-- invokes Hermes with `execFile` argument arrays and `--query-file`, never a shell command;
-- scopes DMs to `Bot Chat` and Channels to a stable room session name;
-- serializes sends per conversation;
-- bounds output, execution time, room history, and agents per turn;
-- removes temporary prompt files in a `finally` block.
+- invokes every adapter with argument arrays and piped input, never a shell command;
+- scopes DMs and Channel threads to persisted native session IDs;
+- retries a missing native session once with a fresh session and never retries unrelated failures;
+- serializes sends per conversation and serializes runs whose Project paths overlap;
+- bounds stdout, stderr, Codex output files, execution time, room history, and agents per turn;
+- kills timed-out adapter process groups;
+- stores temporary prompts/outputs under a `0700` directory with `0600` files and removes them in `finally` blocks.
 
-Hermes yolo mode is config-controlled and disabled by default. The bundle reads `COMMONSPACE_HERMES_YOLO=1` only when the operator explicitly opts in.
+Unsafe adapter mode is config-controlled and disabled by default. `COMMONSPACE_AGENT_YOLO=1` affects only Codex CLI and Claude Code; the legacy `COMMONSPACE_HERMES_YOLO=1` flag remains isolated to Hermes.
 
 ## Browser face
 
@@ -64,17 +66,17 @@ When Commonspace mode activates, `src/client/index.ts` dynamically registers pri
 `CommonspaceSidebar` renders:
 
 - Projects with expandable child filesystem workspaces and per-Project add-workspace controls;
-- Channels with Project binding and editable Hermes member rosters;
+- Channels with Project binding and editable agent rosters;
 - Direct Messages derived from persisted DM activity;
-- the full Hermes Agent roster.
+- discovered Hermes agents and user-managed Codex CLI/Claude Code agents.
 
 ### Conversation
 
-`CommonspaceConversation` renders the selected Channel or DM, visible Channel membership, attributed messages, errors, and a bounded composer. It does not reuse DSH Session messages because Hermes profiles—not DSH agents—are the room members.
+`CommonspaceConversation` renders the selected Channel or DM, visible Channel membership, attributed messages, errors, and a bounded composer. It does not reuse DSH Session messages because adapter-backed Commonspace agents—not DSH agents—are the room members.
 
 ## Persistence
 
-The host state format is versioned. Commonspace state holds Project definitions, Channel definitions, and bounded message histories. Hermes session content remains in each Hermes profile's own state database; Commonspace stores only the room transcript needed for shared display.
+The host state format is versioned. Commonspace state on disk holds Project definitions, Channel definitions, managed agent definitions, bounded message histories, and native session UUID mappings. Session content and credentials remain in each CLI's supported storage. Native session UUIDs are redacted from browser/API snapshots because only the host needs them.
 
 ## Intentional omissions
 
@@ -86,17 +88,23 @@ The private preview does not implement:
 - GitHub repositories or workflow automation;
 - token streaming;
 - reactions, read receipts, or Slack-style message threads;
-- non-Hermes runtimes.
+- hosted remote agent runtimes.
 
 These can be added later without changing the four core entities or the Workspaces/Commonspace mode boundary.
 
 ## Rollback
 
-Remove the profile bundle and restart DSH Web:
+Before reverting to a host version that only understands state v4 or earlier, preserve the v5 state file:
+
+```bash
+cp ~/.commonspace/state.json ~/.commonspace/state-v5.backup.json
+```
+
+Then remove the profile bundle and restart DSH Web:
 
 ```bash
 dsh plugin --profile web remove @ralphbibera/commonspace
 dsh web
 ```
 
-Commonspace metadata remains in `~/.commonspace/state.json` unless the operator deletes it explicitly.
+Commonspace metadata remains in `~/.commonspace/state.json` unless the operator deletes it explicitly. A pre-v5 host cannot load managed-agent/session fields and must not overwrite the backup.

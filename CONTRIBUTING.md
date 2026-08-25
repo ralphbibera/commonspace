@@ -30,7 +30,7 @@ The verifier writes ignored artifacts by default. Set `COMMONSPACE_UPDATE_DOCS=1
 - Keep changes focused and explain the user-visible behavior.
 - Add or update tests before changing behavior.
 - Preserve the existing Harness workspace, session, conversation, and context-management surfaces.
-- Do not add Hermes or OpenAgents dependencies.
+- Keep Hermes, Codex CLI, and Claude Code behind optional no-shell adapters; do not add runtime package dependencies on them or OpenAgents.
 - Do not commit credentials, local profile files, generated bundles, or full-page test artifacts.
 - Include screenshots for visible UI changes.
 - Run `pnpm check` before requesting review.

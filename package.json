@@ -1,7 +1,7 @@
 {
   "name": "@ralphbibera/commonspace",
   "version": "0.1.0",
-  "description": "A local Buzz-like workspace for filesystem projects, channels, DMs, and Hermes agent profiles.",
+  "description": "A local Buzz-like workspace for filesystem projects, channels, DMs, and reusable CLI agents.",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -31,6 +31,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "verify:adapters": "COMMONSPACE_LIVE_ADAPTERS=1 vitest run tests/live-agent-adapters.spec.ts --testTimeout=240000",
+    "verify:adapters:codex": "COMMONSPACE_LIVE_ADAPTERS=1 vitest run tests/live-agent-adapters.spec.ts -t 'Codex sessions' --testTimeout=240000",
+    "verify:adapters:claude": "COMMONSPACE_LIVE_ADAPTERS=1 vitest run tests/live-agent-adapters.spec.ts -t 'Claude Code sessions' --testTimeout=240000",
     "verify:live": "node scripts/verify-live.mjs",
     "lint": "eslint .",
     "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build",

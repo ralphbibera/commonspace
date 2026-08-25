@@ -25,6 +25,14 @@ async function switchToCommonspace() {
   await page.getByLabel('Commonspace conversation').waitFor({ state: 'visible' })
 }
 
+async function verifyAgentManagementSurface() {
+  await page.getByRole('button', { name: 'Add agent' }).click()
+  await page.getByRole('textbox', { name: 'Agent name' }).waitFor({ state: 'visible' })
+  await page.getByRole('combobox', { name: 'Agent adapter' }).selectOption('claude-code')
+  await page.getByRole('textbox', { name: 'Agent model' }).fill('claude-sonnet-4-6')
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+}
+
 async function ensureProject() {
   if ((await page.getByRole('button', { name: 'Select project Commonspace' }).count()) === 0) {
     await page.getByRole('button', { name: 'Add project' }).click()
@@ -89,6 +97,7 @@ try {
   for (const profile of ['AgentOps', 'Backend', 'Frontend', 'Infrastructure']) {
     await page.getByRole('button', { name: `Message agent ${profile}` }).waitFor({ state: 'visible' })
   }
+  await verifyAgentManagementSurface()
 
   await ensureProject()
   await ensureChannel()
@@ -116,9 +125,10 @@ try {
     throw new Error('agent reply leaked into the main channel feed')
   }
   await page.getByRole('button', { name: 'Manage agents in channel general' }).click()
-  await page.getByText(/Projected memory · [1-9][0-9]* threads/).waitFor({ state: 'visible' })
+  const channelContextForm = page.locator('.csp-channel-members')
+  await channelContextForm.getByText(/Projected memory · [1-9][0-9]* threads/).waitFor({ state: 'visible' })
   await page.getByText(rootText, { exact: false }).last().waitFor({ state: 'visible' })
-  await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await channelContextForm.getByRole('button', { name: 'Cancel', exact: true }).click()
 
   await page.getByRole('button', { name: 'Message agent Frontend' }).click()
   await page.getByRole('heading', { name: 'Frontend' }).waitFor({ state: 'visible' })
@@ -159,6 +169,7 @@ try {
     screenshot,
     sidebarScreenshot,
     modeSwitch: true,
+    adapterManagement: true,
     agents: ['default', 'backend', 'frontend', 'infrastructure'],
     project: { name: 'Commonspace', paths: [projectPath, '/Users/ralphbibera/Developer/deepseek-harness'] },
     channel: 'general',

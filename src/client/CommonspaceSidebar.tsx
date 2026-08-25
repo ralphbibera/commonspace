@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useSyncExternalStore, type FormEvent } from 'react'
-import type { CommonspaceMutation, CommonspaceReasoning, HermesAgentProfile } from '../contracts.ts'
+import type { AgentAdapterKind, CommonspaceAgentProfile, CommonspaceMutation, CommonspaceReasoning } from '../contracts.ts'
 import type { CommonspaceClientStore } from './commonspace-store.ts'
 
 export interface CommonspaceSidebarProps {
@@ -32,19 +32,33 @@ function Section(props: {
   )
 }
 
-function AgentDot({ agent }: { agent: HermesAgentProfile }) {
+function adapterLabel(adapter: AgentAdapterKind): string {
+  if (adapter === 'codex') return 'Codex CLI'
+  if (adapter === 'claude-code') return 'Claude Code'
+  return 'Hermes'
+}
+
+function agentStatusLabel(status: CommonspaceAgentProfile['status']): string {
+  if (status === 'running') return 'online'
+  if (status === 'unknown') return 'configured'
+  return 'available'
+}
+
+function AgentDot({ agent }: { agent: CommonspaceAgentProfile }) {
   return <span className={`csp-agent-dot csp-agent-dot--${agent.status}`} aria-hidden="true" />
 }
 
 export function CommonspaceSidebar({ wide, expandSidebar, store }: CommonspaceSidebarProps) {
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot)
-  const [form, setForm] = useState<'project' | 'channel' | null>(null)
+  const [form, setForm] = useState<'project' | 'channel' | 'agent' | null>(null)
   const [name, setName] = useState('')
   const [path, setPath] = useState('')
   const [pathProjectId, setPathProjectId] = useState<string | null>(null)
   const [pathDraft, setPathDraft] = useState('')
   const [projectId, setProjectId] = useState('')
   const [agentIds, setAgentIds] = useState<string[]>([])
+  const [agentAdapter, setAgentAdapter] = useState<Exclude<AgentAdapterKind, 'hermes'>>('codex')
+  const [agentModel, setAgentModel] = useState('')
   const [editingChannelId, setEditingChannelId] = useState<string | null>(null)
   const [channelAgentIds, setChannelAgentIds] = useState<string[]>([])
   const [channelInstructions, setChannelInstructions] = useState('')
@@ -61,7 +75,7 @@ export function CommonspaceSidebar({ wide, expandSidebar, store }: CommonspaceSi
   const state = bootstrap?.state
   const agents = bootstrap?.agents ?? []
   const dmAgents = useMemo(() => agents.filter(agent => (state?.messages[`dm:${agent.id}`]?.length ?? 0) > 0), [agents, state])
-  const models = useMemo(() => [...new Set(agents.map(agent => agent.model).filter(Boolean))], [agents])
+  const models = useMemo(() => [...new Set(agents.map(agent => agent.model).filter((model): model is string => model !== null && model !== ''))], [agents])
 
   if (!wide) {
     return (
@@ -83,12 +97,20 @@ export function CommonspaceSidebar({ wide, expandSidebar, store }: CommonspaceSi
         agentIds,
         ...(projectId === '' ? {} : { projectId }),
       }
+    } else if (form === 'agent') {
+      mutation = {
+        action: 'add-agent',
+        displayName: name,
+        adapter: agentAdapter,
+        model: agentModel || null,
+      }
     } else return
     await store.mutate(mutation)
     setForm(null)
     setName('')
     setPath('')
     setAgentIds([])
+    setAgentModel('')
   }
 
   const submitPath = async (event: FormEvent, targetProjectId: string) => {
@@ -117,7 +139,7 @@ export function CommonspaceSidebar({ wide, expandSidebar, store }: CommonspaceSi
       <header className="csp-browser-header">
         <div>
           <strong>Commonspace</strong>
-          <span>Hermes agents</span>
+          <span>Local agent workspace</span>
         </div>
         <div className="csp-browser-header-actions">
           <button type="button" className="csp-browser-refresh" aria-label="Commonspace settings" onClick={() => {
@@ -134,7 +156,7 @@ export function CommonspaceSidebar({ wide, expandSidebar, store }: CommonspaceSi
         </div>
       </header>
 
-      {snapshot.loading && bootstrap === null && <div className="csp-browser-status">Loading Hermes profiles…</div>}
+      {snapshot.loading && bootstrap === null && <div className="csp-browser-status">Loading agents…</div>}
       {snapshot.error !== null && <div className="csp-runtime-error" role="alert">{snapshot.error}</div>}
       {settingsOpen && state !== undefined && (
         <form className="csp-browser-form csp-global-settings" onSubmit={(event) => { void saveDefaults(event) }}>
@@ -262,7 +284,7 @@ export function CommonspaceSidebar({ wide, expandSidebar, store }: CommonspaceSi
               )}
             </div>
           ))}
-          {(state?.channels.length ?? 0) === 0 && form !== 'channel' && <div className="csp-browser-empty">Create a channel and seat Hermes agents.</div>}
+          {(state?.channels.length ?? 0) === 0 && form !== 'channel' && <div className="csp-browser-empty">Create a channel and seat agents.</div>}
         </Section>
 
         <Section title="Direct Messages" count={dmAgents.length}>
@@ -274,11 +296,27 @@ export function CommonspaceSidebar({ wide, expandSidebar, store }: CommonspaceSi
           {dmAgents.length === 0 && <div className="csp-browser-empty">Start a DM from the Agents list.</div>}
         </Section>
 
-        <Section title="Agents" count={agents.length}>
+        <Section title="Agents" count={agents.length} onAdd={() => { setForm('agent'); setName(''); setAgentAdapter('codex'); setAgentModel('') }}>
+          {form === 'agent' && (
+            <form className="csp-browser-form" onSubmit={(event) => { void submit(event) }}>
+              <input aria-label="Agent name" placeholder="Agent name" value={name} onChange={event => { setName(event.target.value) }} autoFocus />
+              <select aria-label="Agent adapter" value={agentAdapter} onChange={event => { setAgentAdapter(event.target.value as Exclude<AgentAdapterKind, 'hermes'>) }}>
+                <option value="codex">Codex</option>
+                <option value="claude-code">Claude Code</option>
+              </select>
+              <input aria-label="Agent model" list="commonspace-models" placeholder="Use adapter default model" value={agentModel} onChange={event => { setAgentModel(event.target.value) }} />
+              <div><button type="submit">Create agent</button><button type="button" onClick={() => { setForm(null) }}>Cancel</button></div>
+            </form>
+          )}
           {agents.map(agent => (
-            <button key={agent.id} type="button" className="csp-browser-row" aria-label={`Message agent ${agent.displayName}`} onClick={() => { store.selectConversation({ kind: 'dm', id: agent.id }) }}>
-              <AgentDot agent={agent} /><span className="csp-browser-row-main"><strong>{agent.displayName}</strong><small>{agent.model} · {agent.status === 'running' ? 'online' : 'available'}</small></span>
-            </button>
+            <div key={agent.id} className="csp-agent-head">
+              <button type="button" className="csp-browser-row" aria-label={`Message agent ${agent.displayName}`} onClick={() => { store.selectConversation({ kind: 'dm', id: agent.id }) }}>
+                <AgentDot agent={agent} /><span className="csp-browser-row-main"><strong>{agent.displayName}</strong><small>{adapterLabel(agent.adapter)} · {agent.model ?? 'default model'} · {agentStatusLabel(agent.status)}</small></span>
+              </button>
+              {state?.agents.some(candidate => candidate.id === agent.id) === true && (
+                <button type="button" className="csp-project-add" aria-label={`Remove agent ${agent.displayName}`} onClick={() => { void store.mutate({ action: 'remove-agent', agentId: agent.id }) }}>×</button>
+              )}
+            </div>
           ))}
         </Section>
       </div>
