@@ -1,4 +1,5 @@
-# Load Commonspace into the shipped DeepSeek Harness Web profile.
 - insert:
     - id: commonspace
       name: '@ralphbibera/commonspace'
+      config:
+        yolo: !!js process.env.COMMONSPACE_HERMES_YOLO === '1'
