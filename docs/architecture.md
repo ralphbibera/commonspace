@@ -8,7 +8,7 @@ Commonspace extends the shipped DeepSeek Harness Web profile. It is not a separa
 
 ### Host
 
-`src/index.ts` is the Cordis host face. It deliberately registers no services in the navigation-only release. This lets the DSH Loader discover the package and lets the browser module scanner find the package's `dsh.client` declaration.
+`src/index.ts` is the Cordis host face. It deliberately registers no services in the browser-local release. This lets the DSH Loader discover the package and lets the browser module scanner find the package's `dsh.client` declaration.
 
 ### Browser
 
@@ -22,7 +22,12 @@ The launcher:
 - closes on Escape or when the stock sidebar collapses;
 - follows the sidebar's wide layout and keeps the collapsed rail compact;
 - uses Harness design tokens with safe fallbacks;
-- exposes Projects, Channels, and Direct Messages as disclosure buttons.
+- exposes Projects, Channels, and Direct Messages as disclosure buttons;
+- provides inline create, select, and remove controls for every group.
+
+### Browser state
+
+`src/client/navigation-state.ts` owns a versioned `commonspace.navigation.v1` localStorage record. It validates unknown JSON before use, applies Unicode-aware channel slug normalization, prevents case-insensitive duplicates, restores a valid selection, and falls back safely when storage is unavailable or corrupt. This state is intentionally local to one browser profile and contains navigation labels only; it is not a shared collaboration database.
 
 ## Profile activation
 
@@ -30,7 +35,7 @@ The launcher:
 
 ## Future extensions
 
-Future work can add data and behavior behind the existing navigation shell:
+Future work can move browser-local data behind shared Harness services:
 
 1. a host-side Commonspace service and explicit persistence format;
 2. typed APIs for projects, channels, direct messages, and thread metadata;

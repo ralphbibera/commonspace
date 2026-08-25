@@ -12,4 +12,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Native DeepSeek Harness bundle and dual-face Cordis plugin.
 - Additive Commonspace launcher in the existing Harness sidebar.
 - Accessible collapsible Projects, Channels, and Direct Messages groups.
+- Inline create, select, and remove controls for every navigation group.
+- Versioned browser persistence with channel normalization and duplicate prevention.
 - Unit, type, build, and live-browser verification.

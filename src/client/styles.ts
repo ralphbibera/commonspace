@@ -97,11 +97,18 @@ export const commonspaceStyles = String.raw`
   gap: 2px;
 }
 
+.csp-section-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
 .csp-section-button {
   display: flex;
   align-items: center;
   gap: 7px;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   min-height: 34px;
   padding: 6px 8px;
   border: 0;
@@ -119,6 +126,35 @@ export const commonspaceStyles = String.raw`
   background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.06));
 }
 
+.csp-add-button,
+.csp-remove-button,
+.csp-composer-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary, #666b74);
+  font: inherit;
+  cursor: pointer;
+}
+
+.csp-add-button {
+  width: 28px;
+  height: 28px;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.csp-add-button:hover,
+.csp-remove-button:hover,
+.csp-composer-action:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.06));
+  color: var(--dsw-alias-label-primary, #202124);
+}
+
 .csp-section-label {
   flex: 1;
 }
@@ -131,22 +167,108 @@ export const commonspaceStyles = String.raw`
 
 .csp-section-content {
   margin: 0 4px 5px 25px;
-  padding: 6px 8px;
+  padding: 3px 4px 5px 8px;
   border-left: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.1));
   color: var(--dsw-alias-label-secondary, #666b74);
   font-size: 12px;
   line-height: 18px;
 }
 
-.csp-channel-preview {
+.csp-empty {
+  padding: 4px 5px;
+}
+
+.csp-item-row {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 2px;
+}
+
+.csp-item-button {
   display: flex;
   align-items: center;
   gap: 6px;
+  flex: 1;
+  min-width: 0;
+  min-height: 28px;
+  padding: 4px 6px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary, #666b74);
+  font: inherit;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
 }
 
-.csp-channel-hash {
+.csp-item-button:hover,
+.csp-item-button[aria-pressed='true'] {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.06));
+  color: var(--dsw-alias-label-primary, #202124);
+}
+
+.csp-item-button[aria-pressed='true'] {
+  font-weight: 600;
+}
+
+.csp-item-prefix,
+.csp-composer-prefix {
   color: var(--dsw-alias-label-tertiary, #8a8f98);
   font-weight: 700;
+}
+
+.csp-remove-button {
+  width: 26px;
+  height: 26px;
+  opacity: 0;
+  font-size: 15px;
+}
+
+.csp-item-row:hover .csp-remove-button,
+.csp-item-row:focus-within .csp-remove-button {
+  opacity: 1;
+}
+
+.csp-composer {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-height: 30px;
+  padding: 2px 0;
+}
+
+.csp-composer-prefix {
+  padding-left: 5px;
+}
+
+.csp-composer-input {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  box-sizing: border-box;
+  padding: 4px 7px;
+  border: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.14));
+  border-radius: 7px;
+  outline: none;
+  background: var(--dsw-alias-bg-base, #fff);
+  color: var(--dsw-alias-label-primary, #202124);
+  font: inherit;
+  font-size: 12px;
+}
+
+.csp-composer-input:focus {
+  border-color: var(--dsw-alias-interactive-brand, #4d6bfe);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-interactive-brand, #4d6bfe) 14%, transparent);
+}
+
+.csp-composer-action {
+  width: 26px;
+  height: 26px;
+  font-size: 13px;
 }
 
 @media (prefers-reduced-motion: reduce) {
