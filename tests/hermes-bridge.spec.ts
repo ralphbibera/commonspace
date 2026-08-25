@@ -10,9 +10,9 @@ const PROFILE_TABLE = `Profile          Model                        Gateway    
 describe('Hermes agent bridge', () => {
   it('discovers default and named profiles as agent identities', () => {
     expect(parseHermesProfileList(PROFILE_TABLE)).toEqual([
-      { id: 'default', displayName: 'AgentOps', model: 'gpt-5.6-sol', status: 'running' },
-      { id: 'backend', displayName: 'Backend', model: 'gpt-5.6-luna', status: 'stopped' },
-      { id: 'frontend', displayName: 'Frontend', model: 'gpt-5.6-luna', status: 'stopped' },
+      { id: 'default', displayName: 'AgentOps', adapter: 'hermes', model: 'gpt-5.6-sol', status: 'running' },
+      { id: 'backend', displayName: 'Backend', adapter: 'hermes', model: 'gpt-5.6-luna', status: 'stopped' },
+      { id: 'frontend', displayName: 'Frontend', adapter: 'hermes', model: 'gpt-5.6-luna', status: 'stopped' },
     ])
   })
 
@@ -48,6 +48,8 @@ describe('Hermes agent bridge', () => {
     expect(prompt).toContain('Commonspace channel #engineering')
     expect(prompt).toContain('Ralph: Checkout fails after payment.')
     expect(prompt).toContain('You are responding as @backend')
+    expect(prompt).toContain('Other agents in Commonspace are peers')
+    expect(prompt).not.toContain('Other Hermes profiles')
     expect(prompt).toContain('Please investigate the checkout failure.')
   })
 

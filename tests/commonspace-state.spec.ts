@@ -53,4 +53,90 @@ describe('Commonspace local state', () => {
     state = applyMutation(state, { action: 'set-channel-settings', channelId: 'c', model: null, reasoning: null })
     expect(state.channels[0]?.settings).toEqual({ model: null, reasoning: null })
   })
+
+  it('rejects unsupported reasoning values at the runtime mutation boundary', () => {
+    const state = createInitialState()
+    expect(() => applyMutation(state, { action: 'set-defaults', reasoning: 'high"; malicious=true' } as never))
+      .toThrow('unsupported reasoning')
+  })
+
+  it('adds and removes managed CLI agents with their channel and session state', () => {
+    let state = createInitialState()
+    state = applyMutation(state, {
+      action: 'add-agent',
+      displayName: 'Review Bot',
+      adapter: 'codex',
+      model: '  gpt-5.4  ',
+    }, { ids: () => 'unused', now: () => '2026-08-25T01:00:00.000Z' })
+
+    expect(state.agents).toEqual([{
+      id: 'codex-review-bot',
+      displayName: 'Review Bot',
+      adapter: 'codex',
+      model: 'gpt-5.4',
+      createdAt: '2026-08-25T01:00:00.000Z',
+    }])
+
+    const seeded = {
+      ...state,
+      channels: [{
+        id: 'channel-1',
+        name: 'general',
+        projectId: null,
+        agentIds: ['codex-review-bot'],
+        instructions: '',
+        memory: { summary: '', decisions: [], openQuestions: [], threadIds: [], updatedAt: null },
+        settings: { model: null, reasoning: null },
+        createdAt: 'now',
+      }],
+      agentSessions: {
+        'codex-review-bot': { 'Bot Chat': '123e4567-e89b-42d3-a456-426614174000' },
+      },
+      messages: { 'dm:codex-review-bot': [] },
+    }
+    const removed = applyMutation(seeded, { action: 'remove-agent', agentId: 'codex-review-bot' })
+
+    expect(removed.agents).toEqual([])
+    expect(removed.channels[0]?.agentIds).toEqual([])
+    expect(removed.agentSessions).toEqual({})
+    expect(removed.messages).toEqual({})
+  })
+
+  it('removes native thread sessions with a deleted channel while preserving DMs', () => {
+    const threadId = '123e4567-e89b-42d3-a456-426614174000'
+    const sessionId = '223e4567-e89b-42d3-a456-426614174000'
+    const state = {
+      ...createInitialState(),
+      channels: [{
+        id: 'channel-1',
+        name: 'general',
+        projectId: null,
+        agentIds: ['codex-review-bot'],
+        instructions: '',
+        memory: { summary: '', decisions: [], openQuestions: [], threadIds: [threadId], updatedAt: null },
+        settings: { model: null, reasoning: null },
+        createdAt: 'now',
+      }],
+      threads: [{
+        id: threadId,
+        channelId: 'channel-1',
+        projectId: null,
+        rootMessageId: 'root-1',
+        agentIds: ['codex-review-bot'],
+        status: 'complete' as const,
+        createdAt: 'now',
+        updatedAt: 'now',
+      }],
+      agentSessions: {
+        'codex-review-bot': {
+          'Bot Chat': sessionId,
+          [`Commonspace Thread: ${threadId}`]: sessionId,
+        },
+      },
+    }
+
+    expect(applyMutation(state, { action: 'remove-channel', channelId: 'channel-1' }).agentSessions).toEqual({
+      'codex-review-bot': { 'Bot Chat': sessionId },
+    })
+  })
 })

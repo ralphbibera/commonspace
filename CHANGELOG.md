@@ -15,6 +15,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Membership-aware `@profile` routing and serial channel turns.
 - Direct Messages backed by each Hermes profile's persistent `Bot Chat`.
 - Real Hermes profile discovery with profile model and availability metadata.
+- User-managed Codex CLI and Claude Code agents with native DM/thread session resumption.
+- Adapter-aware Agent creation/removal and Channel membership in the Commonspace sidebar.
+- Overlapping-workspace serialization, stale-session recovery, generation-safe removal, and host-private session references.
 - Same-origin local API, atomic JSON persistence, and bounded no-shell Hermes execution.
 - Projects, Channels, Direct Messages, Agents, and center Messages UI.
 - Unit, type, build, CI, and live-browser verification.

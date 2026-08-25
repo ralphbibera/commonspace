@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CommonspaceConversation } from '../src/client/CommonspaceConversation.tsx'
 import { CommonspaceModeController } from '../src/client/commonspace-mode.ts'
@@ -24,8 +24,8 @@ describe('Commonspace workspace mode', () => {
 
   it('suggests the active tag type from the current word', () => {
     expect(tagSuggestions('Please ask @ba', {
-      agents: [{ id: 'backend', displayName: 'Backend', model: 'x', status: 'running' }],
-      state: { version: 4, revision: 0, defaults: { model: null, reasoning: 'max', maxAgentsPerTurn: 4, memoryThreads: 12 }, projects: [{ id: 'commonspace', name: 'Commonspace', paths: [], createdAt: '' }], channels: [{ id: 'general', name: 'general', projectId: null, agentIds: [], instructions: '', memory: { summary: '', decisions: [], openQuestions: [], threadIds: [], updatedAt: null }, settings: { model: null, reasoning: null }, createdAt: '' }], threads: [], messages: {} },
+      agents: [{ id: 'backend', displayName: 'Backend', adapter: 'hermes', model: 'x', status: 'running' }],
+      state: { version: 5, revision: 0, defaults: { model: null, reasoning: 'max', maxAgentsPerTurn: 4, memoryThreads: 12 }, agents: [], agentSessions: {}, projects: [{ id: 'commonspace', name: 'Commonspace', paths: [], createdAt: '' }], channels: [{ id: 'general', name: 'general', projectId: null, agentIds: [], instructions: '', memory: { summary: '', decisions: [], openQuestions: [], threadIds: [], updatedAt: null }, settings: { model: null, reasoning: null }, createdAt: '' }], threads: [], messages: {} },
     })).toEqual([{ kind: 'agent', id: 'backend', label: 'Backend', token: '@backend' }])
   })
 
@@ -39,6 +39,56 @@ describe('Commonspace workspace mode', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Switch to Workspaces' }))
     expect(mode.getSnapshot()).toBe('workspaces')
+  })
+
+  it('adds and removes managed Codex and Claude Code agents from the sidebar', async () => {
+    const mutate = vi.fn(async () => undefined)
+    const snapshot = {
+      bootstrap: {
+        agents: [{ id: 'codex-review-bot', displayName: 'Review Bot', adapter: 'codex', model: 'gpt-5.4', status: 'unknown' }],
+        state: {
+          version: 5,
+          revision: 1,
+          defaults: { model: null, reasoning: 'max', maxAgentsPerTurn: 4, memoryThreads: 12 },
+          agents: [{ id: 'codex-review-bot', displayName: 'Review Bot', adapter: 'codex', model: 'gpt-5.4', createdAt: '2026-08-25T00:00:00.000Z' }],
+          agentSessions: {},
+          projects: [],
+          channels: [],
+          threads: [],
+          messages: {},
+        },
+      },
+      loading: false,
+      sending: false,
+      error: null,
+      activeConversation: null,
+      activeProjectId: null,
+      activeThreadId: null,
+    } as const
+    const store = {
+      subscribe: () => () => undefined,
+      getSnapshot: () => snapshot,
+      refresh: vi.fn(async () => undefined),
+      mutate,
+      selectConversation: vi.fn(),
+      selectProject: vi.fn(),
+    }
+    render(<CommonspaceSidebar wide expandSidebar={() => undefined} store={store as never} />)
+    expect(screen.getByText('Codex CLI · gpt-5.4 · configured')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add agent' }))
+    fireEvent.change(screen.getByLabelText('Agent name'), { target: { value: 'Builder' } })
+    fireEvent.change(screen.getByLabelText('Agent adapter'), { target: { value: 'claude-code' } })
+    fireEvent.change(screen.getByLabelText('Agent model'), { target: { value: 'claude-sonnet-4-6' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Create agent' }))
+
+    await waitFor(() => {
+      expect(mutate).toHaveBeenCalledWith({ action: 'add-agent', displayName: 'Builder', adapter: 'claude-code', model: 'claude-sonnet-4-6' })
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Remove agent Review Bot' }))
+    await waitFor(() => {
+      expect(mutate).toHaveBeenCalledWith({ action: 'remove-agent', agentId: 'codex-review-bot' })
+    })
   })
 
   it('shadows sidebar and conversation only while Commonspace mode is active', () => {

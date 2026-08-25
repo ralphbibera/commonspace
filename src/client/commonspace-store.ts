@@ -96,16 +96,12 @@ export class CommonspaceClientStore {
 
   async mutate(mutation: CommonspaceMutation): Promise<void> {
     try {
-      const result = await requestJson<{ state: CommonspaceBootstrap['state'] }>('/commonspace/api/mutate', {
+      const result = await requestJson<CommonspaceBootstrap>('/commonspace/api/mutate', {
         method: 'POST',
         body: JSON.stringify(mutation),
       })
-      const bootstrap = this.snapshot.bootstrap
-      if (bootstrap === null) await this.refresh()
-      else {
-        const merged = this.mergeBootstrap({ ...bootstrap, state: result.state })
-        this.set({ ...this.snapshot, bootstrap: merged, activeProjectId: this.resolveActiveProject(merged), error: null })
-      }
+      const merged = this.mergeBootstrap(result)
+      this.set({ ...this.snapshot, bootstrap: merged, activeProjectId: this.resolveActiveProject(merged), error: null })
     } catch (error) {
       this.set({ ...this.snapshot, error: error instanceof Error ? error.message : String(error) })
       throw error

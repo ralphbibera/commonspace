@@ -1,4 +1,4 @@
-import type { CommonspaceMutation, CommonspaceState } from '../contracts.ts'
+import type { CommonspaceAgentDefinition, CommonspaceMutation, CommonspaceState } from '../contracts.ts'
 import { COMMONSPACE_STATE_VERSION } from '../contracts.ts'
 
 export interface StateDependencies {
@@ -9,6 +9,33 @@ export interface StateDependencies {
 const defaults: StateDependencies = {
   ids: () => crypto.randomUUID(),
   now: () => new Date().toISOString(),
+}
+
+const COMMONSPACE_REASONING_VALUES = new Set<CommonspaceState['defaults']['reasoning']>([
+  'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max',
+])
+
+export function isCommonspaceReasoning(value: unknown): value is CommonspaceState['defaults']['reasoning'] {
+  return typeof value === 'string' && COMMONSPACE_REASONING_VALUES.has(value as CommonspaceState['defaults']['reasoning'])
+}
+
+function requiredReasoning(value: unknown): CommonspaceState['defaults']['reasoning'] {
+  if (!isCommonspaceReasoning(value)) throw new Error('unsupported reasoning value')
+  return value
+}
+
+function optionalModel(value: unknown, current: string | null): string | null {
+  if (value === undefined) return current
+  if (value === null) return null
+  if (typeof value !== 'string') throw new Error('model must be a string or null')
+  const normalized = value.trim()
+  return normalized === '' ? null : normalized.slice(0, 200)
+}
+
+function boundedInteger(value: unknown, current: number, minimum: number, maximum: number, label: string): number {
+  if (value === undefined) return current
+  if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(`${label} must be a finite number`)
+  return Math.max(minimum, Math.min(maximum, Math.trunc(value)))
 }
 
 export function emptyChannelMemory() {
@@ -40,6 +67,10 @@ function normalizedChannel(value: string): string {
   return name
 }
 
+export function managedAgentId(adapter: CommonspaceAgentDefinition['adapter'], displayName: string): string {
+  return `${adapter}-${normalizedChannel(normalizedName(displayName, 'agent'))}`
+}
+
 function nextRevision(state: CommonspaceState): number {
   return Math.max(0, state.revision) + 1
 }
@@ -49,6 +80,8 @@ export function createInitialState(): CommonspaceState {
     version: COMMONSPACE_STATE_VERSION,
     revision: 0,
     defaults: defaultCommonspaceDefaults(),
+    agents: [],
+    agentSessions: {},
     projects: [],
     channels: [],
     threads: [],
@@ -148,14 +181,17 @@ export function applyMutation(
     }
     case 'set-channel-settings': {
       let matched = false
+      const reasoning = mutation.reasoning === undefined
+        ? undefined
+        : mutation.reasoning === null ? null : requiredReasoning(mutation.reasoning)
       const channels = state.channels.map(channel => {
         if (channel.id !== mutation.channelId) return channel
         matched = true
         return {
           ...channel,
           settings: {
-            model: mutation.model === undefined ? channel.settings.model : mutation.model === null || mutation.model.trim() === '' ? null : mutation.model.trim().slice(0, 200),
-            reasoning: mutation.reasoning === undefined ? channel.settings.reasoning : mutation.reasoning,
+            model: optionalModel(mutation.model, channel.settings.model),
+            reasoning: reasoning === undefined ? channel.settings.reasoning : reasoning,
           },
         }
       })
@@ -163,24 +199,61 @@ export function applyMutation(
       return { ...state, revision: nextRevision(state), channels }
     }
     case 'set-defaults': {
+      const reasoning = mutation.reasoning === undefined ? state.defaults.reasoning : requiredReasoning(mutation.reasoning)
       return {
         ...state,
         revision: nextRevision(state),
         defaults: {
-          model: mutation.model === undefined ? state.defaults.model : mutation.model === null || mutation.model.trim() === '' ? null : mutation.model.trim().slice(0, 200),
-          reasoning: mutation.reasoning ?? state.defaults.reasoning,
-          maxAgentsPerTurn: mutation.maxAgentsPerTurn === undefined ? state.defaults.maxAgentsPerTurn : Math.max(1, Math.min(8, Math.trunc(mutation.maxAgentsPerTurn))),
-          memoryThreads: mutation.memoryThreads === undefined ? state.defaults.memoryThreads : Math.max(1, Math.min(50, Math.trunc(mutation.memoryThreads))),
+          model: optionalModel(mutation.model, state.defaults.model),
+          reasoning,
+          maxAgentsPerTurn: boundedInteger(mutation.maxAgentsPerTurn, state.defaults.maxAgentsPerTurn, 1, 8, 'max agents per turn'),
+          memoryThreads: boundedInteger(mutation.memoryThreads, state.defaults.memoryThreads, 1, 50, 'memory thread window'),
         },
+      }
+    }
+    case 'add-agent': {
+      if (mutation.adapter !== 'codex' && mutation.adapter !== 'claude-code') throw new Error('unsupported agent adapter')
+      const displayName = normalizedName(mutation.displayName, 'agent')
+      const id = managedAgentId(mutation.adapter, displayName)
+      if (state.agents.some(agent => agent.id === id)) throw new Error(`agent ${displayName} already exists`)
+      return {
+        ...state,
+        revision: nextRevision(state),
+        agents: [...state.agents, {
+          id,
+          displayName,
+          adapter: mutation.adapter,
+          model: optionalModel(mutation.model, null),
+          createdAt: dependencies.now(),
+        }],
+      }
+    }
+    case 'remove-agent': {
+      if (!state.agents.some(agent => agent.id === mutation.agentId)) return state
+      return {
+        ...state,
+        revision: nextRevision(state),
+        agents: state.agents.filter(agent => agent.id !== mutation.agentId),
+        agentSessions: Object.fromEntries(Object.entries(state.agentSessions).filter(([agentId]) => agentId !== mutation.agentId)),
+        channels: state.channels.map(channel => ({ ...channel, agentIds: channel.agentIds.filter(agentId => agentId !== mutation.agentId) })),
+        messages: Object.fromEntries(Object.entries(state.messages).filter(([key]) => key !== `dm:${mutation.agentId}`)),
       }
     }
     case 'remove-channel': {
       if (!state.channels.some(channel => channel.id === mutation.channelId)) return state
+      const removedSessionNames = new Set(state.threads
+        .filter(thread => thread.channelId === mutation.channelId)
+        .map(thread => `Commonspace Thread: ${thread.id}`))
+      const agentSessions = Object.fromEntries(Object.entries(state.agentSessions).flatMap(([agentId, sessions]) => {
+        const remaining = Object.fromEntries(Object.entries(sessions).filter(([name]) => !removedSessionNames.has(name)))
+        return Object.keys(remaining).length === 0 ? [] : [[agentId, remaining]]
+      })) as CommonspaceState['agentSessions']
       return {
         ...state,
         revision: nextRevision(state),
         channels: state.channels.filter(channel => channel.id !== mutation.channelId),
         threads: state.threads.filter(thread => thread.channelId !== mutation.channelId),
+        agentSessions,
         messages: Object.fromEntries(Object.entries(state.messages).filter(([key]) => key !== `channel:${mutation.channelId}`)),
       }
     }

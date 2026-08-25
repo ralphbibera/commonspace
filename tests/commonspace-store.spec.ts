@@ -7,9 +7,11 @@ function bootstrap(revision: number, projectName: string): CommonspaceBootstrap 
   return {
     agents: [],
     state: {
-      version: 4,
+      version: 5,
       revision,
       defaults: { model: null, reasoning: 'max', maxAgentsPerTurn: 4, memoryThreads: 12 },
+      agents: [],
+      agentSessions: {},
       projects: [{ id: `project-${revision}`, name: projectName, paths: ['/workspace'], createdAt: '2026-08-25T00:00:00.000Z' }],
       channels: [],
       threads: [],
@@ -45,12 +47,42 @@ describe('Commonspace client revision ordering', () => {
     const refreshing = store.refresh()
     const mutating = store.mutate({ action: 'remove-project', projectId: 'missing' })
 
-    mutation.resolve(response({ state: bootstrap(2, 'Newest').state }))
+    mutation.resolve(response(bootstrap(2, 'Newest')))
     await mutating
     staleRefresh.resolve(response(bootstrap(1, 'Stale')))
     await refreshing
 
     expect(store.getSnapshot().bootstrap?.state.revision).toBe(2)
     expect(store.getSnapshot().bootstrap?.state.projects[0]?.name).toBe('Newest')
+  })
+
+  it('replaces the agent roster directly from a mutation response', async () => {
+    const managed = {
+      id: 'codex-review-bot',
+      displayName: 'Review Bot',
+      adapter: 'codex' as const,
+      model: 'gpt-5.4',
+      status: 'unknown' as const,
+    }
+    const initial = bootstrap(1, 'Initial')
+    const updated = bootstrap(2, 'Initial')
+    updated.agents = [managed]
+    updated.state.agents = [{
+      id: managed.id,
+      displayName: managed.displayName,
+      adapter: managed.adapter,
+      model: managed.model,
+      createdAt: '2026-08-25T00:00:00.000Z',
+    }]
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(response(initial))
+      .mockResolvedValueOnce(response(updated))
+    vi.stubGlobal('fetch', fetch)
+
+    const store = new CommonspaceClientStore()
+    await store.refresh()
+    await store.mutate({ action: 'add-agent', displayName: 'Review Bot', adapter: 'codex', model: 'gpt-5.4' })
+
+    expect(store.getSnapshot().bootstrap?.agents).toEqual([managed])
   })
 })

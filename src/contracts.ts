@@ -1,4 +1,6 @@
-export const COMMONSPACE_STATE_VERSION = 4 as const
+export const COMMONSPACE_STATE_VERSION = 5 as const
+
+export type AgentAdapterKind = 'hermes' | 'codex' | 'claude-code'
 
 export type CommonspaceReasoning = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 
@@ -13,12 +15,24 @@ export interface CommonspaceDefaults extends Omit<CommonspaceRunSettings, 'reaso
   memoryThreads: number
 }
 
-export interface HermesAgentProfile {
+export interface CommonspaceAgentProfile {
   id: string
   displayName: string
-  model: string
+  adapter: AgentAdapterKind
+  model: string | null
   status: 'running' | 'stopped' | 'unknown'
   description?: string
+}
+
+/** @deprecated Use CommonspaceAgentProfile. */
+export type HermesAgentProfile = CommonspaceAgentProfile
+
+export interface CommonspaceAgentDefinition {
+  id: string
+  displayName: string
+  adapter: Exclude<AgentAdapterKind, 'hermes'>
+  model: string | null
+  createdAt: string
 }
 
 export interface CommonspaceProject {
@@ -81,6 +95,8 @@ export interface CommonspaceState {
   version: typeof COMMONSPACE_STATE_VERSION
   revision: number
   defaults: CommonspaceDefaults
+  agents: CommonspaceAgentDefinition[]
+  agentSessions: Record<string, Record<string, string>>
   projects: CommonspaceProject[]
   channels: CommonspaceChannel[]
   threads: CommonspaceThread[]
@@ -88,7 +104,7 @@ export interface CommonspaceState {
 }
 
 export interface CommonspaceBootstrap {
-  agents: HermesAgentProfile[]
+  agents: CommonspaceAgentProfile[]
   state: CommonspaceState
 }
 
@@ -101,6 +117,8 @@ export type CommonspaceMutation =
   | { action: 'set-channel-context'; channelId: string; instructions: string }
   | { action: 'set-channel-settings'; channelId: string; model?: string | null; reasoning?: CommonspaceReasoning | null }
   | { action: 'set-defaults'; model?: string | null; reasoning?: CommonspaceReasoning; maxAgentsPerTurn?: number; memoryThreads?: number }
+  | { action: 'add-agent'; displayName: string; adapter: Exclude<AgentAdapterKind, 'hermes'>; model?: string | null }
+  | { action: 'remove-agent'; agentId: string }
   | { action: 'remove-channel'; channelId: string }
 
 export interface SendMessageRequest {

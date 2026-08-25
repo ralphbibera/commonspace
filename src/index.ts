@@ -1,4 +1,4 @@
-/** Commonspace host plugin: local durable state and Hermes profile execution. */
+/** Commonspace host plugin: local durable state and pluggable agent execution. */
 import type { Context } from '@deepseek-ai/cordis'
 import { createCommonspaceHost, type CommonspaceHostConfig } from './host/service.ts'
 

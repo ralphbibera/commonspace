@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from 'react'
-import type { ConversationRef, CommonspaceMessage, CommonspaceThread } from '../contracts.ts'
+import type { AgentAdapterKind, ConversationRef, CommonspaceMessage, CommonspaceThread } from '../contracts.ts'
 import type { CommonspaceClientStore } from './commonspace-store.ts'
 import { insertTag, tagReferenceParts, tagSuggestions, type TagSuggestion } from './tagging.ts'
 
@@ -7,12 +7,18 @@ export interface CommonspaceConversationProps {
   store: CommonspaceClientStore
 }
 
+function adapterLabel(adapter: AgentAdapterKind | undefined): string {
+  if (adapter === 'claude-code') return 'Claude Code'
+  if (adapter === 'codex') return 'Codex CLI'
+  return 'Hermes'
+}
+
 function conversationTitle(store: CommonspaceClientStore, ref: ConversationRef | null): { title: string; subtitle: string } {
   const bootstrap = store.getSnapshot().bootstrap
   if (ref === null || bootstrap === null) return { title: 'Commonspace', subtitle: 'Select a channel or agent' }
   if (ref.kind === 'dm') {
     const agent = bootstrap.agents.find(candidate => candidate.id === ref.id)
-    return { title: agent?.displayName ?? ref.id, subtitle: `Hermes profile · ${agent?.model ?? 'unknown model'}` }
+    return { title: agent?.displayName ?? ref.id, subtitle: `${adapterLabel(agent?.adapter)} · ${agent?.model ?? 'default model'}` }
   }
   const channel = bootstrap.state.channels.find(candidate => candidate.id === ref.id)
   const project = bootstrap.state.projects.find(candidate => candidate.id === channel?.projectId)
@@ -184,7 +190,7 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
                 {activeRoot !== undefined && <MessageRow message={activeRoot} />}
                 <div className="csp-thread-divider">Replies</div>
                 {replies.map(reply => <MessageRow key={reply.id} message={reply} compact />)}
-                {(activeThread.status === 'queued' || activeThread.status === 'running') && <div className="csp-agent-working">Hermes agents are responding…</div>}
+                {(activeThread.status === 'queued' || activeThread.status === 'running') && <div className="csp-agent-working">Agents are responding…</div>}
                 {activeThread.error !== undefined && <div className="csp-conversation-error">{activeThread.error}</div>}
               </div>
               <form className="csp-thread-composer" onSubmit={(event) => { void sendThreadReply(event) }}>

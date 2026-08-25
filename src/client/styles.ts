@@ -547,14 +547,16 @@ export const commonspaceStyles = String.raw`
 }
 
 .csp-project-head,
-.csp-channel-head {
+.csp-channel-head,
+.csp-agent-head {
   display: flex;
   align-items: center;
   gap: 2px;
 }
 
 .csp-project-head .csp-browser-row,
-.csp-channel-head .csp-browser-row {
+.csp-channel-head .csp-browser-row,
+.csp-agent-head .csp-browser-row {
   flex: 1;
   width: auto;
 }

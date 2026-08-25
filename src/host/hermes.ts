@@ -1,4 +1,4 @@
-import type { CommonspaceMessage, CommonspaceReasoning, HermesAgentProfile } from '../contracts.ts'
+import type { CommonspaceAgentProfile, CommonspaceMessage, CommonspaceReasoning } from '../contracts.ts'
 
 const ESCAPE = String.fromCharCode(27)
 
@@ -66,8 +66,8 @@ export function parseTags(text: string): CommonspaceTags {
   return { agents: unique(agents), projects: unique(projects), channels: unique(channels) }
 }
 
-export function parseHermesProfileList(output: string): HermesAgentProfile[] {
-  const profiles: HermesAgentProfile[] = []
+export function parseHermesProfileList(output: string): CommonspaceAgentProfile[] {
+  const profiles: CommonspaceAgentProfile[] = []
   for (const raw of stripAnsi(output).split(/\r?\n/)) {
     const line = raw.trim().replace(/^◆\s?/, '')
     if (line === '' || line.startsWith('Profile') || /^[─\-\s]+$/.test(line)) continue
@@ -77,6 +77,7 @@ export function parseHermesProfileList(output: string): HermesAgentProfile[] {
       profiles.push({
         id: 'default',
         displayName: primary[1]!.trim(),
+        adapter: 'hermes',
         model: primary[2]!,
         status: primary[3]! as 'running' | 'stopped',
       })
@@ -88,6 +89,7 @@ export function parseHermesProfileList(output: string): HermesAgentProfile[] {
     profiles.push({
       id: named[1]!,
       displayName: profileDisplayName(named[1]!),
+      adapter: 'hermes',
       model: named[2]!,
       status: named[3]! as 'running' | 'stopped',
     })
@@ -122,7 +124,7 @@ export function buildRoomPrompt(input: RoomPromptInput): string {
     .slice(-8_000)
   return [
     `Commonspace channel #${input.channel}.`,
-    `You are responding as @${input.agent}. Other Hermes profiles are peer agents, not subordinates.`,
+    `You are responding as @${input.agent}. Other agents in Commonspace are peers, not subordinates.`,
     input.projectPaths?.length ? `Project workspaces:\n${input.projectPaths.map(path => `- ${path}`).join('\n')}` : 'Project workspaces: (none)',
     input.instructions ? `Channel instructions:\n${input.instructions}` : 'Channel instructions: (none)',
     input.memorySummary ? `Channel memory:\n${input.memorySummary}` : 'Channel memory: (empty)',
@@ -137,7 +139,7 @@ export function buildRoomPrompt(input: RoomPromptInput): string {
 export function routeChannelAgents(
   memberIds: readonly string[],
   text: string,
-  agents: readonly Pick<HermesAgentProfile, 'id'>[],
+  agents: readonly Pick<CommonspaceAgentProfile, 'id'>[],
 ): string[] {
   const members = new Set(memberIds)
   const knownAgents = new Set(agents.map(agent => agent.id))
