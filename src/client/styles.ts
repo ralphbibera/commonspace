@@ -850,6 +850,172 @@ export const commonspaceStyles = String.raw`
   font-size: 11px;
 }
 
+.csp-conversation-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
+}
+
+.csp-conversation-layout.has-thread {
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 38%);
+}
+
+.csp-channel-feed {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.csp-thread-root {
+  border-bottom: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.08));
+}
+
+.csp-thread-open {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: calc(100% - 76px);
+  margin: -6px 20px 10px 56px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--dsw-alias-interactive-brand, #4d6bfe);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.csp-thread-open:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.05));
+}
+
+.csp-thread-status {
+  color: var(--dsw-alias-label-tertiary, #8a8f98);
+  font-size: 10px;
+}
+
+.csp-thread-status--running,
+.csp-thread-status--queued {
+  color: #b45309;
+}
+
+.csp-thread-status--error {
+  color: #b42318;
+}
+
+.csp-thread-panel {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  border-left: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.1));
+  background: var(--dsw-alias-bg-base, #fff);
+}
+
+.csp-thread-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 52px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.1));
+}
+
+.csp-thread-header > div {
+  display: flex;
+  flex-direction: column;
+}
+
+.csp-thread-header span {
+  color: var(--dsw-alias-label-tertiary, #8a8f98);
+  font-size: 10px;
+}
+
+.csp-thread-header button {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary, #666b74);
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.csp-thread-header button:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.06));
+}
+
+.csp-thread-messages {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.csp-thread-divider {
+  margin: 4px 14px;
+  color: var(--dsw-alias-label-tertiary, #8a8f98);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.csp-message--compact {
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+.csp-thread-composer {
+  display: flex;
+  gap: 7px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.1));
+}
+
+.csp-thread-composer textarea {
+  flex: 1;
+  min-width: 0;
+  min-height: 38px;
+  max-height: 100px;
+  resize: vertical;
+  box-sizing: border-box;
+  padding: 8px 9px;
+  border: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.14));
+  border-radius: 8px;
+  outline: none;
+  background: var(--dsw-alias-bg-base, #fff);
+  color: var(--dsw-alias-label-primary, #202124);
+  font: inherit;
+  font-size: 12px;
+}
+
+.csp-thread-composer button {
+  align-self: flex-end;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--dsw-alias-interactive-brand, #4d6bfe);
+  color: #fff;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+@media (max-width: 900px) {
+  .csp-conversation-layout.has-thread {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .csp-thread-panel {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .csp-trigger-chevron,
   .csp-section-chevron {

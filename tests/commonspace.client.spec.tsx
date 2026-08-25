@@ -25,7 +25,7 @@ describe('Commonspace workspace mode', () => {
   it('suggests the active tag type from the current word', () => {
     expect(tagSuggestions('Please ask @ba', {
       agents: [{ id: 'backend', displayName: 'Backend', model: 'x', status: 'running' }],
-      state: { version: 1, revision: 0, projects: [{ id: 'commonspace', name: 'Commonspace', paths: [], createdAt: '' }], channels: [{ id: 'general', name: 'general', projectId: null, agentIds: [], createdAt: '' }], messages: {} },
+      state: { version: 2, revision: 0, projects: [{ id: 'commonspace', name: 'Commonspace', paths: [], createdAt: '' }], channels: [{ id: 'general', name: 'general', projectId: null, agentIds: [], createdAt: '' }], threads: [], messages: {} },
     })).toEqual([{ kind: 'agent', id: 'backend', label: 'Backend', token: '@backend' }])
   })
 

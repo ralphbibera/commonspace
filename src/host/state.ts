@@ -38,6 +38,7 @@ export function createInitialState(): CommonspaceState {
     revision: 0,
     projects: [],
     channels: [],
+    threads: [],
     messages: {},
   }
 }
@@ -84,6 +85,9 @@ export function applyMutation(
         channels: state.channels.map(channel => channel.projectId === mutation.projectId
           ? { ...channel, projectId: null }
           : channel),
+        threads: state.threads.map(thread => thread.projectId === mutation.projectId
+          ? { ...thread, projectId: null }
+          : thread),
       }
     }
     case 'create-channel': {
@@ -121,6 +125,8 @@ export function applyMutation(
         ...state,
         revision: nextRevision(state),
         channels: state.channels.filter(channel => channel.id !== mutation.channelId),
+        threads: state.threads.filter(thread => thread.channelId !== mutation.channelId),
+        messages: Object.fromEntries(Object.entries(state.messages).filter(([key]) => key !== `channel:${mutation.channelId}`)),
       }
     }
     default: {
