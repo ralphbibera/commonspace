@@ -1,24 +1,43 @@
 # Commonspace
 
-Commonspace is a small DeepSeek Harness Web plugin that adds a Slack-like navigation entry to the existing Harness sidebar.
+Commonspace is a small, local-first collaboration workspace where Ralph and reusable Hermes agent profiles work together through projects, channels, and direct messages. It is inspired by Block's open-source Buzz project, but intentionally omits voice, Nostr federation, GitHub workflows, and unrelated team features.
 
-![Commonspace navigation panel](docs/assets/commonspace-panel.png)
+![Commonspace agent workspace](docs/assets/commonspace-panel.png)
 
-> **Status:** private preview. The repository is structured for a future public release, but the package is intentionally marked `private` until its first release is ready.
+> **Status:** private preview. The repository is structured for a future public release, but the package remains `private` until the first release is ready.
 
-## What it adds
+## Product model
 
-Click **Commonspace** in the DeepSeek Harness sidebar to expand three inline groups:
+Commonspace has four first-class objects:
 
-- **Projects**
-- **Channels**
-- **Direct Messages**
+- **Projects** — local context containers that can group multiple filesystem workspaces or repositories.
+- **Channels** — shared rooms with an explicit roster of Hermes agent profiles.
+- **Direct Messages** — persistent one-to-one conversations with a Hermes profile's canonical `Bot Chat`.
+- **Agents** — real Hermes profiles, preserving each profile's role, model, memory, skills, and sessions.
 
-Each group has an inline **+** action. Added items can be selected or removed, channel names are normalized into readable slugs, duplicates are prevented, and the versioned browser state survives reloads.
+There is no required captain. In channels, `@profile` routes a turn to that seated agent. A message without a valid mention is sent to the channel's selected members.
 
-Projects bind to real Harness workspaces. Selecting a channel or DM creates (or reopens) a dedicated Harness Session in that workspace and switches the center pane to the native **Chat** surface and composer.
+## User experience
 
-The plugin is additive. It preserves the existing Harness workspace list, sessions, conversation UI, model controls, tools, and context management.
+The existing DeepSeek Harness sidebar has two modes:
+
+1. **Workspaces** — the unmodified native DSH workspace/session browser and conversation.
+2. **Commonspace** — replaces that same sidebar body and center conversation with Projects, Channels, DMs, and Agents.
+
+Use the footer switch to move between them. Commonspace does not stack underneath Workspaces and does not render as a popup.
+
+## Current capabilities
+
+- Discovers the real local Hermes profile roster.
+- Creates Projects from absolute local directory paths.
+- Adds multiple local workspaces to one Project.
+- Creates Channels scoped to a Project.
+- Selects and edits the Hermes agent roster for each Channel.
+- Routes valid `@profile` mentions only to agents seated in that Channel.
+- Opens persistent profile DMs through Hermes `Bot Chat`.
+- Stores Commonspace metadata and room messages in `~/.commonspace/state.json` using atomic writes.
+- Restores Commonspace metadata and conversations after browser reload.
+- Restores native DSH Workspaces/conversation immediately when switching back.
 
 ## Install from a checkout
 
@@ -27,6 +46,8 @@ Requirements:
 - Node.js 22 or newer
 - pnpm 10 or newer
 - DeepSeek Harness `0.1.1-rc.2` or newer
+- Hermes Agent available as `hermes` on `PATH`
+- At least one configured Hermes profile
 
 ```bash
 git clone git@github.com:ralphbibera/commonspace.git
@@ -36,13 +57,21 @@ pnpm build
 dsh plugin --profile web add .
 ```
 
-Restart the Web profile:
+Restart the DSH Web profile:
 
 ```bash
 dsh web
 ```
 
-The plugin declares itself as a DSH bundle, so installing it activates `commonspace.patch.yml` automatically.
+The package declares a DSH bundle, so installation activates `commonspace.patch.yml` automatically.
+
+### Optional Hermes yolo mode
+
+Commonspace does **not** enable Hermes `--yolo` by default. To opt in explicitly for a local trusted environment:
+
+```bash
+COMMONSPACE_HERMES_YOLO=1 dsh web
+```
 
 ## Remove
 
@@ -50,7 +79,7 @@ The plugin declares itself as a DSH bundle, so installing it activates `commonsp
 dsh plugin --profile web remove @ralphbibera/commonspace
 ```
 
-Restart `dsh web` after installing or removing a profile plugin.
+Restart `dsh web` after installing or removing the bundle.
 
 ## Development
 
@@ -61,34 +90,39 @@ pnpm lint
 pnpm build
 ```
 
-With a patched Web profile running locally:
+With DSH Web running locally:
 
 ```bash
-COMMONSPACE_TEST_URL=http://127.0.0.1:3080 pnpm verify:live
+COMMONSPACE_TEST_URL=http://127.0.0.1:3080 \
+COMMONSPACE_TEST_PROJECT="$PWD" \
+pnpm verify:live
 ```
 
-The live check opens the real Harness Web UI, creates one item in every group, selects `#design-team`, requires the native active-chat composer, records the real Harness Session ID, reloads, reopens the same Session, checks browser errors, and captures screenshots.
+The live check verifies mode replacement, the real Hermes profile roster, a two-workspace Project, channel membership, a real Hermes profile DM, reload persistence, and restoration of native Workspaces.
 
 ## Architecture
 
-Commonspace is one dual-face Cordis package:
+Commonspace is a dual-face Cordis package:
 
-- `src/index.ts` is the host plugin face. The first release is intentionally a no-op.
-- `src/client/index.ts` registers one entry in `sidebar.footer.action`.
-- `src/client/CommonspaceLauncher.tsx` owns the accessible inline navigation and item controls.
-- `src/client/harness-runtime.ts` binds projects to Workspaces and channels/DMs to native Harness Sessions.
-- `src/client/navigation-state.ts` validates, normalizes, de-duplicates, selects, removes, and persists navigation items.
-- `commonspace.patch.yml` inserts the package into the Web profile.
+- `src/index.ts` mounts the local host service and same-origin API routes.
+- `src/host/state.ts` owns deterministic state transitions.
+- `src/host/hermes.ts` owns profile discovery, safe no-shell CLI arguments, room prompts, and membership-aware routing.
+- `src/host/service.ts` owns validation, atomic persistence, API routes, and bounded Hermes execution.
+- `src/client/commonspace-mode.ts` owns the Workspaces/Commonspace mode.
+- `src/client/commonspace-store.ts` is the observable browser store.
+- `src/client/CommonspaceSidebar.tsx` renders Projects, Channels, DMs, and Agents.
+- `src/client/CommonspaceConversation.tsx` renders room messages and the composer.
+- `src/client/index.ts` dynamically shadows `sidebar.workspaces` and `conversation` only while Commonspace mode is active.
 
-See [`docs/architecture.md`](docs/architecture.md) for boundaries and future extension points.
+See [`docs/architecture.md`](docs/architecture.md) for the detailed boundary.
 
 ## Current boundary
 
-This slice provides browser-local Commonspace metadata with real Harness Workspace and Session bindings. Channel/DM selection switches the native chat and reopens the same durable Session after reload. Shared Commonspace metadata across browsers, channel message threads, and multi-agent handoff presentation remain future work.
+Commonspace is currently single-user and local-first. Metadata is not synchronized across machines or browsers. Channels invoke Hermes profiles serially and return completed responses rather than token streams. Buzz/Nostr federation, voice, GitHub workflows, and non-Hermes runtimes are intentionally out of scope.
 
 ## Contributing
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md). Security reports belong in private GitHub Security Advisories; see [`SECURITY.md`](SECURITY.md).
+See [`CONTRIBUTING.md`](CONTRIBUTING.md). Report vulnerabilities privately through GitHub Security Advisories; see [`SECURITY.md`](SECURITY.md).
 
 ## License
 

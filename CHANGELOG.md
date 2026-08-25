@@ -9,12 +9,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Added
 
 - Private GitHub repository and open-source-oriented project structure.
-- Native DeepSeek Harness bundle and dual-face Cordis plugin.
-- Additive Commonspace launcher in the existing Harness sidebar.
-- Accessible collapsible Projects, Channels, and Direct Messages groups.
-- Inline create, select, and remove controls for every navigation group.
-- Versioned browser persistence with channel normalization and duplicate prevention.
-- Real Harness Workspace bindings for Commonspace projects.
-- Native Harness Session creation/reopen when selecting channels and direct messages.
-- Main-chat switching with the standard Harness composer, tools, persistence, and compaction.
-- Unit, type, build, and live-browser verification.
+- Native DeepSeek Harness bundle with dynamic Workspaces/Commonspace mode switching.
+- Local filesystem Projects containing multiple workspace paths.
+- Channels with editable, explicit Hermes profile membership.
+- Membership-aware `@profile` routing and serial channel turns.
+- Direct Messages backed by each Hermes profile's persistent `Bot Chat`.
+- Real Hermes profile discovery with profile model and availability metadata.
+- Same-origin local API, atomic JSON persistence, and bounded no-shell Hermes execution.
+- Projects, Channels, Direct Messages, Agents, and center Messages UI.
+- Unit, type, build, CI, and live-browser verification.
+
+### Removed
+
+- The earlier additive popup/footer navigation.
+- Fake local agent labels and DSH-session-backed Commonspace conversations.

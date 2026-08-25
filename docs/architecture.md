@@ -2,58 +2,101 @@
 
 ## Boundary
 
-Commonspace extends the shipped DeepSeek Harness Web profile. It is not a separate application, API server, model provider, or agent runtime.
+Commonspace is a local Buzz-like agent workspace hosted inside DeepSeek Harness Web. DSH supplies the shell and extension points. Hermes profiles supply agent identities and execution. Commonspace owns only local Projects, Channels, DMs, Agents presentation, message metadata, and routing.
 
-## Package faces
+Commonspace does not depend on OpenAgents, run another model provider, replace Hermes profile state, or modify DeepSeek Harness core files.
 
-### Host
+## Core entities
 
-`src/index.ts` is the Cordis host face. It deliberately registers no services in the browser-local release. This lets the DSH Loader discover the package and lets the browser module scanner find the package's `dsh.client` declaration.
+### Project
 
-### Browser
+A Project is a named context container with one or more absolute local directory paths. The first path is the Hermes process working directory. Every path is listed in the room prompt so an agent can reason about the whole Project.
 
-`src/client/index.ts` loads after `@deepseek-ai/dsh-client-ui-sidebar` and registers `CommonspaceLauncher` into the public `sidebar.footer.action` list slot.
+### Channel
 
-The launcher:
+A Channel belongs to a Project and carries an explicit list of Hermes profile IDs. Valid `@profile` mentions route only to seated agents. If no seated agent is mentioned, the turn is sent to the full Channel roster. Agent calls are currently serial and capped by host configuration.
 
-- preserves the stock sidebar and workspace/session browser;
-- embeds the navigation directly above the Commonspace row in the sidebar footer stack;
-- grows upward into the sidebar's available space without covering the conversation;
-- closes on Escape or when the stock sidebar collapses;
-- follows the sidebar's wide layout and keeps the collapsed rail compact;
-- uses Harness design tokens with safe fallbacks;
-- exposes Projects, Channels, and Direct Messages as disclosure buttons;
-- provides inline create, select, and remove controls for every group.
+### Direct Message
 
-### Browser state
+A DM is derived from a Hermes profile ID and uses that profile's canonical `Bot Chat` session. The profile therefore keeps its own role, model, memory, skills, and persistent conversation context.
 
-`src/client/navigation-state.ts` owns a versioned `commonspace.navigation.v2` localStorage record and migrates the earlier label-only schema. It validates unknown JSON before use, applies Unicode-aware channel slug normalization, prevents case-insensitive duplicates, restores a valid selection, and stores opaque Harness `workspaceId`/`sessionId` bindings. Commonspace metadata is local to one browser profile; the referenced Harness Sessions remain durable Host state.
+### Agent
 
-### Harness runtime
+An Agent is a real Hermes profile discovered through `hermes profile list`. Commonspace never synthesizes fake specialists. The profile ID is routing authority; the display name and model are presentation metadata.
 
-`src/client/harness-runtime.ts` uses the composed `workspaces` and `sessions` services. Projects select real Harness Workspaces. First channel/DM selection creates a dedicated Session, gives it a readable title, opens it, and records one concise Commonspace creation turn so DSH exposes the native Messages view. Later selections reopen the stored Session directly. The existing Harness conversation renderer, composer, model controls, tools, context injection, persistence, and compaction remain authoritative.
+## Host face
 
-## Profile activation
+`src/index.ts` creates `CommonspaceHostService`, which mounts three same-origin routes on DSH's existing loopback Web server:
 
-`package.json` declares `dsh.bundle.patch`. Installing the package through `dsh plugin --profile web add …` appends the package to the Web profile's bundle layers. `commonspace.patch.yml` then inserts the host plugin row. The DSH client-module service discovers and serves `lib/client.js` from the same package.
+- `GET /commonspace/api/bootstrap`
+- `POST /commonspace/api/mutate`
+- `POST /commonspace/api/send`
 
-## Future extensions
+The host service:
 
-Future work can move browser-local data behind shared Harness services:
+- rejects cross-origin mutation requests;
+- caps JSON body and message sizes;
+- validates Project paths as absolute existing directories;
+- persists `~/.commonspace/state.json` through temp-file + rename publication;
+- discovers Hermes profiles without reading credentials;
+- invokes Hermes with `execFile` argument arrays and `--query-file`, never a shell command;
+- scopes DMs to `Bot Chat` and Channels to a stable room session name;
+- serializes sends per conversation;
+- bounds output, execution time, room history, and agents per turn;
+- removes temporary prompt files in a `finally` block.
 
-1. a host-side Commonspace metadata service and explicit shared persistence format;
-2. typed APIs for synchronized projects, channels, direct messages, and thread metadata;
-3. Slack-style message threads inside each channel Session;
-4. reusable specialist presets and direct handoff presentation;
-5. work-inspection projections derived from real Harness events.
+Hermes yolo mode is config-controlled and disabled by default. The bundle reads `COMMONSPACE_HERMES_YOLO=1` only when the operator explicitly opts in.
 
-Those additions must preserve Harness conversation rendering, compaction, credentials, and tool execution rather than reimplementing them.
+## Browser face
+
+### Mode switching
+
+`CommonspaceModeController` starts in Workspaces mode. The footer switch toggles it.
+
+When Commonspace mode activates, `src/client/index.ts` dynamically registers priority `-20` occupants for the existing `sidebar.workspaces` and `conversation` single slots. Lower priority wins the DSH slot shadowing election. When Commonspace deactivates, those registrations are disposed, revealing the untouched native Workspace browser and DSH conversation again.
+
+### Shared state
+
+`CommonspaceClientStore` is one observable store shared by both replacement surfaces. It owns bootstrap loading, active Project, active Channel/DM, optimistic user messages, sending state, errors, mutations, and refresh.
+
+### Sidebar
+
+`CommonspaceSidebar` renders:
+
+- Projects with expandable child filesystem workspaces and per-Project add-workspace controls;
+- Channels with Project binding and editable Hermes member rosters;
+- Direct Messages derived from persisted DM activity;
+- the full Hermes Agent roster.
+
+### Conversation
+
+`CommonspaceConversation` renders the selected Channel or DM, visible Channel membership, attributed messages, errors, and a bounded composer. It does not reuse DSH Session messages because Hermes profiles—not DSH agents—are the room members.
+
+## Persistence
+
+The host state format is versioned. Commonspace state holds Project definitions, Channel definitions, and bounded message histories. Hermes session content remains in each Hermes profile's own state database; Commonspace stores only the room transcript needed for shared display.
+
+## Intentional omissions
+
+The private preview does not implement:
+
+- Nostr/Buzz federation;
+- multi-user authentication;
+- voice or media uploads;
+- GitHub repositories or workflow automation;
+- token streaming;
+- reactions, read receipts, or Slack-style message threads;
+- non-Hermes runtimes.
+
+These can be added later without changing the four core entities or the Workspaces/Commonspace mode boundary.
 
 ## Rollback
 
-Remove the profile bundle and restart Web:
+Remove the profile bundle and restart DSH Web:
 
 ```bash
 dsh plugin --profile web remove @ralphbibera/commonspace
 dsh web
 ```
+
+Commonspace metadata remains in `~/.commonspace/state.json` unless the operator deletes it explicitly.
