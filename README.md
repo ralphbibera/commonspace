@@ -71,7 +71,7 @@ Commonspace is one dual-face Cordis package:
 
 - `src/index.ts` is the host plugin face. The first release is intentionally a no-op.
 - `src/client/index.ts` registers one entry in `sidebar.footer.action`.
-- `src/client/CommonspaceLauncher.tsx` owns the accessible launcher, portal, and disclosure state.
+- `src/client/CommonspaceLauncher.tsx` owns the accessible inline navigation and disclosure state.
 - `commonspace.patch.yml` inserts the package into the Web profile.
 
 See [`docs/architecture.md`](docs/architecture.md) for boundaries and future extension points.

@@ -8,12 +8,15 @@ import { apply, inject } from '../src/client/index.ts'
 afterEach(cleanup)
 
 describe('Commonspace launcher', () => {
-  it('opens a panel with the three requested collapsible groups', () => {
+  it('embeds the three requested collapsible groups inside the sidebar action', () => {
     render(<CommonspaceLauncher wide />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Open Commonspace' }))
+    const trigger = screen.getByRole('button', { name: 'Open Commonspace' })
+    fireEvent.click(trigger)
 
-    expect(screen.getByRole('dialog', { name: 'Commonspace navigation' })).toBeTruthy()
+    const navigation = screen.getByRole('navigation', { name: 'Commonspace navigation' })
+    expect(trigger.closest('.csp-launcher')?.contains(navigation)).toBe(true)
+    expect(screen.queryByRole('dialog')).toBeNull()
     expect(screen.getByRole('button', { name: 'Projects' }).getAttribute('aria-expanded')).toBe('false')
     expect(screen.getByRole('button', { name: 'Channels' }).getAttribute('aria-expanded')).toBe('false')
     expect(screen.getByRole('button', { name: 'Direct Messages' }).getAttribute('aria-expanded')).toBe('false')
@@ -28,7 +31,16 @@ describe('Commonspace launcher', () => {
     expect(screen.getByRole('button', { name: 'Projects' }).getAttribute('aria-expanded')).toBe('true')
 
     fireEvent.keyDown(document, { key: 'Escape' })
-    expect(screen.queryByRole('dialog', { name: 'Commonspace navigation' })).toBeNull()
+    expect(screen.queryByRole('navigation', { name: 'Commonspace navigation' })).toBeNull()
+  })
+
+  it('closes the embedded navigation when the stock sidebar collapses', () => {
+    const view = render(<CommonspaceLauncher wide />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open Commonspace' }))
+    expect(screen.getByRole('navigation', { name: 'Commonspace navigation' })).toBeTruthy()
+
+    view.rerender(<CommonspaceLauncher wide={false} />)
+    expect(screen.queryByRole('navigation', { name: 'Commonspace navigation' })).toBeNull()
   })
 
   it('registers additively in the stock sidebar footer and withdraws on dispose', () => {
