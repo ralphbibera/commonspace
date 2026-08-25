@@ -5,7 +5,7 @@ Thanks for helping improve Commonspace.
 ## Development setup
 
 ```bash
-pnpm install
+pnpm install --frozen-lockfile
 pnpm check
 ```
 

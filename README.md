@@ -53,27 +53,72 @@ Type `/` in the main composer to browse commands. Command matching is case-insen
 | `/status` | Shows the active Channel or agent, model, adapter, and Project context. |
 | `/agents` (`/tasks`) | Lists the currently available agents. |
 
-## Install from a checkout
+## Install on another machine
 
 Requirements:
 
 - Node.js 22 or newer
-- pnpm 10 or newer
+- pnpm 10.34.5 (the version pinned by `packageManager`; pnpm 10.26+ is required for `allowBuilds`)
 - DeepSeek Harness `0.1.1-rc.2` or newer
 - At least one supported agent CLI on `PATH`: Hermes Agent (`hermes`), Codex CLI (`codex`), or Claude Code (`claude`)
 - Authentication already configured in the selected CLI's supported credential store
 
+### A. Developer checkout — recommended for working on Commonspace
+
 ```bash
 git clone git@github.com:ralphbibera/commonspace.git
 cd commonspace
-pnpm install
+pnpm install --frozen-lockfile
 pnpm build
 dsh plugin --profile web add .
 ```
 
-Restart the DSH Web profile:
+This creates a live `link:` dependency in the DSH profile. Rebuild after source changes and restart `dsh web`; no reinstall is needed.
+
+### B. Prebuilt CI artifact — recommended for testing an exact push
+
+Every successful push to `main` uploads a self-contained `commonspace.tgz` for 14 days. In a shell authenticated to the private GitHub repository:
 
 ```bash
+read RUN_ID SHA < <(gh run list \
+  --repo ralphbibera/commonspace \
+  --workflow CI --branch main --event push --status success --limit 1 \
+  --json databaseId,headSha \
+  --jq '.[0] | "\(.databaseId) \(.headSha)"')
+
+gh run download "$RUN_ID" \
+  --repo ralphbibera/commonspace \
+  --name "commonspace-plugin-$SHA" \
+  --dir commonspace-artifact
+
+dsh plugin --profile web add ./commonspace-artifact/commonspace.tgz
+```
+
+The tarball already contains `lib/`, its patch, types, and documentation. It runs no package build on the target machine.
+
+### C. Pinned GitHub source
+
+Git installs build from source through the package `prepare` script. Install a trusted full commit SHA rather than a moving branch:
+
+```bash
+dsh plugin --profile web add \
+  'github:ralphbibera/commonspace#<full-commit-sha>'
+```
+
+The first add is expected to stop before executing `prepare`. pnpm prints the exact rejected build key, including source identity where required. Copy that exact key—not a guessed package-only key—into `~/.dsh/profiles/web/pnpm-workspace.yaml`:
+
+```yaml
+allowBuilds:
+  '<exact key printed by pnpm>': true
+```
+
+Then rerun the same pinned `dsh plugin ... add` command. This explicit allowance is permission to execute that Git source during installation.
+
+### Verify and boot
+
+```bash
+dsh plugin --profile web list --depth 0
+dsh --profile web --dump-config
 dsh web
 ```
 

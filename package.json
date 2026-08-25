@@ -38,6 +38,8 @@
     "verify:live": "node scripts/verify-live.mjs",
     "lint": "eslint .",
     "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build",
+    "pack:plugin": "pnpm check && npm_config_ignore_scripts=true pnpm pack --out commonspace-%v.tgz",
+    "prepare": "pnpm build",
     "prepack": "pnpm check"
   },
   "dsh": {
@@ -62,6 +64,16 @@
     "@deepseek-ai/dsh-host-webserver": ">=0.1.1-rc.2 <0.2.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": { "optional": true },
+    "@deepseek-ai/dsh-client-runtime": { "optional": true },
+    "@deepseek-ai/dsh-client-ui-layout": { "optional": true },
+    "@deepseek-ai/dsh-client-ui-sidebar": { "optional": true },
+    "@deepseek-ai/dsh-client-ui-slots": { "optional": true },
+    "@deepseek-ai/dsh-host-webserver": { "optional": true },
+    "react": { "optional": true },
+    "react-dom": { "optional": true }
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "4.0.1",
@@ -89,5 +101,5 @@
   "engines": {
     "node": ">=22"
   },
-  "packageManager": "pnpm@10.12.1"
+  "packageManager": "pnpm@10.34.5"
 }

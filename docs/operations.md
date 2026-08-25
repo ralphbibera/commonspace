@@ -32,6 +32,43 @@ COMMONSPACE_AGENT_YOLO=1   # Codex + Claude only
 
 Both are intentionally unset by default.
 
+## Install and update modes
+
+### Linked developer checkout
+
+Use this when the target machine will edit Commonspace:
+
+```bash
+git clone git@github.com:ralphbibera/commonspace.git
+cd commonspace
+pnpm install --frozen-lockfile
+pnpm build
+dsh plugin --profile web add .
+```
+
+The profile records a `link:` dependency. Pull and rebuild to update it; restart DSH Web after every host/client build.
+
+### Prebuilt package
+
+Use the `commonspace.tgz` artifact attached to a successful `main` CI run, or create one with `pnpm pack:plugin`. Install it with:
+
+```bash
+dsh plugin --profile web add ./commonspace.tgz
+```
+
+This path needs no build allowance and is the best way to test one exact pushed commit on another machine.
+
+### Pinned Git source
+
+The package has a self-contained `prepare` build. Install `github:ralphbibera/commonspace#<full-commit-sha>` once and let pnpm reject the unapproved build. Copy the exact rejected build key it prints—including source identity where required—into the web profile's `pnpm-workspace.yaml`:
+
+```yaml
+allowBuilds:
+  '<exact key printed by pnpm>': true
+```
+
+Rerun the same pinned add. Never guess a broader package-only key or allow a moving unreviewed branch to execute install-time code. This flow requires pnpm 10.26+; the repository pins 10.34.5.
+
 ## Health checks
 
 1. Confirm DSH Web answers on its configured loopback URL.
