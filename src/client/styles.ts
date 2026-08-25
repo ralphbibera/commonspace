@@ -1,6 +1,7 @@
 export const commonspaceStyles = String.raw`
 .csp-launcher {
-  position: relative;
+  display: flex;
+  flex-direction: column;
   width: 100%;
   min-width: 0;
 }
@@ -26,6 +27,11 @@ export const commonspaceStyles = String.raw`
 .csp-trigger:hover,
 .csp-trigger[aria-expanded='true'] {
   background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.06));
+}
+
+.csp-trigger:disabled {
+  cursor: default;
+  opacity: 0.72;
 }
 
 .csp-trigger--rail {
@@ -73,39 +79,22 @@ export const commonspaceStyles = String.raw`
   transform: rotate(180deg);
 }
 
-.csp-panel {
-  position: fixed;
-  z-index: 10000;
-  width: min(280px, calc(100vw - 16px));
-  max-height: min(520px, calc(100vh - 16px));
-  overflow: auto;
+.csp-inline {
+  width: 100%;
+  max-height: min(430px, calc(100vh - 300px));
+  overflow-y: auto;
   box-sizing: border-box;
-  padding: 8px;
-  border: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.12));
-  border-radius: 14px;
-  background: var(--dsw-specific-sidebar-fill, #f8f9fb);
+  margin: 0 0 4px;
+  padding: 5px 2px 7px;
+  border-top: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.1));
   color: var(--dsw-alias-label-primary, #202124);
-  box-shadow: 0 16px 44px rgba(23, 27, 38, 0.18), 0 3px 12px rgba(23, 27, 38, 0.08);
   font-family: inherit;
-}
-
-.csp-panel-header {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  min-height: 42px;
-  padding: 4px 8px 10px;
-  border-bottom: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.1));
-  font-size: 15px;
-  font-weight: 650;
-  letter-spacing: -0.01em;
 }
 
 .csp-sections {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding-top: 6px;
 }
 
 .csp-section-button {
