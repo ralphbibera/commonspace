@@ -64,6 +64,21 @@ async function ensureChannel() {
   await page.getByRole('button', { name: /general.*2 agents/ }).waitFor({ state: 'visible' })
 }
 
+async function ensureSettings() {
+  await page.getByRole('button', { name: 'Commonspace settings' }).click()
+  await page.getByRole('combobox', { name: 'Default reasoning' }).selectOption('max')
+  await page.getByRole('spinbutton', { name: 'Default max agents' }).fill('2')
+  await page.getByRole('spinbutton', { name: 'Default memory threads' }).fill('12')
+  await page.getByRole('button', { name: 'Save defaults' }).click()
+}
+
+async function ensureChannelContext() {
+  await page.getByRole('button', { name: 'Manage agents in channel general' }).click()
+  await page.getByRole('textbox', { name: 'Instructions for channel general' }).fill('Keep checkout work concise. Record decisions and unresolved questions explicitly.')
+  await page.getByRole('combobox', { name: 'Reasoning for channel general' }).selectOption('high')
+  await page.getByRole('button', { name: 'Save', exact: true }).click()
+}
+
 try {
   await page.goto(url, { waitUntil: 'domcontentloaded' })
   await switchToCommonspace()
@@ -77,6 +92,8 @@ try {
 
   await ensureProject()
   await ensureChannel()
+  await ensureSettings()
+  await ensureChannelContext()
   await page.getByRole('button', { name: /general.*agent/ }).click()
   await page.getByRole('heading', { name: '#general' }).waitFor({ state: 'visible' })
   const rootText = '@frontend Reply exactly: Threaded agent reply works.'
@@ -98,6 +115,10 @@ try {
   if ((await page.locator('.csp-channel-feed').getByText('Threaded agent reply works.', { exact: true }).count()) !== 0) {
     throw new Error('agent reply leaked into the main channel feed')
   }
+  await page.getByRole('button', { name: 'Manage agents in channel general' }).click()
+  await page.getByText(/Projected memory · [1-9][0-9]* threads/).waitFor({ state: 'visible' })
+  await page.getByText(rootText, { exact: false }).last().waitFor({ state: 'visible' })
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click()
 
   await page.getByRole('button', { name: 'Message agent Frontend' }).click()
   await page.getByRole('heading', { name: 'Frontend' }).waitFor({ state: 'visible' })
@@ -142,6 +163,9 @@ try {
     project: { name: 'Commonspace', paths: [projectPath, '/Users/ralphbibera/Developer/deepseek-harness'] },
     channel: 'general',
     channelAgents: ['backend', 'frontend'],
+    channelReasoning: 'high',
+    defaultMaxAgents: 2,
+    channelMemory: true,
     immediateRoot: true,
     threadedReplies: true,
     dm: 'frontend',

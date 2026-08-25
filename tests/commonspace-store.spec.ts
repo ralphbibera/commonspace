@@ -7,8 +7,9 @@ function bootstrap(revision: number, projectName: string): CommonspaceBootstrap 
   return {
     agents: [],
     state: {
-      version: 2,
+      version: 4,
       revision,
+      defaults: { model: null, reasoning: 'max', maxAgentsPerTurn: 4, memoryThreads: 12 },
       projects: [{ id: `project-${revision}`, name: projectName, paths: ['/workspace'], createdAt: '2026-08-25T00:00:00.000Z' }],
       channels: [],
       threads: [],

@@ -646,7 +646,8 @@ export const commonspaceStyles = String.raw`
 }
 
 .csp-browser-form input,
-.csp-browser-form select {
+.csp-browser-form select,
+.csp-browser-form textarea {
   width: 100%;
   height: 29px;
   box-sizing: border-box;
@@ -657,6 +658,44 @@ export const commonspaceStyles = String.raw`
   color: var(--dsw-alias-label-primary, #202124);
   font: inherit;
   font-size: 11px;
+}
+
+.csp-browser-form textarea {
+  min-height: 64px;
+  height: auto;
+  resize: vertical;
+}
+
+.csp-context-label {
+  display: flex !important;
+  align-items: stretch !important;
+  flex-direction: column;
+  gap: 3px !important;
+}
+
+.csp-memory-preview {
+  padding: 5px 6px;
+  border: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.1));
+  border-radius: 7px;
+  color: var(--dsw-alias-label-secondary, #666b74);
+  font-size: 10px;
+}
+
+.csp-memory-preview summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.csp-memory-preview pre {
+  max-height: 140px;
+  margin: 6px 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  font: inherit;
+}
+
+.csp-memory-preview p {
+  margin: 4px 0;
 }
 
 .csp-browser-form fieldset {

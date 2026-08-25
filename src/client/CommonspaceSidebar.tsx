@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useSyncExternalStore, type FormEvent } from 'react'
-import type { CommonspaceMutation, HermesAgentProfile } from '../contracts.ts'
+import type { CommonspaceMutation, CommonspaceReasoning, HermesAgentProfile } from '../contracts.ts'
 import type { CommonspaceClientStore } from './commonspace-store.ts'
 
 export interface CommonspaceSidebarProps {
@@ -47,12 +47,21 @@ export function CommonspaceSidebar({ wide, expandSidebar, store }: CommonspaceSi
   const [agentIds, setAgentIds] = useState<string[]>([])
   const [editingChannelId, setEditingChannelId] = useState<string | null>(null)
   const [channelAgentIds, setChannelAgentIds] = useState<string[]>([])
+  const [channelInstructions, setChannelInstructions] = useState('')
+  const [channelModel, setChannelModel] = useState('')
+  const [channelReasoning, setChannelReasoning] = useState<CommonspaceReasoning | ''>('')
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [defaultModel, setDefaultModel] = useState('')
+  const [defaultReasoning, setDefaultReasoning] = useState<CommonspaceReasoning>('max')
+  const [defaultMaxAgents, setDefaultMaxAgents] = useState(4)
+  const [defaultMemoryThreads, setDefaultMemoryThreads] = useState(12)
 
   useEffect(() => { void store.refresh() }, [store])
   const bootstrap = snapshot.bootstrap
   const state = bootstrap?.state
   const agents = bootstrap?.agents ?? []
   const dmAgents = useMemo(() => agents.filter(agent => (state?.messages[`dm:${agent.id}`]?.length ?? 0) > 0), [agents, state])
+  const models = useMemo(() => [...new Set(agents.map(agent => agent.model).filter(Boolean))], [agents])
 
   if (!wide) {
     return (
@@ -92,7 +101,15 @@ export function CommonspaceSidebar({ wide, expandSidebar, store }: CommonspaceSi
   const saveChannelAgents = async (event: FormEvent, channelId: string) => {
     event.preventDefault()
     await store.mutate({ action: 'set-channel-agents', channelId, agentIds: channelAgentIds })
+    await store.mutate({ action: 'set-channel-context', channelId, instructions: channelInstructions })
+    await store.mutate({ action: 'set-channel-settings', channelId, model: channelModel || null, reasoning: channelReasoning || null })
     setEditingChannelId(null)
+  }
+
+  const saveDefaults = async (event: FormEvent) => {
+    event.preventDefault()
+    await store.mutate({ action: 'set-defaults', model: defaultModel || null, reasoning: defaultReasoning, maxAgentsPerTurn: defaultMaxAgents, memoryThreads: defaultMemoryThreads })
+    setSettingsOpen(false)
   }
 
   return (
@@ -102,11 +119,36 @@ export function CommonspaceSidebar({ wide, expandSidebar, store }: CommonspaceSi
           <strong>Commonspace</strong>
           <span>Hermes agents</span>
         </div>
-        <button type="button" className="csp-browser-refresh" aria-label="Refresh Commonspace" onClick={() => { void store.refresh() }}>↻</button>
+        <div className="csp-browser-header-actions">
+          <button type="button" className="csp-browser-refresh" aria-label="Commonspace settings" onClick={() => {
+            const defaults = state?.defaults
+            if (defaults !== undefined) {
+              setDefaultModel(defaults.model ?? '')
+              setDefaultReasoning(defaults.reasoning)
+              setDefaultMaxAgents(defaults.maxAgentsPerTurn)
+              setDefaultMemoryThreads(defaults.memoryThreads)
+            }
+            setSettingsOpen(value => !value)
+          }}>⚙</button>
+          <button type="button" className="csp-browser-refresh" aria-label="Refresh Commonspace" onClick={() => { void store.refresh() }}>↻</button>
+        </div>
       </header>
 
       {snapshot.loading && bootstrap === null && <div className="csp-browser-status">Loading Hermes profiles…</div>}
       {snapshot.error !== null && <div className="csp-runtime-error" role="alert">{snapshot.error}</div>}
+      {settingsOpen && state !== undefined && (
+        <form className="csp-browser-form csp-global-settings" onSubmit={(event) => { void saveDefaults(event) }}>
+          <strong>Commonspace defaults</strong>
+          <label>Model override<input aria-label="Default model" list="commonspace-models" placeholder="Use each agent profile model" value={defaultModel} onChange={event => { setDefaultModel(event.target.value) }} /></label>
+          <datalist id="commonspace-models">{models.map(model => <option key={model} value={model} />)}</datalist>
+          <label>Reasoning<select aria-label="Default reasoning" value={defaultReasoning} onChange={event => { setDefaultReasoning(event.target.value as CommonspaceReasoning) }}>
+            {['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].map(value => <option key={value} value={value}>{value}</option>)}
+          </select></label>
+          <label>Max agents per turn<input aria-label="Default max agents" type="number" min="1" max="8" value={defaultMaxAgents} onChange={event => { setDefaultMaxAgents(Number(event.target.value)) }} /></label>
+          <label>Memory thread window<input aria-label="Default memory threads" type="number" min="1" max="50" value={defaultMemoryThreads} onChange={event => { setDefaultMemoryThreads(Number(event.target.value)) }} /></label>
+          <div><button type="submit">Save defaults</button><button type="button" onClick={() => { setSettingsOpen(false) }}>Cancel</button></div>
+        </form>
+      )}
 
       <div className="csp-browser-scroll">
         <Section title="Projects" count={state?.projects.length ?? 0} onAdd={() => { setForm('project') }}>
@@ -198,6 +240,9 @@ export function CommonspaceSidebar({ wide, expandSidebar, store }: CommonspaceSi
                   onClick={() => {
                     setEditingChannelId(channel.id)
                     setChannelAgentIds(channel.agentIds)
+                    setChannelInstructions(channel.instructions)
+                    setChannelModel(channel.settings.model ?? '')
+                    setChannelReasoning(channel.settings.reasoning ?? '')
                   }}
                 >⋯</button>
               </div>
@@ -208,6 +253,10 @@ export function CommonspaceSidebar({ wide, expandSidebar, store }: CommonspaceSi
                       setChannelAgentIds(current => event.target.checked ? [...current, agent.id] : current.filter(id => id !== agent.id))
                     }} />{agent.displayName}</label>
                   ))}</fieldset>
+                  <label className="csp-context-label">Channel instructions<textarea aria-label={`Instructions for channel ${channel.name}`} value={channelInstructions} onChange={event => { setChannelInstructions(event.target.value) }} placeholder="What agents should remember and how they should behave in this channel" /></label>
+                  <label className="csp-context-label">Channel model<input aria-label={`Model for channel ${channel.name}`} list="commonspace-models" placeholder="Inherit default" value={channelModel} onChange={event => { setChannelModel(event.target.value) }} /></label>
+                  <label className="csp-context-label">Channel reasoning<select aria-label={`Reasoning for channel ${channel.name}`} value={channelReasoning} onChange={event => { setChannelReasoning(event.target.value as CommonspaceReasoning | '') }}><option value="">Inherit default</option>{['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].map(value => <option key={value} value={value}>{value}</option>)}</select></label>
+                  <details className="csp-memory-preview"><summary>Projected memory · {channel.memory.threadIds.length} threads</summary><pre>{channel.memory.summary || 'No completed thread memory yet.'}</pre>{channel.memory.decisions.length > 0 && <p><strong>Decisions:</strong> {channel.memory.decisions.join(' · ')}</p>}{channel.memory.openQuestions.length > 0 && <p><strong>Open questions:</strong> {channel.memory.openQuestions.join(' · ')}</p>}</details>
                   <div><button type="submit">Save</button><button type="button" onClick={() => { setEditingChannelId(null) }}>Cancel</button></div>
                 </form>
               )}

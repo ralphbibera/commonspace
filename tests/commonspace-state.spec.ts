@@ -35,12 +35,22 @@ describe('Commonspace local state', () => {
       ...createInitialState(),
       revision: 2,
       projects: [{ id: 'p', name: 'P', paths: ['/tmp/p'], createdAt: 'now' }],
-      channels: [{ id: 'c', name: 'general', projectId: 'p', agentIds: [], createdAt: 'now' }],
+      channels: [{ id: 'c', name: 'general', projectId: 'p', agentIds: [], instructions: '', memory: { summary: '', decisions: [], openQuestions: [], threadIds: [], updatedAt: null }, settings: { model: null, reasoning: null }, createdAt: 'now' }],
       messages: { 'channel:c': [] },
     }
     const next = applyMutation(seeded, { action: 'remove-project', projectId: 'p' })
     expect(next.projects).toHaveLength(0)
     expect(next.channels[0]?.projectId).toBeNull()
     expect(next.messages['channel:c']).toEqual([])
+  })
+
+  it('applies bounded defaults and per-channel overrides', () => {
+    let state = createInitialState()
+    state = applyMutation(state, { action: 'set-defaults', model: 'openai/gpt-5.2', reasoning: 'high', maxAgentsPerTurn: 99, memoryThreads: 0 })
+    expect(state.defaults).toEqual({ model: 'openai/gpt-5.2', reasoning: 'high', maxAgentsPerTurn: 8, memoryThreads: 1 })
+    state = applyMutation(state, { action: 'create-project', name: 'P', paths: ['/tmp/p'] }, { ids: () => 'p', now: () => 'now' })
+    state = applyMutation(state, { action: 'create-channel', name: 'general', projectId: 'p', agentIds: [] }, { ids: () => 'c', now: () => 'now' })
+    state = applyMutation(state, { action: 'set-channel-settings', channelId: 'c', model: null, reasoning: null })
+    expect(state.channels[0]?.settings).toEqual({ model: null, reasoning: null })
   })
 })

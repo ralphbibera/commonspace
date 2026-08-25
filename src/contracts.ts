@@ -1,4 +1,17 @@
-export const COMMONSPACE_STATE_VERSION = 2 as const
+export const COMMONSPACE_STATE_VERSION = 4 as const
+
+export type CommonspaceReasoning = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+
+export interface CommonspaceRunSettings {
+  model: string | null
+  reasoning: CommonspaceReasoning | null
+}
+
+export interface CommonspaceDefaults extends Omit<CommonspaceRunSettings, 'reasoning'> {
+  reasoning: CommonspaceReasoning
+  maxAgentsPerTurn: number
+  memoryThreads: number
+}
 
 export interface HermesAgentProfile {
   id: string
@@ -15,11 +28,22 @@ export interface CommonspaceProject {
   createdAt: string
 }
 
+export interface CommonspaceChannelMemory {
+  summary: string
+  decisions: string[]
+  openQuestions: string[]
+  threadIds: string[]
+  updatedAt: string | null
+}
+
 export interface CommonspaceChannel {
   id: string
   name: string
   projectId: string | null
   agentIds: string[]
+  instructions: string
+  memory: CommonspaceChannelMemory
+  settings: CommonspaceRunSettings
   createdAt: string
 }
 
@@ -56,6 +80,7 @@ export interface CommonspaceThread {
 export interface CommonspaceState {
   version: typeof COMMONSPACE_STATE_VERSION
   revision: number
+  defaults: CommonspaceDefaults
   projects: CommonspaceProject[]
   channels: CommonspaceChannel[]
   threads: CommonspaceThread[]
@@ -73,6 +98,9 @@ export type CommonspaceMutation =
   | { action: 'remove-project'; projectId: string }
   | { action: 'create-channel'; name: string; projectId?: string; agentIds: string[] }
   | { action: 'set-channel-agents'; channelId: string; agentIds: string[] }
+  | { action: 'set-channel-context'; channelId: string; instructions: string }
+  | { action: 'set-channel-settings'; channelId: string; model?: string | null; reasoning?: CommonspaceReasoning | null }
+  | { action: 'set-defaults'; model?: string | null; reasoning?: CommonspaceReasoning; maxAgentsPerTurn?: number; memoryThreads?: number }
   | { action: 'remove-channel'; channelId: string }
 
 export interface SendMessageRequest {

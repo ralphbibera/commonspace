@@ -18,7 +18,8 @@ import type {
 } from '../contracts.ts'
 import { conversationKey } from '../contracts.ts'
 import { buildHermesInvocation, buildRoomPrompt, parseHermesProfileList, routeChannelAgents } from './hermes.ts'
-import { applyMutation, createInitialState } from './state.ts'
+import { projectChannelMemory } from './memory.ts'
+import { applyMutation, createInitialState, defaultCommonspaceDefaults, defaultRunSettings, emptyChannelMemory } from './state.ts'
 
 const execFileAsync = promisify(execFile)
 const MAX_BODY_BYTES = 128 * 1024
@@ -40,6 +41,8 @@ interface SendDependencies {
     cwd: string
     sessionName: string
     prompt: string
+    model?: string
+    reasoning?: CommonspaceState['defaults']['reasoning']
   }): Promise<string>
 }
 
@@ -114,14 +117,29 @@ function now(): string {
 function sanitizeLoadedState(value: unknown): CommonspaceState {
   if (typeof value !== 'object' || value === null) return createInitialState()
   const record = value as Record<string, unknown>
-  if ((record.version !== 1 && record.version !== 2) || !Array.isArray(record.projects) || !Array.isArray(record.channels)) {
+  if ((record.version !== 1 && record.version !== 2 && record.version !== 3 && record.version !== 4) || !Array.isArray(record.projects) || !Array.isArray(record.channels)) {
     return createInitialState()
   }
+  const fallbackDefaults = defaultCommonspaceDefaults()
+  const rawDefaults = typeof record.defaults === 'object' && record.defaults !== null ? record.defaults as Record<string, unknown> : {}
+  const defaults = {
+    model: typeof rawDefaults.model === 'string' ? rawDefaults.model : rawDefaults.model === null ? null : fallbackDefaults.model,
+    reasoning: typeof rawDefaults.reasoning === 'string' ? rawDefaults.reasoning as CommonspaceState['defaults']['reasoning'] : fallbackDefaults.reasoning,
+    maxAgentsPerTurn: typeof rawDefaults.maxAgentsPerTurn === 'number' ? rawDefaults.maxAgentsPerTurn : fallbackDefaults.maxAgentsPerTurn,
+    memoryThreads: typeof rawDefaults.memoryThreads === 'number' ? rawDefaults.memoryThreads : fallbackDefaults.memoryThreads,
+  }
+  const channels = (record.channels as Array<Record<string, unknown>>).map(channel => ({
+    ...channel,
+    instructions: typeof channel.instructions === 'string' ? channel.instructions : '',
+    memory: typeof channel.memory === 'object' && channel.memory !== null ? channel.memory : emptyChannelMemory(),
+    settings: typeof channel.settings === 'object' && channel.settings !== null ? channel.settings : defaultRunSettings(),
+  })) as CommonspaceState['channels']
   return {
-    version: 2,
+    version: 4,
     revision: typeof record.revision === 'number' ? record.revision : 0,
+    defaults,
     projects: record.projects as CommonspaceState['projects'],
-    channels: record.channels as CommonspaceState['channels'],
+    channels,
     threads: Array.isArray(record.threads) ? record.threads as CommonspaceState['threads'] : [],
     messages: typeof record.messages === 'object' && record.messages !== null
       ? record.messages as CommonspaceState['messages']
@@ -162,6 +180,16 @@ export class CommonspaceHostService {
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') this.ctx.logger.warn(error)
       this.state = createInitialState()
+    }
+    let memoryChanged = false
+    const channels = this.state.channels.map(channel => {
+      const memory = projectChannelMemory(this.state, channel.id, this.state.defaults.memoryThreads)
+      if (JSON.stringify(memory) !== JSON.stringify(channel.memory)) memoryChanged = true
+      return memoryChanged ? { ...channel, memory } : channel
+    })
+    if (memoryChanged) {
+      this.state = { ...this.state, revision: this.state.revision + 1, channels }
+      await this.persist()
     }
   }
 
@@ -357,7 +385,10 @@ export class CommonspaceHostService {
       ? `Project workspaces:\n${prepared.project.paths.map(path => `- ${path}`).join('\n')}\n\n`
       : ''
     try {
-      for (const agentId of prepared.agentIds.slice(0, this.maxAgentsPerTurn)) {
+      const effectiveLimit = Math.min(this.maxAgentsPerTurn, this.state.defaults.maxAgentsPerTurn)
+      const effectiveModel = prepared.channel?.settings.model ?? this.state.defaults.model ?? undefined
+      const effectiveReasoning = prepared.channel?.settings.reasoning ?? this.state.defaults.reasoning
+      for (const agentId of prepared.agentIds.slice(0, effectiveLimit)) {
         const agent = prepared.agents.find(candidate => candidate.id === agentId)
         if (agent === undefined) continue
         const prompt = prepared.request.conversation.kind === 'dm'
@@ -367,6 +398,10 @@ export class CommonspaceHostService {
               agent: agent.id,
               userText: prepared.text,
               ...(prepared.project === undefined ? {} : { projectPaths: prepared.project.paths }),
+              ...(prepared.channel?.instructions ? { instructions: prepared.channel.instructions } : {}),
+              ...(prepared.channel?.memory.summary ? { memorySummary: prepared.channel.memory.summary } : {}),
+              ...(prepared.channel?.memory.decisions.length ? { decisions: prepared.channel.memory.decisions } : {}),
+              ...(prepared.channel?.memory.openQuestions.length ? { openQuestions: prepared.channel.memory.openQuestions } : {}),
               recent: (this.state.messages[conversationKey(prepared.request.conversation)] ?? []).slice(-30),
             })
         const agentResponse = await this.runAgent({
@@ -376,6 +411,8 @@ export class CommonspaceHostService {
             ? 'Bot Chat'
             : `Commonspace Thread: ${thread?.id ?? crypto.randomUUID()}`,
           prompt,
+          ...(effectiveModel === undefined ? {} : { model: effectiveModel }),
+          reasoning: effectiveReasoning,
         })
         this.append({
           id: messageId(),
@@ -390,7 +427,10 @@ export class CommonspaceHostService {
         await this.persist()
         this.broadcastRevision()
       }
-      if (thread !== undefined) await this.setThreadStatus(thread.id, 'complete')
+      if (thread !== undefined) {
+        await this.setThreadStatus(thread.id, 'complete')
+        await this.updateChannelMemory(thread.channelId)
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       this.append({
@@ -405,8 +445,22 @@ export class CommonspaceHostService {
       })
       await this.persist()
       this.broadcastRevision()
-      if (thread !== undefined) await this.setThreadStatus(thread.id, 'error', message)
+      if (thread !== undefined) {
+        await this.setThreadStatus(thread.id, 'error', message)
+        await this.updateChannelMemory(thread.channelId)
+      }
     }
+  }
+
+  private async updateChannelMemory(channelId: string): Promise<void> {
+    const memory = projectChannelMemory(this.state, channelId, this.state.defaults.memoryThreads)
+    this.state = {
+      ...this.state,
+      revision: this.state.revision + 1,
+      channels: this.state.channels.map(channel => channel.id === channelId ? { ...channel, memory } : channel),
+    }
+    await this.persist()
+    this.broadcastRevision()
   }
 
   private async setThreadStatus(id: string, status: CommonspaceThread['status'], error?: string): Promise<void> {
@@ -476,7 +530,7 @@ export class CommonspaceHostService {
     return agents
   }
 
-  private async runAgent(input: { profile: string; cwd: string; sessionName: string; prompt: string }): Promise<string> {
+  private async runAgent(input: { profile: string; cwd: string; sessionName: string; prompt: string; model?: string; reasoning?: CommonspaceState['defaults']['reasoning'] }): Promise<string> {
     if (this.overrides.runAgent !== undefined) return this.overrides.runAgent(input)
     const tempRoot = join(this.root, 'tmp')
     await mkdir(tempRoot, { recursive: true })
@@ -490,6 +544,8 @@ export class CommonspaceHostService {
         queryFile,
         hermesPath: this.hermesPath,
         yolo: this.yolo,
+        ...(input.model === undefined ? {} : { model: input.model }),
+        ...(input.reasoning === undefined ? {} : { reasoning: input.reasoning }),
       })
       const { stdout, stderr } = await execFileAsync(invocation.command, [
         ...invocation.args,
