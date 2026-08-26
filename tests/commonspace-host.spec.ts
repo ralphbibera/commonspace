@@ -235,7 +235,7 @@ describe('Commonspace host authority', () => {
     expect(state.agentSessions['codex-review-bot']).toBeUndefined()
   })
 
-  it('serializes agent runs that can write to an overlapping workspace', async () => {
+  it('does not block independent room deliveries on overlapping workspace paths', async () => {
     const root = await mkdtemp(join(tmpdir(), 'commonspace-workspace-lock-'))
     roots.push(root)
     const firstWorkspace = join(root, 'first-workspace')
@@ -243,11 +243,10 @@ describe('Commonspace host authority', () => {
     await mkdir(firstWorkspace)
     await mkdir(secondWorkspace)
     const first = deferred<string>()
-    let invocation = 0
-    const runAgent = vi.fn(async () => {
-      invocation += 1
-      return invocation === 1 ? first.promise : 'Second response.'
-    })
+    const second = deferred<string>()
+    const runAgent = vi.fn(async (input: AgentRunInput) => input.sessionName.includes(firstChannelId)
+      ? first.promise
+      : second.promise)
     const service = new CommonspaceHostService({} as never, { root }, {
       discoverAgents: async () => [{ id: 'frontend', displayName: 'Frontend', adapter: 'hermes', model: 'test', status: 'stopped' }],
       runAgent,
@@ -257,16 +256,77 @@ describe('Commonspace host authority', () => {
     const secondProject = (await service.mutate({ action: 'create-project', name: 'Second', paths: [secondWorkspace] })).projects.at(-1)!
     const firstChannel = (await service.mutate({ action: 'create-channel', name: 'first', projectId: firstProject.id, agentIds: ['frontend'] })).channels.at(-1)!
     const secondChannel = (await service.mutate({ action: 'create-channel', name: 'second', projectId: secondProject.id, agentIds: ['frontend'] })).channels.at(-1)!
+    const firstChannelId = firstChannel.id
 
     await service.send({ conversation: { kind: 'channel', id: firstChannel.id }, text: 'First task.' })
     await vi.waitFor(() => { expect(runAgent).toHaveBeenCalledOnce() })
     await service.send({ conversation: { kind: 'channel', id: secondChannel.id }, text: 'Second task.' })
-    await new Promise(resolve => setTimeout(resolve, 30))
-    expect(runAgent).toHaveBeenCalledOnce()
+    await vi.waitFor(() => { expect(runAgent).toHaveBeenCalledTimes(2) })
 
     first.resolve('First response.')
+    second.resolve('Second response.')
     await service.whenIdle()
     expect(runAgent).toHaveBeenCalledTimes(2)
+  })
+
+  it('delivers an agent-authored mention once with the root room context', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-a2a-room-'))
+    roots.push(root)
+    const workspace = join(root, 'workspace')
+    await mkdir(workspace)
+    const runAgent = vi.fn(async (input: AgentRunInput) => input.agent.id === 'backend'
+      ? 'API is ready. @frontend connect the configuration view.'
+      : '@backend UI connected and verified.')
+    const agents = [
+      { id: 'backend', displayName: 'Backend', adapter: 'hermes' as const, model: 'test', status: 'stopped' as const },
+      { id: 'frontend', displayName: 'Frontend', adapter: 'hermes' as const, model: 'test', status: 'stopped' as const },
+    ]
+    const service = new CommonspaceHostService({} as never, { root }, {
+      discoverAgents: async () => agents,
+      runAgent,
+    })
+    await service.initialize()
+    const project = (await service.mutate({ action: 'create-project', name: 'App', paths: [workspace] })).projects[0]!
+    const channel = (await service.mutate({ action: 'create-channel', name: 'engineering', projectId: project.id, agentIds: ['backend', 'frontend'] })).channels[0]!
+
+    await service.send({ conversation: { kind: 'channel', id: channel.id }, text: '@backend expose the provider configuration.' })
+    await service.whenIdle()
+
+    expect(runAgent.mock.calls.map(call => call[0].agent.id)).toEqual(['backend', 'frontend'])
+    expect(runAgent.mock.calls[1]?.[0].prompt).toContain('From: @backend')
+    expect(runAgent.mock.calls[1]?.[0].prompt).toContain('API is ready. @frontend connect the configuration view.')
+    expect(runAgent.mock.calls[1]?.[0].prompt).toContain('Root request from Ralph')
+    const messages = service.snapshot().messages[`channel:${channel.id}`] ?? []
+    expect(messages.filter(message => message.authorType === 'agent').map(message => message.authorId)).toEqual(['backend', 'frontend'])
+  })
+
+  it('continues room delivery when one agent invocation fails', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-room-failure-'))
+    roots.push(root)
+    const workspace = join(root, 'workspace')
+    await mkdir(workspace)
+    const runAgent = vi.fn(async (input: AgentRunInput) => {
+      if (input.agent.id === 'backend') throw new Error('backend unavailable')
+      return 'Frontend still replied.'
+    })
+    const service = new CommonspaceHostService({} as never, { root }, {
+      discoverAgents: async () => [
+        { id: 'backend', displayName: 'Backend', adapter: 'hermes', model: 'test', status: 'stopped' },
+        { id: 'frontend', displayName: 'Frontend', adapter: 'hermes', model: 'test', status: 'stopped' },
+      ],
+      runAgent,
+    })
+    await service.initialize()
+    const project = (await service.mutate({ action: 'create-project', name: 'App', paths: [workspace] })).projects[0]!
+    const channel = (await service.mutate({ action: 'create-channel', name: 'engineering', projectId: project.id, agentIds: ['backend', 'frontend'] })).channels[0]!
+
+    await service.send({ conversation: { kind: 'channel', id: channel.id }, text: 'Share your current findings.' })
+    await service.whenIdle()
+
+    expect(runAgent).toHaveBeenCalledTimes(2)
+    const messages = service.snapshot().messages[`channel:${channel.id}`] ?? []
+    expect(messages.some(message => message.authorType === 'system' && message.text.includes('@backend'))).toBe(true)
+    expect(messages.some(message => message.authorType === 'agent' && message.authorId === 'frontend')).toBe(true)
   })
 
   it('rejects managed agent IDs that collide with discovered Hermes profiles', async () => {

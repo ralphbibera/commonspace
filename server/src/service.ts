@@ -1,7 +1,7 @@
 import { execFile, spawn } from 'node:child_process'
 import { chmod, mkdir, open, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { isAbsolute, join, relative, sep } from 'node:path'
+import { isAbsolute, join } from 'node:path'
 import { promisify } from 'node:util'
 import type {
   AgentAdapterKind,
@@ -22,8 +22,10 @@ import {
   buildHermesInvocation,
   buildRoomPrompt,
   isAgentSessionId,
+  mentionedChannelAgents,
   parseClaudeCodeOutput,
   parseCodexOutput,
+  parseHermesOutput,
   parseHermesProfileList,
   routeChannelAgents,
   type AgentCommandInvocation,
@@ -97,6 +99,13 @@ interface PreparedSend {
   dmSessionName?: string
 }
 
+interface AgentDelivery {
+  authorType: 'user' | 'agent'
+  authorId: string
+  authorName: string
+  text: string
+}
+
 function messageId(): string {
   return crypto.randomUUID()
 }
@@ -166,14 +175,6 @@ function isMissingNativeSession(error: unknown, adapter: AgentAdapterKind): bool
   return /(?:no (?:saved )?(?:session|conversation|thread)|no rollout found for thread id|(?:session|conversation|thread).*(?:not found|does not exist|unknown)|failed to (?:load|resume).*(?:session|conversation|thread))/i.test(message)
 }
 
-function pathContains(parent: string, candidate: string): boolean {
-  const relation = relative(parent, candidate)
-  return relation === '' || (relation !== '..' && !relation.startsWith(`..${sep}`) && !isAbsolute(relation))
-}
-
-function workspacePathsOverlap(first: string, second: string): boolean {
-  return pathContains(first, second) || pathContains(second, first)
-}
 
 export async function readBoundedTextFile(path: string, maxBytes: number): Promise<string> {
   if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) throw new Error('output limit must be a positive integer')
@@ -487,8 +488,7 @@ export class CommonspaceHostService {
   private readonly statePath: string
   private state: CommonspaceState = createInitialState()
   private writeTail = Promise.resolve()
-  private readonly conversationTails = new Map<string, Promise<unknown>>()
-  private readonly workspaceTails = new Map<string, Promise<unknown>>()
+  private readonly agentSessionTails = new Map<string, Promise<unknown>>()
   private readonly revisionListeners = new Set<(revision: number) => void>()
   private readonly backgroundRuns = new Set<Promise<void>>()
   private readonly hermesPath: string
@@ -497,7 +497,7 @@ export class CommonspaceHostService {
   private readonly maxAgentsPerTurn: number
   private readonly hermesYolo: boolean
   private readonly externalAgentYolo: boolean
-  private readonly runBudgetSeconds: number
+  private readonly runBudgetSeconds: number | undefined
   private readonly maxClaudeTurns: number
 
   constructor(
@@ -513,7 +513,9 @@ export class CommonspaceHostService {
     this.maxAgentsPerTurn = Math.max(1, Math.min(8, config.maxAgentsPerTurn ?? 6))
     this.hermesYolo = unsafeModeForAdapter(config, 'hermes')
     this.externalAgentYolo = unsafeModeForAdapter(config, 'codex')
-    this.runBudgetSeconds = Math.min(600, Math.max(30, config.runBudgetSeconds ?? 180))
+    this.runBudgetSeconds = config.runBudgetSeconds === undefined
+      ? undefined
+      : Math.min(3_600, Math.max(30, config.runBudgetSeconds))
     this.maxClaudeTurns = Math.min(100, Math.max(1, Math.trunc(config.maxClaudeTurns ?? 40)))
   }
 
@@ -599,16 +601,10 @@ export class CommonspaceHostService {
     const prepared = await this.prepareSend(request)
     await this.overrides.beforeAcceptSend?.(prepared)
     const response = await this.acceptSend(prepared)
-    const executionKey = response.thread === undefined
-      ? conversationKey(request.conversation)
-      : `thread:${response.thread.id}`
-    const previous = this.conversationTails.get(executionKey) ?? Promise.resolve()
-    const operation = previous.catch(() => undefined).then(() => this.processReplies(prepared, response))
-    this.conversationTails.set(executionKey, operation)
+    const operation = this.processReplies(prepared, response)
     this.backgroundRuns.add(operation)
     void operation.finally(() => {
       this.backgroundRuns.delete(operation)
-      if (this.conversationTails.get(executionKey) === operation) this.conversationTails.delete(executionKey)
     }).catch(() => undefined)
     return response
   }
@@ -713,104 +709,124 @@ export class CommonspaceHostService {
     const projectContext = prepared.project?.paths.length
       ? `Project workspaces:\n${prepared.project.paths.map(path => `- ${path}`).join('\n')}\n\n`
       : ''
-    try {
-      const effectiveLimit = Math.min(this.maxAgentsPerTurn, this.state.defaults.maxAgentsPerTurn)
-      const effectiveModel = prepared.channel?.settings.model ?? this.state.defaults.model ?? undefined
-      const effectiveReasoning = prepared.channel?.settings.reasoning ?? this.state.defaults.reasoning
-      for (const agentId of prepared.agentIds.slice(0, effectiveLimit)) {
-        const agent = prepared.agents.find(candidate => candidate.id === agentId)
-        if (agent === undefined) continue
-        const authority = this.managedAgentAuthority(agent)
-        if (agent.adapter !== 'hermes' && authority === undefined) continue
-        const executionIsCurrent = () => this.agentAuthorityIsCurrent(agent, authority) && this.conversationIsCurrent(prepared, thread)
-        const prompt = prepared.request.conversation.kind === 'dm'
-          ? `${projectContext}Message from Ralph in Commonspace:\n\n${prepared.text}`
-          : buildRoomPrompt({
-              channel: prepared.channel?.name ?? 'channel',
-              agent: agent.id,
-              userText: prepared.text,
-              ...(prepared.project === undefined ? {} : { projectPaths: prepared.project.paths }),
-              ...(prepared.channel?.instructions ? { instructions: prepared.channel.instructions } : {}),
-              ...(prepared.channel?.memory.summary ? { memorySummary: prepared.channel.memory.summary } : {}),
-              ...(prepared.channel?.memory.decisions.length ? { decisions: prepared.channel.memory.decisions } : {}),
-              ...(prepared.channel?.memory.openQuestions.length ? { openQuestions: prepared.channel.memory.openQuestions } : {}),
-              recent: (this.state.messages[conversationKey(prepared.request.conversation)] ?? []).slice(-30),
-            })
-        const sessionName = prepared.request.conversation.kind === 'dm'
-          ? prepared.dmSessionName ?? 'Bot Chat'
-          : `Commonspace Thread: ${thread?.id ?? crypto.randomUUID()}`
-        const sessionId = this.state.agentSessions[agent.id]?.[sessionName]
-        const agentModel = effectiveModel ?? (agent.adapter === 'hermes' ? undefined : agent.model ?? undefined)
-        const workspaces = prepared.project?.paths ?? [cwd]
-        let agentResponse: AgentRunResult | null
-        try {
-          agentResponse = await this.withWorkspaceLocks(workspaces, async () => {
-            if (!executionIsCurrent()) return null
-            if (prepared.request.conversation.kind === 'dm' &&
-              this.updateMessageReplyStatus(prepared.request.conversation, response.accepted.id, 'running')) {
-              await this.persist()
-              this.broadcastRevision()
-            }
-            return this.runAgentWithSessionRecovery({
-              agent,
-              cwd,
-              additionalCwds: prepared.project?.paths.slice(1) ?? [],
-              sessionName,
-              prompt,
-              ...(sessionId === undefined ? {} : { sessionId }),
-              ...(agentModel === undefined ? {} : { model: agentModel }),
-              reasoning: effectiveReasoning,
-            }, executionIsCurrent)
+    const effectiveLimit = Math.min(this.maxAgentsPerTurn, this.state.defaults.maxAgentsPerTurn)
+    const effectiveModel = prepared.channel?.settings.model ?? this.state.defaults.model ?? undefined
+    const effectiveReasoning = prepared.channel?.settings.reasoning ?? this.state.defaults.reasoning
+    const memberIds = prepared.channel?.agentIds ?? thread?.agentIds ?? prepared.agentIds
+    const delivered = new Set<string>()
+    const rootDelivery: AgentDelivery = {
+      authorType: 'user',
+      authorId: response.accepted.authorId,
+      authorName: response.accepted.authorName,
+      text: response.accepted.text,
+    }
+
+    const deliver = async (agentId: string, delivery: AgentDelivery): Promise<void> => {
+      if (delivered.has(agentId) || delivered.size >= effectiveLimit) return
+      delivered.add(agentId)
+      const agent = prepared.agents.find(candidate => candidate.id === agentId)
+      if (agent === undefined) return
+      const authority = this.managedAgentAuthority(agent)
+      if (agent.adapter !== 'hermes' && authority === undefined) return
+      const executionIsCurrent = () => this.agentAuthorityIsCurrent(agent, authority) && this.conversationIsCurrent(prepared, thread)
+      const prompt = prepared.request.conversation.kind === 'dm'
+        ? [
+            'Commonspace direct message.',
+            `You are @${agent.id}. Use your provider-native identity, instructions, memory, and tools.`,
+            'If this asks for action, do the work now. Return one concise final message with the outcome or a concrete blocker. Do not include private reasoning or tool logs.',
+            `${projectContext}Message from ${delivery.authorName}:\n${delivery.text}`,
+          ].join('\n\n')
+        : buildRoomPrompt({
+            channel: prepared.channel?.name ?? 'channel',
+            agent: agent.id,
+            delivery,
+            rootText: prepared.text,
+            ...(prepared.project === undefined ? {} : { projectPaths: prepared.project.paths }),
+            ...(prepared.channel?.instructions ? { instructions: prepared.channel.instructions } : {}),
+            ...(prepared.channel?.memory.summary ? { memorySummary: prepared.channel.memory.summary } : {}),
+            ...(prepared.channel?.memory.decisions.length ? { decisions: prepared.channel.memory.decisions } : {}),
+            ...(prepared.channel?.memory.openQuestions.length ? { openQuestions: prepared.channel.memory.openQuestions } : {}),
+            recent: (this.state.messages[conversationKey(prepared.request.conversation)] ?? []).slice(-30),
           })
-        } catch (error) {
-          if (!executionIsCurrent()) continue
-          throw error
-        }
-        if (agentResponse === null || !executionIsCurrent()) continue
-        if (agentResponse.sessionId !== undefined) this.rememberAgentSession(agent.id, sessionName, agentResponse.sessionId)
+      const sessionName = prepared.request.conversation.kind === 'dm'
+        ? prepared.dmSessionName ?? 'Bot Chat'
+        : `Commonspace Thread: ${thread?.id ?? crypto.randomUUID()}`
+      const sessionId = this.state.agentSessions[agent.id]?.[sessionName]
+      const agentModel = effectiveModel ?? (agent.adapter === 'hermes' ? undefined : agent.model ?? undefined)
+      let agentResponse: AgentRunResult | null
+      try {
+        agentResponse = await this.withAgentSessionLock(agent.id, sessionName, async () => {
+          if (!executionIsCurrent()) return null
+          if (prepared.request.conversation.kind === 'dm' &&
+            this.updateMessageReplyStatus(prepared.request.conversation, response.accepted.id, 'running')) {
+            await this.persist()
+            this.broadcastRevision()
+          }
+          return this.runAgentWithSessionRecovery({
+            agent,
+            cwd,
+            additionalCwds: prepared.project?.paths.slice(1) ?? [],
+            sessionName,
+            prompt,
+            ...(sessionId === undefined ? {} : { sessionId }),
+            ...(agentModel === undefined ? {} : { model: agentModel }),
+            reasoning: effectiveReasoning,
+          }, executionIsCurrent)
+        })
+      } catch (error) {
+        if (!executionIsCurrent()) return
+        const message = error instanceof Error ? error.message : String(error)
         if (prepared.request.conversation.kind === 'dm') {
-          this.updateMessageReplyStatus(prepared.request.conversation, response.accepted.id, 'complete')
+          this.updateMessageReplyStatus(prepared.request.conversation, response.accepted.id, 'error', message)
         }
         this.append({
           id: messageId(),
           conversation: prepared.request.conversation,
-          authorType: 'agent',
-          authorId: agent.id,
-          authorName: agent.displayName,
-          text: agentResponse.text,
+          authorType: 'system',
+          authorId: 'system',
+          authorName: 'Commonspace',
+          text: `@${agent.id} run failed: ${message}`,
           createdAt: now(),
           ...(thread === undefined ? {} : { threadId: thread.id, parentMessageId: thread.rootMessageId }),
         })
         await this.persist()
         this.broadcastRevision()
+        return
       }
-      if (thread !== undefined) {
-        if (!this.conversationIsCurrent(prepared, thread)) return
-        await this.setThreadStatus(thread.id, 'complete')
-        await this.updateChannelMemory(thread.channelId)
-      }
-    } catch (error) {
-      if (!this.conversationIsCurrent(prepared, thread)) return
-      const message = error instanceof Error ? error.message : String(error)
+      if (agentResponse === null || !executionIsCurrent()) return
+      if (agentResponse.sessionId !== undefined) this.rememberAgentSession(agent.id, sessionName, agentResponse.sessionId)
       if (prepared.request.conversation.kind === 'dm') {
-        this.updateMessageReplyStatus(prepared.request.conversation, response.accepted.id, 'error', message)
+        this.updateMessageReplyStatus(prepared.request.conversation, response.accepted.id, 'complete')
       }
-      this.append({
+      const reply: CommonspaceMessage = {
         id: messageId(),
         conversation: prepared.request.conversation,
-        authorType: 'system',
-        authorId: 'system',
-        authorName: 'Commonspace',
-        text: `Agent run failed: ${message}`,
+        authorType: 'agent',
+        authorId: agent.id,
+        authorName: agent.displayName,
+        text: agentResponse.text,
         createdAt: now(),
         ...(thread === undefined ? {} : { threadId: thread.id, parentMessageId: thread.rootMessageId }),
-      })
+      }
+      this.append(reply)
       await this.persist()
       this.broadcastRevision()
-      if (thread !== undefined) {
-        await this.setThreadStatus(thread.id, 'error', message)
-        await this.updateChannelMemory(thread.channelId)
+      if (prepared.request.conversation.kind === 'channel') {
+        const handoffs = mentionedChannelAgents(memberIds, reply.text, prepared.agents)
+          .filter(id => !delivered.has(id))
+        await Promise.all(handoffs.map(id => deliver(id, {
+          authorType: 'agent',
+          authorId: agent.id,
+          authorName: agent.displayName,
+          text: reply.text,
+        })))
       }
+    }
+
+    await Promise.all(prepared.agentIds.slice(0, effectiveLimit).map(agentId => deliver(agentId, rootDelivery)))
+    if (thread !== undefined && this.conversationIsCurrent(prepared, thread)) {
+      await this.setThreadStatus(thread.id, 'complete')
+      await this.updateChannelMemory(thread.channelId)
     }
   }
 
@@ -835,18 +851,13 @@ export class CommonspaceHostService {
       : authority !== undefined && this.state.agents.find(candidate => candidate.id === agent.id) === authority
   }
 
-  private async withWorkspaceLocks<T>(paths: readonly string[], task: () => Promise<T>): Promise<T> {
-    const keys = [...new Set(paths)].sort()
-    const predecessors = new Set<Promise<unknown>>()
-    for (const [activePath, tail] of this.workspaceTails) {
-      if (keys.some(key => workspacePathsOverlap(activePath, key))) predecessors.add(tail)
-    }
-    const operation = Promise.all([...predecessors].map(predecessor => predecessor.catch(() => undefined))).then(task)
-    for (const key of keys) this.workspaceTails.set(key, operation)
+  private async withAgentSessionLock<T>(agentId: string, sessionName: string, task: () => Promise<T>): Promise<T> {
+    const key = `${agentId}\u0000${sessionName}`
+    const previous = this.agentSessionTails.get(key) ?? Promise.resolve()
+    const operation = previous.catch(() => undefined).then(task)
+    this.agentSessionTails.set(key, operation)
     void operation.finally(() => {
-      for (const key of keys) {
-        if (this.workspaceTails.get(key) === operation) this.workspaceTails.delete(key)
-      }
+      if (this.agentSessionTails.get(key) === operation) this.agentSessionTails.delete(key)
     }).catch(() => undefined)
     return operation
   }
@@ -1059,11 +1070,14 @@ export class CommonspaceHostService {
       })
       const { stdout, stderr } = await executeAgentCommand({
         command: invocation.command,
-        args: [...invocation.args, '--run-budget', String(this.runBudgetSeconds)],
+        args: [
+          ...invocation.args,
+          ...(this.runBudgetSeconds === undefined ? [] : ['--run-budget', String(this.runBudgetSeconds)]),
+        ],
         cwd: input.cwd,
         input: '',
-      }, (this.runBudgetSeconds + 30) * 1000)
-      const response = stdout.trim()
+      }, ((this.runBudgetSeconds ?? 3_600) + 30) * 1000)
+      const response = parseHermesOutput(stdout)
       if (response === '') throw new Error(stderr.trim() || `Hermes profile ${input.agent.id} returned no response`)
       return { text: response.slice(0, 64_000) }
     } finally {
@@ -1087,7 +1101,7 @@ export class CommonspaceHostService {
         ...(input.model === undefined ? {} : { model: input.model }),
         ...(input.reasoning === undefined ? {} : { reasoning: input.reasoning }),
       })
-      const { stdout } = await executeAgentCommand(invocation, (this.runBudgetSeconds + 30) * 1000)
+      const { stdout } = await executeAgentCommand(invocation, ((this.runBudgetSeconds ?? 3_600) + 30) * 1000)
       let lastMessage = ''
       try {
         lastMessage = await readBoundedTextFile(outputFile, MAX_CAPTURE_BYTES)
@@ -1115,7 +1129,7 @@ export class CommonspaceHostService {
       ...(input.model === undefined ? {} : { model: input.model }),
       ...(input.reasoning === undefined ? {} : { reasoning: input.reasoning }),
     })
-    const { stdout } = await executeAgentCommand(invocation, (this.runBudgetSeconds + 30) * 1000)
+    const { stdout } = await executeAgentCommand(invocation, ((this.runBudgetSeconds ?? 3_600) + 30) * 1000)
     const result = parseClaudeCodeOutput(stdout)
     return { text: result.text.slice(0, 64_000), sessionId: result.sessionId }
   }

@@ -1017,6 +1017,8 @@ export const commonspaceStyles = String.raw`
   border-top: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.1));
 }
 
+.csp-thread-composer .csp-composer-input-wrap { display: flex; }
+
 .csp-thread-composer textarea {
   flex: 1;
   min-width: 0;
@@ -1034,7 +1036,7 @@ export const commonspaceStyles = String.raw`
   font-size: 12px;
 }
 
-.csp-thread-composer button {
+.csp-thread-composer > button {
   align-self: flex-end;
   padding: 7px 10px;
   border: 0;

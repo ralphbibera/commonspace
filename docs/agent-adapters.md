@@ -35,7 +35,9 @@ Native UUIDs and DM scopes are persisted only in host state and are redacted fro
 
 ## Concurrency and cancellation
 
-Conversation turns are serialized. Runs whose canonical workspace paths overlap—including ancestor/descendant paths—are also serialized so editing agents cannot race in the same tree. Before publishing a result, the host revalidates the managed-agent generation and Channel/DM generation. Removed agents, deleted Channels, and reset DMs cannot be resurrected by late replies.
+Message acceptance is non-blocking. Different agents and different native sessions may run concurrently, including in the same Project. Calls to the same agent session are serialized so native session continuity remains valid. Before publishing a result, the host revalidates the managed-agent generation and Channel/DM generation. Removed agents, deleted Channels, and reset DMs cannot be resurrected by late replies.
+
+In Channels, an agent reply that names a seated peer creates one bounded follow-on delivery with the root human message and recent room context. Each agent is delivered at most once per causal turn, preventing mention loops without introducing task or blocker state.
 
 ## Resource boundaries
 
@@ -71,6 +73,6 @@ A new adapter must include:
 4. Output parsing with explicit success/error handling.
 5. Safe default permissions and a separately scoped unsafe opt-in.
 6. Unit tests for new/resume arguments, model/reasoning mapping, malformed output, and identifier injection.
-7. Host tests for persistence, stale-session behavior, removal/reset races, and workspace serialization.
+7. Host tests for persistence, stale-session behavior, removal/reset races, concurrent room delivery, and bounded peer handoffs.
 8. An opt-in real CLI smoke test that starts and resumes a session.
 9. README, operations, and architecture updates.

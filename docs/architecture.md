@@ -36,7 +36,8 @@ Server-sent revision events prompt the UI store to refresh. State revisions prev
 - atomic persistence under `~/.commonspace`;
 - message acceptance and thread creation;
 - native session mapping and stale-session recovery;
-- per-conversation and overlapping-workspace serialization;
+- immediate message acceptance, concurrent cross-agent delivery, and same-native-session serialization;
+- bounded agent-authored mention handoffs carrying the root message and recent room context;
 - bounded subprocess execution and output capture;
 - generation-safe DM resets;
 - revision subscriptions.
