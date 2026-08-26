@@ -59,6 +59,51 @@ function suggestionLabel(suggestion: TagSuggestion): string {
   return `Channel · ${suggestion.label}`
 }
 
+interface SuggestionMenuProps {
+  id: string
+  selectedSuggestion: number
+  slashSuggestions: ReturnType<typeof slashCommandSuggestions>
+  referenceSuggestions: TagSuggestion[]
+  onSelectSlash: (name: string) => void
+  onSelectTag: (suggestion: TagSuggestion) => void
+}
+
+function SuggestionMenu({
+  id,
+  selectedSuggestion,
+  slashSuggestions,
+  referenceSuggestions,
+  onSelectSlash,
+  onSelectTag,
+}: SuggestionMenuProps) {
+  return (
+    <div id={id} className="csp-tag-suggestions" role="listbox" aria-label={slashSuggestions.length > 0 ? 'Slash commands' : 'Tag suggestions'}>
+      {slashSuggestions.map((command, index) => (
+        <button
+          key={command.id}
+          id={`${id}-option-${String(index)}`}
+          type="button"
+          role="option"
+          aria-selected={index === selectedSuggestion}
+          className={index === selectedSuggestion ? 'is-selected' : ''}
+          onMouseDown={event => { event.preventDefault(); onSelectSlash(command.name) }}
+        ><strong>{command.name}</strong><span>{command.description}</span></button>
+      ))}
+      {referenceSuggestions.map((suggestion, index) => (
+        <button
+          key={`${suggestion.kind}-${suggestion.id}`}
+          id={`${id}-option-${String(index + slashSuggestions.length)}`}
+          type="button"
+          role="option"
+          aria-selected={index + slashSuggestions.length === selectedSuggestion}
+          className={index + slashSuggestions.length === selectedSuggestion ? 'is-selected' : ''}
+          onMouseDown={event => { event.preventDefault(); onSelectTag(suggestion) }}
+        ><strong>{suggestion.token}</strong><span>{suggestionLabel(suggestion)}</span></button>
+      ))}
+    </div>
+  )
+}
+
 function threadStatus(thread: CommonspaceThread | undefined): string {
   if (thread === undefined) return 'Complete'
   if (thread.status === 'queued') return 'Queued'
@@ -69,10 +114,12 @@ function threadStatus(thread: CommonspaceThread | undefined): string {
 
 export function CommonspaceConversation({ store }: CommonspaceConversationProps) {
   const suggestionListId = useId()
+  const threadSuggestionListId = useId()
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot)
   const [draft, setDraft] = useState('')
   const [threadDraft, setThreadDraft] = useState('')
   const [selectedSuggestion, setSelectedSuggestion] = useState(0)
+  const [selectedThreadSuggestion, setSelectedThreadSuggestion] = useState(0)
   const [commandFeedback, setCommandFeedback] = useState<CommandFeedback | null>(null)
   const bottom = useRef<HTMLDivElement>(null)
   const composer = useRef<HTMLTextAreaElement>(null)
@@ -89,6 +136,11 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
     ? bootstrap.state.threads.filter(thread => thread.channelId === snapshot.activeConversation?.id)
     : []
   const activeThread = channelThreads.find(thread => thread.id === snapshot.activeThreadId)
+  const threadSlashSuggestions = activeThread === undefined ? [] : slashCommandSuggestions(threadDraft, 'channel')
+  const resolvedThreadCommand = activeThread === undefined ? null : resolveSlashCommand(threadDraft, 'channel')
+  const threadReferenceSuggestions = activeThread === undefined || bootstrap === null || threadDraft.startsWith('/') ? [] : tagSuggestions(threadDraft, bootstrap)
+  const threadSuggestionCount = threadSlashSuggestions.length + threadReferenceSuggestions.length
+  const activeThreadSuggestionId = threadSuggestionCount > 0 ? `${threadSuggestionListId}-option-${String(selectedThreadSuggestion)}` : undefined
   const roots = isChannel
     ? messages.filter(message => message.authorType === 'user' && message.parentMessageId === undefined)
     : messages
@@ -116,6 +168,16 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
   const selectSlashSuggestion = (name: string) => {
     setDraft(name)
     setSelectedSuggestion(0)
+  }
+
+  const selectThreadSuggestion = (suggestion: TagSuggestion) => {
+    setThreadDraft(current => insertTag(current, suggestion.token))
+    setSelectedThreadSuggestion(0)
+  }
+
+  const selectThreadSlashSuggestion = (name: string) => {
+    setThreadDraft(name)
+    setSelectedThreadSuggestion(0)
   }
 
   const resetDirectMessage = async () => {
@@ -330,32 +392,14 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
                     }
                   }}
                 />
-                {suggestionCount > 0 && (
-                  <div id={suggestionListId} className="csp-tag-suggestions" role="listbox" aria-label={slashSuggestions.length > 0 ? 'Slash commands' : 'Tag suggestions'}>
-                    {slashSuggestions.map((command, index) => (
-                      <button
-                        key={command.id}
-                        id={`${suggestionListId}-option-${String(index)}`}
-                        type="button"
-                        role="option"
-                        aria-selected={index === selectedSuggestion}
-                        className={index === selectedSuggestion ? 'is-selected' : ''}
-                        onMouseDown={event => { event.preventDefault(); selectSlashSuggestion(command.name) }}
-                      ><strong>{command.name}</strong><span>{command.description}</span></button>
-                    ))}
-                    {referenceSuggestions.map((suggestion, index) => (
-                      <button
-                        key={`${suggestion.kind}-${suggestion.id}`}
-                        id={`${suggestionListId}-option-${String(index + slashSuggestions.length)}`}
-                        type="button"
-                        role="option"
-                        aria-selected={index + slashSuggestions.length === selectedSuggestion}
-                        className={index + slashSuggestions.length === selectedSuggestion ? 'is-selected' : ''}
-                        onMouseDown={event => { event.preventDefault(); selectSuggestion(suggestion) }}
-                      ><strong>{suggestion.token}</strong><span>{suggestionLabel(suggestion)}</span></button>
-                    ))}
-                  </div>
-                )}
+                {suggestionCount > 0 && <SuggestionMenu
+                  id={suggestionListId}
+                  selectedSuggestion={selectedSuggestion}
+                  slashSuggestions={slashSuggestions}
+                  referenceSuggestions={referenceSuggestions}
+                  onSelectSlash={selectSlashSuggestion}
+                  onSelectTag={selectSuggestion}
+                />}
               </div>
               <div className="csp-composer-footer">
                 <span>{isChannel ? '@ agent · @@ project · # channel · / commands' : 'Enter to send · / for commands'}</span>
@@ -378,19 +422,46 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
                 {activeThread.error !== undefined && <div className="csp-conversation-error">{activeThread.error}</div>}
               </div>
               <form className="csp-thread-composer" onSubmit={(event) => { void sendThreadReply(event) }}>
-                <textarea
-                  aria-label="Reply in thread"
-                  placeholder="Reply in thread"
-                  value={threadDraft}
-                  disabled={snapshot.sending}
-                  onChange={event => { setThreadDraft(event.target.value) }}
-                  onKeyDown={event => {
-                    if (event.key === 'Enter' && !event.shiftKey) {
-                      event.preventDefault()
-                      event.currentTarget.form?.requestSubmit()
-                    }
-                  }}
-                />
+                <div className="csp-composer-input-wrap">
+                  <textarea
+                    aria-label="Reply in thread"
+                    aria-autocomplete="list"
+                    aria-expanded={threadSuggestionCount > 0}
+                    aria-controls={threadSuggestionCount > 0 ? threadSuggestionListId : undefined}
+                    aria-activedescendant={activeThreadSuggestionId}
+                    placeholder="Reply in thread, tag context, or type /"
+                    value={threadDraft}
+                    disabled={snapshot.sending}
+                    onChange={event => { setThreadDraft(event.target.value); setSelectedThreadSuggestion(0) }}
+                    onKeyDown={event => {
+                      if (threadSuggestionCount > 0 && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+                        event.preventDefault()
+                        setSelectedThreadSuggestion(current => event.key === 'ArrowDown' ? (current + 1) % threadSuggestionCount : (current - 1 + threadSuggestionCount) % threadSuggestionCount)
+                      } else if (threadSuggestionCount > 0 && event.key === 'Tab') {
+                        event.preventDefault()
+                        if (threadSlashSuggestions.length > 0) selectThreadSlashSuggestion((threadSlashSuggestions[selectedThreadSuggestion] ?? threadSlashSuggestions[0]!).name)
+                        else selectThreadSuggestion(threadReferenceSuggestions[selectedThreadSuggestion] ?? threadReferenceSuggestions[0]!)
+                      } else if (event.key === 'Enter' && !event.shiftKey) {
+                        event.preventDefault()
+                        if (threadSlashSuggestions.length > 0 && resolvedThreadCommand === null) {
+                          selectThreadSlashSuggestion((threadSlashSuggestions[selectedThreadSuggestion] ?? threadSlashSuggestions[0]!).name)
+                        } else if (threadReferenceSuggestions.length > 0) {
+                          selectThreadSuggestion(threadReferenceSuggestions[selectedThreadSuggestion] ?? threadReferenceSuggestions[0]!)
+                        } else {
+                          event.currentTarget.form?.requestSubmit()
+                        }
+                      }
+                    }}
+                  />
+                  {threadSuggestionCount > 0 && <SuggestionMenu
+                    id={threadSuggestionListId}
+                    selectedSuggestion={selectedThreadSuggestion}
+                    slashSuggestions={threadSlashSuggestions}
+                    referenceSuggestions={threadReferenceSuggestions}
+                    onSelectSlash={selectThreadSlashSuggestion}
+                    onSelectTag={selectThreadSuggestion}
+                  />}
+                </div>
                 <button type="submit" disabled={snapshot.sending || threadDraft.trim() === ''}>Reply</button>
               </form>
             </aside>

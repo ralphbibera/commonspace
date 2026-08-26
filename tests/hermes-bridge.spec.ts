@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildHermesInvocation, buildRoomPrompt, parseHermesProfileList, routeChannelAgents } from '../packages/adapters/src/hermes.ts'
+import { buildHermesInvocation, buildRoomPrompt, parseHermesOutput, parseHermesProfileList, routeChannelAgents } from '../packages/adapters/src/hermes.ts'
 
 const PROFILE_TABLE = `Profile          Model                        Gateway      Alias        Distribution
  ───────────────    ───────────────────────────    ───────────    ───────────    ────────────────────
@@ -35,22 +35,43 @@ describe('Hermes agent bridge', () => {
     })
   })
 
-  it('builds an attributed channel prompt with bounded recent history', () => {
+  it('builds an actionable agent-to-agent delivery with bounded room context', () => {
     const prompt = buildRoomPrompt({
       channel: 'engineering',
-      agent: 'backend',
-      userText: 'Please investigate the checkout failure.',
+      agent: 'frontend',
+      delivery: {
+        authorType: 'agent',
+        authorId: 'backend',
+        authorName: 'Backend',
+        text: '@frontend connect the checkout configuration view.',
+      },
+      rootText: 'Please repair checkout and coordinate directly.',
       recent: [
         { authorName: 'Ralph', text: 'Checkout fails after payment.' },
-        { authorName: 'Frontend', text: 'The response reaches the client.' },
+        { authorName: 'Backend', text: '@frontend connect the checkout configuration view.' },
       ],
     })
     expect(prompt).toContain('Commonspace channel #engineering')
     expect(prompt).toContain('Ralph: Checkout fails after payment.')
-    expect(prompt).toContain('You are responding as @backend')
-    expect(prompt).toContain('Other agents in Commonspace are peers')
-    expect(prompt).not.toContain('Other Hermes profiles')
-    expect(prompt).toContain('Please investigate the checkout failure.')
+    expect(prompt).toContain('You are @frontend')
+    expect(prompt).toContain('From: @backend')
+    expect(prompt).toContain('@frontend connect the checkout configuration view.')
+    expect(prompt).toContain('use your harness tools and do the work now')
+    expect(prompt).toContain('Do not stop at an acknowledgement or plan')
+    expect(prompt).toContain('Commonspace will deliver that message once')
+    expect(prompt).toContain('Root request from Ralph')
+    expect(prompt).not.toContain('ticket')
+  })
+
+  it('keeps Hermes reasoning summaries and session metadata out of room messages', () => {
+    expect(parseHermesOutput([
+      '┌─ Reasoning ─────────────────────────┐',
+      '**Inspecting the repository****Inspecting the repository**',
+      '',
+      'Implemented the fix and verified the tests.',
+      '',
+      'session_id: 20260826_example',
+    ].join('\n'))).toBe('Implemented the fix and verified the tests.')
   })
 
   it('routes mentions only to agents seated in the channel', () => {

@@ -20,6 +20,8 @@ Commonspace may reuse proven infrastructure patterns, but it must not inherit an
 ## Engineering rules
 
 - Preserve hard `/new` context boundaries and exact native-session resumption.
+- Treat Channels as non-blocking agent-to-agent rooms: persist messages immediately, wake addressed agents, and route bounded peer mentions without adding task-state gates.
+- Different agents may act concurrently, including in the same Project. Serialize only calls that target the same native agent session.
 - Treat session references and filesystem paths as host-private data.
 - Invoke CLIs with argument arrays and piped input; never construct shell command strings.
 - Bind the server to loopback and keep same-origin mutation guards.
