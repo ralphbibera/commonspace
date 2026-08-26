@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { CommonspaceConversation } from '../src/client/CommonspaceConversation.tsx'
+import { CommonspaceConversation } from '../ui/src/CommonspaceConversation.tsx'
 
 function renderDirectMessage() {
   const send = vi.fn(async () => undefined)

@@ -1,11 +1,8 @@
 import { execFile, spawn } from 'node:child_process'
 import { chmod, mkdir, open, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
-import type { IncomingMessage, ServerResponse } from 'node:http'
 import { homedir } from 'node:os'
 import { isAbsolute, join, relative, sep } from 'node:path'
 import { promisify } from 'node:util'
-import type { Context } from '@deepseek-ai/cordis'
-import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {
   AgentAdapterKind,
   CommonspaceAgentDefinition,
@@ -17,22 +14,24 @@ import type {
   CommonspaceThread,
   SendMessageRequest,
   SendMessageResponse,
-} from '../contracts.ts'
-import { COMMONSPACE_STATE_VERSION, conversationKey } from '../contracts.ts'
+} from '@commonspace/shared'
+import { COMMONSPACE_STATE_VERSION, conversationKey } from '@commonspace/shared'
 import {
   buildClaudeCodeInvocation,
   buildCodexInvocation,
+  buildHermesInvocation,
+  buildRoomPrompt,
   isAgentSessionId,
   parseClaudeCodeOutput,
   parseCodexOutput,
+  parseHermesProfileList,
+  routeChannelAgents,
   type AgentCommandInvocation,
-} from './adapters.ts'
-import { buildHermesInvocation, buildRoomPrompt, parseHermesProfileList, routeChannelAgents } from './hermes.ts'
-import { projectChannelMemory } from './memory.ts'
-import { applyMutation, createInitialState, defaultCommonspaceDefaults, defaultRunSettings, emptyChannelMemory, isCommonspaceReasoning, managedAgentId } from './state.ts'
+} from '@commonspace/adapters'
+import { projectChannelMemory } from './memory.js'
+import { applyMutation, createInitialState, defaultCommonspaceDefaults, defaultRunSettings, emptyChannelMemory, isCommonspaceReasoning, managedAgentId } from './state.js'
 
 const execFileAsync = promisify(execFile)
-const MAX_BODY_BYTES = 128 * 1024
 const MAX_MESSAGE_CHARS = 16_000
 const MAX_CAPTURE_BYTES = 1024 * 1024
 const MANAGED_AGENT_ID_PATTERN = /^(?:codex|claude-code)-[\p{L}\p{N}][\p{L}\p{N}-]{0,79}$/u
@@ -51,6 +50,12 @@ export interface CommonspaceHostConfig {
   externalAgentYolo?: boolean
   runBudgetSeconds?: number
   maxClaudeTurns?: number
+}
+
+export interface CommonspaceHostEnvironment {
+  logger?: {
+    warn(message: unknown): void
+  }
 }
 
 export function unsafeModeForAdapter(config: CommonspaceHostConfig, adapter: AgentAdapterKind): boolean {
@@ -75,7 +80,7 @@ export interface AgentRunResult {
   sessionId?: string
 }
 
-interface SendDependencies {
+export interface CommonspaceHostDependencies {
   discoverAgents(): Promise<CommonspaceAgentProfile[]>
   runAgent(input: AgentRunInput): Promise<string | AgentRunResult>
   beforeAcceptSend?(prepared: PreparedSend): Promise<void>
@@ -90,56 +95,6 @@ interface PreparedSend {
   project?: CommonspaceState['projects'][number]
   thread?: CommonspaceThread
   dmSessionName?: string
-}
-
-function json(res: ServerResponse, status: number, body: unknown): void {
-  const encoded = JSON.stringify(body)
-  res.writeHead(status, {
-    'content-type': 'application/json; charset=utf-8',
-    'cache-control': 'no-store',
-    'content-length': Buffer.byteLength(encoded),
-  })
-  res.end(encoded)
-}
-
-export function requestIsSameOrigin(req: IncomingMessage): boolean {
-  const host = req.headers.host
-  if (host === undefined) return false
-  const origin = req.headers.origin
-  if (origin !== undefined) {
-    try {
-      const url = new URL(origin)
-      return url.protocol === 'http:' && url.host === host
-    } catch {
-      return false
-    }
-  }
-  return req.headers['sec-fetch-site'] === 'same-origin'
-}
-
-export function requestIsLoopback(req: IncomingMessage): boolean {
-  const address = req.socket.remoteAddress
-  return address === '127.0.0.1' || address === '::1' || address?.startsWith('::ffff:127.') === true
-}
-
-async function readJsonBody(req: IncomingMessage): Promise<unknown> {
-  let bytes = 0
-  const chunks: Buffer[] = []
-  for await (const chunk of req) {
-    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
-    bytes += buffer.byteLength
-    if (bytes > MAX_BODY_BYTES) throw new Error('request body is too large')
-    chunks.push(buffer)
-  }
-  if (chunks.length === 0) return {}
-  return JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw new Error('request body must be an object')
-  }
-  return value as Record<string, unknown>
 }
 
 function messageId(): string {
@@ -476,6 +431,13 @@ function sanitizeMessages(
         createdAt: loadedString(message.createdAt, 100),
         ...(threadId === null ? {} : { threadId }),
         ...(parentMessageId === null ? {} : { parentMessageId }),
+        ...(kind === 'dm' && message.authorType === 'user' &&
+          (message.replyStatus === 'queued' || message.replyStatus === 'running' || message.replyStatus === 'complete' || message.replyStatus === 'error')
+          ? {
+              replyStatus: message.replyStatus,
+              ...(typeof message.replyError === 'string' ? { replyError: message.replyError.slice(0, 4_000) } : {}),
+            }
+          : {}),
       })
     }
     messages[key] = sanitized
@@ -527,7 +489,7 @@ export class CommonspaceHostService {
   private writeTail = Promise.resolve()
   private readonly conversationTails = new Map<string, Promise<unknown>>()
   private readonly workspaceTails = new Map<string, Promise<unknown>>()
-  private readonly eventClients = new Set<ServerResponse>()
+  private readonly revisionListeners = new Set<(revision: number) => void>()
   private readonly backgroundRuns = new Set<Promise<void>>()
   private readonly hermesPath: string
   private readonly codexPath: string
@@ -539,9 +501,9 @@ export class CommonspaceHostService {
   private readonly maxClaudeTurns: number
 
   constructor(
-    private readonly ctx: Context,
+    private readonly environment: CommonspaceHostEnvironment,
     config: CommonspaceHostConfig = {},
-    private readonly overrides: Partial<SendDependencies> = {},
+    private readonly overrides: Partial<CommonspaceHostDependencies> = {},
   ) {
     this.root = config.root ?? join(homedir(), '.commonspace')
     this.statePath = join(this.root, 'state.json')
@@ -560,7 +522,7 @@ export class CommonspaceHostService {
     try {
       this.state = sanitizeLoadedState(JSON.parse(await readFile(this.statePath, 'utf8')))
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') this.ctx.logger?.warn(error)
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') this.environment.logger?.warn(error)
       this.state = createInitialState()
     }
     this.state = await this.canonicalizeLoadedProjectPaths(this.state)
@@ -651,70 +613,9 @@ export class CommonspaceHostService {
     return response
   }
 
-  registerRoutes(): () => void {
-    const routes = [
-      this.ctx.webServer.register({
-        kind: 'exact',
-        path: '/commonspace/api/bootstrap',
-        handler: async (req, res) => {
-          if (!requestIsLoopback(req)) return json(res, 403, { code: 'loopback_required', error: 'Commonspace is local-only' })
-          if (!requestIsSameOrigin(req)) return json(res, 403, { code: 'origin_denied', error: 'same-origin request required' })
-          if (req.method !== 'GET') return json(res, 405, { code: 'method_not_allowed', error: 'GET required' })
-          json(res, 200, await this.bootstrap())
-        },
-      }),
-      this.ctx.webServer.register({
-        kind: 'exact',
-        path: '/commonspace/api/events',
-        handler: async (req, res) => {
-          if (!requestIsLoopback(req)) return json(res, 403, { code: 'loopback_required', error: 'Commonspace is local-only' })
-          if (!requestIsSameOrigin(req)) return json(res, 403, { code: 'origin_denied', error: 'same-origin request required' })
-          if (req.method !== 'GET') return json(res, 405, { code: 'method_not_allowed', error: 'GET required' })
-          res.writeHead(200, {
-            'content-type': 'text/event-stream; charset=utf-8',
-            'cache-control': 'no-store',
-            connection: 'keep-alive',
-          })
-          res.write(`event: revision\ndata: ${JSON.stringify({ revision: this.state.revision })}\n\n`)
-          this.eventClients.add(res)
-          req.on('close', () => { this.eventClients.delete(res) })
-        },
-      }),
-      this.ctx.webServer.register({
-        kind: 'exact',
-        path: '/commonspace/api/mutate',
-        handler: async (req, res) => {
-          if (!requestIsLoopback(req)) return json(res, 403, { code: 'loopback_required', error: 'Commonspace is local-only' })
-          if (req.method !== 'POST') return json(res, 405, { code: 'method_not_allowed', error: 'POST required' })
-          if (!requestIsSameOrigin(req)) return json(res, 403, { code: 'origin_denied', error: 'same-origin request required' })
-          try {
-            await this.mutate(asRecord(await readJsonBody(req)) as unknown as CommonspaceMutation)
-            json(res, 200, await this.bootstrap())
-          } catch (error) {
-            json(res, 400, { code: 'invalid_mutation', error: error instanceof Error ? error.message : String(error) })
-          }
-        },
-      }),
-      this.ctx.webServer.register({
-        kind: 'exact',
-        path: '/commonspace/api/send',
-        handler: async (req, res) => {
-          if (!requestIsLoopback(req)) return json(res, 403, { code: 'loopback_required', error: 'Commonspace is local-only' })
-          if (req.method !== 'POST') return json(res, 405, { code: 'method_not_allowed', error: 'POST required' })
-          if (!requestIsSameOrigin(req)) return json(res, 403, { code: 'origin_denied', error: 'same-origin request required' })
-          try {
-            json(res, 202, await this.send(asRecord(await readJsonBody(req)) as unknown as SendMessageRequest))
-          } catch (error) {
-            json(res, 400, { code: 'send_failed', error: error instanceof Error ? error.message : String(error) })
-          }
-        },
-      }),
-    ]
-    return () => {
-      for (const client of this.eventClients) client.end()
-      this.eventClients.clear()
-      for (const dispose of routes.reverse()) dispose()
-    }
+  subscribeToRevisions(listener: (revision: number) => void): () => void {
+    this.revisionListeners.add(listener)
+    return () => { this.revisionListeners.delete(listener) }
   }
 
   private async prepareSend(request: SendMessageRequest): Promise<PreparedSend> {
@@ -783,6 +684,7 @@ export class CommonspaceHostService {
       createdAt,
       ...(thread === undefined ? {} : { threadId: thread.id }),
       ...(prepared.thread === undefined ? {} : { parentMessageId: prepared.thread.rootMessageId }),
+      ...(prepared.request.conversation.kind === 'dm' ? { replyStatus: 'queued' } : {}),
     }
     const key = conversationKey(prepared.request.conversation)
     const currentMessages = this.state.messages[key] ?? []
@@ -844,6 +746,11 @@ export class CommonspaceHostService {
         try {
           agentResponse = await this.withWorkspaceLocks(workspaces, async () => {
             if (!executionIsCurrent()) return null
+            if (prepared.request.conversation.kind === 'dm' &&
+              this.updateMessageReplyStatus(prepared.request.conversation, response.accepted.id, 'running')) {
+              await this.persist()
+              this.broadcastRevision()
+            }
             return this.runAgentWithSessionRecovery({
               agent,
               cwd,
@@ -861,6 +768,9 @@ export class CommonspaceHostService {
         }
         if (agentResponse === null || !executionIsCurrent()) continue
         if (agentResponse.sessionId !== undefined) this.rememberAgentSession(agent.id, sessionName, agentResponse.sessionId)
+        if (prepared.request.conversation.kind === 'dm') {
+          this.updateMessageReplyStatus(prepared.request.conversation, response.accepted.id, 'complete')
+        }
         this.append({
           id: messageId(),
           conversation: prepared.request.conversation,
@@ -882,6 +792,9 @@ export class CommonspaceHostService {
     } catch (error) {
       if (!this.conversationIsCurrent(prepared, thread)) return
       const message = error instanceof Error ? error.message : String(error)
+      if (prepared.request.conversation.kind === 'dm') {
+        this.updateMessageReplyStatus(prepared.request.conversation, response.accepted.id, 'error', message)
+      }
       this.append({
         id: messageId(),
         conversation: prepared.request.conversation,
@@ -992,13 +905,11 @@ export class CommonspaceHostService {
   }
 
   private broadcastRevision(): void {
-    const payload = `event: revision\ndata: ${JSON.stringify({ revision: this.state.revision })}\n\n`
-    for (const client of this.eventClients) {
+    for (const listener of this.revisionListeners) {
       try {
-        client.write(payload)
+        listener(this.state.revision)
       } catch {
-        this.eventClients.delete(client)
-        client.end()
+        this.revisionListeners.delete(listener)
       }
     }
   }
@@ -1011,6 +922,31 @@ export class CommonspaceHostService {
       revision: this.state.revision + 1,
       messages: { ...this.state.messages, [key]: [...current, message].slice(-500) },
     }
+  }
+
+  private updateMessageReplyStatus(
+    conversation: SendMessageRequest['conversation'],
+    messageId: string,
+    replyStatus: NonNullable<CommonspaceMessage['replyStatus']>,
+    replyError?: string,
+  ): boolean {
+    const key = conversationKey(conversation)
+    const current = this.state.messages[key]
+    if (current === undefined || !current.some(message => message.id === messageId)) return false
+    this.state = {
+      ...this.state,
+      revision: this.state.revision + 1,
+      messages: {
+        ...this.state.messages,
+        [key]: current.map((message) => {
+          if (message.id !== messageId) return message
+          const updated: CommonspaceMessage = { ...message, replyStatus, ...(replyError === undefined ? {} : { replyError }) }
+          if (replyError === undefined) delete updated.replyError
+          return updated
+        }),
+      },
+    }
+    return true
   }
 
   private async normalizeMutation(mutation: CommonspaceMutation): Promise<CommonspaceMutation> {
@@ -1054,7 +990,7 @@ export class CommonspaceHostService {
         })
         discovered = parseHermesProfileList(stdout)
       } catch (error) {
-        this.ctx.logger?.warn(`Commonspace could not discover Hermes profiles: ${error instanceof Error ? error.message : String(error)}`)
+        this.environment.logger?.warn(`Commonspace could not discover Hermes profiles: ${error instanceof Error ? error.message : String(error)}`)
       }
     }
     const managed = this.state.agents.map<CommonspaceAgentProfile>(agent => ({
@@ -1200,8 +1136,8 @@ export class CommonspaceHostService {
   }
 }
 
-export async function createCommonspaceHost(ctx: Context, config: CommonspaceHostConfig = {}): Promise<CommonspaceHostService> {
-  const service = new CommonspaceHostService(ctx, config)
+export async function createCommonspaceHost(environment: CommonspaceHostEnvironment, config: CommonspaceHostConfig = {}): Promise<CommonspaceHostService> {
+  const service = new CommonspaceHostService(environment, config)
   await service.initialize()
   return service
 }

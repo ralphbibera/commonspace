@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useState, useSyncExternalStore, type FormEvent } from 'react'
-import type { AgentAdapterKind, CommonspaceAgentProfile, CommonspaceMutation, CommonspaceReasoning } from '../contracts.ts'
+import type { AgentAdapterKind, CommonspaceAgentProfile, CommonspaceMutation, CommonspaceReasoning } from '@commonspace/shared'
 import type { CommonspaceClientStore } from './commonspace-store.ts'
 
 export interface CommonspaceSidebarProps {
@@ -61,7 +61,6 @@ export function CommonspaceSidebar({ wide, expandSidebar, store }: CommonspaceSi
   const [path, setPath] = useState('')
   const [pathProjectId, setPathProjectId] = useState<string | null>(null)
   const [pathDraft, setPathDraft] = useState('')
-  const [projectId, setProjectId] = useState('')
   const [agentIds, setAgentIds] = useState<string[]>([])
   const [agentAdapter, setAgentAdapter] = useState<Exclude<AgentAdapterKind, 'hermes'>>('codex')
   const [agentModel, setAgentModel] = useState('')
@@ -109,7 +108,6 @@ export function CommonspaceSidebar({ wide, expandSidebar, store }: CommonspaceSi
         action: 'create-channel',
         name,
         agentIds,
-        ...(projectId === '' ? {} : { projectId }),
       }
     } else if (form === 'agent') {
       mutation = {
@@ -258,10 +256,6 @@ export function CommonspaceSidebar({ wide, expandSidebar, store }: CommonspaceSi
           {form === 'channel' && (
             <form className="csp-browser-form" onSubmit={(event) => { void submit(event) }}>
               <input aria-label="Channel name" placeholder="channel-name" value={name} onChange={event => { setName(event.target.value) }} autoFocus />
-              <select aria-label="Channel project" value={projectId} onChange={event => { setProjectId(event.target.value) }}>
-                <option value="">No project</option>
-                {state?.projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}
-              </select>
               <fieldset><legend>Agents</legend>{agents.map(agent => (
                 <label key={agent.id}><input type="checkbox" checked={agentIds.includes(agent.id)} onChange={event => {
                   setAgentIds(current => event.target.checked ? [...current, agent.id] : current.filter(id => id !== agent.id))

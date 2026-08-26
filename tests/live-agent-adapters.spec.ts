@@ -2,8 +2,8 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { AgentAdapterKind } from '../src/contracts.ts'
-import { CommonspaceHostService } from '../src/host/service.ts'
+import type { AgentAdapterKind } from '../packages/shared/src/contracts.ts'
+import { CommonspaceHostService } from '../server/src/service.ts'
 
 const live = process.env.COMMONSPACE_LIVE_ADAPTERS === '1'
 const roots: string[] = []

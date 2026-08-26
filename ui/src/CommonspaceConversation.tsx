@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type FormEvent } from 'react'
-import type { AgentAdapterKind, ConversationRef, CommonspaceMessage, CommonspaceThread } from '../contracts.ts'
+import type { AgentAdapterKind, ConversationRef, CommonspaceMessage, CommonspaceThread } from '@commonspace/shared'
 import type { CommonspaceClientStore } from './commonspace-store.ts'
 import { resolveSlashCommand, slashCommandSuggestions } from './slash-commands.ts'
 import { insertTag, tagReferenceParts, tagSuggestions, type TagSuggestion } from './tagging.ts'
@@ -92,12 +92,20 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
   const roots = isChannel
     ? messages.filter(message => message.authorType === 'user' && message.parentMessageId === undefined)
     : messages
+  const pendingDirectMessage = isChannel
+    ? undefined
+    : messages.findLast(message => message.authorType === 'user' && (message.replyStatus === 'queued' || message.replyStatus === 'running'))
+  const directMessageStatus = pendingDirectMessage?.replyStatus === 'queued'
+    ? `${heading.title} is queued…`
+    : pendingDirectMessage?.replyStatus === 'running'
+      ? `${heading.title} is responding…`
+      : null
   const activeRoot = activeThread === undefined ? undefined : messages.find(message => message.id === activeThread.rootMessageId)
   const replies = activeThread === undefined
     ? []
     : messages.filter(message => message.threadId === activeThread.id && message.parentMessageId === activeThread.rootMessageId)
 
-  useEffect(() => { bottom.current?.scrollIntoView({ block: 'end' }) }, [messages.length, snapshot.sending])
+  useEffect(() => { bottom.current?.scrollIntoView({ block: 'end' }) }, [messages.length, snapshot.sending, directMessageStatus])
   useEffect(() => { composer.current?.focus(); setCommandFeedback(null) }, [snapshot.activeConversation?.id, snapshot.activeConversation?.kind])
 
   const selectSuggestion = (suggestion: TagSuggestion) => {
@@ -271,6 +279,7 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
                     )
                   })
                 : roots.map(message => <MessageRow key={message.id} message={message} />)}
+              {directMessageStatus !== null && <div className="csp-agent-working" role="status" aria-live="polite">{directMessageStatus}</div>}
               <div ref={bottom} />
             </div>
 

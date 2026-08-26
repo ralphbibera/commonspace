@@ -1,137 +1,55 @@
-# Operations and troubleshooting
+# Operations
 
-## Runtime layout
-
-Commonspace runs inside the existing DSH Web process. It does not start another web server.
-
-- Bundle: linked/installed DSH plugin.
-- State: `~/.commonspace/state.json` (`0600`, atomic temp-file publication).
-- Temporary files: `~/.commonspace/tmp/` (`0700`; files `0600`).
-- Native sessions and credentials: owned by Hermes, Codex CLI, or Claude Code in their supported stores.
-
-## Configuration
-
-`CommonspaceHostConfig` supports:
-
-- `root`
-- `hermesPath`
-- `codexPath`
-- `claudePath`
-- `maxAgentsPerTurn`
-- `runBudgetSeconds`
-- `maxClaudeTurns`
-- `hermesYolo` / legacy `yolo`
-- `externalAgentYolo`
-
-The packaged bundle maps:
+## Runtime
 
 ```bash
-COMMONSPACE_HERMES_YOLO=1  # Hermes only
-COMMONSPACE_AGENT_YOLO=1   # Codex + Claude only
-```
-
-Both are intentionally unset by default.
-
-## Install and update modes
-
-### Linked developer checkout
-
-Use this when the target machine will edit Commonspace:
-
-```bash
-git clone git@github.com:ralphbibera/commonspace.git
-cd commonspace
-pnpm install --frozen-lockfile
 pnpm build
-dsh plugin --profile web add .
+pnpm start
 ```
 
-The profile records a `link:` dependency. Pull and rebuild to update it; restart DSH Web after every host/client build.
+The server binds to `127.0.0.1:3100` by default and serves the built UI plus `/api`. Override the port with `COMMONSPACE_PORT`.
 
-### Prebuilt package
+## Local data
 
-Use the `commonspace.tgz` artifact attached to a successful `main` CI run, or create one with `pnpm pack:plugin`. Install it with:
+- State: `~/.commonspace/state.json`
+- Temporary prompts and adapter output: `~/.commonspace/tmp/`
+- Credentials and native transcripts: each agent CLI's supported stores
 
-```bash
-dsh plugin --profile web add ./commonspace.tgz
-```
-
-This path needs no build allowance and is the best way to test one exact pushed commit on another machine.
-
-### Pinned Git source
-
-The package has a self-contained `prepare` build. Install `github:ralphbibera/commonspace#<full-commit-sha>` once and let pnpm reject the unapproved build. Copy the exact rejected build key it prints—including source identity where required—into the web profile's `pnpm-workspace.yaml`:
-
-```yaml
-allowBuilds:
-  '<exact key printed by pnpm>': true
-```
-
-Rerun the same pinned add. Never guess a broader package-only key or allow a moving unreviewed branch to execute install-time code. This flow requires pnpm 10.26+; the repository pins 10.34.5.
+Set `COMMONSPACE_HOME` to isolate state for development or verification.
 
 ## Health checks
 
-1. Confirm DSH Web answers on its configured loopback URL.
-2. Switch to Commonspace and verify the browser and conversation surfaces replace—not stack under—the native surfaces.
-3. Verify the Agent roster.
-4. Run `pnpm verify:live` from a checkout for end-to-end coverage.
-5. Run the adapter-specific smoke test for every enabled managed runtime.
+```bash
+curl http://127.0.0.1:3100/api/health
+pnpm verify:live
+```
+
+The health response is `{"status":"ok"}`. The live verifier builds the workspace, starts an isolated server on an OS-assigned loopback port, opens the UI in Chromium, and verifies the application, navigation, conversation surface, and API.
 
 ## Common failures
 
+### UI development cannot reach the API
+
+Run `pnpm dev` from the workspace root. Confirm the server is on port `3100` and open the Vite URL on port `5173`.
+
 ### No Hermes agents
 
-Run `hermes profile list` in the same service environment. Commonspace tolerates Hermes discovery failure so managed Codex/Claude agents remain usable, but logs the discovery error.
-
-### Codex cannot resume
-
-Commonspace recognizes a missing rollout/session, deletes the stale mapping, and tries one fresh session. Repeated failure is not a stale-session problem; inspect Codex authentication, model configuration, and sandbox access.
-
-### Claude Code times out or returns OAuth 401
-
-`claude auth status` can report logged in while the access token is no longer accepted. Reauthenticate through the supported Claude CLI flow:
-
-```bash
-claude auth login
-```
-
-Then run:
-
-```bash
-pnpm verify:adapters:claude
-```
-
-Do not enable unsafe mode to solve authentication.
+Run `hermes profile list` in the same environment. Discovery failure is non-fatal so configured Codex and Claude agents remain usable.
 
 ### Project path rejected
 
-Paths must be absolute, resolve through `realpath`, exist, and be directories. Loaded state is sanitized the same way before an adapter can receive `cwd` or an additional writable path.
+Project paths must be absolute, exist, resolve through `realpath`, and be directories.
 
-### Live UI looks stale after a build
+### Adapter authentication fails
 
-Because the checkout is linked, rebuild and restart DSH Web:
-
-```bash
-pnpm build
-# stop the old dsh web process
-dsh web --no-open --port 3080
-```
-
-A browser reload alone does not reload the host bundle.
+Authenticate with the adapter's supported CLI flow. Unsafe mode does not solve authentication and should not be used for that purpose.
 
 ## Backup and rollback
 
-Before reverting across a state-version boundary:
+Before changing state versions:
 
 ```bash
-cp ~/.commonspace/state.json ~/.commonspace/state-v6.backup.json
+cp ~/.commonspace/state.json ~/.commonspace/state.backup.json
 ```
 
-A pre-v6 host cannot preserve DM generation scopes. Do not let it overwrite the backup. To remove the bundle:
-
-```bash
-dsh plugin --profile web remove @ralphbibera/commonspace
-dsh web
-```
-
-The state file remains until deliberately removed. Never commit it or CLI credential/session stores.
+The standalone extraction retains state version 6. Rolling back to the earlier implementation can reuse the same file as long as no newer state version has been written.

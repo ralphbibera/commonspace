@@ -1,4 +1,5 @@
-import type { CommonspaceBootstrap } from '../contracts.ts'
+import type { CommonspaceBootstrap } from '@commonspace/shared'
+import { projectTagName } from '@commonspace/shared'
 
 export type TagKind = 'agent' | 'project' | 'channel' | 'text'
 
@@ -47,9 +48,10 @@ export function tagSuggestions(text: string, bootstrap: CommonspaceBootstrap): T
   }
   if (prefix === '@@') {
     return bootstrap.state.projects
-      .filter(project => project.id.toLocaleLowerCase().startsWith(query) || project.name.toLocaleLowerCase().startsWith(query))
+      .map(project => ({ project, tagName: projectTagName(project.name) }))
+      .filter(({ project, tagName }) => tagName.startsWith(query) || project.name.toLocaleLowerCase().startsWith(query))
       .slice(0, 6)
-      .map(project => ({ kind: 'project' as const, id: project.id, label: project.name, token: `@@${project.id}` }))
+      .map(({ project, tagName }) => ({ kind: 'project' as const, id: project.id, label: project.name, token: `@@${tagName}` }))
   }
   return bootstrap.state.channels
     .filter(channel => channel.id.toLocaleLowerCase().startsWith(query) || channel.name.toLocaleLowerCase().startsWith(query))

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyMutation, createInitialState } from '../src/host/state.ts'
+import { applyMutation, createInitialState } from '../server/src/state.ts'
 
 describe('Commonspace local state', () => {
   it('creates filesystem projects and channels with real agent membership', () => {
@@ -28,6 +28,21 @@ describe('Commonspace local state', () => {
       agentIds: ['frontend', 'backend'],
     })
     expect(withChannel.revision).toBe(2)
+  })
+
+  it('rejects project names that resolve to the same tag', () => {
+    const state = applyMutation(createInitialState(), {
+      action: 'create-project',
+      name: 'Checkout App',
+      paths: ['/tmp/checkout-a'],
+    }, { ids: () => 'project-1', now: () => 'now' })
+
+    expect(() => applyMutation(state, {
+      action: 'create-project',
+      name: 'checkout-app',
+      paths: ['/tmp/checkout-b'],
+    }, { ids: () => 'project-2', now: () => 'now' }))
+      .toThrow('project name already exists')
   })
 
   it('removing a project detaches its channels without deleting room history', () => {

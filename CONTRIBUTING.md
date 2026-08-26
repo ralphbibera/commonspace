@@ -1,43 +1,24 @@
 # Contributing
 
-Thanks for helping improve Commonspace.
-
-## Development setup
+## Setup
 
 ```bash
 pnpm install --frozen-lockfile
 pnpm check
+pnpm verify:live
 ```
 
-For a live integration check, link the checkout into the DeepSeek Harness Web profile and restart it:
+Use `pnpm dev` for the server and Vite UI. The UI runs on port `5173`; the API runs on port `3100`.
 
-```bash
-pnpm build
-dsh plugin --profile web add .
-dsh web
-```
+## Change workflow
 
-Then run:
+1. Add a focused failing test.
+2. Implement the smallest production change.
+3. Run the focused test.
+4. Run `pnpm check`.
+5. Run `pnpm verify:live` for server, API, or visible UI work.
+6. Review `git diff --check` and the complete diff.
 
-```bash
-COMMONSPACE_TEST_URL=http://127.0.0.1:3080 pnpm verify:live
-```
+Keep changes inside the conversation-first product model. Shared contracts belong in `packages/shared`, adapter mechanics in `packages/adapters`, host behavior in `server`, and presentation in `ui`.
 
-The verifier writes ignored artifacts by default. Set `COMMONSPACE_UPDATE_DOCS=1` only when intentionally refreshing `docs/assets/commonspace-panel.png`.
-
-## Pull requests
-
-- Keep changes focused and explain the user-visible behavior.
-- Add or update tests before changing behavior.
-- Preserve the existing Harness workspace, session, conversation, and context-management surfaces.
-- Keep Hermes, Codex CLI, and Claude Code behind optional no-shell adapters; do not add runtime package dependencies on them or OpenAgents.
-- Do not commit credentials, local profile files, generated bundles, or full-page test artifacts.
-- Include screenshots for visible UI changes.
-- Run `pnpm check` before requesting review.
-
-## Design principles
-
-- Commonspace should feel native to DeepSeek Harness, not like a second application embedded inside it.
-- Prefer additive public slots over replacing core UI.
-- Keep navigation readable and keyboard accessible.
-- Add persistence only through explicit host-side services with migrations and tests.
+Never commit credentials, CLI session stores, `~/.commonspace`, generated `dist` output, or browser artifacts.

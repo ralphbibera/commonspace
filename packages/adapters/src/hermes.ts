@@ -1,4 +1,4 @@
-import type { CommonspaceAgentProfile, CommonspaceMessage, CommonspaceReasoning } from '../contracts.ts'
+import type { CommonspaceAgentProfile, CommonspaceMessage, CommonspaceReasoning } from '@commonspace/shared'
 
 const ESCAPE = String.fromCharCode(27)
 

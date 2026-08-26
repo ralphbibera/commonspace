@@ -1,11 +1,61 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { CommonspaceSidebar } from '../src/client/CommonspaceSidebar.tsx'
+import { CommonspaceConversation } from '../ui/src/CommonspaceConversation.tsx'
+import { CommonspaceSidebar } from '../ui/src/CommonspaceSidebar.tsx'
 
 afterEach(cleanup)
 
 describe('Commonspace direct messages', () => {
+  it('shows when a direct-message agent is responding', () => {
+    Element.prototype.scrollIntoView = vi.fn()
+    const messages = [{
+      id: 'message-1',
+      conversation: { kind: 'dm' as const, id: 'frontend' },
+      authorType: 'user' as const,
+      authorId: 'user',
+      authorName: 'Ralph',
+      text: 'Please review this.',
+      createdAt: '2026-08-26T00:00:00.000Z',
+      replyStatus: 'running' as const,
+    }]
+    const snapshot = {
+      bootstrap: {
+        agents: [{ id: 'frontend', displayName: 'Frontend', adapter: 'hermes' as const, model: 'gpt-5.6-luna', status: 'stopped' as const }],
+        state: {
+          version: 6,
+          revision: 2,
+          defaults: { model: null, reasoning: 'max' as const, maxAgentsPerTurn: 2, memoryThreads: 12 },
+          agents: [],
+          dmSessions: {},
+          agentSessions: {},
+          projects: [],
+          channels: [],
+          threads: [],
+          messages: { 'dm:frontend': messages },
+        },
+      },
+      loading: false,
+      sending: false,
+      error: null,
+      activeConversation: { kind: 'dm' as const, id: 'frontend' },
+      activeProjectId: null,
+      activeThreadId: null,
+    }
+    const store = {
+      subscribe: () => () => undefined,
+      getSnapshot: () => snapshot,
+      messages: () => messages,
+      send: vi.fn(),
+      mutate: vi.fn(),
+      selectThread: vi.fn(),
+    }
+
+    render(<CommonspaceConversation store={store as never} />)
+
+    expect(screen.getByRole('status').textContent).toBe('Frontend is responding…')
+  })
+
   it('starts a direct message from a searchable agent picker', () => {
     const agents = [
       { id: 'backend', displayName: 'Backend', adapter: 'hermes' as const, model: 'openai/gpt-5.4', status: 'running' as const },

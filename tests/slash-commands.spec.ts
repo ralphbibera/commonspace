@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { resolveSlashCommand, slashCommandSuggestions } from '../src/client/slash-commands.ts'
+import { resolveSlashCommand, slashCommandSuggestions } from '../ui/src/slash-commands.ts'
 
 describe('Commonspace slash commands', () => {
   it('suggests commands and aliases case-insensitively for the active conversation', () => {

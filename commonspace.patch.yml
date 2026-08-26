@@ -1,6 +1,0 @@
-- insert:
-    - id: commonspace
-      name: '@ralphbibera/commonspace'
-      config:
-        yolo: !!js process.env.COMMONSPACE_HERMES_YOLO === '1'
-        externalAgentYolo: !!js process.env.COMMONSPACE_AGENT_YOLO === '1'

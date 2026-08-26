@@ -1,5 +1,5 @@
-import type { CommonspaceAgentDefinition, CommonspaceMutation, CommonspaceState } from '../contracts.ts'
-import { COMMONSPACE_STATE_VERSION } from '../contracts.ts'
+import type { CommonspaceAgentDefinition, CommonspaceMutation, CommonspaceState } from '@commonspace/shared'
+import { COMMONSPACE_STATE_VERSION, projectTagName } from '@commonspace/shared'
 
 export interface StateDependencies {
   ids(): string
@@ -98,6 +98,10 @@ export function applyMutation(
   switch (mutation.action) {
     case 'create-project': {
       const name = normalizedName(mutation.name, 'project')
+      const tagName = projectTagName(name)
+      if (state.projects.some(project => projectTagName(project.name) === tagName)) {
+        throw new Error('project name already exists')
+      }
       const paths = [...new Set(mutation.paths.map(path => path.trim()).filter(Boolean))]
       if (paths.length === 0) throw new Error('project requires at least one filesystem path')
       return {

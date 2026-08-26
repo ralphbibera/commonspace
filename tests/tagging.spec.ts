@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseTags, routeChannelAgents } from '../src/host/hermes.ts'
+import { parseTags, routeChannelAgents } from '../packages/adapters/src/hermes.ts'
 
 describe('Commonspace tagging', () => {
   it('parses agent, project, and channel references without confusing @@ with @', () => {

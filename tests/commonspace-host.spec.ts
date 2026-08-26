@@ -2,7 +2,8 @@ import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promi
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { CommonspaceHostService, readBoundedTextFile, requestIsLoopback, requestIsSameOrigin, unsafeModeForAdapter, type AgentRunInput } from '../src/host/service.ts'
+import { requestIsLoopback, requestIsSameOrigin } from '../server/src/app.ts'
+import { CommonspaceHostService, readBoundedTextFile, unsafeModeForAdapter, type AgentRunInput } from '../server/src/service.ts'
 
 const roots: string[] = []
 function deferred<T>() {
