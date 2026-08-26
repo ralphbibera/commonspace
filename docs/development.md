@@ -1,112 +1,61 @@
 # Development guide
 
-## Prerequisites
-
-- Node.js 22+
-- pnpm 10.34.5 (pnpm 10.26+ is required for Git dependency `allowBuilds`)
-- DeepSeek Harness Web `0.1.1-rc.2`+
-- At least one configured Hermes, Codex CLI, or Claude Code runtime for live execution tests
-
 ## Setup
 
 ```bash
 pnpm install --frozen-lockfile
-pnpm check
+pnpm dev
 ```
 
-`pnpm check` is the release gate: ESLint, TypeScript, Vitest, and both host/client builds.
+Development services:
 
-## Repository map
+- UI: `http://127.0.0.1:5173`
+- API: `http://127.0.0.1:3100`
 
-- `src/contracts.ts` — versioned API/state contracts.
-- `src/host/state.ts` — deterministic mutations.
-- `src/host/service.ts` — validation, persistence, routing, locking, subprocess lifecycle, and same-origin routes.
-- `src/host/hermes.ts` — Hermes discovery/invocation plus common prompt/routing helpers.
-- `src/host/adapters.ts` — Codex and Claude invocation builders/parsers.
-- `src/host/memory.ts` — Channel memory projection.
-- `src/client/commonspace-store.ts` — browser state and API client.
-- `src/client/CommonspaceSidebar.tsx` — Projects, Channels, DMs, and Agents navigation.
-- `src/client/CommonspaceConversation.tsx` — messages, threads, commands, and composer.
-- `src/client/slash-commands.ts` — command registry, aliases, and resolver.
-- `src/client/styles.ts` — compatibility/base styles.
-- `src/client/polish.ts` — semantic Commonspace design layer.
-- `scripts/verify-live.mjs` — real DSH browser acceptance path.
+Vite proxies `/api` to the server, so browser code always uses same-origin relative paths.
 
-## Change workflow
+## Workspace map
 
-1. Write a failing focused test.
-2. Run only that test and verify the failure is meaningful.
-3. Implement the smallest production change.
-4. Run the focused tests.
-5. Run `pnpm check` once the slice is complete.
-6. For visible work, rebuild, restart linked DSH Web, run `pnpm verify:live`, and inspect screenshots.
-7. Review `git diff --check` and the complete diff before committing.
+- `packages/shared/src` — versioned contracts and pure shared helpers.
+- `packages/adapters/src` — Hermes, Codex CLI, and Claude Code invocation and parsing.
+- `server/src/state.ts` — deterministic mutations.
+- `server/src/service.ts` — persistence, routing, sessions, and process lifecycle.
+- `server/src/app.ts` — Express API and production asset serving.
+- `server/src/index.ts` — process startup and shutdown.
+- `ui/src/commonspace-store.ts` — observable API client state.
+- `ui/src/CommonspaceSidebar.tsx` — Projects, Channels, DMs, and Agents.
+- `ui/src/CommonspaceConversation.tsx` — messages, threads, commands, and composer.
+- `ui/src/main.tsx` — standalone browser mount.
 
-Do not modify DeepSeek Harness core files. Commonspace remains an external bundle that uses public Cordis/DSH extension points.
+## Test-driven workflow
 
-## State changes
-
-When changing persisted state:
-
-1. Increment `COMMONSPACE_STATE_VERSION`.
-2. Keep older supported versions in the load gate.
-3. Structurally sanitize every loaded field; never cast raw JSON into a state interface.
-4. Canonicalize persisted filesystem paths before adapters can use them.
-5. Redact host-private values from browser/API snapshots.
-6. Persist the migrated state during initialization.
-7. Add tests for malformed old state, migration durability, and rollback notes.
-8. Update `docs/architecture.md` and `docs/operations.md`.
-
-## Verification commands
+1. Add a focused failing test in `tests/` or beside a package module.
+2. Confirm the failure describes the missing behavior.
+3. Implement the smallest change.
+4. Run the focused test.
+5. Run the full gates:
 
 ```bash
-pnpm test
 pnpm lint
 pnpm typecheck
+pnpm test
 pnpm build
-pnpm check
-pnpm verify:adapters:codex
-pnpm verify:adapters:claude
-```
-
-The real adapter checks are opt-in and consume the installed CLI's configured model access. A passing unit suite is not a substitute for a real start/resume smoke test, but an authentication failure is reported as an external blocker rather than fabricated success.
-
-## Packaging and cross-machine testing
-
-Create the same self-contained tarball that CI uploads:
-
-```bash
-pnpm pack:plugin
-```
-
-The resulting `commonspace-<version>.tgz` contains built host/client entry points, declarations, the bundle patch, documentation, and the checked-in image. Test it without linking the source checkout:
-
-```bash
-dsh plugin --profile web add ./commonspace-<version>.tgz
-dsh plugin --profile web list --depth 0
-dsh --profile web --dump-config
-```
-
-For source installs from GitHub, `prepare` builds `lib/`. Pin a full trusted commit SHA, run the add once, and copy the exact rejected build key printed by pnpm into the target profile's `allowBuilds`; do not guess a package-only key. Prefer the prebuilt CI artifact when the target machine should execute no package build.
-
-## Live DSH verification
-
-Link the checkout once:
-
-```bash
-pnpm build
-dsh plugin --profile web add .
-dsh web --no-open --port 3080
-```
-
-Then run:
-
-```bash
-COMMONSPACE_TEST_URL=http://127.0.0.1:3080 \
-COMMONSPACE_TEST_PROJECT="$PWD" \
 pnpm verify:live
 ```
 
-The verifier checks mode switching, the real Hermes roster, Project paths, Channel settings and memory, immediate root acceptance, thread isolation, DM picker, slash commands, a real DM, reload persistence, and restoration of native Workspaces.
+`pnpm check` combines lint, typecheck, tests, and build. `verify:live` additionally starts the built server and exercises the application through a real browser.
 
-Artifacts are written under ignored `artifacts/`. Set `COMMONSPACE_UPDATE_DOCS=1` only when deliberately refreshing the checked-in sidebar image.
+## Contract changes
+
+Cross-process shapes have one writer: `packages/shared`. When changing persisted state:
+
+1. Increment `COMMONSPACE_STATE_VERSION` when compatibility changes.
+2. Sanitize every loaded field.
+3. Migrate during initialization and persist the result.
+4. Redact host-private session references from API snapshots.
+5. Add malformed-state, migration, and rollback tests.
+6. Update architecture and operations documentation.
+
+## Adapter changes
+
+Adapters build argument arrays and parse results; they do not read credentials or spawn processes. Real adapter smoke tests are opt-in because they use the locally authenticated CLI and may consume model access.

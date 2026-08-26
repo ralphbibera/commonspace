@@ -75,9 +75,13 @@ export interface CommonspaceMessage {
   createdAt: string
   threadId?: string
   parentMessageId?: string
+  /** Lifecycle of the agent reply requested by a direct-message user turn. */
+  replyStatus?: CommonspaceReplyStatus
+  replyError?: string
 }
 
-export type CommonspaceThreadStatus = 'queued' | 'running' | 'complete' | 'error'
+export type CommonspaceReplyStatus = 'queued' | 'running' | 'complete' | 'error'
+export type CommonspaceThreadStatus = CommonspaceReplyStatus
 
 export interface CommonspaceThread {
   id: string

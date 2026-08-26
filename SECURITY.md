@@ -1,15 +1,20 @@
 # Security Policy
 
-## Reporting a vulnerability
+## Reporting
 
-Please do not open a public issue for suspected security vulnerabilities.
+Report suspected vulnerabilities privately through GitHub's **Report a vulnerability** flow. Include the affected revision, reproduction steps, impact, and any suggested mitigation.
 
-Use GitHub's **Report a vulnerability** flow under the repository's Security tab so the report and discussion remain private. Include the affected version, reproduction steps, impact, and any suggested mitigation.
+## Current support
 
-## Supported versions
+Commonspace is a private preview. Security fixes target the latest `main` revision.
 
-Commonspace is currently a private preview. Security fixes target the latest commit on `main`; no older release line is supported yet.
+## Security boundary
 
-## Scope
+- The HTTP server binds to `127.0.0.1`.
+- State-changing API requests require same-origin browser metadata.
+- Project paths are canonicalized before an adapter receives them.
+- Agent CLIs are invoked without a shell and with bounded input, output, and execution time.
+- Commonspace stores session references but never copies runtime credentials.
+- Unsafe adapter modes require explicit environment variables and are disabled by default.
 
-Commonspace must never store or transmit DeepSeek Harness credentials. Runtime credentials remain owned by the Harness profile and its supported credential providers.
+Do not attach local state files, credential stores, or native agent transcripts to a vulnerability report unless requested through the private thread.

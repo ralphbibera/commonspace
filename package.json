@@ -1,87 +1,27 @@
 {
-  "name": "@ralphbibera/commonspace",
+  "name": "commonspace",
   "version": "0.1.0",
-  "description": "A local Buzz-like workspace for filesystem projects, channels, DMs, and reusable CLI agents.",
+  "description": "A local-first workspace for projects, channels, direct messages, and coding agents.",
   "private": true,
   "license": "MIT",
   "type": "module",
-  "main": "lib/index.mjs",
-  "types": "lib/types/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./lib/types/index.d.ts",
-      "import": "./lib/index.mjs"
-    },
-    "./client": {
-      "types": "./lib/types/client/index.d.ts",
-      "default": "./lib/client.js"
-    },
-    "./commonspace.patch.yml": "./commonspace.patch.yml",
-    "./package.json": "./package.json"
-  },
-  "files": [
-    "lib",
-    "commonspace.patch.yml",
-    "docs",
-    "README.md",
-    "LICENSE"
-  ],
   "scripts": {
-    "build": "tsdown && tsc -p tsconfig.build.json",
-    "dev": "tsdown --watch",
-    "typecheck": "tsc --noEmit",
+    "dev": "pnpm --filter @commonspace/server --filter @commonspace/ui --parallel --stream run dev",
+    "dev:server": "pnpm --filter @commonspace/server dev",
+    "dev:ui": "pnpm --filter @commonspace/ui dev",
+    "build": "pnpm -r --if-present build",
+    "typecheck": "pnpm --filter @commonspace/shared build && pnpm --filter @commonspace/adapters build && pnpm -r --if-present typecheck",
     "test": "vitest run",
     "test:watch": "vitest",
     "verify:adapters": "COMMONSPACE_LIVE_ADAPTERS=1 vitest run tests/live-agent-adapters.spec.ts --testTimeout=240000",
     "verify:adapters:codex": "COMMONSPACE_LIVE_ADAPTERS=1 vitest run tests/live-agent-adapters.spec.ts -t 'Codex sessions' --testTimeout=240000",
     "verify:adapters:claude": "COMMONSPACE_LIVE_ADAPTERS=1 vitest run tests/live-agent-adapters.spec.ts -t 'Claude Code sessions' --testTimeout=240000",
-    "verify:live": "node scripts/verify-live.mjs",
+    "verify:live": "pnpm build && node scripts/verify-live.mjs",
     "lint": "eslint .",
     "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build",
-    "pack:plugin": "pnpm check && npm_config_ignore_scripts=true pnpm pack --out commonspace-%v.tgz",
-    "prepare": "pnpm build",
-    "prepack": "pnpm check"
-  },
-  "dsh": {
-    "bundle": {
-      "patch": "./commonspace.patch.yml"
-    },
-    "client": {
-      "platform": "web",
-      "inject": [
-        "@deepseek-ai/dsh-client-runtime",
-        "@deepseek-ai/dsh-client-ui-layout",
-        "@deepseek-ai/dsh-client-ui-sidebar"
-      ]
-    }
-  },
-  "peerDependencies": {
-    "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/dsh-client-runtime": ">=0.1.1-rc.2 <0.2.0",
-    "@deepseek-ai/dsh-client-ui-layout": ">=0.1.1-rc.2 <0.2.0",
-    "@deepseek-ai/dsh-client-ui-sidebar": ">=0.1.1-rc.2 <0.2.0",
-    "@deepseek-ai/dsh-client-ui-slots": ">=0.1.1-rc.2 <0.2.0",
-    "@deepseek-ai/dsh-host-webserver": ">=0.1.1-rc.2 <0.2.0",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0"
-  },
-  "peerDependenciesMeta": {
-    "@deepseek-ai/cordis": { "optional": true },
-    "@deepseek-ai/dsh-client-runtime": { "optional": true },
-    "@deepseek-ai/dsh-client-ui-layout": { "optional": true },
-    "@deepseek-ai/dsh-client-ui-sidebar": { "optional": true },
-    "@deepseek-ai/dsh-client-ui-slots": { "optional": true },
-    "@deepseek-ai/dsh-host-webserver": { "optional": true },
-    "react": { "optional": true },
-    "react-dom": { "optional": true }
+    "start": "pnpm --filter @commonspace/server start"
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "4.0.1",
-    "@deepseek-ai/dsh-client-runtime": "0.1.1-rc.2",
-    "@deepseek-ai/dsh-client-ui-layout": "0.1.1-rc.2",
-    "@deepseek-ai/dsh-client-ui-sidebar": "0.1.1-rc.2",
-    "@deepseek-ai/dsh-client-ui-slots": "0.1.1-rc.2",
-    "@deepseek-ai/dsh-host-webserver": "0.1.1-rc.2",
     "@eslint/js": "9.39.1",
     "@testing-library/react": "16.3.0",
     "@types/node": "22.19.11",
@@ -93,7 +33,6 @@
     "prettier": "3.8.2",
     "react": "18.3.1",
     "react-dom": "18.3.1",
-    "tsdown": "0.20.3",
     "typescript": "5.9.3",
     "typescript-eslint": "8.56.1",
     "vitest": "4.1.8"

@@ -1,5 +1,5 @@
-import type { CommonspaceChannelMemory, CommonspaceMessage, CommonspaceState } from '../contracts.ts'
-import { conversationKey } from '../contracts.ts'
+import type { CommonspaceChannelMemory, CommonspaceMessage, CommonspaceState } from '@commonspace/shared'
+import { conversationKey } from '@commonspace/shared'
 
 function unique(values: string[], limit: number): string[] {
   const seen = new Set<string>()

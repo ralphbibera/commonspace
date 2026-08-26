@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyMutation, createInitialState } from '../src/host/state.ts'
+import { applyMutation, createInitialState } from '../server/src/state.ts'
 
 describe('Commonspace direct-message sessions', () => {
   it('starts a fresh adapter session and clears only that DM transcript', () => {

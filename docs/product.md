@@ -2,71 +2,39 @@
 
 ## Purpose
 
-Commonspace is a local-first place for one human to work with reusable coding agents without leaving DeepSeek Harness Web. It turns filesystem context, agent identity, and conversation history into four understandable objects instead of exposing raw CLI sessions.
+Commonspace gives one person a clear, local place to converse with reusable coding agents while keeping project context and native session continuity visible.
 
 ## Product principles
 
-1. **Local authority.** Files, state, credentials, and agent processes stay on the local machine.
-2. **Real agents, not decorative personas.** Hermes profiles are discovered; Codex CLI and Claude Code agents are added explicitly.
-3. **Context is visible.** Projects, channel membership, model overrides, reasoning, and memory are inspectable in the interface.
-4. **Threads are execution boundaries.** Every Channel root creates one native agent session; its replies resume that exact session.
-5. **Direct means persistent.** A DM resumes one native scope until the user deliberately runs `/new`.
-6. **Native, reversible integration.** Commonspace occupies public DSH slots and reveals untouched Workspaces when switched off.
+1. **Conversation is the work record.** Requests, replies, decisions, and follow-ups remain legible as messages and threads.
+2. **Context has a visible home.** Every shared conversation belongs to a Project and every Project identifies its filesystem context.
+3. **Agents are real runtimes.** Agent identity maps to an installed Hermes profile or an explicitly configured Codex CLI or Claude Code adapter.
+4. **Continuity is exact.** A Channel thread or DM resumes the native session created for that conversation.
+5. **Local authority.** State, files, agent processes, and credentials remain on the machine.
+6. **Control operations stay local.** Slash commands change Commonspace state and are never forwarded as prompts.
 
 ## Core objects
 
 ### Project
 
-A named set of one or more canonical filesystem directories. The first directory is the process working directory; the rest are additional writable context where the adapter supports it.
+A named context containing one or more canonical filesystem directories. The first directory is the working directory; supported adapters receive the others as additional context.
 
 ### Channel
 
-A Project-scoped room with explicit agent membership, instructions, model/reasoning overrides, and projected memory. A valid `@agent-id` targets seated agents. Without a valid mention, the root is routed to the roster, bounded by the configured per-turn limit.
+A Project-scoped shared conversation with an explicit agent roster, instructions, settings, and projected memory. An `@agent-id` mention targets a seated agent. A message without a valid mention routes to the Channel roster within the configured limit.
 
 ### Direct Message
 
-A one-to-one conversation with an agent. The current DM scope is host-private. `/new` clears only that transcript, rotates the scope, and prevents an old in-flight reply from appearing in the new chat.
+A persistent one-to-one conversation with an agent. `/new` deliberately rotates the native scope, clears only that DM transcript, and prevents stale in-flight replies from crossing the boundary.
 
 ### Agent
 
-Either a discovered Hermes profile or an explicit Codex CLI/Claude Code definition. Identity is stable and namespaced; adapter, model, availability, and display name remain visible presentation metadata.
+A stable identity backed by Hermes, Codex CLI, or Claude Code. Adapter, display name, model, reasoning, and availability remain visible.
 
-## Primary journeys
+### Message and thread
 
-### Start shared work
+Messages carry user intent and agent results. A Channel root creates one native session; replies continue it. This is the product's unit of work and context handoff.
 
-1. Add a Project and one or more workspace paths.
-2. Create a Channel and choose its agents.
-3. Add Channel instructions and optional model/reasoning overrides.
-4. Post a root task.
-5. Open its thread to inspect or continue the exact native session.
+## Product decision rule
 
-### Start a private conversation
-
-1. Use **+** beside Direct Messages.
-2. Search by agent name, ID, adapter, or model.
-3. Select an agent and send a message.
-4. Use `/status`, `/retry`, or `/new` without forwarding those commands to the model.
-
-### Add another runtime
-
-1. Use **+** beside Agents.
-2. Pick Codex CLI or Claude Code.
-3. Give the agent a name and optional model.
-4. Seat it in a Channel or open a DM.
-
-## Command behavior
-
-Commands are local control operations. Unknown slash commands are rejected rather than sent as prompts.
-
-- `/help` — context-aware command list.
-- `/new` — DM-only fresh transcript and native scope.
-- `/retry` — resend the latest user turn in the current conversation/thread.
-- `/status` — local runtime, model, and context summary.
-- `/agents` — visible local roster.
-
-Aliases are documented in the README and resolved case-insensitively.
-
-## Current product boundary
-
-Commonspace is single-user, local-only, and non-streaming. It does not add federation, voice, multi-user authentication, hosted agent runtimes, GitHub workflow management, or another web application. Those omissions are deliberate, not placeholders hidden behind inactive controls.
+A feature belongs when it improves conversation continuity, context visibility, agent routing, transcript navigation, or safe local execution. It should extend the objects above rather than introduce a separate task-management model.

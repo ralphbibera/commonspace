@@ -2,7 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { CommonspaceHostService, type AgentRunInput } from '../src/host/service.ts'
+import { CommonspaceHostService, type AgentRunInput } from '../server/src/service.ts'
 
 const roots: string[] = []
 
@@ -17,6 +17,26 @@ afterEach(async () => {
 })
 
 describe('Commonspace direct-message host sessions', () => {
+  it('reports queued and running work before completing a DM reply', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-dm-status-'))
+    roots.push(root)
+    const result = deferred<{ text: string; sessionId: string }>()
+    const runAgent = vi.fn(async () => result.promise)
+    const service = new CommonspaceHostService({} as never, { root }, { discoverAgents: async () => [], runAgent })
+    await service.initialize()
+    await service.mutate({ action: 'add-agent', displayName: 'Review Bot', adapter: 'codex' })
+
+    const accepted = await service.send({ conversation: { kind: 'dm', id: 'codex-review-bot' }, text: 'Review this' })
+    expect(accepted.accepted.replyStatus).toBe('queued')
+    await vi.waitFor(() => {
+      expect(service.snapshot().messages['dm:codex-review-bot']?.[0]?.replyStatus).toBe('running')
+    })
+
+    result.resolve({ text: 'Reviewed', sessionId: '123e4567-e89b-42d3-a456-426614174000' })
+    await service.whenIdle()
+    expect(service.snapshot().messages['dm:codex-review-bot']?.[0]?.replyStatus).toBe('complete')
+  })
+
   it('runs the next DM in a fresh native session after reset', async () => {
     const root = await mkdtemp(join(tmpdir(), 'commonspace-reset-dm-'))
     roots.push(root)

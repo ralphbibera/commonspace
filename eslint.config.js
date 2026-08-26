@@ -27,8 +27,11 @@ export default tseslint.config(
       ecmaVersion: 'latest',
       sourceType: 'module',
       globals: {
+        clearTimeout: 'readonly',
         console: 'readonly',
+        fetch: 'readonly',
         process: 'readonly',
+        setTimeout: 'readonly',
       },
     },
   },

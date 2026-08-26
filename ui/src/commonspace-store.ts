@@ -6,8 +6,8 @@ import type {
   ConversationRef,
   SendMessageRequest,
   SendMessageResponse,
-} from '../contracts.ts'
-import { conversationKey } from '../contracts.ts'
+} from '@commonspace/shared'
+import { conversationKey } from '@commonspace/shared'
 
 export interface CommonspaceClientSnapshot {
   bootstrap: CommonspaceBootstrap | null
@@ -49,6 +49,7 @@ export class CommonspaceClientStore {
   }
   private readonly listeners = new Set<Listener>()
   private refreshPromise: Promise<void> | null = null
+  private pendingRevision = -1
   private events: EventSource | null = null
 
   getSnapshot = (): CommonspaceClientSnapshot => this.snapshot
@@ -61,26 +62,36 @@ export class CommonspaceClientStore {
   async refresh(): Promise<void> {
     if (this.refreshPromise !== null) return this.refreshPromise
     this.set({ ...this.snapshot, loading: true, error: null })
-    const task = requestJson<CommonspaceBootstrap>('/commonspace/api/bootstrap')
+    let refreshSucceeded = false
+    const task = requestJson<CommonspaceBootstrap>('/api/bootstrap')
       .then((bootstrap) => {
+        refreshSucceeded = true
         const merged = this.mergeBootstrap(bootstrap)
         this.set({ ...this.snapshot, bootstrap: merged, loading: false, activeProjectId: this.resolveActiveProject(merged) })
       })
       .catch((error: unknown) => {
         this.set({ ...this.snapshot, loading: false, error: error instanceof Error ? error.message : String(error) })
       })
-      .finally(() => { this.refreshPromise = null })
+      .finally(() => {
+        this.refreshPromise = null
+        const currentRevision = this.snapshot.bootstrap?.state.revision ?? -1
+        if (this.pendingRevision <= currentRevision) this.pendingRevision = -1
+        else if (refreshSucceeded) void this.refresh()
+      })
     this.refreshPromise = task
     return task
   }
 
   connectEvents(): void {
     if (this.events !== null || typeof EventSource === 'undefined') return
-    const events = new EventSource('/commonspace/api/events')
+    const events = new EventSource('/api/events')
     events.addEventListener('revision', (event) => {
       try {
         const value = JSON.parse((event as MessageEvent<string>).data) as { revision?: number }
-        if (typeof value.revision === 'number' && value.revision > (this.snapshot.bootstrap?.state.revision ?? -1)) void this.refresh()
+        if (typeof value.revision === 'number' && value.revision > (this.snapshot.bootstrap?.state.revision ?? -1)) {
+          this.pendingRevision = Math.max(this.pendingRevision, value.revision)
+          void this.refresh()
+        }
       } catch {
         // Ignore malformed event frames; EventSource will continue.
       }
@@ -96,7 +107,7 @@ export class CommonspaceClientStore {
 
   async mutate(mutation: CommonspaceMutation): Promise<void> {
     try {
-      const result = await requestJson<CommonspaceBootstrap>('/commonspace/api/mutate', {
+      const result = await requestJson<CommonspaceBootstrap>('/api/mutate', {
         method: 'POST',
         body: JSON.stringify(mutation),
       })
@@ -139,7 +150,7 @@ export class CommonspaceClientStore {
     }
     this.set({ ...this.snapshot, sending: true, error: null })
     try {
-      const result = await requestJson<SendMessageResponse>('/commonspace/api/send', {
+      const result = await requestJson<SendMessageResponse>('/api/send', {
         method: 'POST',
         body: JSON.stringify(request),
       })

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { CommonspaceBootstrap } from '../src/contracts.ts'
-import { CommonspaceClientStore } from '../src/client/commonspace-store.ts'
+import type { CommonspaceBootstrap } from '../packages/shared/src/contracts.ts'
+import { CommonspaceClientStore } from '../ui/src/commonspace-store.ts'
 
 function bootstrap(revision: number, projectName: string): CommonspaceBootstrap {
   return {
@@ -31,7 +31,28 @@ function deferred<T>() {
   return { promise, resolve }
 }
 
-afterEach(() => { vi.unstubAllGlobals() })
+class FakeEventSource {
+  static readonly instances: FakeEventSource[] = []
+  private readonly listeners = new Map<string, (event: MessageEvent<string>) => void>()
+  readonly close = vi.fn()
+
+  constructor() {
+    FakeEventSource.instances.push(this)
+  }
+
+  addEventListener(type: string, listener: EventListener): void {
+    this.listeners.set(type, listener as (event: MessageEvent<string>) => void)
+  }
+
+  emit(type: string, data: string): void {
+    this.listeners.get(type)?.({ data } as MessageEvent<string>)
+  }
+}
+
+afterEach(() => {
+  FakeEventSource.instances.length = 0
+  vi.unstubAllGlobals()
+})
 
 describe('Commonspace client revision ordering', () => {
   it('ignores a stale refresh that resolves after a newer mutation', async () => {
@@ -85,5 +106,38 @@ describe('Commonspace client revision ordering', () => {
     await store.mutate({ action: 'add-agent', displayName: 'Review Bot', adapter: 'codex', model: 'gpt-5.4' })
 
     expect(store.getSnapshot().bootstrap?.agents).toEqual([managed])
+  })
+
+  it('refreshes again when an SSE revision arrives during an in-flight refresh', async () => {
+    const firstRefresh = deferred<Response>()
+    const followUpRefresh = deferred<Response>()
+    const latest = bootstrap(2, 'Initial')
+    latest.state.messages['dm:backend'] = [{
+      id: 'reply-1',
+      conversation: { kind: 'dm', id: 'backend' },
+      authorType: 'agent',
+      authorId: 'backend',
+      authorName: 'Backend',
+      text: 'Reply arrived',
+      createdAt: '2026-08-25T00:00:00.000Z',
+    }]
+    const fetch = vi.fn()
+      .mockImplementationOnce(() => firstRefresh.promise)
+      .mockImplementationOnce(() => followUpRefresh.promise)
+    vi.stubGlobal('fetch', fetch)
+    vi.stubGlobal('EventSource', FakeEventSource)
+
+    const store = new CommonspaceClientStore()
+    store.connectEvents()
+    const refreshing = store.refresh()
+    FakeEventSource.instances[0]!.emit('revision', JSON.stringify({ revision: 2 }))
+    firstRefresh.resolve(response(bootstrap(1, 'Initial')))
+    await refreshing
+
+    await vi.waitFor(() => { expect(fetch).toHaveBeenCalledTimes(2) })
+    followUpRefresh.resolve(response(latest))
+    await vi.waitFor(() => {
+      expect(store.getSnapshot().bootstrap?.state.messages['dm:backend']?.[0]?.text).toBe('Reply arrived')
+    })
   })
 })

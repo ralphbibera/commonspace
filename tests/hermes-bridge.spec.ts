@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildHermesInvocation, buildRoomPrompt, parseHermesProfileList, routeChannelAgents } from '../src/host/hermes.ts'
+import { buildHermesInvocation, buildRoomPrompt, parseHermesProfileList, routeChannelAgents } from '../packages/adapters/src/hermes.ts'
 
 const PROFILE_TABLE = `Profile          Model                        Gateway      Alias        Distribution
  ───────────────    ───────────────────────────    ───────────    ───────────    ────────────────────

@@ -1,111 +1,62 @@
 # Architecture
 
-## Boundary
+## Shape
 
-Commonspace is a local Buzz-like agent workspace hosted inside DeepSeek Harness Web. DSH supplies the shell and extension points. Optional Hermes, Codex CLI, and Claude Code adapters supply agent identities and execution. Commonspace owns only local Projects, Channels, DMs, Agents presentation, message metadata, routing, and native-session references.
+Commonspace is a pnpm workspace with four explicit boundaries:
 
-Commonspace has no runtime package dependency on those CLIs or OpenAgents, does not copy their credentials or session content, and does not modify DeepSeek Harness core files.
+```text
+packages/shared    Domain contracts and pure shared helpers
+packages/adapters  CLI invocation builders and output/session parsers
+server             Express API, durable state, routing, and agent execution
+ui                 Vite/React browser application
+```
 
-## Core entities
+The structure borrows mature separation patterns without importing another product's domain. Commonspace remains scoped to Projects, Channels, Direct Messages, Agents, Messages, threads, and context continuity.
 
-### Project
+## Request path
 
-A Project is a named context container with one or more absolute local directory paths. The first path is the agent process working directory. Other paths are exposed through the adapter's supported additional-directory flags and every path is listed in Channel prompts.
+The Vite development server proxies `/api` to `127.0.0.1:3100`. A production build places browser assets in `ui/dist`; the Express server serves those assets and the same API from one origin.
 
-### Channel
+Endpoints:
 
-A Channel belongs to a Project and carries an explicit list of agent IDs. Valid `@agent-id` mentions route only to seated agents. If no seated agent is mentioned, the turn is sent to the full Channel roster. Each root creates a new native session; replies reuse that thread's session. Agent calls are serial and capped by host configuration.
+- `GET /api/health`
+- `GET /api/bootstrap`
+- `GET /api/events`
+- `POST /api/mutate`
+- `POST /api/send`
 
-### Direct Message
+Server-sent revision events prompt the UI store to refresh. State revisions prevent an older response from replacing newer browser state.
 
-A DM is derived from an agent ID and uses one persistent native session. It begins with Hermes' canonical `Bot Chat` scope or the equivalent adapter session. `/new` rotates to a generated `Commonspace DM` scope, clears the Commonspace transcript, and prevents an in-flight reply from the previous scope from being published.
+## Server
 
-### Agent
+`server/src/service.ts` owns domain behavior:
 
-An Agent is either a real Hermes profile discovered through `hermes profile list` or an explicit user-managed Codex CLI/Claude Code definition. Commonspace never synthesizes specialists. The namespaced agent ID is routing authority; display name, adapter, and optional model are presentation/execution metadata.
+- versioned state loading and structural sanitization;
+- canonical Project paths;
+- atomic persistence under `~/.commonspace`;
+- message acceptance and thread creation;
+- native session mapping and stale-session recovery;
+- per-conversation and overlapping-workspace serialization;
+- bounded subprocess execution and output capture;
+- generation-safe DM resets;
+- revision subscriptions.
 
-## Host face
+`server/src/app.ts` owns HTTP concerns: JSON limits, loopback and same-origin guards, SSE framing, API status codes, static assets, SPA fallback, and security headers.
 
-`src/index.ts` creates `CommonspaceHostService`, which mounts three same-origin routes on DSH's existing loopback Web server:
+`server/src/index.ts` owns process startup, configuration, signal handling, and server shutdown.
 
-- `GET /commonspace/api/bootstrap`
-- `POST /commonspace/api/mutate`
-- `POST /commonspace/api/send`
+## Shared contracts
 
-The host service:
+`packages/shared` defines the state and API shapes consumed by both server and UI. Native session names and IDs remain in host-private state and are removed from browser snapshots.
 
-- rejects cross-origin mutation requests;
-- caps JSON body and message sizes;
-- structurally sanitizes loaded state, validates reasoning/settings at API boundaries, and canonicalizes Project paths as absolute existing directories;
-- persists `~/.commonspace/state.json` through temp-file + rename publication;
-- discovers Hermes profiles without reading credentials;
-- invokes every adapter with argument arrays and piped input, never a shell command;
-- scopes DMs and Channel threads to persisted native session IDs and host-private session names;
-- rotates DM generations atomically so stale in-flight replies cannot cross a `/new` boundary;
-- retries a missing native session once with a fresh session and never retries unrelated failures;
-- serializes sends per conversation and serializes runs whose Project paths overlap;
-- bounds stdout, stderr, Codex output files, execution time, room history, and agents per turn;
-- kills timed-out adapter process groups;
-- stores temporary prompts/outputs under a `0700` directory with `0600` files and removes them in `finally` blocks.
+## Adapters
 
-Unsafe adapter mode is config-controlled and disabled by default. `COMMONSPACE_AGENT_YOLO=1` affects only Codex CLI and Claude Code; the legacy `COMMONSPACE_HERMES_YOLO=1` flag remains isolated to Hermes.
+`packages/adapters` has no credential logic. It constructs argument arrays, validates native session identifiers, parses CLI output, and builds bounded room prompts. The server launches the commands and owns process lifecycle.
 
-## Browser face
+## UI
 
-### Mode switching
-
-`CommonspaceModeController` starts in Workspaces mode. The footer switch toggles it.
-
-When Commonspace mode activates, `src/client/index.ts` dynamically registers priority `-20` occupants for the existing `sidebar.workspaces` and `conversation` single slots. Lower priority wins the DSH slot shadowing election. When Commonspace deactivates, those registrations are disposed, revealing the untouched native Workspace browser and DSH conversation again.
-
-### Shared state
-
-`CommonspaceClientStore` is one observable store shared by both replacement surfaces. It owns bootstrap loading, active Project, active Channel/DM, optimistic user messages, sending state, errors, mutations, and refresh.
-
-### Sidebar
-
-`CommonspaceSidebar` renders:
-
-- Projects with expandable child filesystem workspaces and per-Project add-workspace controls;
-- Channels with Project binding and editable agent rosters;
-- Direct Messages derived from persisted DM activity, plus the active blank DM, with a searchable agent picker;
-- discovered Hermes agents and user-managed Codex CLI/Claude Code agents.
-
-### Conversation
-
-`CommonspaceConversation` renders the selected Channel or DM, visible Channel membership, attributed messages, errors, and a bounded composer. `src/client/slash-commands.ts` supplies context-aware autocomplete and aliases; recognized commands execute locally and are never forwarded as agent prompts. It does not reuse DSH Session messages because adapter-backed Commonspace agents—not DSH agents—are the room members.
+`ui/src/main.tsx` mounts a normal React root and shared styles. `CommonspaceApp` composes the responsive navigation and conversation surface. `CommonspaceClientStore` owns bootstrap state, selection, sends, mutations, and revision-event refreshes.
 
 ## Persistence
 
-The host state format is versioned. State v6 holds Project definitions, Channel definitions, managed agent definitions, bounded message histories, DM session scopes, and native session UUID mappings. Session content and credentials remain in each CLI's supported storage. Native session names and UUIDs are redacted from browser/API snapshots because only the host needs them.
-
-## Intentional omissions
-
-The private preview does not implement:
-
-- Nostr/Buzz federation;
-- multi-user authentication;
-- voice or media uploads;
-- GitHub repositories or workflow automation;
-- token streaming;
-- reactions, read receipts, or Slack-style message threads;
-- hosted remote agent runtimes.
-
-These can be added later without changing the four core entities or the Workspaces/Commonspace mode boundary.
-
-## Rollback
-
-Before reverting to a host version that only understands state v5 or earlier, preserve the v6 state file:
-
-```bash
-cp ~/.commonspace/state.json ~/.commonspace/state-v6.backup.json
-```
-
-Then remove the profile bundle and restart DSH Web:
-
-```bash
-dsh plugin --profile web remove @ralphbibera/commonspace
-dsh web
-```
-
-Commonspace metadata remains in `~/.commonspace/state.json` unless the operator deletes it explicitly. A pre-v6 host cannot preserve DM generation scopes and must not overwrite the backup.
+State v6 is retained during the standalone extraction, so existing `~/.commonspace/state.json` data remains usable. Writes use a temporary file followed by rename. A future database migration must preserve this migration path and provide rollback evidence.

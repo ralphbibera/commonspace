@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest'
-import type { CommonspaceState } from '../src/contracts.ts'
-import { projectChannelMemory } from '../src/host/memory.ts'
+import type { CommonspaceState } from '../packages/shared/src/contracts.ts'
+import { projectChannelMemory } from '../server/src/memory.ts'
 
 it('projects completed thread context into inspectable channel memory', () => {
   const state: CommonspaceState = {
