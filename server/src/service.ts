@@ -10,9 +10,12 @@ import type {
   CommonspaceAgentDefinition,
   CommonspaceBootstrap,
   CommonspaceAgentProfile,
+  CommonspaceImageAttachment,
+  CommonspaceImageMimeType,
   CommonspaceMessage,
   CommonspaceMutation,
   CommonspaceState,
+  CommonspaceLiveAgentActivity,
   CommonspaceTraceEntry,
   CommonspaceTracePlanStep,
   CommonspaceThread,
@@ -25,11 +28,15 @@ import { projectChannelMemory } from './memory.js'
 import { mentionedChannelAgents, parseHermesProfileList, routeChannelAgents } from './relay.js'
 import { addDiscoveredAgent, applyMutation, createInitialState, defaultCommonspaceDefaults, defaultRunSettings, DM_SESSION_BOUNDARY_AUTHOR_ID, emptyChannelMemory, isCommonspaceReasoning, managedAgentId } from './state.js'
 import { AcpAgentProcess, AcpSessionLoadError, AcpSessionRunError } from './acp-runtime.js'
+import { codexProfileRuntimeConfig, discoverCodexAgents, findCodexAgentProfile, type CodexAgentProfileConfig } from './codex-agents.js'
 import type { CommonspaceMcpGateway, CommonspaceMcpProvider, CommonspaceMcpScope } from './commonspace-mcp.js'
 
 const execFileAsync = promisify(execFile)
 const moduleRequire = createRequire(import.meta.url)
 const MAX_MESSAGE_CHARS = 16_000
+const MAX_IMAGE_ATTACHMENTS = 4
+const MAX_IMAGE_ATTACHMENT_BYTES = 8 * 1024 * 1024
+const MAX_IMAGE_ATTACHMENTS_BYTES = 16 * 1024 * 1024
 const MAX_PROFILE_LIST_BYTES = 1024 * 1024
 const MAX_AGENT_RESPONSE_CHARS = 64_000
 const MAX_MCP_CONTEXT_CHARS = 64_000
@@ -40,6 +47,8 @@ const MAX_TRACE_CHARS = 256_000
 const MANAGED_AGENT_ID_PATTERN = /^codex-[\p{L}\p{N}][\p{L}\p{N}-]{0,79}$/u
 const THREAD_SESSION_SCOPE_PATTERN = /^Commonspace Thread: [0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const DM_SESSION_SCOPE_PATTERN = /^Commonspace DM: [0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const IMAGE_ATTACHMENT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const IMAGE_MIME_TYPES = new Set<CommonspaceImageMimeType>(['image/png', 'image/jpeg', 'image/gif', 'image/webp'])
 
 export interface CommonspaceHostConfig {
   root?: string
@@ -75,10 +84,18 @@ export interface AgentRunInput {
   sessionName: string
   /** The one newly delivered Commonspace message, without replayed context. */
   message: string
+  images?: readonly AgentImageInput[]
   commonspaceScope?: CommonspaceMcpScope
   sessionId?: string
   model?: string
   reasoning?: CommonspaceState['defaults']['reasoning']
+  onTraceUpdate?: (entries: readonly CommonspaceTraceEntry[]) => void
+}
+
+export interface AgentImageInput {
+  name: string
+  mimeType: CommonspaceImageMimeType
+  data: string
 }
 
 export interface AgentRunResult {
@@ -96,6 +113,7 @@ export interface CommonspaceHostDependencies {
 interface PreparedSend {
   request: SendMessageRequest
   text: string
+  attachments: PreparedImageAttachment[]
   agents: CommonspaceAgentProfile[]
   agentIds: string[]
   channel?: CommonspaceState['channels'][number]
@@ -104,11 +122,17 @@ interface PreparedSend {
   dmSessionName?: string
 }
 
+interface PreparedImageAttachment {
+  metadata: CommonspaceImageAttachment
+  data: Buffer
+}
+
 interface AgentDelivery {
   authorType: 'user' | 'agent'
   authorId: string
   authorName: string
   text: string
+  images?: readonly AgentImageInput[]
 }
 
 function messageId(): string {
@@ -117,6 +141,47 @@ function messageId(): string {
 
 function now(): string {
   return new Date().toISOString()
+}
+
+function isImageMimeType(value: unknown): value is CommonspaceImageMimeType {
+  return typeof value === 'string' && IMAGE_MIME_TYPES.has(value as CommonspaceImageMimeType)
+}
+
+function prepareImageAttachments(value: unknown): PreparedImageAttachment[] {
+  if (value === undefined) return []
+  if (!Array.isArray(value)) throw new Error('image attachments must be an array')
+  if (value.length > MAX_IMAGE_ATTACHMENTS) throw new Error(`at most ${String(MAX_IMAGE_ATTACHMENTS)} images can be attached`)
+  const attachments: PreparedImageAttachment[] = []
+  let totalBytes = 0
+  for (const candidate of value) {
+    const attachment = plainRecord(candidate)
+    if (attachment === null) throw new Error('invalid image attachment')
+    if (!isImageMimeType(attachment.mimeType)) throw new Error('unsupported image type')
+    const name = loadedString(attachment.name, 200).normalize('NFKC').trim()
+    if (name === '') throw new Error('image name is required')
+    if (typeof attachment.data !== 'string' || attachment.data.length === 0 || attachment.data.length > Math.ceil(MAX_IMAGE_ATTACHMENT_BYTES / 3) * 4 + 4) {
+      throw new Error('invalid image data')
+    }
+    if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(attachment.data)) {
+      throw new Error('invalid image data')
+    }
+    const data = Buffer.from(attachment.data, 'base64')
+    if (data.length === 0 || data.length > MAX_IMAGE_ATTACHMENT_BYTES || data.toString('base64') !== attachment.data) {
+      throw new Error('invalid image data')
+    }
+    totalBytes += data.length
+    if (totalBytes > MAX_IMAGE_ATTACHMENTS_BYTES) throw new Error('image attachments are too large')
+    attachments.push({
+      metadata: {
+        id: crypto.randomUUID(),
+        name,
+        mimeType: attachment.mimeType,
+        size: data.length,
+      },
+      data,
+    })
+  }
+  return attachments
 }
 
 function isNativeSessionId(value: unknown): value is string {
@@ -146,12 +211,14 @@ function sanitizeAgents(value: unknown): CommonspaceState['agents'] {
     if (adapter === 'hermes') {
       if (agent.id.trim() !== agent.id || agent.id === '' || agent.id.length > 200 || /\s/u.test(agent.id)) continue
     } else if (!MANAGED_AGENT_ID_PATTERN.test(agent.id)) continue
+    const nativeProfile = agent.nativeProfile
+    if (nativeProfile !== undefined && (typeof nativeProfile !== 'string' || nativeProfile.trim() !== nativeProfile || nativeProfile === '' || nativeProfile.length > 200 || /\s/u.test(nativeProfile))) continue
     if (typeof agent.displayName !== 'string' || agent.displayName.trim() === '') continue
     if (agent.model !== null && typeof agent.model !== 'string') continue
     if (typeof agent.createdAt !== 'string') continue
     const displayName = agent.displayName.normalize('NFKC').trim().slice(0, 80)
     try {
-      if (adapter !== 'hermes' && managedAgentId(adapter, displayName) !== agent.id) continue
+      if (adapter !== 'hermes' && managedAgentId(adapter, typeof nativeProfile === 'string' ? nativeProfile : displayName) !== agent.id) continue
     } catch {
       continue
     }
@@ -160,6 +227,7 @@ function sanitizeAgents(value: unknown): CommonspaceState['agents'] {
       id: agent.id,
       displayName,
       adapter,
+      ...(typeof nativeProfile === 'string' ? { nativeProfile } : {}),
       model: model === '' ? null : model,
       createdAt: agent.createdAt.slice(0, 100),
     })
@@ -212,6 +280,12 @@ function loadedId(value: unknown): string | null {
 
 function loadedString(value: unknown, maximum: number, defaultValue = ''): string {
   return typeof value === 'string' ? value.slice(0, maximum) : defaultValue
+}
+
+function loadedIsoTimestamp(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const timestamp = new Date(value)
+  return Number.isNaN(timestamp.valueOf()) || timestamp.toISOString() !== value ? null : value
 }
 
 function loadedStringArray(value: unknown, maximumItems = 64, maximumLength = 2_000): string[] {
@@ -416,6 +490,24 @@ function sanitizeThreads(value: unknown, channels: readonly CommonspaceState['ch
   return threads
 }
 
+function sanitizeImageAttachments(value: unknown): CommonspaceImageAttachment[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const attachments: CommonspaceImageAttachment[] = []
+  const seen = new Set<string>()
+  for (const candidate of value.slice(0, MAX_IMAGE_ATTACHMENTS)) {
+    const attachment = plainRecord(candidate)
+    const id = loadedId(attachment?.id)
+    const name = loadedString(attachment?.name, 200).normalize('NFKC').trim()
+    const size = attachment?.size
+    if (attachment === null || id === null || !IMAGE_ATTACHMENT_ID_PATTERN.test(id) || seen.has(id)) continue
+    if (name === '' || !isImageMimeType(attachment.mimeType)) continue
+    if (typeof size !== 'number' || !Number.isSafeInteger(size) || size < 1 || size > MAX_IMAGE_ATTACHMENT_BYTES) continue
+    seen.add(id)
+    attachments.push({ id, name, mimeType: attachment.mimeType, size })
+  }
+  return attachments.length === 0 ? undefined : attachments
+}
+
 function sanitizeMessages(
   value: unknown,
   channelIds: ReadonlySet<string>,
@@ -451,6 +543,7 @@ function sanitizeMessages(
       const parentMessageId = loadedId(message.parentMessageId)
       if (message.parentMessageId !== undefined && parentMessageId === null) continue
       const trace = message.authorType === 'agent' ? sanitizeAgentTrace(message.trace) : undefined
+      const attachments = sanitizeImageAttachments(message.attachments)
       seen.add(id)
       sanitized.push({
         id,
@@ -459,6 +552,7 @@ function sanitizeMessages(
         authorId,
         authorName,
         text: message.text.slice(0, 64_000),
+        ...(attachments === undefined ? {} : { attachments }),
         createdAt: loadedString(message.createdAt, 100),
         ...(threadId === null ? {} : { threadId }),
         ...(parentMessageId === null ? {} : { parentMessageId }),
@@ -479,7 +573,7 @@ function sanitizeMessages(
 
 function sanitizeLoadedState(value: unknown): CommonspaceState {
   const record = plainRecord(value)
-  if (record === null || (record.version !== 1 && record.version !== 2 && record.version !== 3 && record.version !== 4 && record.version !== 5 && record.version !== 6 && record.version !== 7 && record.version !== 8 && record.version !== COMMONSPACE_STATE_VERSION)) {
+  if (record === null || (record.version !== 1 && record.version !== 2 && record.version !== 3 && record.version !== 4 && record.version !== 5 && record.version !== 6 && record.version !== 7 && record.version !== 8 && record.version !== 9 && record.version !== 10 && record.version !== COMMONSPACE_STATE_VERSION)) {
     return createInitialState()
   }
   const stateDefaults = defaultCommonspaceDefaults()
@@ -506,6 +600,7 @@ function sanitizeLoadedState(value: unknown): CommonspaceState {
   return {
     version: COMMONSPACE_STATE_VERSION,
     revision: loadedBoundedInteger(record.revision, 0, 0, Number.MAX_SAFE_INTEGER),
+    inboxReadAt: loadedIsoTimestamp(record.inboxReadAt),
     defaults,
     agents,
     dmSessions,
@@ -520,11 +615,14 @@ function sanitizeLoadedState(value: unknown): CommonspaceState {
 export class CommonspaceHostService implements CommonspaceMcpProvider {
   readonly root: string
   private readonly statePath: string
+  private readonly attachmentsRoot: string
   private readonly defaultCwd: string
   private state: CommonspaceState = createInitialState()
   private writeTail = Promise.resolve()
   private readonly agentSessionTails = new Map<string, Promise<unknown>>()
   private readonly revisionListeners = new Set<(revision: number) => void>()
+  private readonly liveActivityListeners = new Set<(activities: readonly CommonspaceLiveAgentActivity[]) => void>()
+  private readonly liveActivitiesById = new Map<string, CommonspaceLiveAgentActivity>()
   private readonly backgroundRuns = new Set<Promise<void>>()
   private activeAdmissions = 0
   private readonly admissionIdleWaiters = new Set<() => void>()
@@ -541,6 +639,8 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
   private readonly hermesAcpArgs: string[]
   private readonly codexAcpCommand: string
   private readonly codexAcpArgs: string[]
+  private discoveredAgentCandidates: CommonspaceAgentProfile[] = []
+  private readonly codexAgentProfileConfigs = new Map<string, CodexAgentProfileConfig>()
   private closeOperation: Promise<void> | undefined
   private drainOperation: Promise<void> | undefined
   private closing = false
@@ -555,6 +655,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
   ) {
     this.root = config.root ?? join(homedir(), '.commonspace')
     this.statePath = join(this.root, 'state.json')
+    this.attachmentsRoot = join(this.root, 'attachments')
     this.defaultCwd = config.defaultCwd ?? process.cwd()
     this.hermesPath = config.hermesPath ?? 'hermes'
     this.codexPath = config.codexPath ?? 'codex'
@@ -576,6 +677,8 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
   async initialize(): Promise<void> {
     await mkdir(this.root, { recursive: true, mode: 0o700 })
     await chmod(this.root, 0o700)
+    await mkdir(this.attachmentsRoot, { recursive: true, mode: 0o700 })
+    await chmod(this.attachmentsRoot, 0o700)
     try {
       this.state = sanitizeLoadedState(JSON.parse(await readFile(this.statePath, 'utf8')))
     } catch (error) {
@@ -676,6 +779,8 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
       const processes = [...this.acpProcesses.values()]
       this.acpProcesses.clear()
       this.activeAcpSessions.clear()
+      this.liveActivitiesById.clear()
+      this.broadcastLiveActivities()
       await Promise.all(processes.map(processClient => processClient.close().catch(error => {
         this.environment.logger?.warn(error)
       })))
@@ -779,12 +884,18 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
   }
 
   async bootstrap(): Promise<CommonspaceBootstrap> {
-    const discoveredAgents = await this.discoverAgentCandidates()
     return {
-      agents: this.configuredAgents(discoveredAgents),
-      discoveredAgents,
+      agents: this.configuredAgents(),
+      discoveredAgents: this.discoveredAgentCandidates,
       state: this.publicSnapshot(),
+      liveActivities: this.liveActivities(),
     }
+  }
+
+  async discoverAgents(adapter: AgentAdapterKind): Promise<CommonspaceBootstrap> {
+    if (adapter !== 'hermes' && adapter !== 'codex') throw new Error('unsupported agent adapter')
+    this.discoveredAgentCandidates = await this.discoverAgentCandidates(adapter)
+    return this.bootstrap()
   }
 
   private resolveMcpScope(scope: CommonspaceMcpScope): {
@@ -985,7 +1096,15 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
           })
       if (mutation.action === 'add-discovered-agent') {
         if (typeof mutation.agentId !== 'string') throw new Error('discovered agent id is required')
-        const agent = (await this.discoverAgentCandidates()).find(candidate => candidate.id === mutation.agentId)
+        let agent = this.discoveredAgentCandidates.find(candidate => candidate.id === mutation.agentId)
+        if (agent === undefined) {
+          const [hermes, codex] = await Promise.all([
+            this.discoverAgentCandidates('hermes'),
+            this.discoverAgentCandidates('codex'),
+          ])
+          this.discoveredAgentCandidates = [...hermes, ...codex]
+          agent = this.discoveredAgentCandidates.find(candidate => candidate.id === mutation.agentId)
+        }
         if (agent === undefined) throw new Error('unknown discovered agent')
         this.state = addDiscoveredAgent(this.state, agent)
       } else {
@@ -1033,10 +1152,32 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
     return () => { this.revisionListeners.delete(listener) }
   }
 
+  liveActivities(): CommonspaceLiveAgentActivity[] {
+    return structuredClone([...this.liveActivitiesById.values()])
+  }
+
+  subscribeToLiveActivities(listener: (activities: readonly CommonspaceLiveAgentActivity[]) => void): () => void {
+    this.liveActivityListeners.add(listener)
+    return () => { this.liveActivityListeners.delete(listener) }
+  }
+
+  async readImageAttachment(id: string): Promise<{ attachment: CommonspaceImageAttachment; data: Buffer }> {
+    if (!IMAGE_ATTACHMENT_ID_PATTERN.test(id)) throw new Error('unknown image attachment')
+    const attachment = Object.values(this.state.messages)
+      .flatMap(messages => messages)
+      .flatMap(message => message.attachments ?? [])
+      .find(candidate => candidate.id === id)
+    if (attachment === undefined) throw new Error('unknown image attachment')
+    const data = await readFile(join(this.attachmentsRoot, id))
+    if (data.length !== attachment.size) throw new Error('image attachment is unavailable')
+    return { attachment: structuredClone(attachment), data }
+  }
+
   private async prepareSend(request: SendMessageRequest): Promise<PreparedSend> {
     const text = request.text.normalize('NFKC').trim().slice(0, MAX_MESSAGE_CHARS)
-    if (text === '') throw new Error('message text is required')
-    const agents = this.configuredAgents(await this.discoverAgentCandidates())
+    const attachments = prepareImageAttachments(request.attachments)
+    if (text === '' && attachments.length === 0) throw new Error('message text or image is required')
+    const agents = this.configuredAgents()
     let channel = undefined as PreparedSend['channel']
     let project = undefined as PreparedSend['project']
     let thread = undefined as PreparedSend['thread']
@@ -1055,9 +1196,18 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
         thread = this.state.threads.find(candidate => candidate.id === request.threadId)
         if (thread === undefined || thread.channelId !== channel.id) throw new Error('unknown channel thread')
       }
-      agentIds = routeChannelAgents(thread?.agentIds ?? channel.agentIds, text, agents)
+      if (request.targetAgentId !== undefined) {
+        if (thread === undefined) throw new Error('direct channel replies require a thread')
+        if (!channel.agentIds.includes(request.targetAgentId) || !agents.some(agent => agent.id === request.targetAgentId)) {
+          throw new Error('direct reply target is not a channel member')
+        }
+        agentIds = [request.targetAgentId]
+      } else {
+        agentIds = routeChannelAgents(thread?.agentIds ?? channel.agentIds, text, agents)
+      }
     } else {
       if (request.threadId !== undefined) throw new Error('direct messages do not use channel threads')
+      if (request.targetAgentId !== undefined) throw new Error('direct messages do not accept a reply target')
       if (!agents.some(agent => agent.id === request.conversation.id)) throw new Error('unknown agent')
       if (request.projectId !== undefined) {
         project = this.state.projects.find(candidate => candidate.id === request.projectId)
@@ -1066,13 +1216,15 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
       agentIds = [request.conversation.id]
       dmSessionName = this.state.dmSessions[request.conversation.id] ?? 'Bot Chat'
     }
-    return { request, text, agents, agentIds, ...(channel === undefined ? {} : { channel }), ...(project === undefined ? {} : { project }), ...(thread === undefined ? {} : { thread }), ...(dmSessionName === undefined ? {} : { dmSessionName }) }
+    return { request, text, attachments, agents, agentIds, ...(channel === undefined ? {} : { channel }), ...(project === undefined ? {} : { project }), ...(thread === undefined ? {} : { thread }), ...(dmSessionName === undefined ? {} : { dmSessionName }) }
   }
 
   private async acceptSend(prepared: PreparedSend): Promise<SendMessageResponse> {
     if (!this.conversationIsCurrent(prepared, prepared.thread)) {
       throw new Error('conversation changed before message acceptance')
     }
+    const previousState = this.state
+    await this.persistImageAttachments(prepared.attachments)
     const createdAt = now()
     const acceptedId = messageId()
     let thread = prepared.thread
@@ -1096,6 +1248,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
       authorId: 'user',
       authorName: 'Ralph',
       text: prepared.text,
+      ...(prepared.attachments.length === 0 ? {} : { attachments: prepared.attachments.map(attachment => attachment.metadata) }),
       createdAt,
       ...(thread === undefined ? {} : { threadId: thread.id }),
       ...(prepared.thread === undefined ? {} : { parentMessageId: prepared.thread.rootMessageId }),
@@ -1116,7 +1269,13 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
             return updated
           }),
     }
-    await this.persist()
+    try {
+      await this.persist()
+    } catch (error) {
+      this.state = previousState
+      await this.removeImageAttachments(prepared.attachments.map(attachment => attachment.metadata.id))
+      throw error
+    }
     this.broadcastRevision()
     return { accepted, ...(thread === undefined ? {} : { thread }), state: this.publicSnapshot() }
   }
@@ -1135,6 +1294,13 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
       authorId: response.accepted.authorId,
       authorName: response.accepted.authorName,
       text: response.accepted.text,
+      ...(prepared.attachments.length === 0
+        ? {}
+        : { images: prepared.attachments.map(attachment => ({
+            name: attachment.metadata.name,
+            mimeType: attachment.metadata.mimeType,
+            data: attachment.data.toString('base64'),
+          })) }),
     }
 
     const deliver = async (agentId: string, delivery: AgentDelivery): Promise<void> => {
@@ -1149,33 +1315,43 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
         ? prepared.dmSessionName ?? 'Bot Chat'
         : `Commonspace Thread: ${thread?.id ?? crypto.randomUUID()}`
       const sessionId = this.state.agentSessions[agent.id]?.[sessionName]
-      const agentModel = effectiveModel ?? (agent.adapter === 'hermes' ? undefined : agent.model ?? undefined)
+      const agentModel = effectiveModel ?? (agent.adapter === 'hermes' || agent.nativeProfile !== undefined ? undefined : agent.model ?? undefined)
       let agentResponse: AgentRunResult | null
       try {
         agentResponse = await this.withAgentSessionLock(agent.id, sessionName, async () => {
           if (!executionIsCurrent()) return null
-          if (prepared.request.conversation.kind === 'dm' &&
-            this.updateMessageReplyStatus(prepared.request.conversation, response.accepted.id, 'running')) {
-            await this.persist()
-            this.broadcastRevision()
-          }
-          return this.runAgentWithSessionRecovery({
-            agent,
-            cwd,
-            additionalCwds: prepared.project?.paths.slice(1) ?? [],
-            sessionName,
-            message: delivery.text,
-            commonspaceScope: {
-              agentId: agent.id,
-              conversation: prepared.request.conversation,
+          const liveActivityId = this.beginLiveActivity(agent, prepared.request.conversation, thread?.id)
+          try {
+            if (prepared.request.conversation.kind === 'dm' &&
+              this.updateMessageReplyStatus(prepared.request.conversation, response.accepted.id, 'running')) {
+              await this.persist()
+              this.broadcastRevision()
+            }
+            const result = await this.runAgentWithSessionRecovery({
+              agent,
+              cwd,
+              additionalCwds: prepared.project?.paths.slice(1) ?? [],
               sessionName,
-              ...(thread === undefined ? {} : { threadId: thread.id }),
-              ...(prepared.project === undefined ? {} : { projectId: prepared.project.id }),
-            },
-            ...(sessionId === undefined ? {} : { sessionId }),
-            ...(agentModel === undefined ? {} : { model: agentModel }),
-            reasoning: effectiveReasoning,
-          }, executionIsCurrent)
+              message: delivery.text,
+              ...(delivery.images === undefined ? {} : { images: delivery.images }),
+              commonspaceScope: {
+                agentId: agent.id,
+                conversation: prepared.request.conversation,
+                sessionName,
+                ...(thread === undefined ? {} : { threadId: thread.id }),
+                ...(prepared.project === undefined ? {} : { projectId: prepared.project.id }),
+              },
+              ...(sessionId === undefined ? {} : { sessionId }),
+              ...(agentModel === undefined ? {} : { model: agentModel }),
+              ...(agent.nativeProfile === undefined ? { reasoning: effectiveReasoning } : {}),
+              onTraceUpdate: entries => {
+                if (executionIsCurrent()) this.updateLiveActivity(liveActivityId, entries)
+              },
+            }, executionIsCurrent)
+            return result
+          } finally {
+            this.endLiveActivity(liveActivityId)
+          }
         })
       } catch (error) {
         if (!executionIsCurrent()) return
@@ -1331,6 +1507,17 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
     }
   }
 
+  private broadcastLiveActivities(): void {
+    const activities = this.liveActivities()
+    for (const listener of this.liveActivityListeners) {
+      try {
+        listener(activities)
+      } catch {
+        this.liveActivityListeners.delete(listener)
+      }
+    }
+  }
+
   private append(message: CommonspaceMessage): void {
     const key = conversationKey(message.conversation)
     const current = this.state.messages[key] ?? []
@@ -1376,7 +1563,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
     }
     if (mutation.action === 'add-agent') {
       const id = managedAgentId(mutation.adapter, mutation.displayName)
-      const conflict = (await this.discoverAgentCandidates()).some(agent => agent.id === id)
+      const conflict = this.discoveredAgentCandidates.some(agent => agent.id === id)
       if (conflict) throw new Error(`agent ${mutation.displayName.trim()} conflicts with a Hermes profile`)
     }
     if (mutation.action === 'reset-dm') {
@@ -1394,7 +1581,16 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
     return resolved
   }
 
-  private async discoverAgentCandidates(): Promise<CommonspaceAgentProfile[]> {
+  private async discoverAgentCandidates(adapter: AgentAdapterKind): Promise<CommonspaceAgentProfile[]> {
+    if (adapter === 'codex') {
+      const candidates = await discoverCodexAgents({
+        cwd: this.defaultCwd,
+        projectPaths: this.state.projects.flatMap(project => project.paths),
+      })
+      this.codexAgentProfileConfigs.clear()
+      for (const candidate of candidates) this.codexAgentProfileConfigs.set(candidate.profile.id, candidate.config)
+      return candidates.map(candidate => candidate.profile)
+    }
     let discovered: CommonspaceAgentProfile[] = []
     if (this.overrides.discoverAgents !== undefined) {
       discovered = await this.overrides.discoverAgents()
@@ -1417,17 +1613,18 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
     return [...unique.values()]
   }
 
-  private configuredAgents(discoveredAgents: CommonspaceAgentProfile[] = []): CommonspaceAgentProfile[] {
+  private configuredAgents(discoveredAgents: CommonspaceAgentProfile[] = this.discoveredAgentCandidates): CommonspaceAgentProfile[] {
     const discoveredById = new Map(discoveredAgents.map(agent => [agent.id, agent]))
     return this.state.agents.map<CommonspaceAgentProfile>((agent) => {
-      if (agent.adapter === 'hermes') {
+      if (agent.adapter === 'hermes' || agent.nativeProfile !== undefined) {
         const discovered = discoveredById.get(agent.id)
-        if (discovered?.adapter === 'hermes') return discovered
+        if (discovered?.adapter === agent.adapter) return discovered
       }
       return {
         id: agent.id,
         displayName: agent.displayName,
         adapter: agent.adapter,
+        ...(agent.nativeProfile === undefined ? {} : { nativeProfile: agent.nativeProfile }),
         model: agent.model,
         status: 'unknown',
       }
@@ -1442,11 +1639,66 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
     return this.runAcpAgent(input)
   }
 
+  private beginLiveActivity(
+    agent: CommonspaceAgentProfile,
+    conversation: SendMessageRequest['conversation'],
+    threadId: string | undefined,
+  ): string {
+    const id = crypto.randomUUID()
+    this.liveActivitiesById.set(id, {
+      id,
+      agentId: agent.id,
+      agentName: agent.displayName,
+      adapter: agent.adapter,
+      conversation: structuredClone(conversation),
+      ...(threadId === undefined ? {} : { threadId }),
+      startedAt: now(),
+      entries: [],
+    })
+    this.broadcastLiveActivities()
+    return id
+  }
+
+  private updateLiveActivity(id: string, entries: readonly CommonspaceTraceEntry[]): void {
+    const current = this.liveActivitiesById.get(id)
+    if (current === undefined) return
+    const completedAt = now()
+    const trace = this.publicAgentTrace({
+      adapter: current.adapter,
+      startedAt: current.startedAt,
+      completedAt,
+      entries: [...entries],
+    }, current.adapter)
+    this.liveActivitiesById.set(id, { ...current, entries: trace?.entries ?? [] })
+    this.broadcastLiveActivities()
+  }
+
+  private endLiveActivity(id: string): void {
+    if (!this.liveActivitiesById.delete(id)) return
+    this.broadcastLiveActivities()
+  }
+
+  private async codexAgentProfileConfig(agent: CommonspaceAgentProfile, cwd: string): Promise<CodexAgentProfileConfig | undefined> {
+    const nativeProfile = agent.nativeProfile
+    if (agent.adapter !== 'codex' || nativeProfile === undefined) return undefined
+    const cached = this.codexAgentProfileConfigs.get(agent.id)
+    if (cached?.name === nativeProfile) return cached
+    const candidate = await findCodexAgentProfile({
+      nativeProfile,
+      cwd,
+      projectPaths: this.state.projects.flatMap(project => project.paths),
+    })
+    if (candidate === undefined) throw new Error(`Codex native agent profile "${nativeProfile}" is unavailable`)
+    this.codexAgentProfileConfigs.set(agent.id, candidate.config)
+    return candidate.config
+  }
+
   private async runAcpAgent(input: AgentRunInput): Promise<AgentRunResult> {
     const mcpServers = this.mcpServersFor(input)
-    const reasoning = acpReasoningValue(input.agent.adapter, input.reasoning)
+    const codexProfile = await this.codexAgentProfileConfig(input.agent, input.cwd)
+    const reasoning = codexProfile === undefined ? acpReasoningValue(input.agent.adapter, input.reasoning) : undefined
     const configOptions: Record<string, string> = {
-      ...(input.model === undefined || input.agent.adapter === 'hermes' ? {} : { model: input.model }),
+      ...(input.model === undefined || input.agent.adapter === 'hermes' || codexProfile !== undefined ? {} : { model: input.model }),
       ...(reasoning === undefined
         ? {}
         : { reasoning_effort: reasoning }),
@@ -1467,6 +1719,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
               CODEX_PATH: this.codexPath,
               INITIAL_AGENT_MODE: this.externalAgentYolo ? 'agent-full-access' : 'agent',
               NO_BROWSER: '1',
+              ...(codexProfile === undefined ? {} : { CODEX_CONFIG: JSON.stringify(codexProfileRuntimeConfig(codexProfile)) }),
             },
         requestTimeoutMs: ((this.runBudgetSeconds ?? 3_600) + 30) * 1000,
         maxResponseChars: MAX_AGENT_RESPONSE_CHARS,
@@ -1481,6 +1734,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
         cwd: input.cwd,
         additionalCwds: input.additionalCwds,
         message: input.message,
+        ...(input.images === undefined ? {} : { images: input.images }),
         mcpServers,
         modeId: input.agent.adapter === 'hermes'
           ? (this.hermesYolo ? 'dont_ask' : 'accept_edits')
@@ -1491,6 +1745,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
           activeSessionId = sessionId
           this.activeAcpSessions.set(activeScopeKey, sessionId)
         },
+        ...(input.onTraceUpdate === undefined ? {} : { onTraceUpdate: input.onTraceUpdate }),
         ...(input.sessionId === undefined ? {} : { sessionId: input.sessionId }),
       })
       if (result.text.trim() === '') throw new Error(`${input.agent.displayName} returned no response`)
@@ -1562,6 +1817,29 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
       delete replacement.sessionId
       return this.runAgent(replacement)
     }
+  }
+
+  private async persistImageAttachments(attachments: readonly PreparedImageAttachment[]): Promise<void> {
+    const storedIds: string[] = []
+    try {
+      for (const attachment of attachments) {
+        const temporary = join(this.attachmentsRoot, `attachment-${process.pid}-${crypto.randomUUID()}.tmp`)
+        try {
+          await writeFile(temporary, attachment.data, { mode: 0o600, flag: 'wx' })
+          await rename(temporary, join(this.attachmentsRoot, attachment.metadata.id))
+          storedIds.push(attachment.metadata.id)
+        } finally {
+          await rm(temporary, { force: true })
+        }
+      }
+    } catch (error) {
+      await this.removeImageAttachments(storedIds)
+      throw error
+    }
+  }
+
+  private async removeImageAttachments(ids: readonly string[]): Promise<void> {
+    await Promise.all(ids.map(id => rm(join(this.attachmentsRoot, id), { force: true })))
   }
 
   private persist(): Promise<void> {

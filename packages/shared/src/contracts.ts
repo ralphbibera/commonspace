@@ -1,4 +1,4 @@
-export const COMMONSPACE_STATE_VERSION = 9 as const
+export const COMMONSPACE_STATE_VERSION = 11 as const
 
 export type AgentAdapterKind = 'hermes' | 'codex'
 
@@ -19,6 +19,8 @@ export interface CommonspaceAgentProfile {
   id: string
   displayName: string
   adapter: AgentAdapterKind
+  /** Native harness profile name used when invoking a discovered agent. */
+  nativeProfile?: string
   model: string | null
   status: 'running' | 'stopped' | 'unknown'
   description?: string
@@ -31,6 +33,8 @@ export interface CommonspaceAgentDefinition {
   id: string
   displayName: string
   adapter: AgentAdapterKind
+  /** Native harness profile name used when invoking a discovered agent. */
+  nativeProfile?: string
   model: string | null
   createdAt: string
 }
@@ -120,6 +124,35 @@ export type ConversationRef =
   | { kind: 'channel'; id: string }
   | { kind: 'dm'; id: string }
 
+export type CommonspaceImageMimeType = 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp'
+
+/** Public metadata for image bytes managed privately by the Commonspace host. */
+export interface CommonspaceImageAttachment {
+  id: string
+  name: string
+  mimeType: CommonspaceImageMimeType
+  size: number
+}
+
+/** Base64 image payload accepted only at the local send boundary. */
+export interface SendImageAttachment {
+  name: string
+  mimeType: CommonspaceImageMimeType
+  data: string
+}
+
+/** Provider-emitted activity for an agent turn that is still running. */
+export interface CommonspaceLiveAgentActivity {
+  id: string
+  agentId: string
+  agentName: string
+  adapter: AgentAdapterKind
+  conversation: ConversationRef
+  threadId?: string
+  startedAt: string
+  entries: CommonspaceTraceEntry[]
+}
+
 export interface CommonspaceMessage {
   id: string
   conversation: ConversationRef
@@ -127,6 +160,7 @@ export interface CommonspaceMessage {
   authorId: string
   authorName: string
   text: string
+  attachments?: CommonspaceImageAttachment[]
   createdAt: string
   threadId?: string
   parentMessageId?: string
@@ -155,6 +189,8 @@ export interface CommonspaceThread {
 export interface CommonspaceState {
   version: typeof COMMONSPACE_STATE_VERSION
   revision: number
+  /** Single-owner cursor for activity shown in the Inbox. */
+  inboxReadAt: string | null
   defaults: CommonspaceDefaults
   agents: CommonspaceAgentDefinition[]
   /** Host-private native session scope selected for each direct message. */
@@ -170,9 +206,15 @@ export interface CommonspaceBootstrap {
   agents: CommonspaceAgentProfile[]
   discoveredAgents: CommonspaceAgentProfile[]
   state: CommonspaceState
+  liveActivities?: CommonspaceLiveAgentActivity[]
+}
+
+export interface DiscoverAgentsRequest {
+  adapter: AgentAdapterKind
 }
 
 export type CommonspaceMutation =
+  | { action: 'mark-inbox-read' }
   | { action: 'create-project'; name: string; paths: string[] }
   | { action: 'add-project-path'; projectId: string; path: string }
   | { action: 'remove-project'; projectId: string }
@@ -192,6 +234,9 @@ export interface SendMessageRequest {
   text: string
   projectId?: string
   threadId?: string
+  /** Restrict a channel-thread reply to one current channel agent. */
+  targetAgentId?: string
+  attachments?: SendImageAttachment[]
 }
 
 export interface SendMessageResponse {

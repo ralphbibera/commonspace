@@ -63,7 +63,7 @@ describe.skipIf(!live).sequential('installed Commonspace ACP agents', () => {
     })
     try {
       await service.initialize()
-      const discovered = (await service.bootstrap()).discoveredAgents.find(agent => agent.id === 'default')
+      const discovered = (await service.discoverAgents('hermes')).discoveredAgents.find(agent => agent.id === 'default')
       if (discovered === undefined) throw new Error('Hermes default profile is not installed')
       await service.mutate({ action: 'add-discovered-agent', agentId: discovered.id })
 

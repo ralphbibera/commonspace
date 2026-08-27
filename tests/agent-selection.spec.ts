@@ -1,7 +1,7 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { CommonspaceAgentProfile } from '@commonspace/shared'
 import { CommonspaceHostService } from '../server/src/service.ts'
 
@@ -19,19 +19,66 @@ describe('Commonspace agent selection', () => {
       { id: 'frontend', displayName: 'Frontend', adapter: 'hermes', model: 'gpt-test', status: 'running' },
       { id: 'backend', displayName: 'Backend', adapter: 'hermes', model: 'gpt-test', status: 'stopped' },
     ]
-    const dependencies = { discoverAgents: async () => discoveredAgents }
+    const discoverAgents = vi.fn(async () => discoveredAgents)
+    const dependencies = { discoverAgents }
     const service = new CommonspaceHostService({}, { root }, dependencies)
     await service.initialize()
 
     expect((await service.bootstrap()).agents).toEqual([])
-    expect((await service.bootstrap()).discoveredAgents).toEqual(discoveredAgents)
+    expect((await service.bootstrap()).discoveredAgents).toEqual([])
+    expect(discoverAgents).not.toHaveBeenCalled()
+    expect((await service.discoverAgents('hermes')).discoveredAgents).toEqual(discoveredAgents)
+    expect(discoverAgents).toHaveBeenCalledOnce()
     await service.mutate({ action: 'add-discovered-agent', agentId: 'frontend' })
     expect((await service.bootstrap()).agents).toEqual([discoveredAgents[0]])
     await service.close()
 
     const restarted = new CommonspaceHostService({}, { root }, dependencies)
     await restarted.initialize()
-    expect((await restarted.bootstrap()).agents).toEqual([discoveredAgents[0]])
+    expect((await restarted.bootstrap()).agents).toEqual([{
+      ...discoveredAgents[0],
+      status: 'unknown',
+    }])
+    expect((await restarted.discoverAgents('hermes')).agents).toEqual([discoveredAgents[0]])
     await restarted.close()
+  })
+
+  it('does not discover Hermes while adding a Codex agent', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-codex-selection-'))
+    roots.push(root)
+    const discoverAgents = vi.fn(async () => [])
+    const service = new CommonspaceHostService({}, { root }, { discoverAgents })
+    await service.initialize()
+
+    await service.mutate({ action: 'add-agent', displayName: 'Review Bot', adapter: 'codex' })
+
+    expect(discoverAgents).not.toHaveBeenCalled()
+    expect((await service.bootstrap()).discoveredAgents).toEqual([])
+    await service.close()
+  })
+
+  it('discovers and persists a selected native Codex agent profile', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-codex-profile-selection-'))
+    roots.push(root)
+    const workspace = join(root, 'workspace')
+    await mkdir(join(workspace, '.codex', 'agents'), { recursive: true })
+    await writeFile(join(workspace, '.codex', 'agents', 'reviewer.toml'), [
+      'name = "reviewer"',
+      'description = "Reviews changes."',
+      'developer_instructions = "Review code with evidence."',
+    ].join('\n'))
+    const service = new CommonspaceHostService({}, { root, defaultCwd: workspace }, { discoverAgents: async () => [] })
+    await service.initialize()
+
+    const discovery = await service.discoverAgents('codex')
+    expect(discovery.discoveredAgents).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'codex-reviewer', adapter: 'codex', nativeProfile: 'reviewer' }),
+    ]))
+    await service.mutate({ action: 'add-discovered-agent', agentId: 'codex-reviewer' })
+
+    expect(service.snapshot().agents).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'codex-reviewer', adapter: 'codex', nativeProfile: 'reviewer' }),
+    ]))
+    await service.close()
   })
 })

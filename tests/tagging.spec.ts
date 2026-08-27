@@ -26,9 +26,19 @@ describe('Commonspace tagging', () => {
 
   it('routes only explicitly mentioned seated agents', () => {
     expect(routeChannelAgents(['frontend', 'backend'], '@backend please check @@api', [
-      { id: 'frontend' },
-      { id: 'backend' },
+      { id: 'frontend', displayName: 'Frontend' },
+      { id: 'backend', displayName: 'Backend' },
     ])).toEqual(['backend'])
+  })
+
+  it('routes display handles without exposing internal profile ids', () => {
+    const agents = [
+      { id: 'default', displayName: 'AgentOps' },
+      { id: 'backend', displayName: 'Backend' },
+    ]
+
+    expect(routeChannelAgents(['default', 'backend'], '@agentops please check', agents)).toEqual(['default'])
+    expect(routeChannelAgents(['default', 'backend'], '@default still works', agents)).toEqual(['default'])
   })
 
   it('discovers default and named Hermes profiles as agent identities', () => {

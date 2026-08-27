@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -71,6 +71,41 @@ describe('Commonspace ACP host path', () => {
     ])
     expect(frames.filter(frame => frame.method === 'session/new')).toHaveLength(2)
     expect(frames.filter(frame => frame.method === 'session/load')).toHaveLength(1)
+  })
+
+  it('launches a selected Codex custom agent with its native profile config', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-codex-native-profile-'))
+    roots.push(root)
+    const workspace = join(root, 'workspace')
+    const logPath = join(root, 'frames.ndjson')
+    await mkdir(join(workspace, '.codex', 'agents'), { recursive: true })
+    await writeFile(join(workspace, '.codex', 'agents', 'reviewer.toml'), [
+      'name = "reviewer"',
+      'description = "Reviews changes."',
+      'model = "gpt-5.4"',
+      'model_reasoning_effort = "medium"',
+      'sandbox_mode = "read-only"',
+      'developer_instructions = "Review code with evidence."',
+    ].join('\n'))
+    vi.stubEnv('FAKE_ACP_LOG', logPath)
+    vi.stubEnv('FAKE_ACP_CAPTURE_ENV', '1')
+    const service = new CommonspaceHostService({}, { ...acpConfig(root), defaultCwd: workspace }, { discoverAgents: async () => [] })
+    await service.initialize()
+    await service.discoverAgents('codex')
+    await service.mutate({ action: 'add-discovered-agent', agentId: 'codex-reviewer' })
+    await service.send({ conversation: { kind: 'dm', id: 'codex-reviewer' }, text: 'Review this.' })
+    await service.whenIdle()
+    await service.close()
+
+    const frames = (await readFile(logPath, 'utf8')).trim().split('\n').map(line => JSON.parse(line))
+    expect(frames.find(frame => frame.event === 'environment')).toMatchObject({
+      codexConfig: {
+        developer_instructions: 'Review code with evidence.',
+        model: 'gpt-5.4',
+        model_reasoning_effort: 'medium',
+        sandbox_mode: 'read-only',
+      },
+    })
   })
 
   it.each(['codex', 'hermes'] as const)('persists a sanitized %s activity trace on the reply', async (adapter) => {

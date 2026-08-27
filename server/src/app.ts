@@ -1,12 +1,20 @@
-import { join } from 'node:path'
 import type { IncomingMessage } from 'node:http'
 import express, { type ErrorRequestHandler, type Express, type NextFunction, type Request, type Response } from 'express'
-import type { CommonspaceMutation, SelectDirectoryResponse, SendMessageRequest } from '@commonspace/shared'
+import type { CommonspaceLiveAgentActivity, CommonspaceMutation, DiscoverAgentsRequest, SelectDirectoryResponse, SendMessageRequest } from '@commonspace/shared'
 import type { CommonspaceHostService } from './service.js'
 import type { CommonspaceMcpGateway } from './commonspace-mcp.js'
 import { selectLocalDirectory } from './directory-picker.js'
+import {
+  listProjectFiles,
+  openProjectFile,
+  ProjectFileError,
+  projectGitDiff,
+  projectGitStatus,
+  streamProjectFile,
+} from './project-files.js'
 
 const MAX_BODY_BYTES = 128 * 1024
+const MAX_SEND_BODY_BYTES = 24 * 1024 * 1024
 
 function firstHeaderValue(value: string | string[] | undefined): string | undefined {
   const first = Array.isArray(value) ? value[0] : value
@@ -31,7 +39,6 @@ function urlMatchesRequestHost(value: string, host: string | undefined): boolean
 export interface CreateCommonspaceAppOptions {
   service: CommonspaceHostService
   mcpGateway?: CommonspaceMcpGateway
-  uiDistPath?: string
   directoryPicker?: () => Promise<string | null>
 }
 
@@ -69,7 +76,36 @@ function recordBody(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>
 }
 
-export function createCommonspaceApp({ service, mcpGateway, uiDistPath, directoryPicker }: CreateCommonspaceAppOptions): Express {
+function queryString(value: unknown, fallback = ''): string {
+  if (value === undefined) return fallback
+  if (typeof value !== 'string') throw new ProjectFileError(400, 'invalid_query', 'Query parameter must be a string')
+  return value
+}
+
+function queryRootIndex(value: unknown): number {
+  if (value === undefined) return 0
+  if (typeof value !== 'string' || !/^\d+$/u.test(value)) {
+    throw new ProjectFileError(400, 'invalid_project_root', 'Project folder index must be a non-negative integer')
+  }
+  const rootIndex = Number(value)
+  if (!Number.isSafeInteger(rootIndex)) throw new ProjectFileError(400, 'invalid_project_root', 'Project folder index is too large')
+  return rootIndex
+}
+
+function projectIdParam(value: unknown): string {
+  if (typeof value !== 'string' || value === '') throw new ProjectFileError(400, 'invalid_project_id', 'Project id is required')
+  return value
+}
+
+function sendProjectError(res: Response, error: unknown): void {
+  if (error instanceof ProjectFileError) {
+    res.status(error.status).json({ code: error.code, error: error.message })
+    return
+  }
+  res.status(500).json({ code: 'project_read_failed', error: 'Unable to read project files' })
+}
+
+export function createCommonspaceApp({ service, mcpGateway, directoryPicker }: CreateCommonspaceAppOptions): Express {
   const app = express()
   const pickDirectory = directoryPicker ?? selectLocalDirectory
   app.disable('x-powered-by')
@@ -82,6 +118,7 @@ export function createCommonspaceApp({ service, mcpGateway, uiDistPath, director
     res.setHeader('cache-control', 'no-store')
     next()
   })
+  app.use('/api/send', express.json({ limit: MAX_SEND_BODY_BYTES }))
   app.use('/api', express.json({ limit: MAX_BODY_BYTES }))
 
   app.get('/api/health', (_req, res) => {
@@ -98,6 +135,68 @@ export function createCommonspaceApp({ service, mcpGateway, uiDistPath, director
     res.json(await service.bootstrap())
   })
 
+  app.get('/api/projects/:projectId/files', requireSameOrigin, async (req, res) => {
+    try {
+      res.json(await listProjectFiles(
+        service.snapshot(),
+        projectIdParam(req.params.projectId),
+        queryRootIndex(req.query.root),
+        queryString(req.query.path),
+      ))
+    } catch (error) {
+      sendProjectError(res, error)
+    }
+  })
+
+  app.get('/api/projects/:projectId/file', requireSameOrigin, async (req, res) => {
+    try {
+      const file = await openProjectFile(
+        service.snapshot(),
+        projectIdParam(req.params.projectId),
+        queryRootIndex(req.query.root),
+        queryString(req.query.path),
+      )
+      await streamProjectFile(req, res, file)
+    } catch (error) {
+      if (res.headersSent) {
+        res.destroy()
+        return
+      }
+      sendProjectError(res, error)
+    }
+  })
+
+  app.get('/api/projects/:projectId/changes', requireSameOrigin, async (req, res) => {
+    try {
+      res.json(await projectGitStatus(service.snapshot(), projectIdParam(req.params.projectId), queryRootIndex(req.query.root)))
+    } catch (error) {
+      sendProjectError(res, error)
+    }
+  })
+
+  app.get('/api/projects/:projectId/diff', requireSameOrigin, async (req, res) => {
+    try {
+      res.json(await projectGitDiff(
+        service.snapshot(),
+        projectIdParam(req.params.projectId),
+        queryRootIndex(req.query.root),
+        queryString(req.query.path),
+      ))
+    } catch (error) {
+      sendProjectError(res, error)
+    }
+  })
+
+  app.post('/api/discover-agents', requireSameOrigin, async (req, res) => {
+    try {
+      const body = recordBody(req.body) as unknown as DiscoverAgentsRequest
+      if (body.adapter !== 'hermes' && body.adapter !== 'codex') throw new Error('unsupported agent adapter')
+      res.json(await service.discoverAgents(body.adapter))
+    } catch (error) {
+      res.status(400).json({ code: 'agent_discovery_failed', error: error instanceof Error ? error.message : String(error) })
+    }
+  })
+
   app.get('/api/events', requireSameOrigin, (req, res) => {
     res.status(200)
     res.setHeader('content-type', 'text/event-stream; charset=utf-8')
@@ -107,9 +206,17 @@ export function createCommonspaceApp({ service, mcpGateway, uiDistPath, director
     const writeRevision = (revision: number) => {
       res.write(`event: revision\ndata: ${JSON.stringify({ revision })}\n\n`)
     }
+    const writeActivity = (activities: readonly CommonspaceLiveAgentActivity[]) => {
+      res.write(`event: activity\ndata: ${JSON.stringify({ activities })}\n\n`)
+    }
     writeRevision(service.snapshot().revision)
-    const unsubscribe = service.subscribeToRevisions(writeRevision)
-    req.on('close', unsubscribe)
+    writeActivity(service.liveActivities())
+    const unsubscribeRevision = service.subscribeToRevisions(writeRevision)
+    const unsubscribeActivity = service.subscribeToLiveActivities(writeActivity)
+    req.on('close', () => {
+      unsubscribeRevision()
+      unsubscribeActivity()
+    })
   })
 
   app.post('/api/select-directory', requireSameOrigin, async (_req, res) => {
@@ -138,31 +245,27 @@ export function createCommonspaceApp({ service, mcpGateway, uiDistPath, director
     }
   })
 
+  app.get('/api/attachments/:attachmentId', requireSameOrigin, async (req, res) => {
+    try {
+      const attachmentId = req.params.attachmentId
+      if (typeof attachmentId !== 'string') throw new Error('unknown image attachment')
+      const { attachment, data } = await service.readImageAttachment(attachmentId)
+      res.setHeader('content-type', attachment.mimeType)
+      res.setHeader('content-length', String(data.length))
+      res.setHeader('x-content-type-options', 'nosniff')
+      res.send(data)
+    } catch (error) {
+      res.status(404).json({ code: 'attachment_not_found', error: error instanceof Error ? error.message : String(error) })
+    }
+  })
+
   app.use('/api', (_req, res) => {
     res.status(404).json({ code: 'not_found', error: 'API route not found' })
   })
 
-  if (uiDistPath !== undefined) {
-    app.use(express.static(uiDistPath, {
-      fallthrough: true,
-      index: false,
-      immutable: true,
-      maxAge: '1y',
-      setHeaders: (res, path) => {
-        if (path.endsWith('.html')) res.setHeader('cache-control', 'no-cache')
-      },
-    }))
-    app.use((req, res, next) => {
-      if (req.method !== 'GET' || req.accepts('html') === false) {
-        next()
-        return
-      }
-      res.setHeader('cache-control', 'no-cache')
-      res.sendFile(join(uiDistPath, 'index.html'), (error) => {
-        if (error !== undefined) next(error)
-      })
-    })
-  }
+  app.get('/', (_req, res) => {
+    res.json({ status: 'ok' })
+  })
 
   app.use((_req, res) => {
     res.status(404).json({ code: 'not_found', error: 'route not found' })

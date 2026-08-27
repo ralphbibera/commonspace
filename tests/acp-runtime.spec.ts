@@ -44,6 +44,35 @@ describe('ACP agent process', () => {
     }
   })
 
+  it('sends pasted images as structured ACP prompt blocks', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-acp-image-'))
+    roots.push(root)
+    const logPath = join(root, 'frames.ndjson')
+    const processClient = new AcpAgentProcess({
+      command: process.execPath,
+      args: [fixturePath],
+      cwd: root,
+      env: { ...process.env, FAKE_ACP_LOG: logPath },
+    })
+
+    try {
+      await processClient.run({
+        cwd: root,
+        message: 'What is wrong here?',
+        images: [{ name: 'clipboard.png', mimeType: 'image/png', data: 'iVBORw==' }],
+      })
+
+      const frames = (await readFile(logPath, 'utf8')).trim().split('\n').map(line => JSON.parse(line))
+      const prompt = frames.find(frame => frame.method === 'session/prompt')
+      expect(prompt?.params.prompt).toEqual([
+        { type: 'text', text: 'What is wrong here?' },
+        { type: 'image', mimeType: 'image/png', data: 'iVBORw==' },
+      ])
+    } finally {
+      await processClient.close()
+    }
+  })
+
   it('returns a provider-neutral activity trace from ACP session updates', async () => {
     const root = await mkdtemp(join(tmpdir(), 'commonspace-acp-trace-'))
     roots.push(root)

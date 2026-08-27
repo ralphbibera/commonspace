@@ -68,6 +68,7 @@ for await (const line of lines) {
         event: 'environment',
         noBrowser: process.env.NO_BROWSER ?? null,
         argv: process.argv.slice(2),
+        codexConfig: process.env.CODEX_CONFIG === undefined ? null : JSON.parse(process.env.CODEX_CONFIG),
       })
     }
     await writeFrame({

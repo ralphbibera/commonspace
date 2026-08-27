@@ -1,4 +1,4 @@
-import type { CommonspaceAgentProfile } from '@commonspace/shared'
+import { agentTagName, type CommonspaceAgentProfile } from '@commonspace/shared'
 
 const ESCAPE = String.fromCharCode(27)
 
@@ -76,20 +76,29 @@ export function parseHermesProfileList(output: string): CommonspaceAgentProfile[
 export function mentionedChannelAgents(
   memberIds: readonly string[],
   text: string,
-  agents: readonly Pick<CommonspaceAgentProfile, 'id'>[],
+  agents: readonly Pick<CommonspaceAgentProfile, 'id' | 'displayName'>[],
 ): string[] {
   const members = new Set(memberIds)
   const knownAgents = new Set(agents.map(agent => agent.id))
-  const memberByNormalizedId = new Map(memberIds.map(id => [id.toLocaleLowerCase(), id]))
+  const memberByMention = new Map(memberIds.map(id => [id.toLocaleLowerCase(), id]))
+  const agentByHandle = new Map<string, string | null>()
+  for (const agent of agents) {
+    const handle = agentTagName(agent.displayName)
+    const existing = agentByHandle.get(handle)
+    agentByHandle.set(handle, existing === undefined || existing === agent.id ? agent.id : null)
+  }
+  for (const [handle, agentId] of agentByHandle) {
+    if (agentId !== null && !memberByMention.has(handle)) memberByMention.set(handle, agentId)
+  }
   return [...new Set(parseTags(text).agents
-    .map(id => memberByNormalizedId.get(id))
+    .map(id => memberByMention.get(id))
     .filter((id): id is string => id !== undefined && members.has(id) && knownAgents.has(id)))]
 }
 
 export function routeChannelAgents(
   memberIds: readonly string[],
   text: string,
-  agents: readonly Pick<CommonspaceAgentProfile, 'id'>[],
+  agents: readonly Pick<CommonspaceAgentProfile, 'id' | 'displayName'>[],
 ): string[] {
   const mentioned = mentionedChannelAgents(memberIds, text, agents)
   return mentioned.length > 0 ? mentioned : [...memberIds]

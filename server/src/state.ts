@@ -81,6 +81,7 @@ export function createInitialState(): CommonspaceState {
   return {
     version: COMMONSPACE_STATE_VERSION,
     revision: 0,
+    inboxReadAt: null,
     defaults: defaultCommonspaceDefaults(),
     agents: [],
     dmSessions: {},
@@ -97,19 +98,25 @@ export function addDiscoveredAgent(
   agent: CommonspaceAgentProfile,
   dependencies: StateDependencies = defaults,
 ): CommonspaceState {
-  if (agent.adapter !== 'hermes') throw new Error('only Hermes profiles can be added from discovery')
-  if (agent.id.trim() !== agent.id || agent.id === '' || agent.id.length > 200 || /\s/u.test(agent.id)) {
+  if (agent.adapter !== 'hermes' && agent.adapter !== 'codex') throw new Error('unsupported agent adapter')
+  if (agent.adapter === 'hermes' && (agent.id.trim() !== agent.id || agent.id === '' || agent.id.length > 200 || /\s/u.test(agent.id))) {
     throw new Error('invalid discovered agent id')
   }
+  const nativeProfile = agent.adapter === 'codex' ? agent.nativeProfile : undefined
+  if (agent.adapter === 'codex' && (nativeProfile === undefined || nativeProfile.trim() !== nativeProfile || nativeProfile === '' || nativeProfile.length > 200 || /\s/u.test(nativeProfile))) {
+    throw new Error('invalid native Codex profile')
+  }
   const displayName = normalizedName(agent.displayName, 'agent')
-  if (state.agents.some(candidate => candidate.id === agent.id)) throw new Error(`agent ${displayName} already exists`)
+  const id = agent.adapter === 'hermes' ? agent.id : managedAgentId('codex', nativeProfile!)
+  if (state.agents.some(candidate => candidate.id === id)) throw new Error(`agent ${displayName} already exists`)
   return {
     ...state,
     revision: nextRevision(state),
     agents: [...state.agents, {
-      id: agent.id,
+      id,
       displayName,
-      adapter: 'hermes',
+      adapter: agent.adapter,
+      ...(nativeProfile === undefined ? {} : { nativeProfile }),
       model: optionalModel(agent.model, null),
       createdAt: dependencies.now(),
     }],
@@ -122,6 +129,11 @@ export function applyMutation(
   dependencies: StateDependencies = defaults,
 ): CommonspaceState {
   switch (mutation.action) {
+    case 'mark-inbox-read': {
+      const readAt = dependencies.now()
+      if (state.inboxReadAt !== null && state.inboxReadAt >= readAt) return state
+      return { ...state, revision: nextRevision(state), inboxReadAt: readAt }
+    }
     case 'create-project': {
       const name = normalizedName(mutation.name, 'project')
       const tagName = projectTagName(name)

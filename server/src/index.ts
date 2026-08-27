@@ -1,8 +1,5 @@
-import { stat } from 'node:fs/promises'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { dirname, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import pino from 'pino'
 import { createCommonspaceApp } from './app.js'
 import { CommonspaceMcpGateway } from './commonspace-mcp.js'
@@ -20,7 +17,6 @@ interface CommonspaceLogger {
 
 export interface StartCommonspaceServerOptions extends CommonspaceHostConfig {
   port?: number
-  uiDistPath?: string
   directoryPicker?: () => Promise<string | null>
   dependencies?: Partial<CommonspaceHostDependencies>
   logger?: CommonspaceLogger
@@ -31,18 +27,6 @@ export interface RunningCommonspaceServer {
   service: CommonspaceHostService
   close(): Promise<void>
   drainAndClose(): Promise<void>
-}
-
-function defaultUiDistPath(): string {
-  return resolve(dirname(fileURLToPath(import.meta.url)), '../../ui/dist')
-}
-
-async function existingDirectory(path: string): Promise<string | undefined> {
-  try {
-    return (await stat(path)).isDirectory() ? path : undefined
-  } catch {
-    return undefined
-  }
 }
 
 function defaultLogger(): CommonspaceLogger {
@@ -70,15 +54,9 @@ export async function startCommonspaceServer(options: StartCommonspaceServerOpti
   let server: Server | undefined
   let url: string
   try {
-    const requestedUiDistPath = options.uiDistPath ?? defaultUiDistPath()
-    const uiDistPath = await existingDirectory(requestedUiDistPath)
-    if (options.uiDistPath !== undefined && uiDistPath === undefined) {
-      throw new Error(`Commonspace UI build not found: ${options.uiDistPath}`)
-    }
     const app = createCommonspaceApp({
       service,
       mcpGateway,
-      ...(uiDistPath === undefined ? {} : { uiDistPath }),
       ...(options.directoryPicker === undefined ? {} : { directoryPicker: options.directoryPicker }),
     })
     server = createServer(app)

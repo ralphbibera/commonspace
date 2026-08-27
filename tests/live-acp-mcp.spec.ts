@@ -74,7 +74,7 @@ describe.skipIf(!live).sequential('installed ACP bridge with Commonspace MCP', (
       logger: { info: () => undefined, warn: () => undefined },
     })
     servers.push(running)
-    const discovered = (await running.service.bootstrap()).discoveredAgents.find(agent => agent.id === 'default')
+    const discovered = (await running.service.discoverAgents('hermes')).discoveredAgents.find(agent => agent.id === 'default')
     if (discovered === undefined) throw new Error('Hermes default profile is not installed')
     await running.service.mutate({ action: 'add-discovered-agent', agentId: discovered.id })
     const project = (await running.service.mutate({
