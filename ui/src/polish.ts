@@ -297,6 +297,10 @@ export const commonspacePolish = String.raw`
   transform: translateY(-50%);
 }
 
+.csp-agent-customize {
+  right: 34px;
+}
+
 .csp-browser-refresh {
   width: 44px;
   height: 44px;
@@ -451,12 +455,35 @@ export const commonspacePolish = String.raw`
   height: 28px;
   flex: none;
   box-sizing: border-box;
-  border: 1px solid var(--csp-border);
+  border: 1px solid var(--csp-agent-accent, var(--csp-border));
   border-radius: 8px;
-  background: var(--csp-surface);
+  background: color-mix(in srgb, var(--csp-agent-accent, var(--csp-surface)) 12%, var(--csp-surface));
   color: var(--csp-sidebar-fg);
   font-size: 11px;
   font-weight: 650;
+}
+
+.csp-agent-profile-preview {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+}
+
+.csp-agent-profile-preview > span {
+  display: grid;
+  gap: 2px;
+}
+
+.csp-agent-profile-preview small,
+.csp-agent-profile-note {
+  color: var(--csp-sidebar-muted);
+  font-size: 10px;
+}
+
+.csp-agent-profile-note {
+  margin: 0;
+  line-height: 1.4;
 }
 
 .csp-agent-presence {
@@ -939,6 +966,18 @@ export const commonspacePolish = String.raw`
 .csp-dialog-header button:hover {
   background: var(--csp-hover);
   color: var(--csp-fg);
+}
+
+.csp-dialog-error {
+  margin: 14px 18px 0;
+  padding: 9px 12px;
+  border: 1px solid rgba(180, 35, 24, 0.24);
+  border-radius: 9px;
+  background: rgba(197, 48, 48, 0.08);
+  color: #b42318;
+  font-size: 12px;
+  line-height: 16px;
+  text-align: center;
 }
 
 .csp-dialog-body {

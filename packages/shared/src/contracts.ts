@@ -1,4 +1,4 @@
-export const COMMONSPACE_STATE_VERSION = 11 as const
+export const COMMONSPACE_STATE_VERSION = 12 as const
 
 export type AgentAdapterKind = 'hermes' | 'codex'
 
@@ -18,6 +18,9 @@ export interface CommonspaceDefaults extends Omit<CommonspaceRunSettings, 'reaso
 export interface CommonspaceAgentProfile {
   id: string
   displayName: string
+  /** Commonspace-local appearance; never used to address the native harness. */
+  avatarEmoji?: string
+  accentColor?: string
   adapter: AgentAdapterKind
   /** Native harness profile name used when invoking a discovered agent. */
   nativeProfile?: string
@@ -32,6 +35,9 @@ export type HermesAgentProfile = CommonspaceAgentProfile
 export interface CommonspaceAgentDefinition {
   id: string
   displayName: string
+  /** Commonspace-local appearance; never used to address the native harness. */
+  avatarEmoji?: string
+  accentColor?: string
   adapter: AgentAdapterKind
   /** Native harness profile name used when invoking a discovered agent. */
   nativeProfile?: string
@@ -225,6 +231,7 @@ export type CommonspaceMutation =
   | { action: 'set-defaults'; model?: string | null; reasoning?: CommonspaceReasoning; maxAgentsPerTurn?: number; memoryThreads?: number }
   | { action: 'add-agent'; displayName: string; adapter: Exclude<AgentAdapterKind, 'hermes'>; model?: string | null }
   | { action: 'add-discovered-agent'; agentId: string }
+  | { action: 'update-agent-profile'; agentId: string; displayName: string; avatarEmoji?: string; accentColor?: string }
   | { action: 'remove-agent'; agentId: string }
   | { action: 'reset-dm'; agentId: string }
   | { action: 'remove-channel'; channelId: string }

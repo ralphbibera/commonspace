@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -40,6 +40,57 @@ describe('Commonspace agent selection', () => {
       status: 'unknown',
     }])
     expect((await restarted.discoverAgents('hermes')).agents).toEqual([discoveredAgents[0]])
+    await restarted.close()
+  })
+
+  it('persists a Commonspace-local agent name and appearance without changing the native profile', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-agent-identity-'))
+    roots.push(root)
+    const discoveredAgent: CommonspaceAgentProfile = {
+      id: 'frontend',
+      displayName: 'Frontend',
+      adapter: 'hermes',
+      model: 'gpt-test',
+      status: 'running',
+    }
+    const dependencies = { discoverAgents: vi.fn(async () => [discoveredAgent]) }
+    const service = new CommonspaceHostService({}, { root }, dependencies)
+    await service.initialize()
+    await service.discoverAgents('hermes')
+    await service.mutate({ action: 'add-discovered-agent', agentId: 'frontend' })
+
+    await service.mutate({
+      action: 'update-agent-profile',
+      agentId: 'frontend',
+      displayName: 'Atlas',
+      avatarEmoji: '🧭',
+      accentColor: '#7c3aed',
+    })
+
+    expect((await service.bootstrap()).agents).toEqual([expect.objectContaining({
+      id: 'frontend',
+      displayName: 'Atlas',
+      avatarEmoji: '🧭',
+      accentColor: '#7c3aed',
+      adapter: 'hermes',
+      status: 'running',
+    })])
+    await service.close()
+
+    const statePath = join(root, 'state.json')
+    const persisted = JSON.parse(await readFile(statePath, 'utf8')) as Record<string, unknown>
+    await writeFile(statePath, JSON.stringify({ ...persisted, version: 11 }))
+
+    const restarted = new CommonspaceHostService({}, { root }, dependencies)
+    await restarted.initialize()
+    expect((await restarted.bootstrap()).agents).toEqual([expect.objectContaining({
+      id: 'frontend',
+      displayName: 'Atlas',
+      avatarEmoji: '🧭',
+      accentColor: '#7c3aed',
+      adapter: 'hermes',
+      status: 'unknown',
+    })])
     await restarted.close()
   })
 

@@ -212,6 +212,21 @@ describe('Commonspace interface', () => {
     })
   })
 
+  it('shows project creation errors at the top of the modal', async () => {
+    const mutate = vi.fn(async () => { throw new Error('project name is required') })
+    const { store } = sidebarStore({}, { mutate })
+    render(<CommonspaceSidebar wide expandSidebar={() => undefined} store={store as never} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add project' }))
+    const dialog = screen.getByRole('dialog', { name: 'Add a project' })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Create' }))
+
+    const alert = await within(dialog).findByRole('alert')
+    expect(alert.textContent).toBe('project name is required')
+    expect(alert.classList.contains('csp-dialog-error')).toBe(true)
+    expect(screen.getAllByRole('alert')).toEqual([alert])
+  })
+
   it('creates an unbound channel', async () => {
     const { store, mutate } = sidebarStore()
     render(<CommonspaceSidebar wide expandSidebar={() => undefined} store={store as never} />)
@@ -259,6 +274,33 @@ describe('Commonspace interface', () => {
       expect(mutate).toHaveBeenCalledWith({ action: 'remove-agent', agentId: 'codex-review-bot' })
     })
     expect(mutate).not.toHaveBeenCalledWith({ action: 'add-discovered-agent', agentId: 'backend' })
+  })
+
+  it('edits an agent workspace name and appearance without exposing its native profile as editable', async () => {
+    const agent = { id: 'frontend', displayName: 'Frontend', adapter: 'hermes' as const, model: 'gpt-test', status: 'running' as const }
+    const { store, mutate } = sidebarStore({
+      agents: [agent],
+      state: state({ agents: [{ ...agent, createdAt: '2026-08-25T00:00:00.000Z' }] }),
+    })
+    render(<CommonspaceSidebar wide expandSidebar={() => undefined} store={store as never} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Customize agent Frontend' }))
+    const dialog = screen.getByRole('dialog', { name: 'Customize Frontend' })
+    expect(within(dialog).queryByLabelText(/native profile/i)).toBeNull()
+    fireEvent.change(within(dialog).getByLabelText('Workspace name'), { target: { value: 'Atlas' } })
+    fireEvent.change(within(dialog).getByLabelText('Avatar emoji'), { target: { value: '🧭' } })
+    fireEvent.change(within(dialog).getByLabelText('Accent color'), { target: { value: '#7c3aed' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save appearance' }))
+
+    await waitFor(() => {
+      expect(mutate).toHaveBeenCalledWith({
+        action: 'update-agent-profile',
+        agentId: 'frontend',
+        displayName: 'Atlas',
+        avatarEmoji: '🧭',
+        accentColor: '#7c3aed',
+      })
+    })
   })
 
   it('starts Hermes discovery only after selecting Hermes in the agent form', async () => {
