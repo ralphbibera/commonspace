@@ -1,7 +1,7 @@
-import { lazy, Suspense, useEffect, useId, useRef, useState, useSyncExternalStore, type CSSProperties, type FormEvent } from 'react'
-import type { AgentAdapterKind, CommonspaceAgentProfile, ConversationRef, CommonspaceMessage, CommonspaceThread } from '@commonspace/shared'
+import { lazy, Suspense, useEffect, useId, useRef, useState, useSyncExternalStore, type CSSProperties, type Dispatch, type FormEvent, type SetStateAction } from 'react'
+import type { AgentAdapterKind, CommonspaceAgentProfile, CommonspaceLiveAgentActivity, CommonspaceTraceEntry, ConversationRef, CommonspaceMessage, CommonspaceThread, SendImageAttachment } from '@commonspace/shared'
 import type { CommonspaceClientStore } from './commonspace-store.ts'
-import { AgentTrace } from './AgentTrace.tsx'
+import { AgentTrace, AgentTraceTimeline } from './AgentTrace.tsx'
 import { resolveSlashCommand, slashCommandSuggestions } from './slash-commands.ts'
 import { insertTag, tagReferenceParts, tagSuggestions, type TagSuggestion } from './tagging.ts'
 
@@ -23,6 +23,55 @@ interface CommandFeedback {
   title: string
   body: string
   action?: 'reset-dm'
+}
+
+const MAX_PASTED_IMAGES = 4
+const MAX_PASTED_IMAGE_BYTES = 8 * 1024 * 1024
+const PASTED_IMAGE_TYPES = new Set<SendImageAttachment['mimeType']>(['image/png', 'image/jpeg', 'image/gif', 'image/webp'])
+
+function readPastedImage(file: File): Promise<SendImageAttachment> {
+  if (!PASTED_IMAGE_TYPES.has(file.type as SendImageAttachment['mimeType'])) return Promise.reject(new Error('Only PNG, JPEG, GIF, and WebP images can be pasted.'))
+  if (file.size === 0 || file.size > MAX_PASTED_IMAGE_BYTES) return Promise.reject(new Error('Pasted images must be 8 MB or smaller.'))
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => { reject(new Error('Could not read the pasted image.')) }
+    reader.onload = () => {
+      const result = reader.result
+      const marker = ';base64,'
+      const markerIndex = typeof result === 'string' ? result.indexOf(marker) : -1
+      if (typeof result !== 'string' || markerIndex < 0) {
+        reject(new Error('Could not read the pasted image.'))
+        return
+      }
+      resolve({
+        name: file.name.trim() || 'pasted-image.png',
+        mimeType: file.type as SendImageAttachment['mimeType'],
+        data: result.slice(markerIndex + marker.length),
+      })
+    }
+    reader.readAsDataURL(file)
+  })
+}
+
+function PendingImageStrip({
+  images,
+  onRemove,
+}: {
+  images: readonly SendImageAttachment[]
+  onRemove: (index: number) => void
+}) {
+  if (images.length === 0) return null
+  return (
+    <div className="csp-composer-attachments" aria-label="Attached images">
+      {images.map((image, index) => (
+        <figure key={`${image.name}-${String(index)}`}>
+          <img src={`data:${image.mimeType};base64,${image.data}`} alt={`Pasted image ${image.name}`} />
+          <figcaption>{image.name}</figcaption>
+          <button type="button" aria-label={`Remove ${image.name}`} onClick={() => { onRemove(index) }}>×</button>
+        </figure>
+      ))}
+    </div>
+  )
 }
 
 function runtimeLabel(adapter: AgentAdapterKind | undefined): string {
@@ -50,17 +99,48 @@ function renderMessageText(message: CommonspaceMessage) {
     : <mark key={`${message.id}-${String(index)}`} className={`csp-tag csp-tag--${part.kind}`}>{part.text}</mark>)
 }
 
-function MessageRow({ message, compact = false }: { message: CommonspaceMessage; compact?: boolean }) {
+function MessageRow({
+  message,
+  compact = false,
+  onReplyToAgent,
+}: {
+  message: CommonspaceMessage
+  compact?: boolean
+  onReplyToAgent?: (message: CommonspaceMessage) => void
+}) {
   return (
     <article className={`csp-message csp-message--${message.authorType}${compact ? ' csp-message--compact' : ''}`} data-author={message.authorType}>
       <div className="csp-message-avatar" aria-hidden="true">{message.authorName.slice(0, 1).toUpperCase()}</div>
       <div className="csp-message-main">
-        <header><strong>{message.authorName}</strong><time>{new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time></header>
-        {message.authorType === 'agent'
+        <header>
+          <strong>{message.authorName}</strong>
+          <time>{new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time>
+          {message.authorType === 'agent' && onReplyToAgent !== undefined && (
+            <button
+              type="button"
+              className="csp-message-direct-reply"
+              aria-label={`Reply directly to ${message.authorName}`}
+              onClick={() => { onReplyToAgent(message) }}
+            ><span aria-hidden="true">↩</span> Reply</button>
+          )}
+        </header>
+        {message.text !== '' && (message.authorType === 'agent'
           ? <Suspense fallback={messageMarkdownFallback}>
               <LazyMessageMarkdown text={message.text} />
             </Suspense>
-          : <p className="csp-message-plain-text">{renderMessageText(message)}</p>}
+          : <p className="csp-message-plain-text">{renderMessageText(message)}</p>)}
+        {message.attachments !== undefined && message.attachments.length > 0 && (
+          <div className="csp-message-attachments">
+            {message.attachments.map(attachment => (
+              <img
+                key={attachment.id}
+                src={`/api/attachments/${encodeURIComponent(attachment.id)}`}
+                alt={attachment.name}
+                loading="lazy"
+              />
+            ))}
+          </div>
+        )}
         {message.authorType === 'agent' && message.trace !== undefined && <AgentTrace authorName={message.authorName} trace={message.trace} />}
       </div>
     </article>
@@ -126,11 +206,118 @@ function threadStatus(thread: CommonspaceThread | undefined): string | null {
   return null
 }
 
-function ThreadAgentActivity({ thread, agents }: { thread: CommonspaceThread; agents: readonly CommonspaceAgentProfile[] }) {
+function liveActivitiesFor(
+  activities: readonly CommonspaceLiveAgentActivity[] | undefined,
+  conversation: ConversationRef | null,
+  threadId: string | undefined,
+): CommonspaceLiveAgentActivity[] {
+  if (conversation === null) return []
+  return (activities ?? []).filter(activity =>
+    activity.conversation.kind === conversation.kind &&
+    activity.conversation.id === conversation.id &&
+    activity.threadId === threadId)
+}
+
+function latestTraceEntry(entries: readonly CommonspaceTraceEntry[]): CommonspaceTraceEntry | undefined {
+  return entries.reduce<CommonspaceTraceEntry | undefined>((latest, entry) =>
+    latest === undefined || entry.updatedAt > latest.updatedAt ? entry : latest, undefined)
+}
+
+function liveActivityDetail(activity: CommonspaceLiveAgentActivity): { kind: string; text: string } {
+  const entry = latestTraceEntry(activity.entries)
+  if (entry === undefined) return { kind: 'Waiting', text: 'Waiting for harness activity…' }
+  if (entry.type === 'reasoning') return { kind: 'Reasoning', text: entry.text }
+  if (entry.type === 'plan') {
+    const step = entry.steps.findLast(candidate => candidate.status === 'in_progress') ?? entry.steps.at(-1)
+    return { kind: 'Plan', text: step?.text ?? entry.markdown ?? 'Updating plan…' }
+  }
+  if (entry.type === 'tool') return { kind: entry.status === 'in_progress' ? 'Tool running' : 'Tool', text: entry.title }
+  return { kind: 'Context', text: `${entry.usedTokens.toLocaleString()} / ${entry.contextWindow.toLocaleString()} tokens` }
+}
+
+function LiveAgentActivity({
+  activities,
+  fallbackAgents,
+  phase,
+}: {
+  activities: readonly CommonspaceLiveAgentActivity[]
+  fallbackAgents: readonly CommonspaceAgentProfile[]
+  phase: 'queued' | 'running'
+}) {
+  const panelIdPrefix = useId()
+  const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null)
+  if (activities.length === 0 && fallbackAgents.length === 0) return null
+  const expandedActivityId = activities.some(activity => activity.id === selectedActivityId)
+    ? selectedActivityId
+    : activities[0]?.id ?? null
+  return (
+    <div className="csp-live-activity" role="status" aria-label="Live agent activity" aria-live="polite">
+      {activities.length > 0
+        ? activities.map((activity, index) => {
+            const detail = liveActivityDetail(activity)
+            const expanded = activity.id === expandedActivityId
+            const panelId = `${panelIdPrefix}-${String(index)}`
+            return (
+              <article key={activity.id} className={`csp-live-activity-row${expanded ? ' is-expanded' : ''}`} data-runtime={activity.adapter}>
+                <button
+                  type="button"
+                  className="csp-live-activity-trigger"
+                  aria-label={`${activity.agentName} activity`}
+                  aria-expanded={expanded}
+                  aria-controls={panelId}
+                  onClick={() => { setSelectedActivityId(activity.id) }}
+                >
+                  <span
+                    className="csp-thread-agent-avatar csp-thread-agent-avatar--responding"
+                    aria-label={`${activity.agentName} is responding`}
+                  >{activity.agentName.slice(0, 1).toLocaleUpperCase()}</span>
+                  <span className="csp-live-activity-copy">
+                    <span className="csp-live-activity-heading"><strong>{activity.agentName}</strong><span>{runtimeLabel(activity.adapter)} · {detail.kind}</span></span>
+                    <span className="csp-live-activity-summary">{detail.text}</span>
+                  </span>
+                  <span className="csp-live-activity-chevron" aria-hidden="true">⌄</span>
+                </button>
+                {expanded && (
+                  <section id={panelId} className="csp-live-activity-panel" role="region" aria-label={`${activity.agentName} live activity`}>
+                    {activity.entries.length > 0
+                      ? <AgentTraceTimeline entries={activity.entries} />
+                      : <p className="csp-live-activity-empty">Waiting for harness activity…</p>}
+                  </section>
+                )}
+              </article>
+            )
+          })
+        : fallbackAgents.map(agent => (
+            <div key={agent.id} className="csp-live-activity-row" data-runtime={agent.adapter}>
+              <div className="csp-live-activity-trigger">
+                <span
+                  className="csp-thread-agent-avatar csp-thread-agent-avatar--responding"
+                  aria-label={`${agent.displayName} is ${phase === 'queued' ? 'queued' : 'responding'}`}
+                >{agent.displayName.slice(0, 1).toLocaleUpperCase()}</span>
+                <span className="csp-live-activity-copy">
+                  <span className="csp-live-activity-heading"><strong>{agent.displayName}</strong><span>{runtimeLabel(agent.adapter)} · {phase === 'queued' ? 'Queued' : 'Waiting'}</span></span>
+                  <span className="csp-live-activity-summary">{phase === 'queued' ? 'Queued for provider run…' : 'Waiting for harness activity…'}</span>
+                </span>
+              </div>
+            </div>
+          ))}
+    </div>
+  )
+}
+
+function ThreadAgentActivity({
+  thread,
+  agents,
+  respondingAgentIds = thread.agentIds,
+}: {
+  thread: CommonspaceThread
+  agents: readonly CommonspaceAgentProfile[]
+  respondingAgentIds?: readonly string[]
+}) {
   if (thread.status !== 'queued' && thread.status !== 'running') return null
   return (
     <span className="csp-thread-agent-activity">
-      {thread.agentIds.map((agentId, index) => {
+      {respondingAgentIds.map((agentId, index) => {
         const agent = agents.find(candidate => candidate.id === agentId)
         const name = agent?.displayName ?? agentId
         return (
@@ -147,17 +334,48 @@ function ThreadAgentActivity({ thread, agents }: { thread: CommonspaceThread; ag
   )
 }
 
+function ThreadReplyAgents({
+  replies,
+  agents,
+}: {
+  replies: readonly CommonspaceMessage[]
+  agents: readonly CommonspaceAgentProfile[]
+}) {
+  const replyingAgents = [...new Map(
+    replies
+      .filter(reply => reply.authorType === 'agent')
+      .map(reply => [reply.authorId, reply] as const),
+  ).values()]
+  if (replyingAgents.length === 0) return null
+  return (
+    <span className="csp-thread-reply-agents">
+      {replyingAgents.map(reply => (
+        <span
+          key={reply.authorId}
+          className="csp-thread-agent-avatar"
+          data-runtime={agents.find(agent => agent.id === reply.authorId)?.adapter}
+          aria-label={`${reply.authorName} replied`}
+        >{reply.authorName.slice(0, 1).toLocaleUpperCase()}</span>
+      ))}
+    </span>
+  )
+}
+
 export function CommonspaceConversation({ store }: CommonspaceConversationProps) {
   const suggestionListId = useId()
   const threadSuggestionListId = useId()
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot)
   const [draft, setDraft] = useState('')
   const [threadDraft, setThreadDraft] = useState('')
+  const [pendingImages, setPendingImages] = useState<SendImageAttachment[]>([])
+  const [pendingThreadImages, setPendingThreadImages] = useState<SendImageAttachment[]>([])
+  const [threadReplyTarget, setThreadReplyTarget] = useState<{ agentId: string; agentName: string } | null>(null)
   const [selectedSuggestion, setSelectedSuggestion] = useState(0)
   const [selectedThreadSuggestion, setSelectedThreadSuggestion] = useState(0)
   const [commandFeedback, setCommandFeedback] = useState<CommandFeedback | null>(null)
   const bottom = useRef<HTMLDivElement>(null)
   const composer = useRef<HTMLTextAreaElement>(null)
+  const threadComposer = useRef<HTMLTextAreaElement>(null)
   const bootstrap = snapshot.bootstrap
   const messages = store.messages()
   const heading = conversationTitle(store, snapshot.activeConversation)
@@ -165,8 +383,8 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
   const activeChannel = isChannel && bootstrap !== null
     ? bootstrap.state.channels.find(channel => channel.id === snapshot.activeConversation?.id)
     : undefined
-  const slashSuggestions = snapshot.activeConversation === null ? [] : slashCommandSuggestions(draft, snapshot.activeConversation.kind)
-  const resolvedDraftCommand = snapshot.activeConversation === null ? null : resolveSlashCommand(draft, snapshot.activeConversation.kind)
+  const slashSuggestions = snapshot.activeConversation === null || pendingImages.length > 0 ? [] : slashCommandSuggestions(draft, snapshot.activeConversation.kind)
+  const resolvedDraftCommand = snapshot.activeConversation === null || pendingImages.length > 0 ? null : resolveSlashCommand(draft, snapshot.activeConversation.kind)
   const referenceSuggestions = bootstrap === null || draft.startsWith('/') ? [] : tagSuggestions(draft, bootstrap)
   const suggestionCount = slashSuggestions.length + referenceSuggestions.length
   const activeSuggestionId = suggestionCount > 0 ? `${suggestionListId}-option-${String(selectedSuggestion)}` : undefined
@@ -175,8 +393,8 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
     : []
   const activeThread = channelThreads.find(thread => thread.id === snapshot.activeThreadId)
   const activeThreadStatus = threadStatus(activeThread)
-  const threadSlashSuggestions = activeThread === undefined ? [] : slashCommandSuggestions(threadDraft, 'channel')
-  const resolvedThreadCommand = activeThread === undefined ? null : resolveSlashCommand(threadDraft, 'channel')
+  const threadSlashSuggestions = activeThread === undefined || pendingThreadImages.length > 0 ? [] : slashCommandSuggestions(threadDraft, 'channel')
+  const resolvedThreadCommand = activeThread === undefined || pendingThreadImages.length > 0 ? null : resolveSlashCommand(threadDraft, 'channel')
   const threadReferenceSuggestions = activeThread === undefined || bootstrap === null || threadDraft.startsWith('/') ? [] : tagSuggestions(threadDraft, bootstrap)
   const threadSuggestionCount = threadSlashSuggestions.length + threadReferenceSuggestions.length
   const activeThreadSuggestionId = threadSuggestionCount > 0 ? `${threadSuggestionListId}-option-${String(selectedThreadSuggestion)}` : undefined
@@ -186,18 +404,47 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
   const pendingDirectMessage = isChannel
     ? undefined
     : messages.findLast(message => message.authorType === 'user' && (message.replyStatus === 'queued' || message.replyStatus === 'running'))
-  const directMessageStatus = pendingDirectMessage?.replyStatus === 'queued'
-    ? `${heading.title} is queued…`
-    : pendingDirectMessage?.replyStatus === 'running'
-      ? `${heading.title} is responding…`
-      : null
+  const directMessagePhase = pendingDirectMessage?.replyStatus === 'queued' || pendingDirectMessage?.replyStatus === 'running'
+    ? pendingDirectMessage.replyStatus
+    : null
+  const directMessageActivities = liveActivitiesFor(bootstrap?.liveActivities, snapshot.activeConversation, undefined)
+  const directMessageAgents = snapshot.activeConversation?.kind === 'dm' && bootstrap !== null
+    ? bootstrap.agents.filter(agent => agent.id === snapshot.activeConversation?.id)
+    : []
   const activeRoot = activeThread === undefined ? undefined : messages.find(message => message.id === activeThread.rootMessageId)
   const replies = activeThread === undefined
     ? []
     : messages.filter(message => message.threadId === activeThread.id && message.parentMessageId === activeThread.rootMessageId)
+  const activeThreadActivities = liveActivitiesFor(bootstrap?.liveActivities, snapshot.activeConversation, activeThread?.id)
+  const activeThreadAgents = activeThread === undefined || bootstrap === null
+    ? []
+    : activeThread.agentIds.flatMap(agentId => bootstrap.agents.filter(agent => agent.id === agentId))
+  const rootIsCommand = pendingImages.length === 0 && draft.startsWith('/')
+  const threadIsCommand = pendingThreadImages.length === 0 && threadDraft.startsWith('/')
 
-  useEffect(() => { bottom.current?.scrollIntoView({ block: 'end' }) }, [messages.length, snapshot.sending, directMessageStatus])
-  useEffect(() => { composer.current?.focus(); setCommandFeedback(null) }, [snapshot.activeConversation?.id, snapshot.activeConversation?.kind])
+  useEffect(() => { bottom.current?.scrollIntoView({ block: 'end' }) }, [messages.length, snapshot.sending, directMessagePhase])
+  useEffect(() => {
+    composer.current?.focus()
+    setCommandFeedback(null)
+    setPendingImages([])
+  }, [snapshot.activeConversation?.id, snapshot.activeConversation?.kind])
+  useEffect(() => {
+    setThreadReplyTarget(null)
+    setPendingThreadImages([])
+  }, [snapshot.activeConversation?.id, snapshot.activeConversation?.kind, snapshot.activeThreadId])
+
+  const attachPastedImages = async (
+    files: readonly File[],
+    setImages: Dispatch<SetStateAction<SendImageAttachment[]>>,
+  ) => {
+    try {
+      const images = await Promise.all(files.slice(0, MAX_PASTED_IMAGES).map(readPastedImage))
+      setImages(current => [...current, ...images].slice(0, MAX_PASTED_IMAGES))
+      setCommandFeedback(null)
+    } catch (error) {
+      setCommandFeedback({ tone: 'error', title: 'Could not attach image', body: error instanceof Error ? error.message : String(error) })
+    }
+  }
 
   const selectSuggestion = (suggestion: TagSuggestion) => {
     setDraft(current => insertTag(current, suggestion.token))
@@ -319,27 +566,56 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
   const sendRoot = async (event: FormEvent) => {
     event.preventDefault()
     const text = draft.trim()
-    if (text === '') return
+    if (text === '' && pendingImages.length === 0) return
+    const attachments = pendingImages
     setDraft('')
-    if (text.startsWith('/')) {
+    if (rootIsCommand) {
       await executeSlashCommand(text)
       return
     }
+    setPendingImages([])
     setCommandFeedback(null)
-    try { await store.send(text) } catch { setDraft(text) }
+    try {
+      if (attachments.length === 0) await store.send(text)
+      else await store.send(text, undefined, attachments)
+    } catch {
+      setDraft(text)
+      setPendingImages(attachments)
+    }
   }
 
   const sendThreadReply = async (event: FormEvent) => {
     event.preventDefault()
     const text = threadDraft.trim()
-    if (text === '' || activeThread === undefined) return
+    if ((text === '' && pendingThreadImages.length === 0) || activeThread === undefined) return
+    const attachments = pendingThreadImages
     setThreadDraft('')
-    if (text.startsWith('/')) {
+    if (threadIsCommand) {
+      setThreadReplyTarget(null)
       await executeSlashCommand(text, activeThread.id)
       return
     }
+    setPendingThreadImages([])
     setCommandFeedback(null)
-    try { await store.send(text, activeThread.id) } catch { setThreadDraft(text) }
+    try {
+      if (threadReplyTarget === null) {
+        if (attachments.length === 0) await store.send(text, activeThread.id)
+        else await store.send(text, activeThread.id, attachments)
+      } else if (attachments.length === 0) {
+        await store.sendDirectReply(text, activeThread.id, threadReplyTarget.agentId)
+      } else {
+        await store.sendDirectReply(text, activeThread.id, threadReplyTarget.agentId, attachments)
+      }
+      setThreadReplyTarget(null)
+    } catch {
+      setThreadDraft(text)
+      setPendingThreadImages(attachments)
+    }
+  }
+
+  const replyDirectlyToAgent = (message: CommonspaceMessage) => {
+    setThreadReplyTarget({ agentId: message.authorId, agentName: message.authorName })
+    threadComposer.current?.focus()
   }
 
   return (
@@ -375,15 +651,24 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
               {isChannel
                 ? roots.map(root => {
                     const thread = channelThreads.find(candidate => candidate.rootMessageId === root.id)
-                    const replyCount = thread === undefined ? 0 : messages.filter(message => message.threadId === thread.id && message.parentMessageId === root.id).length
+                    const threadReplies = thread === undefined ? [] : messages.filter(message => message.threadId === thread.id && message.parentMessageId === root.id)
+                    const replyCount = threadReplies.length
                     const status = threadStatus(thread)
+                    const threadActivities = liveActivitiesFor(bootstrap?.liveActivities, snapshot.activeConversation, thread?.id)
                     return (
                       <article key={root.id} className="csp-thread-root">
                         <MessageRow message={root} />
                         <button type="button" className="csp-thread-open" onClick={() => { if (thread !== undefined) store.selectThread(thread.id) }}>
-                          <span>{replyCount} {replyCount === 1 ? 'reply' : 'replies'}</span>
+                          <span className="csp-thread-reply-summary">
+                            {bootstrap !== null && <ThreadReplyAgents replies={threadReplies} agents={bootstrap.agents} />}
+                            <span>{replyCount} {replyCount === 1 ? 'reply' : 'replies'}</span>
+                          </span>
                           {status !== null && <span className="csp-thread-meta">
-                            {thread !== undefined && bootstrap !== null && <ThreadAgentActivity thread={thread} agents={bootstrap.agents} />}
+                            {thread !== undefined && bootstrap !== null && <ThreadAgentActivity
+                              thread={thread}
+                              agents={bootstrap.agents}
+                              {...(threadActivities.length === 0 ? {} : { respondingAgentIds: threadActivities.map(activity => activity.agentId) })}
+                            />}
                             <span className={`csp-thread-status csp-thread-status--${thread?.status ?? 'complete'}`}>{status}</span>
                           </span>}
                         </button>
@@ -391,7 +676,11 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
                     )
                   })
                 : roots.map(message => <MessageRow key={message.id} message={message} />)}
-              {directMessageStatus !== null && <div className="csp-agent-working" role="status" aria-live="polite">{directMessageStatus}</div>}
+              {directMessagePhase !== null && <LiveAgentActivity
+                activities={directMessageActivities}
+                fallbackAgents={directMessageAgents}
+                phase={directMessagePhase}
+              />}
               <div ref={bottom} />
             </div>
 
@@ -422,6 +711,10 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
                   value={draft}
                   disabled={snapshot.sending}
                   onChange={event => { setDraft(event.target.value); setSelectedSuggestion(0) }}
+                  onPaste={event => {
+                    const files = Array.from(event.clipboardData.files).filter(file => file.type.startsWith('image/'))
+                    if (files.length > 0) void attachPastedImages(files, setPendingImages)
+                  }}
                   onKeyDown={event => {
                     if (suggestionCount > 0 && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
                       event.preventDefault()
@@ -442,6 +735,10 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
                     }
                   }}
                 />
+                <PendingImageStrip
+                  images={pendingImages}
+                  onRemove={index => { setPendingImages(current => current.filter((_, candidate) => candidate !== index)) }}
+                />
                 {suggestionCount > 0 && <SuggestionMenu
                   id={suggestionListId}
                   selectedSuggestion={selectedSuggestion}
@@ -453,13 +750,13 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
               </div>
               <div className="csp-composer-footer">
                 <div className="csp-composer-tools" aria-hidden="true"><span>@</span><span>⌁</span><span>☺</span><span>Aa</span></div>
-                <span className="csp-composer-hint">{isChannel ? '@ agent · @@ project · # channel · / commands' : 'Enter to send · / for commands'}</span>
+                <span className="csp-composer-hint">{isChannel ? '@ agent · @@ project · # channel · paste image · / commands' : 'Enter to send · paste image · / commands'}</span>
                 <button
                   type="submit"
-                  aria-label={draft.startsWith('/') ? 'Run command' : isChannel ? 'Post message' : 'Send message'}
-                  title={draft.startsWith('/') ? 'Run command' : isChannel ? 'Post message' : 'Send message'}
-                  disabled={snapshot.sending || draft.trim() === ''}
-                ><span aria-hidden="true">↑</span><span className="csp-send-label">{draft.startsWith('/') ? 'Run' : isChannel ? 'Post' : 'Send'}</span></button>
+                  aria-label={rootIsCommand ? 'Run command' : isChannel ? 'Post message' : 'Send message'}
+                  title={rootIsCommand ? 'Run command' : isChannel ? 'Post message' : 'Send message'}
+                  disabled={snapshot.sending || (draft.trim() === '' && pendingImages.length === 0)}
+                ><span aria-hidden="true">↑</span><span className="csp-send-label">{rootIsCommand ? 'Run' : isChannel ? 'Post' : 'Send'}</span></button>
               </div>
             </form>
           </section>
@@ -473,18 +770,33 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
               <div className="csp-thread-messages">
                 {activeRoot !== undefined && <MessageRow message={activeRoot} />}
                 <div className="csp-thread-divider">Replies</div>
-                {replies.map(reply => <MessageRow key={reply.id} message={reply} compact />)}
+                {replies.map(reply => (
+                  <MessageRow key={reply.id} message={reply} compact onReplyToAgent={replyDirectlyToAgent} />
+                ))}
                 {(activeThread.status === 'queued' || activeThread.status === 'running') && (
-                  <div className="csp-agent-working">
-                    {bootstrap !== null && <ThreadAgentActivity thread={activeThread} agents={bootstrap.agents} />}
-                    <span>Agents are responding…</span>
-                  </div>
+                  <LiveAgentActivity
+                    activities={activeThreadActivities}
+                    fallbackAgents={activeThreadAgents}
+                    phase={activeThread.status}
+                  />
                 )}
                 {activeThread.error !== undefined && <div className="csp-conversation-error">{activeThread.error}</div>}
               </div>
               <form className="csp-thread-composer" onSubmit={(event) => { void sendThreadReply(event) }}>
                 <div className="csp-composer-input-wrap">
+                  {threadReplyTarget !== null && (
+                    <div className="csp-thread-reply-target" role="status">
+                      <span>Replying to {threadReplyTarget.agentName}</span>
+                      <small>Only this agent will respond</small>
+                      <button
+                        type="button"
+                        aria-label="Cancel direct reply"
+                        onClick={() => { setThreadReplyTarget(null); threadComposer.current?.focus() }}
+                      >×</button>
+                    </div>
+                  )}
                   <textarea
+                    ref={threadComposer}
                     aria-label="Reply in thread"
                     aria-autocomplete="list"
                     aria-expanded={threadSuggestionCount > 0}
@@ -494,6 +806,10 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
                     value={threadDraft}
                     disabled={snapshot.sending}
                     onChange={event => { setThreadDraft(event.target.value); setSelectedThreadSuggestion(0) }}
+                    onPaste={event => {
+                      const files = Array.from(event.clipboardData.files).filter(file => file.type.startsWith('image/'))
+                      if (files.length > 0) void attachPastedImages(files, setPendingThreadImages)
+                    }}
                     onKeyDown={event => {
                       if (threadSuggestionCount > 0 && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
                         event.preventDefault()
@@ -514,6 +830,10 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
                       }
                     }}
                   />
+                  <PendingImageStrip
+                    images={pendingThreadImages}
+                    onRemove={index => { setPendingThreadImages(current => current.filter((_, candidate) => candidate !== index)) }}
+                  />
                   {threadSuggestionCount > 0 && <SuggestionMenu
                     id={threadSuggestionListId}
                     selectedSuggestion={selectedThreadSuggestion}
@@ -523,7 +843,7 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
                     onSelectTag={selectThreadSuggestion}
                   />}
                 </div>
-                <button type="submit" disabled={snapshot.sending || threadDraft.trim() === ''}>Reply</button>
+                <button type="submit" disabled={snapshot.sending || (threadDraft.trim() === '' && pendingThreadImages.length === 0)}>{threadIsCommand ? 'Run' : 'Reply'}</button>
               </form>
             </aside>
           )}

@@ -1,5 +1,5 @@
 import type { CommonspaceBootstrap } from '@commonspace/shared'
-import { projectTagName } from '@commonspace/shared'
+import { agentTagName, projectTagName } from '@commonspace/shared'
 
 export type TagKind = 'agent' | 'project' | 'channel' | 'text'
 
@@ -42,9 +42,10 @@ export function tagSuggestions(text: string, bootstrap: CommonspaceBootstrap): T
   const query = (match[3] ?? '').toLocaleLowerCase()
   if (prefix === '@') {
     return bootstrap.agents
-      .filter(agent => agent.id.toLocaleLowerCase().startsWith(query) || agent.displayName.toLocaleLowerCase().startsWith(query))
+      .map(agent => ({ agent, tagName: agentTagName(agent.displayName) }))
+      .filter(({ agent, tagName }) => agent.id.toLocaleLowerCase().startsWith(query) || tagName.startsWith(query) || agent.displayName.toLocaleLowerCase().startsWith(query))
       .slice(0, 6)
-      .map(agent => ({ kind: 'agent' as const, id: agent.id, label: agent.displayName, token: `@${agent.id}` }))
+      .map(({ agent, tagName }) => ({ kind: 'agent' as const, id: agent.id, label: agent.displayName, token: `@${tagName}` }))
   }
   if (prefix === '@@') {
     return bootstrap.state.projects

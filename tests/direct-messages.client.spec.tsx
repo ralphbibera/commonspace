@@ -22,6 +22,21 @@ describe('Commonspace direct messages', () => {
     const snapshot = {
       bootstrap: {
         agents: [{ id: 'frontend', displayName: 'Frontend', adapter: 'hermes' as const, model: 'gpt-5.6-luna', status: 'stopped' as const }],
+        liveActivities: [{
+          id: 'run-1',
+          agentId: 'frontend',
+          agentName: 'Frontend',
+          adapter: 'hermes' as const,
+          conversation: { kind: 'dm' as const, id: 'frontend' },
+          startedAt: '2026-08-26T00:00:01.000Z',
+          entries: [{
+            type: 'reasoning' as const,
+            id: 'reasoning',
+            text: 'Inspecting the request now.',
+            createdAt: '2026-08-26T00:00:02.000Z',
+            updatedAt: '2026-08-26T00:00:02.000Z',
+          }],
+        }],
         state: {
           version: 9,
           revision: 2,
@@ -53,7 +68,10 @@ describe('Commonspace direct messages', () => {
 
     render(<CommonspaceConversation store={store as never} />)
 
-    expect(screen.getByRole('status').textContent).toBe('Frontend is responding…')
+    const activity = screen.getByRole('status', { name: 'Live agent activity' })
+    expect(activity.textContent).toContain('Frontend')
+    expect(activity.textContent).toContain('Inspecting the request now.')
+    expect(screen.queryByText('Frontend is responding…')).toBeNull()
   })
 
   it('starts a direct message from a searchable agent picker', () => {

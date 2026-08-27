@@ -48,6 +48,7 @@ function sidebarStore(
       subscribe: () => () => undefined,
       getSnapshot: () => snapshot,
       refresh: vi.fn(async () => undefined),
+      discoverAgents: vi.fn(async () => undefined),
       mutate,
       selectConversation: vi.fn(),
       selectProject: vi.fn(),
@@ -68,7 +69,10 @@ describe('Commonspace interface', () => {
     ])
 
     const bootstrap: CommonspaceBootstrap = {
-      agents: [{ id: 'backend', displayName: 'Backend', adapter: 'hermes', model: 'x', status: 'running' }],
+      agents: [
+        { id: 'backend', displayName: 'Backend', adapter: 'hermes', model: 'x', status: 'running' },
+        { id: 'default', displayName: 'AgentOps', adapter: 'hermes', model: 'x', status: 'running' },
+      ],
       discoveredAgents: [],
       state: state({
         projects: [{ id: 'project-1', name: 'Client Portal', paths: [], createdAt: '' }],
@@ -86,6 +90,9 @@ describe('Commonspace interface', () => {
     }
     expect(tagSuggestions('Please ask @ba', bootstrap)).toEqual([
       { kind: 'agent', id: 'backend', label: 'Backend', token: '@backend' },
+    ])
+    expect(tagSuggestions('Please ask @ag', bootstrap)).toEqual([
+      { kind: 'agent', id: 'default', label: 'AgentOps', token: '@agentops' },
     ])
     expect(tagSuggestions('Please inspect @@client-p', bootstrap)).toEqual([
       { kind: 'project', id: 'project-1', label: 'Client Portal', token: '@@client-portal' },
@@ -219,9 +226,10 @@ describe('Commonspace interface', () => {
     })
   })
 
-  it('manages Codex agents and explicitly selected Hermes profiles', async () => {
+  it('manages discovered Codex agents and explicitly selected Hermes profiles', async () => {
     const codexAgent = { id: 'codex-review-bot', displayName: 'Review Bot', adapter: 'codex' as const, model: 'gpt-5.4', status: 'unknown' as const }
     const discoveredAgents = [
+      { id: 'codex-worker', displayName: 'worker', adapter: 'codex' as const, nativeProfile: 'worker', model: null, status: 'unknown' as const },
       { id: 'frontend', displayName: 'Frontend', adapter: 'hermes' as const, model: null, status: 'running' as const },
       { id: 'backend', displayName: 'Backend', adapter: 'hermes' as const, model: null, status: 'stopped' as const },
     ]
@@ -235,20 +243,37 @@ describe('Commonspace interface', () => {
     render(<CommonspaceSidebar wide expandSidebar={() => undefined} store={store as never} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Add agent' }))
-    fireEvent.change(screen.getByLabelText('Agent name'), { target: { value: 'Builder' } })
-    fireEvent.change(screen.getByLabelText('Agent model'), { target: { value: 'gpt-5.4' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Create agent' }))
+    fireEvent.change(screen.getByLabelText('Agent harness'), { target: { value: 'codex' } })
     await waitFor(() => {
-      expect(mutate).toHaveBeenCalledWith({ action: 'add-agent', displayName: 'Builder', adapter: 'codex', model: 'gpt-5.4' })
+      expect(store.discoverAgents).toHaveBeenCalledWith('codex')
     })
+    fireEvent.click(screen.getByRole('button', { name: 'Add discovered agent worker' }))
 
     fireEvent.click(screen.getByRole('button', { name: 'Add agent' }))
+    fireEvent.change(screen.getByLabelText('Agent harness'), { target: { value: 'hermes' } })
     fireEvent.click(screen.getByRole('button', { name: 'Add discovered agent Frontend' }))
     fireEvent.click(screen.getByRole('button', { name: 'Remove agent Review Bot' }))
     await waitFor(() => {
+      expect(mutate).toHaveBeenCalledWith({ action: 'add-discovered-agent', agentId: 'codex-worker' })
       expect(mutate).toHaveBeenCalledWith({ action: 'add-discovered-agent', agentId: 'frontend' })
       expect(mutate).toHaveBeenCalledWith({ action: 'remove-agent', agentId: 'codex-review-bot' })
     })
     expect(mutate).not.toHaveBeenCalledWith({ action: 'add-discovered-agent', agentId: 'backend' })
+  })
+
+  it('starts Hermes discovery only after selecting Hermes in the agent form', async () => {
+    const discoverAgents = vi.fn(async () => undefined)
+    const { store } = sidebarStore({}, { discoverAgents })
+    render(<CommonspaceSidebar wide expandSidebar={() => undefined} store={store as never} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add agent' }))
+    expect(discoverAgents).not.toHaveBeenCalled()
+
+    fireEvent.change(screen.getByLabelText('Agent harness'), { target: { value: 'hermes' } })
+
+    await waitFor(() => {
+      expect(discoverAgents).toHaveBeenCalledWith('hermes')
+    })
+    expect(screen.queryByRole('button', { name: 'Create agent' })).toBeNull()
   })
 })
