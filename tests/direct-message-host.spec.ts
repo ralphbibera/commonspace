@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { CommonspaceTraceEntry } from '@commonspace/shared'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CommonspaceHostService, type AgentRunInput } from '../server/src/service.ts'
 
@@ -35,6 +36,46 @@ describe('Commonspace direct-message host sessions', () => {
     result.resolve({ text: 'Reviewed', sessionId: '123e4567-e89b-42d3-a456-426614174000' })
     await service.whenIdle()
     expect(service.snapshot().messages['dm:codex-review-bot']?.[0]?.replyStatus).toBe('complete')
+  })
+
+  it('publishes provider activity while a DM is running and clears it after completion', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-dm-activity-'))
+    roots.push(root)
+    const result = deferred<{ text: string; sessionId: string }>()
+    const runAgent = vi.fn(async (input: AgentRunInput) => {
+      const onTraceUpdate = (input as AgentRunInput & {
+        onTraceUpdate?: (entries: readonly CommonspaceTraceEntry[]) => void
+      }).onTraceUpdate
+      onTraceUpdate?.([{
+        type: 'reasoning',
+        id: 'reasoning',
+        text: 'Inspecting the request now.',
+        createdAt: '2026-08-26T00:00:02.000Z',
+        updatedAt: '2026-08-26T00:00:02.000Z',
+      }])
+      return result.promise
+    })
+    const service = new CommonspaceHostService({} as never, { root }, { discoverAgents: async () => [], runAgent })
+    await service.initialize()
+    await service.mutate({ action: 'add-agent', displayName: 'Review Bot', adapter: 'codex' })
+
+    await service.send({ conversation: { kind: 'dm', id: 'codex-review-bot' }, text: 'Review this' })
+    await vi.waitFor(async () => {
+      expect(runAgent).toHaveBeenCalledOnce()
+      const activities = (await service.bootstrap() as {
+        liveActivities?: Array<{ agentId: string; agentName: string; entries: CommonspaceTraceEntry[] }>
+      }).liveActivities ?? []
+      expect(activities).toHaveLength(1)
+      expect(activities[0]).toMatchObject({
+        agentId: 'codex-review-bot',
+        agentName: 'Review Bot',
+        entries: [{ type: 'reasoning', text: 'Inspecting the request now.' }],
+      })
+    })
+
+    result.resolve({ text: 'Reviewed', sessionId: '123e4567-e89b-42d3-a456-426614174000' })
+    await service.whenIdle()
+    expect((await service.bootstrap() as { liveActivities?: unknown[] }).liveActivities).toEqual([])
   })
 
   it('runs the next DM in a fresh native session after reset', async () => {

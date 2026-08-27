@@ -1,6 +1,7 @@
 import { chmod, mkdtemp, mkdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { COMMONSPACE_STATE_VERSION } from '@commonspace/shared'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { requestIsLoopback, requestIsSameOrigin } from '../server/src/app.ts'
 import { CommonspaceHostService, unsafeModeForAdapter, type AgentRunInput } from '../server/src/service.ts'
@@ -135,7 +136,7 @@ describe('Commonspace host authority', () => {
     })
   })
 
-  it('sanitizes malformed legacy state, canonicalizes paths, and durably writes v9', async () => {
+  it('sanitizes malformed legacy state, canonicalizes paths, and durably writes the current version', async () => {
     const root = await mkdtemp(join(tmpdir(), 'commonspace-migration-'))
     roots.push(root)
     const workspace = join(root, 'workspace')
@@ -167,7 +168,7 @@ describe('Commonspace host authority', () => {
 
     const state = service.snapshot()
     expect(state).toMatchObject({
-      version: 9,
+      version: COMMONSPACE_STATE_VERSION,
       revision: 0,
       defaults: { model: null, reasoning: 'max', maxAgentsPerTurn: 8, memoryThreads: 1 },
       projects: [{ id: 'project-1', paths: [canonicalWorkspace] }],
@@ -182,7 +183,7 @@ describe('Commonspace host authority', () => {
       messages: {},
     })
     const persisted = JSON.parse(await readFile(join(root, 'state.json'), 'utf8')) as { version?: number; defaults?: { reasoning?: string } }
-    expect(persisted).toMatchObject({ version: 9, defaults: { reasoning: 'max' } })
+    expect(persisted).toMatchObject({ version: COMMONSPACE_STATE_VERSION, defaults: { reasoning: 'max' } })
   })
 
   it('migrates v7 state to the Hermes and Codex roster', async () => {
@@ -227,7 +228,7 @@ describe('Commonspace host authority', () => {
     await service.initialize()
 
     expect(service.snapshot()).toMatchObject({
-      version: 9,
+      version: COMMONSPACE_STATE_VERSION,
       agents: [{ id: 'codex-review-bot', adapter: 'codex' }],
       dmSessions: { 'codex-review-bot': codexScope },
       agentSessions: { 'codex-review-bot': { [codexScope]: 'codex-native-session' } },
@@ -486,6 +487,85 @@ describe('Commonspace host authority', () => {
     expect(messages.filter(message => message.authorType === 'agent').map(message => message.authorId)).toEqual(['backend', 'frontend'])
   })
 
+  it('delivers a direct channel reply only to the selected agent', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-direct-reply-'))
+    roots.push(root)
+    const workspace = join(root, 'workspace')
+    await mkdir(workspace)
+    const runAgent = vi.fn(async (input: AgentRunInput) => `${input.agent.displayName} replied.`)
+    const service = new CommonspaceHostService({} as never, { root }, {
+      discoverAgents: async () => [
+        { id: 'backend', displayName: 'Backend', adapter: 'hermes', model: 'test', status: 'stopped' },
+        { id: 'frontend', displayName: 'Frontend', adapter: 'hermes', model: 'test', status: 'stopped' },
+      ],
+      runAgent,
+    })
+    await service.initialize()
+    await addDiscoveredAgents(service, 'backend', 'frontend')
+    const project = (await service.mutate({ action: 'create-project', name: 'App', paths: [workspace] })).projects[0]!
+    const channel = (await service.mutate({
+      action: 'create-channel',
+      name: 'engineering',
+      projectId: project.id,
+      agentIds: ['backend', 'frontend'],
+    })).channels[0]!
+    const accepted = await service.send({ conversation: { kind: 'channel', id: channel.id }, text: 'Share findings.' })
+    await service.whenIdle()
+    runAgent.mockClear()
+
+    await service.send({
+      conversation: { kind: 'channel', id: channel.id },
+      threadId: accepted.thread!.id,
+      targetAgentId: 'frontend',
+      text: 'Check the boundary again.',
+    })
+    await service.whenIdle()
+
+    expect(runAgent.mock.calls.map(call => call[0].agent.id)).toEqual(['frontend'])
+  })
+
+  it('rejects invalid direct channel reply targets before appending a message', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-direct-reply-validation-'))
+    roots.push(root)
+    const runAgent = vi.fn(async () => 'Done.')
+    const service = new CommonspaceHostService({} as never, { root }, {
+      discoverAgents: async () => [
+        { id: 'frontend', displayName: 'Frontend', adapter: 'hermes', model: 'test', status: 'stopped' },
+        { id: 'outside', displayName: 'Outside', adapter: 'hermes', model: 'test', status: 'stopped' },
+      ],
+      runAgent,
+    })
+    await service.initialize()
+    await addDiscoveredAgents(service, 'frontend', 'outside')
+    const channel = (await service.mutate({
+      action: 'create-channel',
+      name: 'engineering',
+      agentIds: ['frontend'],
+    })).channels[0]!
+    const accepted = await service.send({ conversation: { kind: 'channel', id: channel.id }, text: 'Start.' })
+    await service.whenIdle()
+    const messageCount = service.snapshot().messages[`channel:${channel.id}`]!.length
+
+    await expect(service.send({
+      conversation: { kind: 'channel', id: channel.id },
+      targetAgentId: 'frontend',
+      text: 'No thread.',
+    })).rejects.toThrow('direct channel replies require a thread')
+    await expect(service.send({
+      conversation: { kind: 'channel', id: channel.id },
+      threadId: accepted.thread!.id,
+      targetAgentId: 'outside',
+      text: 'Wrong agent.',
+    })).rejects.toThrow('direct reply target is not a channel member')
+    await expect(service.send({
+      conversation: { kind: 'dm', id: 'frontend' },
+      targetAgentId: 'outside',
+      text: 'Wrong conversation kind.',
+    })).rejects.toThrow('direct messages do not accept a reply target')
+
+    expect(service.snapshot().messages[`channel:${channel.id}`]).toHaveLength(messageCount)
+  })
+
   it('continues room delivery when one agent invocation fails', async () => {
     const root = await mkdtemp(join(tmpdir(), 'commonspace-room-failure-'))
     roots.push(root)
@@ -523,6 +603,7 @@ describe('Commonspace host authority', () => {
       discoverAgents: async () => [{ id: 'codex-review-bot', displayName: 'Collision', adapter: 'hermes', model: 'test', status: 'stopped' }],
     })
     await service.initialize()
+    await service.discoverAgents('hermes')
 
     await expect(service.mutate({ action: 'add-agent', displayName: 'Review Bot', adapter: 'codex' }))
       .rejects.toThrow('conflicts with a Hermes profile')

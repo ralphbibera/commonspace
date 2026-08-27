@@ -6,6 +6,7 @@ import {
   methods,
   ndJsonStream,
   type ClientConnection,
+  type ContentBlock,
   type InitializeResponse,
   type LoadSessionResponse,
   type McpServer,
@@ -40,6 +41,7 @@ export interface AcpRunInput {
   cwd: string
   additionalCwds?: readonly string[]
   message: string
+  images?: readonly AcpImageInput[]
   sessionId?: string
   mcpServers?: readonly McpServer[]
   modeId?: string
@@ -48,6 +50,12 @@ export interface AcpRunInput {
   configOptions?: Readonly<Record<string, string | boolean>>
   onSessionReady?(sessionId: string): void
   onTraceUpdate?(entries: readonly CommonspaceTraceEntry[]): void
+}
+
+export interface AcpImageInput {
+  name: string
+  mimeType: string
+  data: string
 }
 
 export interface AcpRunTrace {
@@ -251,7 +259,7 @@ export class AcpAgentProcess {
 
   async run(input: AcpRunInput): Promise<AcpRunResult> {
     if (this.#closing) throw new Error('ACP process is closed')
-    if (input.message === '') throw new Error('ACP message is required')
+    if (input.message === '' && (input.images?.length ?? 0) === 0) throw new Error('ACP message or image is required')
     await this.#ensureStarted()
     const connection = this.#connection
     if (connection === undefined || connection.signal.aborted) throw new Error('ACP process is not connected')
@@ -273,9 +281,13 @@ export class AcpAgentProcess {
       this.#activeTurns.set(sessionId, turn)
       try {
         input.onSessionReady?.(sessionId)
+        const prompt: ContentBlock[] = [
+          ...(input.message === '' ? [] : [{ type: 'text' as const, text: input.message }]),
+          ...(input.images ?? []).map(image => ({ type: 'image' as const, mimeType: image.mimeType, data: image.data })),
+        ]
         await this.#request('session/prompt', signal => connection.agent.request(methods.agent.session.prompt, {
           sessionId,
-          prompt: [{ type: 'text', text: input.message }],
+          prompt,
         }, { cancellationSignal: signal }))
         if (turn.exceededLimit) throw new Error('ACP agent response exceeded the Commonspace output limit')
         const trace = turn.traceEntries.length === 0
