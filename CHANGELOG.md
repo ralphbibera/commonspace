@@ -6,6 +6,8 @@ All notable changes to Commonspace are recorded here.
 
 ### Added
 
+- Reply-focused Inbox with unread filtering, exact thread navigation, and a durable single-owner read cursor.
+- Commonspace-local agent names, emoji avatars, and accent colors without mutating native harness profiles.
 - Non-blocking agent-to-agent Channel delivery with bounded `@mention` handoffs.
 - Native Hermes and Codex ACP relay with delta-only prompts, exact opaque-session resume, hard-boundary cancellation, and session-scoped MCP context/actions.
 - Durable, expandable Hermes and Codex activity traces with harness-emitted reasoning summaries, plans, tool calls, tool results, and context usage.
@@ -18,7 +20,7 @@ All notable changes to Commonspace are recorded here.
 ### Changed
 
 - Hermes profiles are auto-discovered as candidates but join the Commonspace roster only after an explicit user choice; new Channels also start with no agents preselected.
-- Local state migrates from versions 1–8 to version 9 with sanitized agent activity traces.
+- Local state migrates from versions 1–11 to version 12 with sanitized agent activity traces, Inbox read state, managed image attachment metadata, and local agent appearance.
 - Independent agents can run concurrently; only the same native agent session is serialized.
 - Hermes and Codex use ACP for every agent turn.
 - Missing native sessions recover once without treating authentication or transport failures as a reason to discard continuity.

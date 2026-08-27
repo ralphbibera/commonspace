@@ -14,7 +14,7 @@ The structure borrows mature separation patterns without importing another produ
 
 ## Request path
 
-The Vite development server proxies `/api` to `127.0.0.1:3100`. A production build places browser assets in `ui/dist`; the Express server serves those assets and the same API from one origin.
+The Vite development and preview servers proxy `/api` to the Commonspace API at `127.0.0.1:3100`. A production build places browser assets in `ui/dist`; Vite serves those assets separately while Express serves the API only.
 
 Endpoints:
 
@@ -26,7 +26,7 @@ Endpoints:
 - `POST /api/mutate`
 - `POST /api/send`
 
-Server-sent revision events prompt the UI store to refresh. State revisions prevent an older response from replacing newer browser state.
+Server-sent revision events prompt the UI store to refresh persisted state. Separate activity events carry ephemeral provider-emitted entries for turns still running; state revisions prevent an older response from replacing newer browser state.
 
 ## Server
 
@@ -47,7 +47,7 @@ Server-sent revision events prompt the UI store to refresh. State revisions prev
 - native turn cancellation on reset, Channel removal, agent removal, timeout, and shutdown;
 - revision subscriptions.
 
-`server/src/app.ts` owns HTTP concerns: JSON limits, loopback and same-origin guards, SSE framing, API status codes, static assets, SPA routing, and security headers.
+`server/src/app.ts` owns HTTP concerns: JSON limits, loopback and same-origin guards, SSE framing, API status codes, health checks, and security headers.
 
 `server/src/acp-runtime.ts` owns the provider-neutral ACP client and subprocess lifecycle. `server/src/commonspace-mcp.ts` owns the stateless loopback MCP transport, ephemeral capabilities, and scoped tools. `server/src/index.ts` owns process startup, configuration, signal handling, and graceful shutdown.
 
@@ -69,4 +69,4 @@ Hermes launches one profile-scoped ACP process with `hermes -p <profile> acp`; C
 
 ## Persistence
 
-State v9 persists the Hermes/Codex roster, opaque provider-native session references, and sanitized per-reply activity traces. Versions 1–8 migrate on load through structural sanitization. Writes use a `0600` temporary file followed by atomic rename. Trace payloads are bounded and host details are redacted before persistence; MCP capabilities stay in memory and native session references are removed from browser snapshots.
+State v12 persists the Hermes/Codex roster, Commonspace-local agent appearance, opaque provider-native session references, sanitized per-reply activity traces, the single-owner Inbox read cursor, and managed image attachment metadata. Versions 1–11 migrate on load through structural sanitization. Writes use a `0600` temporary file followed by atomic rename. Trace payloads are bounded and host details are redacted before persistence; MCP capabilities stay in memory and native session references are removed from browser snapshots.
