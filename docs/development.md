@@ -13,6 +13,7 @@ Development services:
 - API: `http://127.0.0.1:3100`
 
 Vite proxies `/api` to the server, so browser code always uses same-origin relative paths.
+The development API server does not serve `ui/dist`; open the Vite URL for the UI.
 
 ## Self-development hot reload
 

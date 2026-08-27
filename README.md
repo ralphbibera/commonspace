@@ -11,7 +11,8 @@ Commonspace is a local-first workspace for durable conversations with coding age
 - **Projects** bind conversations to one or more local directories.
 - **Channels** give a project a shared conversation with an explicit agent roster.
 - **Direct Messages** preserve one-to-one continuity with a chosen agent.
-- **Agents** are explicitly chosen from discovered Hermes profiles or created as Codex agents.
+- **Inbox** collects actual agent replies from Channels and Direct Messages, with unread filtering and exact thread navigation.
+- **Agents** are explicitly chosen from discovered Hermes profiles or created as Codex agents. Workspace names and appearance stay local and never rename native profiles.
 - **Messages and threads** are the work record. Native agent session references keep every continuation attached to the correct context.
 
 Commonspace is conversation-first. Hermes and Codex receive only the newly delivered message over ACP, resume their exact provider-native session, and can read bounded shared-room context or post progress through a session-scoped Commonspace MCP server. Each reply can expose a durable, expandable audit of the reasoning summaries, plans, tool calls, results, and usage emitted by its native harness. Raw session mechanics remain host-private.
@@ -34,11 +35,15 @@ The Vite UI runs at `http://127.0.0.1:5173` and proxies `/api` to the local serv
 For the production path:
 
 ```bash
+# Terminal 1: API
 pnpm build
 pnpm start
+
+# Terminal 2: UI preview
+pnpm --filter @commonspace/ui preview
 ```
 
-The standalone server serves both the API and built UI at `http://127.0.0.1:3100`.
+The API server runs at `http://127.0.0.1:3100`; Vite preview serves the built UI separately.
 
 ## Repository structure
 
@@ -61,7 +66,7 @@ pnpm lint                   # ESLint
 pnpm typecheck              # workspace TypeScript checks
 pnpm build                  # all production builds
 pnpm check                  # complete local gate
-pnpm verify:live            # build, boot, and exercise the standalone browser path
+pnpm verify:live            # build, boot API + UI preview, and exercise the browser path
 pnpm verify:acp             # opt-in real Hermes and Codex ACP start/resume tests
 pnpm verify:acp:hermes      # real Hermes profile start/resume test
 pnpm verify:acp:codex       # real Codex start/resume test

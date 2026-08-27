@@ -5,9 +5,11 @@
 ```bash
 pnpm build
 pnpm start
+# In another terminal:
+pnpm --filter @commonspace/ui preview
 ```
 
-The server binds to `127.0.0.1:3100` by default and serves the built UI plus `/api`. Override the port with `COMMONSPACE_PORT`. Hermes uses its installed profile-native ACP server; Codex uses its bundled ACP bridge.
+The API server binds to `127.0.0.1:3100` by default and serves `/api` plus the root health check. It never serves UI assets. Run `pnpm --filter @commonspace/ui preview` separately for the built UI. Override the API port with `COMMONSPACE_PORT`. Hermes uses its installed profile-native ACP server; Codex uses its bundled ACP bridge.
 
 ## Local data
 
@@ -29,7 +31,7 @@ pnpm verify:acp:codex
 pnpm verify:acp:mcp
 ```
 
-The health response is `{"status":"ok"}`. The live verifier builds the workspace, starts an isolated server on an OS-assigned loopback port, opens the UI in Chromium, and verifies the application, navigation, conversation surface, and API. ACP verifiers are opt-in because they use locally authenticated provider runtimes; each starts a native session and resumes the exact returned opaque ID.
+The health response is `{"status":"ok"}`. The live verifier builds the workspace, starts an isolated API server and Vite preview on OS-assigned loopback ports, opens the UI in Chromium, and verifies the application, navigation, conversation surface, and API. ACP verifiers are opt-in because they use locally authenticated provider runtimes; each starts a native session and resumes the exact returned opaque ID.
 
 ## Common failures
 
@@ -79,4 +81,4 @@ Before changing state versions:
 cp ~/.commonspace/state.json ~/.commonspace/state.backup.json
 ```
 
-Agent activity traces use state version 9, which migrates versions 1–8 on startup. Restore a version 8 backup before rolling back to an older build.
+Local agent appearance, Inbox read state, agent activity traces, and managed image attachment metadata use state version 12, which migrates versions 1–11 on startup. Restore a version 11 backup before rolling back to an older build.
