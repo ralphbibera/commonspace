@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent } from 'react'
+import { useDeferredValue, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
 import {
   deriveCommonspaceInboxItems,
@@ -133,9 +133,10 @@ function Section(props: {
   )
 }
 
-function SidebarDialog({ title, onClose, children }: {
+function SidebarDialog({ title, onClose, error, children }: {
   title: string
   onClose: () => void
+  error?: string | null
   children: React.ReactNode
 }) {
   const titleId = useId()
@@ -151,6 +152,7 @@ function SidebarDialog({ title, onClose, children }: {
           <h2 id={titleId}>{title}</h2>
           <button type="button" aria-label={`Close ${title}`} onClick={onClose}>×</button>
         </header>
+        {error !== undefined && error !== null && <div className="csp-dialog-error" role="alert">{error}</div>}
         <div className="csp-dialog-body">{children}</div>
       </section>
     </>,
@@ -374,9 +376,12 @@ function agentStatusLabel(status: CommonspaceAgentProfile['status']): string {
 }
 
 function AgentAvatar({ agent }: { agent: CommonspaceAgentProfile }) {
+  const style = agent.accentColor === undefined
+    ? undefined
+    : { '--csp-agent-accent': agent.accentColor } as CSSProperties
   return (
-    <span className="csp-agent-avatar" data-runtime={agent.adapter} aria-hidden="true">
-      {agent.displayName.slice(0, 1).toLocaleUpperCase()}
+    <span className="csp-agent-avatar" data-runtime={agent.adapter} style={style} aria-hidden="true">
+      {agent.avatarEmoji ?? agent.displayName.slice(0, 1).toLocaleUpperCase()}
       <i className={`csp-agent-presence csp-agent-presence--${agent.status}`} />
     </span>
   )
@@ -389,10 +394,15 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, inboxActive = f
   const [name, setName] = useState('')
   const [path, setPath] = useState('')
   const [selectingPath, setSelectingPath] = useState(false)
+  const [dialogError, setDialogError] = useState<string | null>(null)
   const [pathProjectId, setPathProjectId] = useState<string | null>(null)
   const [pathDraft, setPathDraft] = useState('')
   const [agentIds, setAgentIds] = useState<string[]>([])
   const [agentAdapter, setAgentAdapter] = useState<AgentAdapterKind | null>(null)
+  const [editingAgentId, setEditingAgentId] = useState<string | null>(null)
+  const [agentProfileName, setAgentProfileName] = useState('')
+  const [agentAvatarEmoji, setAgentAvatarEmoji] = useState('')
+  const [agentAccentColor, setAgentAccentColor] = useState('#6d5dfc')
   const [dmSearch, setDmSearch] = useState('')
   const [editingChannelId, setEditingChannelId] = useState<string | null>(null)
   const [channelAgentIds, setChannelAgentIds] = useState<string[]>([])
@@ -407,6 +417,7 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, inboxActive = f
   const [searchOpen, setSearchOpen] = useState(false)
 
   useEffect(() => { void store.refresh() }, [store])
+  useEffect(() => { setDialogError(null) }, [form])
   useEffect(() => {
     const openSearch = (event: KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey) || event.key.toLocaleLowerCase() !== 'k') return
@@ -449,11 +460,12 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, inboxActive = f
 
   const chooseProjectDirectory = async () => {
     setSelectingPath(true)
+    setDialogError(null)
     try {
       const selectedPath = await store.selectDirectory()
       if (selectedPath !== null) setPath(selectedPath)
-    } catch {
-      // The store exposes picker failures in the sidebar's existing error surface.
+    } catch (error) {
+      setDialogError(error instanceof Error ? error.message : String(error))
     } finally {
       setSelectingPath(false)
     }
@@ -467,6 +479,7 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, inboxActive = f
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
+    setDialogError(null)
     let mutation: CommonspaceMutation
     if (form === 'project') {
       mutation = { action: 'create-project', name, paths: [path] }
@@ -477,7 +490,12 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, inboxActive = f
         agentIds,
       }
     } else return
-    await store.mutate(mutation)
+    try {
+      await store.mutate(mutation)
+    } catch (error) {
+      setDialogError(error instanceof Error ? error.message : String(error))
+      return
+    }
     setForm(null)
     setName('')
     setPath('')
@@ -503,6 +521,18 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, inboxActive = f
     event.preventDefault()
     await store.mutate({ action: 'set-defaults', model: defaultModel || null, reasoning: defaultReasoning, maxAgentsPerTurn: defaultMaxAgents, memoryThreads: defaultMemoryThreads })
     setSettingsOpen(false)
+  }
+
+  const saveAgentProfile = async (event: FormEvent, agentId: string) => {
+    event.preventDefault()
+    await store.mutate({
+      action: 'update-agent-profile',
+      agentId,
+      displayName: agentProfileName,
+      avatarEmoji: agentAvatarEmoji,
+      accentColor: agentAccentColor,
+    })
+    setEditingAgentId(null)
   }
 
   const startDirectMessage = (agentId: string) => {
@@ -546,7 +576,7 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, inboxActive = f
       )}
 
       {snapshot.loading && bootstrap === null && <div className="csp-browser-status">Loading agents…</div>}
-      {snapshot.error !== null && <div className="csp-runtime-error" role="alert">{snapshot.error}</div>}
+      {snapshot.error !== null && form === null && <div className="csp-runtime-error" role="alert">{snapshot.error}</div>}
       {settingsOpen && state !== undefined && (
         <form className="csp-browser-form csp-global-settings" onSubmit={(event) => { void saveDefaults(event) }}>
           <strong>Commonspace defaults</strong>
@@ -578,7 +608,7 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, inboxActive = f
       <div className="csp-browser-scroll">
         <Section title="Projects" count={projects.length} onAdd={() => { setForm('project') }}>
           {form === 'project' && (
-            <SidebarDialog title="Add a project" onClose={() => { setForm(null) }}>
+            <SidebarDialog title="Add a project" error={dialogError} onClose={() => { setForm(null) }}>
               <form className="csp-browser-form csp-dialog-form" onSubmit={(event) => { void submit(event) }}>
                 <input aria-label="Project name" placeholder="Project name" value={name} onChange={event => { setName(event.target.value) }} autoFocus />
                 <div className="csp-directory-picker">
@@ -638,7 +668,7 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, inboxActive = f
 
         <Section title="Channels" count={channels.length} onAdd={() => { setForm('channel'); setAgentIds([]) }}>
           {form === 'channel' && (
-            <SidebarDialog title="Add a channel" onClose={() => { setForm(null) }}>
+            <SidebarDialog title="Add a channel" error={dialogError} onClose={() => { setForm(null) }}>
               <form className="csp-browser-form csp-dialog-form" onSubmit={(event) => { void submit(event) }}>
                 <input aria-label="Channel name" placeholder="channel-name" value={name} onChange={event => { setName(event.target.value) }} autoFocus />
                 <fieldset><legend>Agents</legend>{agents.map(agent => (
@@ -753,6 +783,25 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, inboxActive = f
               <div><button type="button" onClick={() => { setForm(null) }}>Cancel</button></div>
             </SidebarDialog>
           )}
+          {editingAgentId !== null && (() => {
+            const editingAgent = agents.find(agent => agent.id === editingAgentId)
+            if (editingAgent === undefined) return null
+            return (
+              <SidebarDialog title={`Customize ${editingAgent.displayName}`} onClose={() => { setEditingAgentId(null) }}>
+                <form className="csp-browser-form csp-dialog-form csp-agent-profile-form" onSubmit={(event) => { void saveAgentProfile(event, editingAgent.id) }}>
+                  <div className="csp-agent-profile-preview">
+                    <AgentAvatar agent={{ ...editingAgent, displayName: agentProfileName || editingAgent.displayName, ...(agentAvatarEmoji === '' ? {} : { avatarEmoji: agentAvatarEmoji }), accentColor: agentAccentColor }} />
+                    <span><strong>{agentProfileName || editingAgent.displayName}</strong><small>Commonspace appearance only</small></span>
+                  </div>
+                  <label>Workspace name<input aria-label="Workspace name" value={agentProfileName} onChange={event => { setAgentProfileName(event.target.value) }} autoFocus /></label>
+                  <label>Avatar emoji<input aria-label="Avatar emoji" value={agentAvatarEmoji} onChange={event => { setAgentAvatarEmoji(event.target.value) }} placeholder={(agentProfileName || editingAgent.displayName).slice(0, 1).toLocaleUpperCase()} maxLength={16} /></label>
+                  <label>Accent color<input aria-label="Accent color" type="color" value={agentAccentColor} onChange={event => { setAgentAccentColor(event.target.value) }} /></label>
+                  <p className="csp-agent-profile-note">The native {runtimeLabel(editingAgent.adapter)} profile, routing, and sessions stay unchanged.</p>
+                  <div><button type="submit">Save appearance</button><button type="button" onClick={() => { setEditingAgentId(null) }}>Cancel</button></div>
+                </form>
+              </SidebarDialog>
+            )
+          })()}
           {agents.map(agent => (
             <div key={agent.id} className="csp-agent-head">
               <button type="button" className="csp-browser-row" aria-label={`Message agent ${agent.displayName}`} onClick={() => { startDirectMessage(agent.id) }}>
@@ -762,6 +811,12 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, inboxActive = f
                   <small className="csp-agent-meta"><span className="csp-runtime-badge" data-runtime={agent.adapter}>{runtimeLabel(agent.adapter)}</span><span>{agent.model ?? 'default model'}</span><span className="csp-agent-status">{agentStatusLabel(agent.status)}</span></small>
                 </span>
               </button>
+              <button type="button" className="csp-project-add csp-agent-customize" aria-label={`Customize agent ${agent.displayName}`} onClick={() => {
+                setEditingAgentId(agent.id)
+                setAgentProfileName(agent.displayName)
+                setAgentAvatarEmoji(agent.avatarEmoji ?? '')
+                setAgentAccentColor(agent.accentColor ?? '#6d5dfc')
+              }}>⋯</button>
               {state?.agents.some(candidate => candidate.id === agent.id) === true && (
                 <button type="button" className="csp-project-add" aria-label={`Remove agent ${agent.displayName}`} onClick={() => { void store.mutate({ action: 'remove-agent', agentId: agent.id }) }}>×</button>
               )}

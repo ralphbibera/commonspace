@@ -223,9 +223,15 @@ function sanitizeAgents(value: unknown): CommonspaceState['agents'] {
       continue
     }
     const model = typeof agent.model === 'string' ? agent.model.trim().slice(0, 200) : null
+    const avatarEmoji = typeof agent.avatarEmoji === 'string' ? agent.avatarEmoji.normalize('NFKC').trim().slice(0, 16) : ''
+    const accentColor = typeof agent.accentColor === 'string' && /^#[0-9a-fA-F]{6}$/u.test(agent.accentColor.trim())
+      ? agent.accentColor.trim().toLocaleLowerCase()
+      : undefined
     agents.push({
       id: agent.id,
       displayName,
+      ...(avatarEmoji === '' ? {} : { avatarEmoji }),
+      ...(accentColor === undefined ? {} : { accentColor }),
       adapter,
       ...(typeof nativeProfile === 'string' ? { nativeProfile } : {}),
       model: model === '' ? null : model,
@@ -573,7 +579,7 @@ function sanitizeMessages(
 
 function sanitizeLoadedState(value: unknown): CommonspaceState {
   const record = plainRecord(value)
-  if (record === null || (record.version !== 1 && record.version !== 2 && record.version !== 3 && record.version !== 4 && record.version !== 5 && record.version !== 6 && record.version !== 7 && record.version !== 8 && record.version !== 9 && record.version !== 10 && record.version !== COMMONSPACE_STATE_VERSION)) {
+  if (record === null || (record.version !== 1 && record.version !== 2 && record.version !== 3 && record.version !== 4 && record.version !== 5 && record.version !== 6 && record.version !== 7 && record.version !== 8 && record.version !== 9 && record.version !== 10 && record.version !== 11 && record.version !== COMMONSPACE_STATE_VERSION)) {
     return createInitialState()
   }
   const stateDefaults = defaultCommonspaceDefaults()
@@ -1618,11 +1624,25 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
     return this.state.agents.map<CommonspaceAgentProfile>((agent) => {
       if (agent.adapter === 'hermes' || agent.nativeProfile !== undefined) {
         const discovered = discoveredById.get(agent.id)
-        if (discovered?.adapter === agent.adapter) return discovered
+        if (discovered?.adapter === agent.adapter) {
+          return {
+            id: agent.id,
+            displayName: agent.displayName,
+            ...(agent.avatarEmoji === undefined ? {} : { avatarEmoji: agent.avatarEmoji }),
+            ...(agent.accentColor === undefined ? {} : { accentColor: agent.accentColor }),
+            adapter: agent.adapter,
+            ...(agent.nativeProfile === undefined ? {} : { nativeProfile: agent.nativeProfile }),
+            model: discovered.model,
+            status: discovered.status,
+            ...(discovered.description === undefined ? {} : { description: discovered.description }),
+          }
+        }
       }
       return {
         id: agent.id,
         displayName: agent.displayName,
+        ...(agent.avatarEmoji === undefined ? {} : { avatarEmoji: agent.avatarEmoji }),
+        ...(agent.accentColor === undefined ? {} : { accentColor: agent.accentColor }),
         adapter: agent.adapter,
         ...(agent.nativeProfile === undefined ? {} : { nativeProfile: agent.nativeProfile }),
         model: agent.model,

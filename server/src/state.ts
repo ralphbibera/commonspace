@@ -1,4 +1,4 @@
-import type { AgentAdapterKind, CommonspaceAgentProfile, CommonspaceMutation, CommonspaceState } from '@commonspace/shared'
+import type { AgentAdapterKind, CommonspaceAgentDefinition, CommonspaceAgentProfile, CommonspaceMutation, CommonspaceState } from '@commonspace/shared'
 import { COMMONSPACE_STATE_VERSION, projectTagName } from '@commonspace/shared'
 
 export const DM_SESSION_BOUNDARY_AUTHOR_ID = 'dm-session-boundary'
@@ -56,6 +56,19 @@ function normalizedName(value: string, label: string): string {
   const name = value.normalize('NFKC').trim().replace(/\s+/g, ' ').slice(0, 80)
   if (name === '') throw new Error(`${label} name is required`)
   return name
+}
+
+function normalizedAvatarEmoji(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined
+  const emoji = value.normalize('NFKC').trim().slice(0, 16)
+  return emoji === '' ? undefined : emoji
+}
+
+function normalizedAccentColor(value: string | undefined): string | undefined {
+  if (value === undefined || value.trim() === '') return undefined
+  const color = value.trim().toLocaleLowerCase()
+  if (!/^#[0-9a-f]{6}$/u.test(color)) throw new Error('agent accent color must be a six-digit hex color')
+  return color
 }
 
 function normalizedChannel(value: string): string {
@@ -273,6 +286,35 @@ export function applyMutation(
     }
     case 'add-discovered-agent': {
       throw new Error('discovered agent must be resolved by the Commonspace host')
+    }
+    case 'update-agent-profile': {
+      const displayName = normalizedName(mutation.displayName, 'agent')
+      const avatarEmoji = normalizedAvatarEmoji(mutation.avatarEmoji)
+      const accentColor = normalizedAccentColor(mutation.accentColor)
+      let matched = false
+      const agents = state.agents.map(agent => {
+        if (agent.id !== mutation.agentId) return agent
+        matched = true
+        const updated: CommonspaceAgentDefinition = {
+          id: agent.id,
+          displayName,
+          ...(avatarEmoji === undefined ? {} : { avatarEmoji }),
+          ...(accentColor === undefined ? {} : { accentColor }),
+          adapter: agent.adapter,
+          ...(agent.nativeProfile === undefined ? {} : { nativeProfile: agent.nativeProfile }),
+          model: agent.model,
+          createdAt: agent.createdAt,
+        }
+        return updated
+      })
+      if (!matched) throw new Error('unknown agent')
+      const messages = Object.fromEntries(Object.entries(state.messages).map(([key, entries]) => [
+        key,
+        entries.map(message => message.authorType === 'agent' && message.authorId === mutation.agentId
+          ? { ...message, authorName: displayName }
+          : message),
+      ]))
+      return { ...state, revision: nextRevision(state), agents, messages }
     }
     case 'remove-agent': {
       if (!state.agents.some(agent => agent.id === mutation.agentId)) return state
