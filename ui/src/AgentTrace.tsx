@@ -111,6 +111,14 @@ function TracePayload({ label, value }: { label: string; value: string }) {
   )
 }
 
+export function AgentTraceTimeline({ entries }: { entries: readonly CommonspaceTraceEntry[] }) {
+  return (
+    <ol className="csp-trace-timeline">
+      {entries.map(entry => <TraceEntry key={`${entry.type}-${entry.id}`} entry={entry} />)}
+    </ol>
+  )
+}
+
 export function AgentTrace({ authorName, trace }: AgentTraceProps) {
   const [open, setOpen] = useState(false)
   const panelId = useId()
@@ -140,9 +148,7 @@ export function AgentTrace({ authorName, trace }: AgentTraceProps) {
             <strong>Native harness trace</strong>
             <span>Reasoning summaries and tool activity reported by {runtime}.</span>
           </div>
-          <ol className="csp-trace-timeline">
-            {trace.entries.map(entry => <TraceEntry key={`${entry.type}-${entry.id}`} entry={entry} />)}
-          </ol>
+          <AgentTraceTimeline entries={trace.entries} />
         </section>
       )}
     </div>

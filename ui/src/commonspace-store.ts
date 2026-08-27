@@ -1,10 +1,13 @@
 import type {
+  AgentAdapterKind,
   CommonspaceApiError,
   CommonspaceBootstrap,
+  CommonspaceLiveAgentActivity,
   CommonspaceMessage,
   CommonspaceMutation,
   ConversationRef,
   SelectDirectoryResponse,
+  SendImageAttachment,
   SendMessageRequest,
   SendMessageResponse,
 } from '@commonspace/shared'
@@ -51,7 +54,9 @@ export class CommonspaceClientStore {
   }
   private readonly listeners = new Set<Listener>()
   private refreshPromise: Promise<void> | null = null
+  private discoveryRequest = 0
   private pendingRevision = -1
+  private pendingLiveActivities: CommonspaceLiveAgentActivity[] | null = null
   private events: EventSource | null = null
 
   getSnapshot = (): CommonspaceClientSnapshot => this.snapshot
@@ -68,7 +73,9 @@ export class CommonspaceClientStore {
     const task = requestJson<CommonspaceBootstrap>('/api/bootstrap')
       .then((bootstrap) => {
         refreshSucceeded = true
-        const merged = this.mergeBootstrap(bootstrap)
+        const liveActivities = this.pendingLiveActivities
+        this.pendingLiveActivities = null
+        const merged = this.mergeBootstrap(liveActivities === null ? bootstrap : { ...bootstrap, liveActivities })
         this.set({ ...this.snapshot, bootstrap: merged, loading: false, activeProjectId: this.resolveActiveProject(merged) })
       })
       .catch((error: unknown) => {
@@ -98,6 +105,19 @@ export class CommonspaceClientStore {
         // Ignore malformed event frames; EventSource will continue.
       }
     })
+    events.addEventListener('activity', (event) => {
+      try {
+        const value = JSON.parse((event as MessageEvent<string>).data) as { activities?: unknown }
+        if (!Array.isArray(value.activities)) return
+        const activities = value.activities as CommonspaceLiveAgentActivity[]
+        this.pendingLiveActivities = activities
+        const bootstrap = this.snapshot.bootstrap
+        if (bootstrap === null) return
+        this.set({ ...this.snapshot, bootstrap: { ...bootstrap, liveActivities: activities } })
+      } catch {
+        // Ignore malformed event frames; EventSource will continue.
+      }
+    })
     events.onerror = () => { this.set({ ...this.snapshot, error: LIVE_UPDATES_DISCONNECTED }) }
     events.onopen = () => {
       if (this.snapshot.error === LIVE_UPDATES_DISCONNECTED) this.set({ ...this.snapshot, error: null })
@@ -121,6 +141,23 @@ export class CommonspaceClientStore {
     } catch (error) {
       this.set({ ...this.snapshot, error: error instanceof Error ? error.message : String(error) })
       throw error
+    }
+  }
+
+  async discoverAgents(adapter: AgentAdapterKind): Promise<void> {
+    const request = ++this.discoveryRequest
+    this.set({ ...this.snapshot, loading: true, error: null })
+    try {
+      const result = await requestJson<CommonspaceBootstrap>('/api/discover-agents', {
+        method: 'POST',
+        body: JSON.stringify({ adapter }),
+      })
+      if (request !== this.discoveryRequest) return
+      const merged = this.mergeBootstrap(result)
+      this.set({ ...this.snapshot, bootstrap: merged, loading: false, error: null })
+    } catch (error) {
+      if (request !== this.discoveryRequest) return
+      this.set({ ...this.snapshot, loading: false, error: error instanceof Error ? error.message : String(error) })
     }
   }
 
@@ -153,7 +190,15 @@ export class CommonspaceClientStore {
     return this.snapshot.bootstrap?.state.messages[conversationKey(conversation)] ?? []
   }
 
-  async send(text: string, threadId?: string): Promise<void> {
+  async send(text: string, threadId?: string, attachments: readonly SendImageAttachment[] = []): Promise<void> {
+    return this.sendMessage(text, threadId, undefined, attachments)
+  }
+
+  async sendDirectReply(text: string, threadId: string, targetAgentId: string, attachments: readonly SendImageAttachment[] = []): Promise<void> {
+    return this.sendMessage(text, threadId, targetAgentId, attachments)
+  }
+
+  private async sendMessage(text: string, threadId?: string, targetAgentId?: string, attachments: readonly SendImageAttachment[] = []): Promise<void> {
     const conversation = this.snapshot.activeConversation
     if (conversation === null || this.snapshot.sending) return
     const projectId = conversation.kind === 'channel'
@@ -164,6 +209,8 @@ export class CommonspaceClientStore {
       text,
       ...(projectId === undefined ? {} : { projectId }),
       ...(threadId === undefined ? {} : { threadId }),
+      ...(targetAgentId === undefined ? {} : { targetAgentId }),
+      ...(attachments.length === 0 ? {} : { attachments: [...attachments] }),
     }
     this.set({ ...this.snapshot, sending: true, error: null })
     try {
@@ -199,6 +246,9 @@ export class CommonspaceClientStore {
   private mergeBootstrap(candidate: CommonspaceBootstrap): CommonspaceBootstrap {
     const current = this.snapshot.bootstrap
     if (current !== null && candidate.state.revision < current.state.revision) return current
+    if (candidate.liveActivities === undefined && current?.liveActivities !== undefined) {
+      return { ...candidate, liveActivities: current.liveActivities }
+    }
     return candidate
   }
 

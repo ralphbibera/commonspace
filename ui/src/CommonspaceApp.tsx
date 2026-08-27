@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { CommonspaceClientStore } from './commonspace-store.ts'
 import { CommonspaceConversation } from './CommonspaceConversation.tsx'
+import { CommonspaceInbox } from './CommonspaceInbox.tsx'
 import { CommonspaceProjectView } from './CommonspaceProjectView.tsx'
 import { CommonspaceSidebar } from './CommonspaceSidebar.tsx'
 
@@ -10,6 +11,7 @@ export interface CommonspaceAppProps {
 
 export function CommonspaceApp({ store }: CommonspaceAppProps) {
   const [navigationOpen, setNavigationOpen] = useState(false)
+  const [activeDestination, setActiveDestination] = useState<'conversation' | 'inbox'>('conversation')
   const [activeProjectViewId, setActiveProjectViewId] = useState<string | null>(null)
 
   useEffect(() => {
@@ -55,13 +57,36 @@ export function CommonspaceApp({ store }: CommonspaceAppProps) {
             wide
             expandSidebar={() => undefined}
             store={store}
-            onOpenProject={projectId => { setActiveProjectViewId(projectId); setNavigationOpen(false) }}
-            onOpenConversation={() => { setActiveProjectViewId(null); setNavigationOpen(false) }}
+            inboxActive={activeDestination === 'inbox'}
+            onOpenInbox={() => {
+              setActiveProjectViewId(null)
+              setActiveDestination('inbox')
+              setNavigationOpen(false)
+            }}
+            onOpenProject={projectId => {
+              setActiveProjectViewId(projectId)
+              setActiveDestination('conversation')
+              setNavigationOpen(false)
+            }}
+            onOpenConversation={() => {
+              setActiveProjectViewId(null)
+              setActiveDestination('conversation')
+              setNavigationOpen(false)
+            }}
           />
         </aside>
         <section className="csp-app-conversation">
           {activeProjectViewId === null
-            ? <CommonspaceConversation store={store} />
+            ? activeDestination === 'inbox'
+              ? <CommonspaceInbox
+                  store={store}
+                  onOpenItem={item => {
+                    store.selectConversation(item.conversation)
+                    if (item.threadId !== undefined) store.selectThread(item.threadId)
+                    setActiveDestination('conversation')
+                  }}
+                />
+              : <CommonspaceConversation store={store} />
             : <CommonspaceProjectView
                 projectId={activeProjectViewId}
                 store={store}

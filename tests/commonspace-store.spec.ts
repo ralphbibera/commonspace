@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { COMMONSPACE_STATE_VERSION, type CommonspaceBootstrap } from '../packages/shared/src/contracts.ts'
+import { COMMONSPACE_STATE_VERSION, type CommonspaceBootstrap, type CommonspaceLiveAgentActivity } from '../packages/shared/src/contracts.ts'
 import { CommonspaceClientStore } from '../ui/src/commonspace-store.ts'
 
 function bootstrap(revision: number, projectName: string): CommonspaceBootstrap {
@@ -73,6 +73,27 @@ describe('Commonspace client revision ordering', () => {
     expect(store.getSnapshot().error).toBeNull()
   })
 
+  it('keeps live provider activity delivered before bootstrap refresh', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response(bootstrap(1, 'Initial'))))
+    vi.stubGlobal('EventSource', FakeEventSource)
+
+    const activity: CommonspaceLiveAgentActivity = {
+      id: 'run-1',
+      agentId: 'backend',
+      agentName: 'Backend',
+      adapter: 'codex',
+      conversation: { kind: 'dm', id: 'backend' },
+      startedAt: '2026-08-25T00:00:00.000Z',
+      entries: [],
+    }
+    const store = new CommonspaceClientStore()
+    store.connectEvents()
+    FakeEventSource.instances[0]!.emit('activity', JSON.stringify({ activities: [activity] }))
+    await store.refresh()
+
+    expect(store.getSnapshot().bootstrap?.liveActivities).toEqual([activity])
+  })
+
   it('ignores a stale refresh that resolves after a newer mutation', async () => {
     const staleRefresh = deferred<Response>()
     const mutation = deferred<Response>()
@@ -126,6 +147,77 @@ describe('Commonspace client revision ordering', () => {
     expect(store.getSnapshot().bootstrap?.agents).toEqual([managed])
   })
 
+  it('requests discovery for the selected harness and merges its candidates', async () => {
+    const initial = bootstrap(1, 'Initial')
+    const discovered = bootstrap(1, 'Initial')
+    discovered.discoveredAgents = [{
+      id: 'backend',
+      displayName: 'Backend',
+      adapter: 'hermes',
+      model: 'gpt-test',
+      status: 'stopped',
+    }]
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(response(initial))
+      .mockResolvedValueOnce(response(discovered))
+    vi.stubGlobal('fetch', fetch)
+
+    const store = new CommonspaceClientStore()
+    await store.refresh()
+    await store.discoverAgents('hermes')
+
+    expect(fetch).toHaveBeenNthCalledWith(2, '/api/discover-agents', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ adapter: 'hermes' }),
+    }))
+    expect(store.getSnapshot().bootstrap?.discoveredAgents).toEqual(discovered.discoveredAgents)
+  })
+
+  it('includes the selected agent when sending a direct channel reply', async () => {
+    const initial = bootstrap(1, 'Initial')
+    initial.state.channels = [{
+      id: 'general',
+      name: 'general',
+      projectId: initial.state.projects[0]!.id,
+      agentIds: ['frontend', 'backend'],
+      instructions: '',
+      memory: { summary: '', decisions: [], openQuestions: [], threadIds: [], updatedAt: null },
+      settings: { model: null, reasoning: null },
+      createdAt: '2026-08-25T00:00:00.000Z',
+    }]
+    const accepted = {
+      id: 'reply-2',
+      conversation: { kind: 'channel' as const, id: 'general' },
+      authorType: 'user' as const,
+      authorId: 'user',
+      authorName: 'Ralph',
+      text: 'Check that boundary again.',
+      createdAt: '2026-08-25T00:01:00.000Z',
+      threadId: 'thread-1',
+      parentMessageId: 'root-1',
+    }
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(response(initial))
+      .mockResolvedValueOnce(response({ accepted, state: initial.state }))
+    vi.stubGlobal('fetch', fetch)
+
+    const store = new CommonspaceClientStore()
+    await store.refresh()
+    store.selectConversation({ kind: 'channel', id: 'general' })
+    await store.sendDirectReply('Check that boundary again.', 'thread-1', 'frontend')
+
+    expect(fetch).toHaveBeenNthCalledWith(2, '/api/send', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({
+        conversation: { kind: 'channel', id: 'general' },
+        text: 'Check that boundary again.',
+        projectId: initial.state.projects[0]!.id,
+        threadId: 'thread-1',
+        targetAgentId: 'frontend',
+      }),
+    }))
+  })
+
   it('refreshes again when an SSE revision arrives during an in-flight refresh', async () => {
     const firstRefresh = deferred<Response>()
     const followUpRefresh = deferred<Response>()
@@ -157,5 +249,44 @@ describe('Commonspace client revision ordering', () => {
     await vi.waitFor(() => {
       expect(store.getSnapshot().bootstrap?.state.messages['dm:backend']?.[0]?.text).toBe('Reply arrived')
     })
+  })
+
+  it('includes pasted image payloads in the send request', async () => {
+    const initial = bootstrap(1, 'Initial')
+    const accepted = bootstrap(2, 'Initial')
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(response(initial))
+      .mockResolvedValueOnce(response({
+        accepted: {
+          id: 'message-1',
+          conversation: { kind: 'dm', id: 'backend' },
+          authorType: 'user',
+          authorId: 'user',
+          authorName: 'Ralph',
+          text: 'Inspect this',
+          createdAt: '2026-08-27T00:00:00.000Z',
+        },
+        state: accepted.state,
+      }))
+    vi.stubGlobal('fetch', fetch)
+
+    const store = new CommonspaceClientStore()
+    await store.refresh()
+    store.selectConversation({ kind: 'dm', id: 'backend' })
+    await store.send('Inspect this', undefined, [{
+      name: 'clipboard.png',
+      mimeType: 'image/png',
+      data: 'iVBORw==',
+    }])
+
+    expect(fetch).toHaveBeenNthCalledWith(2, '/api/send', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({
+        conversation: { kind: 'dm', id: 'backend' },
+        text: 'Inspect this',
+        projectId: 'project-1',
+        attachments: [{ name: 'clipboard.png', mimeType: 'image/png', data: 'iVBORw==' }],
+      }),
+    }))
   })
 })

@@ -1,12 +1,13 @@
 import { useDeferredValue, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
-import type {
-  AgentAdapterKind,
-  CommonspaceAgentProfile,
-  CommonspaceChannel,
-  CommonspaceMessage,
-  CommonspaceMutation,
-  CommonspaceReasoning,
+import {
+  deriveCommonspaceInboxItems,
+  type AgentAdapterKind,
+  type CommonspaceAgentProfile,
+  type CommonspaceChannel,
+  type CommonspaceMessage,
+  type CommonspaceMutation,
+  type CommonspaceReasoning,
 } from '@commonspace/shared'
 import type { CommonspaceClientStore } from './commonspace-store.ts'
 
@@ -14,6 +15,8 @@ export interface CommonspaceSidebarProps {
   wide: boolean
   expandSidebar: () => void
   store: CommonspaceClientStore
+  inboxActive?: boolean
+  onOpenInbox?: () => void
   onOpenProject?: (projectId: string) => void
   onOpenConversation?: () => void
 }
@@ -379,7 +382,7 @@ function AgentAvatar({ agent }: { agent: CommonspaceAgentProfile }) {
   )
 }
 
-export function CommonspaceSidebar({ wide, expandSidebar, store, onOpenProject, onOpenConversation }: CommonspaceSidebarProps) {
+export function CommonspaceSidebar({ wide, expandSidebar, store, inboxActive = false, onOpenInbox, onOpenProject, onOpenConversation }: CommonspaceSidebarProps) {
   const dmPickerListId = useId()
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot)
   const [form, setForm] = useState<'project' | 'channel' | 'dm' | 'agent' | null>(null)
@@ -389,7 +392,7 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, onOpenProject, 
   const [pathProjectId, setPathProjectId] = useState<string | null>(null)
   const [pathDraft, setPathDraft] = useState('')
   const [agentIds, setAgentIds] = useState<string[]>([])
-  const [agentModel, setAgentModel] = useState('')
+  const [agentAdapter, setAgentAdapter] = useState<AgentAdapterKind | null>(null)
   const [dmSearch, setDmSearch] = useState('')
   const [editingChannelId, setEditingChannelId] = useState<string | null>(null)
   const [channelAgentIds, setChannelAgentIds] = useState<string[]>([])
@@ -397,7 +400,6 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, onOpenProject, 
   const [channelModel, setChannelModel] = useState('')
   const [channelReasoning, setChannelReasoning] = useState<CommonspaceReasoning | ''>('')
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [projectMenuId, setProjectMenuId] = useState<string | null>(null)
   const [defaultModel, setDefaultModel] = useState('')
   const [defaultReasoning, setDefaultReasoning] = useState<CommonspaceReasoning>('max')
   const [defaultMaxAgents, setDefaultMaxAgents] = useState(4)
@@ -416,10 +418,15 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, onOpenProject, 
   }, [])
   const bootstrap = snapshot.bootstrap
   const state = bootstrap?.state
+  const inboxItems = useMemo(
+    () => state === undefined ? [] : deriveCommonspaceInboxItems(state),
+    [state],
+  )
+  const inboxUnreadCount = inboxItems.filter(item => item.unread).length
   const agents = bootstrap?.agents ?? []
   const discoveredAgents = bootstrap?.discoveredAgents ?? []
   const configuredAgentIds = new Set(agents.map(agent => agent.id))
-  const availableDiscoveredAgents = discoveredAgents.filter(agent => !configuredAgentIds.has(agent.id))
+  const availableDiscoveredAgents = discoveredAgents.filter(agent => agent.adapter === agentAdapter && !configuredAgentIds.has(agent.id))
   const activeDmId = snapshot.activeConversation?.kind === 'dm' ? snapshot.activeConversation.id : null
   const dmAgents = useMemo(
     () => agents.filter(agent => agent.id === activeDmId || (state?.messages[`dm:${agent.id}`]?.length ?? 0) > 0),
@@ -452,6 +459,12 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, onOpenProject, 
     }
   }
 
+  const selectAgentHarness = (adapter: AgentAdapterKind) => {
+    setAgentAdapter(adapter)
+    setName('')
+    void store.discoverAgents(adapter)
+  }
+
   const submit = async (event: FormEvent) => {
     event.preventDefault()
     let mutation: CommonspaceMutation
@@ -463,20 +476,12 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, onOpenProject, 
         name,
         agentIds,
       }
-    } else if (form === 'agent') {
-      mutation = {
-        action: 'add-agent',
-        displayName: name,
-        adapter: 'codex',
-        model: agentModel || null,
-      }
     } else return
     await store.mutate(mutation)
     setForm(null)
     setName('')
     setPath('')
     setAgentIds([])
-    setAgentModel('')
   }
 
   const submitPath = async (event: FormEvent, targetProjectId: string) => {
@@ -505,7 +510,6 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, onOpenProject, 
     store.selectConversation({ kind: 'dm', id: agentId })
     setDmSearch('')
     setForm(null)
-    setProjectMenuId(null)
   }
 
   const openSearchResult = (result: ChannelSearchResult) => {
@@ -513,7 +517,6 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, onOpenProject, 
     store.selectConversation({ kind: 'channel', id: result.channelId })
     if (result.threadId !== undefined) store.selectThread(result.threadId)
     setSearchOpen(false)
-    setProjectMenuId(null)
   }
 
   return (
@@ -558,6 +561,20 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, onOpenProject, 
         </form>
       )}
 
+      <nav className="csp-browser-destinations" aria-label="Workspace destinations">
+        <button
+          type="button"
+          className="csp-browser-destination"
+          aria-label={`Open Inbox${inboxUnreadCount === 0 ? '' : `, ${String(inboxUnreadCount)} unread`}`}
+          aria-pressed={inboxActive}
+          onClick={onOpenInbox}
+        >
+          <span className="csp-browser-destination-icon" aria-hidden="true">⌄</span>
+          <span>Inbox</span>
+          {inboxUnreadCount > 0 && <span className="csp-inbox-count" aria-hidden="true">{inboxUnreadCount > 99 ? '99+' : inboxUnreadCount}</span>}
+        </button>
+      </nav>
+
       <div className="csp-browser-scroll">
         <Section title="Projects" count={projects.length} onAdd={() => { setForm('project') }}>
           {form === 'project' && (
@@ -574,12 +591,9 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, onOpenProject, 
           )}
           {projects.map(project => {
             const active = snapshot.activeProjectId === project.id
-            const menuOpen = projectMenuId === project.id
             const folderSummary = project.paths.length === 1
               ? '1 folder · working directory'
               : `${String(project.paths.length)} folders · working + references`
-            const projectConversationCount = channels.filter(channel => channel.projectId === project.id || channel.projectId === null).length +
-              agents.filter(agent => (state?.messages[`dm:${agent.id}`]?.length ?? 0) > 0).length
             return (
               <div key={project.id} className="csp-project-group">
                 <div className="csp-project-head">
@@ -587,13 +601,10 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, onOpenProject, 
                     type="button"
                     className="csp-browser-row"
                     aria-label={`Select project ${project.name}`}
-                    aria-pressed={active || menuOpen}
-                    aria-haspopup="menu"
-                    aria-expanded={menuOpen}
-                    aria-controls={`project-menu-${project.id}`}
+                    aria-pressed={active}
                     onClick={() => {
                       store.selectProject(project.id)
-                      setProjectMenuId(current => current === project.id ? null : project.id)
+                      onOpenProject?.(project.id)
                     }}
                   >
                     <span className="csp-project-glyph" aria-hidden="true"><span /></span>
@@ -602,57 +613,14 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, onOpenProject, 
                   <button
                     type="button"
                     className="csp-project-add"
-                    aria-label={`Add workspace to project ${project.name}`}
+                    aria-label={`Add local folder to project ${project.name}`}
                     onClick={() => {
                       store.selectProject(project.id)
-                      setProjectMenuId(null)
                       setPathProjectId(project.id)
                       setPathDraft('')
                     }}
                   >+</button>
                 </div>
-
-                {menuOpen && (
-                  <div id={`project-menu-${project.id}`} className="csp-project-menu" role="menu" aria-label={`Project ${project.name}`}>
-                    <div className="csp-project-menu-kicker">Project</div>
-                    <div className="csp-project-menu-identity"><strong>{project.name}</strong><small>{projectConversationCount} {projectConversationCount === 1 ? 'conversation' : 'conversations'} · {folderSummary}</small></div>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      className="csp-project-menu-item"
-                      onClick={() => { setProjectMenuId(null); onOpenProject?.(project.id) }}
-                    >
-                      <span className="csp-project-menu-icon" aria-hidden="true">□</span>
-                      <span><strong>Conversations</strong><small>{projectConversationCount} real Commonspace {projectConversationCount === 1 ? 'conversation' : 'conversations'}</small></span>
-                    </button>
-                    <div className="csp-project-menu-label">Local folders</div>
-                    {project.paths.map((projectPath, index) => (
-                      <button key={projectPath} type="button" role="menuitem" className="csp-project-menu-item" disabled title="Repository browsing is not available yet">
-                        <span className="csp-project-menu-folder" aria-hidden="true" />
-                        <span><strong>{projectPath.split(/[\\/]/).filter(Boolean).at(-1) ?? projectPath}</strong><small>{index === 0 ? 'Working directory' : 'Reference folder'} · Files unavailable</small></span>
-                      </button>
-                    ))}
-                    <div className="csp-project-menu-divider" />
-                    <button type="button" role="menuitem" className="csp-project-menu-item" disabled title="Git reading is not available yet">
-                      <span className="csp-project-menu-icon" aria-hidden="true">⌁</span>
-                      <span><strong>Git tracking</strong><small>Changes unavailable without Git read support</small></span>
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      className="csp-project-menu-item"
-                      onClick={() => {
-                        setProjectMenuId(null)
-                        store.selectProject(project.id)
-                        setPathProjectId(project.id)
-                        setPathDraft('')
-                      }}
-                    >
-                      <span className="csp-project-menu-icon" aria-hidden="true">⚙</span>
-                      <span><strong>Manage project</strong><small>Add local reference folders</small></span>
-                    </button>
-                  </div>
-                )}
 
                 {pathProjectId === project.id && (
                   <div className="csp-project-workspaces">
@@ -689,7 +657,7 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, onOpenProject, 
                   type="button"
                   className="csp-browser-row"
                   aria-pressed={snapshot.activeConversation?.kind === 'channel' && snapshot.activeConversation.id === channel.id}
-                  onClick={() => { onOpenConversation?.(); setProjectMenuId(null); store.selectConversation({ kind: 'channel', id: channel.id }) }}
+                  onClick={() => { onOpenConversation?.(); store.selectConversation({ kind: 'channel', id: channel.id }) }}
                 ><span className="csp-browser-hash">#</span><span className="csp-browser-row-main"><strong>{channel.name}</strong><small>{channel.agentIds.length} agent{channel.agentIds.length === 1 ? '' : 's'}</small></span></button>
                 <button
                   type="button"
@@ -755,28 +723,34 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, onOpenProject, 
           {dmAgents.length === 0 && form !== 'dm' && <div className="csp-browser-empty">Use + to choose an agent.</div>}
         </Section>
 
-        <Section title="Agents" count={agents.length} onAdd={() => { setForm('agent'); setName(''); setAgentModel('') }}>
+        <Section title="Agents" count={agents.length} onAdd={() => { setForm('agent'); setName(''); setAgentAdapter(null) }}>
           {form === 'agent' && (
             <SidebarDialog title="Add an agent" onClose={() => { setForm(null) }}>
-              {availableDiscoveredAgents.length > 0 && (
+              <label>Harness<select aria-label="Agent harness" value={agentAdapter ?? ''} onChange={event => {
+                const value = event.target.value
+                if (value === 'codex' || value === 'hermes') selectAgentHarness(value)
+              }}>
+                <option value="">Choose a harness</option>
+                <option value="codex">Codex</option>
+                <option value="hermes">Hermes</option>
+              </select></label>
+              {agentAdapter !== null && (
                 <div className="csp-browser-form csp-discovered-agents">
-                  <strong>Discovered profiles</strong>
+                  <strong>{runtimeLabel(agentAdapter)} profiles</strong>
+                  {snapshot.loading && <span>Discovering {runtimeLabel(agentAdapter)} profiles…</span>}
+                  {!snapshot.loading && availableDiscoveredAgents.length === 0 && <span>No {runtimeLabel(agentAdapter)} profiles found.</span>}
                   {availableDiscoveredAgents.map(agent => (
                     <button key={agent.id} type="button" className="csp-dm-picker-agent" aria-label={`Add discovered agent ${agent.displayName}`} onClick={() => {
-                      void store.mutate({ action: 'add-discovered-agent', agentId: agent.id })
-                      setForm(null)
-                    }}>
-                      <AgentAvatar agent={agent} />
-                      <span><strong>{agent.displayName}</strong><small>{runtimeLabel(agent.adapter)} · {agent.model ?? 'default model'}</small></span>
-                    </button>
-                  ))}
+                        void store.mutate({ action: 'add-discovered-agent', agentId: agent.id })
+                        setForm(null)
+                      }}>
+                        <AgentAvatar agent={agent} />
+                        <span><strong>{agent.displayName}</strong><small>{runtimeLabel(agent.adapter)} · {agent.model ?? 'default model'}</small></span>
+                      </button>
+                    ))}
                 </div>
               )}
-              <form className="csp-browser-form csp-dialog-form" onSubmit={(event) => { void submit(event) }}>
-                <input aria-label="Agent name" placeholder="Agent name" value={name} onChange={event => { setName(event.target.value) }} autoFocus />
-                <input aria-label="Agent model" list="commonspace-models" placeholder="Use Codex default model" value={agentModel} onChange={event => { setAgentModel(event.target.value) }} />
-                <div><button type="submit">Create agent</button><button type="button" onClick={() => { setForm(null) }}>Cancel</button></div>
-              </form>
+              <div><button type="button" onClick={() => { setForm(null) }}>Cancel</button></div>
             </SidebarDialog>
           )}
           {agents.map(agent => (
