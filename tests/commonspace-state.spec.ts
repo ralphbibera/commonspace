@@ -75,7 +75,7 @@ describe('Commonspace local state', () => {
       .toThrow('unsupported reasoning')
   })
 
-  it('adds and removes managed CLI agents with their channel and session state', () => {
+  it('adds and removes Codex agents with their channel and session state', () => {
     let state = createInitialState()
     state = applyMutation(state, {
       action: 'add-agent',

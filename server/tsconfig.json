@@ -7,8 +7,7 @@
     "types": ["node"]
   },
   "references": [
-    { "path": "../packages/shared" },
-    { "path": "../packages/adapters" }
+    { "path": "../packages/shared" }
   ],
   "include": ["src/**/*.ts"]
 }

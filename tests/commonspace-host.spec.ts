@@ -1,16 +1,21 @@
-import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdtemp, mkdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { requestIsLoopback, requestIsSameOrigin } from '../server/src/app.ts'
-import { CommonspaceHostService, readBoundedTextFile, unsafeModeForAdapter, type AgentRunInput } from '../server/src/service.ts'
+import { CommonspaceHostService, unsafeModeForAdapter, type AgentRunInput } from '../server/src/service.ts'
 
 const roots: string[] = []
 function deferred<T>() {
   let resolve!: (value: T) => void
-  let reject!: (reason?: unknown) => void
-  const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail })
-  return { promise, resolve, reject }
+  const promise = new Promise<T>(done => { resolve = done })
+  return { promise, resolve }
+}
+
+async function addDiscoveredAgents(service: CommonspaceHostService, ...agentIds: string[]): Promise<void> {
+  for (const agentId of agentIds) {
+    await service.mutate({ action: 'add-discovered-agent', agentId })
+  }
 }
 
 afterEach(async () => {
@@ -18,13 +23,15 @@ afterEach(async () => {
 })
 
 describe('Commonspace host authority', () => {
-  it('rejects an adapter output file before reading beyond the configured bound', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'commonspace-bounded-read-'))
+  it('tightens an existing Commonspace state directory to owner-only access', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-private-root-'))
     roots.push(root)
-    const path = join(root, 'output.txt')
-    await writeFile(path, '12345')
+    await chmod(root, 0o755)
+    const service = new CommonspaceHostService({} as never, { root }, { discoverAgents: async () => [] })
+    await service.initialize()
 
-    await expect(readBoundedTextFile(path, 4)).rejects.toThrow('output limit')
+    expect((await stat(root)).mode & 0o777).toBe(0o700)
+    expect((await stat(join(root, 'state.json'))).mode & 0o777).toBe(0o600)
   })
 
   it('requires loopback and strict browser same-origin metadata', () => {
@@ -35,14 +42,71 @@ describe('Commonspace host authority', () => {
     expect(requestIsSameOrigin(request({ host: '127.0.0.1:3080', origin: 'https://127.0.0.1:3080' }))).toBe(false)
     expect(requestIsSameOrigin(request({ host: '127.0.0.1:3080', 'sec-fetch-site': 'same-origin' }))).toBe(true)
     expect(requestIsSameOrigin(request({ host: '127.0.0.1:3080' }))).toBe(false)
+    expect(requestIsSameOrigin(request({
+      host: '127.0.0.1:3100',
+      'x-forwarded-host': '127.0.0.1:5173',
+      referer: 'http://127.0.0.1:5173/',
+    }))).toBe(true)
+    expect(requestIsSameOrigin(request({
+      host: '127.0.0.1:3100',
+      'x-forwarded-host': '127.0.0.1:5173',
+      origin: 'http://127.0.0.1:5173',
+    }))).toBe(true)
+    expect(requestIsSameOrigin(request({
+      host: '127.0.0.1:3100',
+      'x-forwarded-host': '127.0.0.1:5173',
+      referer: 'http://127.0.0.1:9999/',
+    }))).toBe(false)
   })
 
-  it('keeps legacy Hermes yolo isolated from external adapters', () => {
-    expect(unsafeModeForAdapter({ yolo: true }, 'hermes')).toBe(true)
-    expect(unsafeModeForAdapter({ yolo: true }, 'codex')).toBe(false)
-    expect(unsafeModeForAdapter({ yolo: true }, 'claude-code')).toBe(false)
+  it('keeps Hermes and Codex safety modes independent', () => {
+    expect(unsafeModeForAdapter({ hermesYolo: true }, 'hermes')).toBe(true)
+    expect(unsafeModeForAdapter({ hermesYolo: true }, 'codex')).toBe(false)
     expect(unsafeModeForAdapter({ externalAgentYolo: true }, 'codex')).toBe(true)
-    expect(unsafeModeForAdapter({ externalAgentYolo: true }, 'claude-code')).toBe(true)
+  })
+
+  it('uses the configured default cwd for an unprojected direct message', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-default-cwd-'))
+    roots.push(root)
+    const defaultCwd = join(root, 'workspace')
+    await mkdir(defaultCwd)
+    const runAgent = vi.fn(async (input: AgentRunInput) => {
+      void input
+      return { text: 'Done.' }
+    })
+    const service = new CommonspaceHostService({} as never, { root, defaultCwd }, {
+      discoverAgents: async () => [],
+      runAgent,
+    })
+    await service.initialize()
+    await service.mutate({ action: 'add-agent', displayName: 'Review Bot', adapter: 'codex' })
+
+    await service.send({ conversation: { kind: 'dm', id: 'codex-review-bot' }, text: 'Run.' })
+    await service.whenIdle()
+
+    expect(runAgent).toHaveBeenCalledOnce()
+    expect(runAgent.mock.calls[0]?.[0]).toMatchObject({ cwd: defaultCwd, additionalCwds: [] })
+  })
+
+  it('redacts host paths from agent failures before publishing them', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-private-error-'))
+    roots.push(root)
+    const workspace = join(root, 'private-workspace')
+    await mkdir(workspace)
+    const canonicalWorkspace = await realpath(workspace)
+    const service = new CommonspaceHostService({} as never, { root }, {
+      discoverAgents: async () => [],
+      runAgent: async () => { throw new Error(`provider failed inside ${canonicalWorkspace}/secret.txt`) },
+    })
+    await service.initialize()
+    await service.mutate({ action: 'add-agent', displayName: 'Review Bot', adapter: 'codex' })
+    const project = (await service.mutate({ action: 'create-project', name: 'Private', paths: [workspace] })).projects[0]!
+    await service.send({ conversation: { kind: 'dm', id: 'codex-review-bot' }, projectId: project.id, text: 'Run.' })
+    await service.whenIdle()
+
+    const failure = service.snapshot().messages['dm:codex-review-bot']?.at(-1)?.text ?? ''
+    expect(failure).toContain('[host path]/secret.txt')
+    expect(failure).not.toContain(canonicalWorkspace)
   })
 
   it('loads only valid native sessions owned by managed agents and known scopes', async () => {
@@ -71,7 +135,7 @@ describe('Commonspace host authority', () => {
     })
   })
 
-  it('sanitizes malformed legacy state, canonicalizes paths, and durably writes v6', async () => {
+  it('sanitizes malformed legacy state, canonicalizes paths, and durably writes v9', async () => {
     const root = await mkdtemp(join(tmpdir(), 'commonspace-migration-'))
     roots.push(root)
     const workspace = join(root, 'workspace')
@@ -103,14 +167,14 @@ describe('Commonspace host authority', () => {
 
     const state = service.snapshot()
     expect(state).toMatchObject({
-      version: 6,
+      version: 9,
       revision: 0,
       defaults: { model: null, reasoning: 'max', maxAgentsPerTurn: 8, memoryThreads: 1 },
       projects: [{ id: 'project-1', paths: [canonicalWorkspace] }],
       channels: [{
         id: 'channel-1',
         projectId: 'project-1',
-        agentIds: ['frontend'],
+        agentIds: [],
         instructions: '',
         settings: { model: null, reasoning: null },
       }],
@@ -118,40 +182,196 @@ describe('Commonspace host authority', () => {
       messages: {},
     })
     const persisted = JSON.parse(await readFile(join(root, 'state.json'), 'utf8')) as { version?: number; defaults?: { reasoning?: string } }
-    expect(persisted).toMatchObject({ version: 6, defaults: { reasoning: 'max' } })
+    expect(persisted).toMatchObject({ version: 9, defaults: { reasoning: 'max' } })
   })
 
-  it('clears a stale native session and starts one bounded replacement session', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'commonspace-stale-session-'))
+  it('migrates v7 state to the Hermes and Codex roster', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-v7-roster-'))
     roots.push(root)
-    const staleSessionId = '123e4567-e89b-42d3-a456-426614174000'
-    const replacementSessionId = '223e4567-e89b-42d3-a456-426614174000'
+    const codexScope = 'Commonspace DM: 123e4567-e89b-42d3-a456-426614174000'
+    const retiredScope = 'Commonspace DM: 223e4567-e89b-42d3-a456-426614174000'
     await writeFile(join(root, 'state.json'), JSON.stringify({
-      version: 5,
-      revision: 1,
+      version: 7,
+      revision: 5,
+      defaults: { model: null, reasoning: 'max', maxAgentsPerTurn: 4, memoryThreads: 12 },
+      agents: [
+        { id: 'codex-review-bot', displayName: 'Review Bot', adapter: 'codex', model: null, createdAt: 'now' },
+        { id: 'retired-agent-writer', displayName: 'Writer', adapter: 'retired-runtime', model: null, createdAt: 'now' },
+      ],
+      dmSessions: {
+        'codex-review-bot': codexScope,
+        'retired-agent-writer': retiredScope,
+      },
+      agentSessions: {
+        'codex-review-bot': { [codexScope]: 'codex-native-session' },
+        'retired-agent-writer': { [retiredScope]: 'retired-native-session' },
+      },
+      projects: [],
+      channels: [{
+        id: 'general',
+        name: 'general',
+        projectId: null,
+        agentIds: ['codex-review-bot', 'retired-agent-writer'],
+        instructions: '',
+        memory: { summary: '', decisions: [], openQuestions: [], threadIds: [], updatedAt: null },
+        settings: { model: null, reasoning: null },
+        createdAt: 'now',
+      }],
+      threads: [],
+      messages: {
+        'dm:codex-review-bot': [],
+        'dm:retired-agent-writer': [],
+      },
+    }))
+    const service = new CommonspaceHostService({} as never, { root }, { discoverAgents: async () => [] })
+    await service.initialize()
+
+    expect(service.snapshot()).toMatchObject({
+      version: 9,
+      agents: [{ id: 'codex-review-bot', adapter: 'codex' }],
+      dmSessions: { 'codex-review-bot': codexScope },
+      agentSessions: { 'codex-review-bot': { [codexScope]: 'codex-native-session' } },
+      channels: [{ id: 'general', agentIds: ['codex-review-bot'] }],
+      messages: { 'dm:codex-review-bot': [] },
+    })
+    expect(service.snapshot().messages['dm:retired-agent-writer']).toBeUndefined()
+  })
+
+  it('redacts host-private details from loaded activity traces before repersisting them', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-trace-redaction-'))
+    roots.push(root)
+    const nativeSessionId = 'codex:private-native-session'
+    await writeFile(join(root, 'state.json'), JSON.stringify({
+      version: 9,
+      revision: 2,
       defaults: { model: null, reasoning: 'max', maxAgentsPerTurn: 4, memoryThreads: 12 },
       agents: [{ id: 'codex-review-bot', displayName: 'Review Bot', adapter: 'codex', model: null, createdAt: 'now' }],
-      agentSessions: { 'codex-review-bot': { 'Bot Chat': staleSessionId } },
+      dmSessions: {},
+      agentSessions: { 'codex-review-bot': { 'Bot Chat': nativeSessionId } },
       projects: [],
       channels: [],
       threads: [],
-      messages: {},
+      messages: {
+        'dm:codex-review-bot': [{
+          id: 'message-1',
+          conversation: { kind: 'dm', id: 'codex-review-bot' },
+          authorType: 'agent',
+          authorId: 'codex-review-bot',
+          authorName: 'Review Bot',
+          text: 'Done.',
+          createdAt: '2026-08-26T00:00:02.000Z',
+          trace: {
+            adapter: 'codex',
+            startedAt: '2026-08-26T00:00:00.000Z',
+            completedAt: '2026-08-26T00:00:02.000Z',
+            entries: [{
+              type: 'tool',
+              id: 'call-1',
+              title: `Read ${root}/secret.txt`,
+              status: 'completed',
+              input: `{"path":"${root}/secret.txt"}`,
+              output: `session=${nativeSessionId}`,
+              createdAt: '2026-08-26T00:00:00.500Z',
+              updatedAt: '2026-08-26T00:00:01.500Z',
+            }],
+          },
+        }],
+      },
     }))
-    const runAgent = vi.fn(async (input: AgentRunInput) => {
-      if (input.sessionId !== undefined) throw new Error('thread/resume failed: no rollout found for thread id')
-      return { text: 'Recovered.', sessionId: replacementSessionId }
+    const service = new CommonspaceHostService({} as never, { root }, { discoverAgents: async () => [] })
+
+    await service.initialize()
+
+    const trace = service.snapshot().messages['dm:codex-review-bot']?.[0]?.trace
+    expect(JSON.stringify(trace)).toContain('[host path]/secret.txt')
+    expect(JSON.stringify(trace)).toContain('[native session]')
+    expect(JSON.stringify(trace)).not.toContain(root)
+    expect(JSON.stringify(trace)).not.toContain(nativeSessionId)
+    const persisted = JSON.parse(await readFile(join(root, 'state.json'), 'utf8'))
+    expect(JSON.stringify(persisted.messages['dm:codex-review-bot'][0].trace)).toEqual(JSON.stringify(trace))
+  })
+
+  it('marks work left running by a previous host process as interrupted', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-interrupted-recovery-'))
+    roots.push(root)
+    await writeFile(join(root, 'state.json'), JSON.stringify({
+      version: 8,
+      revision: 4,
+      defaults: { model: null, reasoning: 'max', maxAgentsPerTurn: 4, memoryThreads: 12 },
+      agents: [{ id: 'codex-review-bot', displayName: 'Review Bot', adapter: 'codex', model: null, createdAt: 'now' }],
+      dmSessions: {},
+      agentSessions: {},
+      projects: [],
+      channels: [],
+      threads: [],
+      messages: {
+        'dm:codex-review-bot': [{
+          id: 'message-1',
+          conversation: { kind: 'dm', id: 'codex-review-bot' },
+          authorType: 'user',
+          authorId: 'user',
+          authorName: 'Ralph',
+          text: 'Interrupted work.',
+          createdAt: 'now',
+          replyStatus: 'running',
+        }],
+      },
+    }))
+    const service = new CommonspaceHostService({} as never, { root }, { discoverAgents: async () => [] })
+    await service.initialize()
+
+    expect(service.snapshot().messages['dm:codex-review-bot']?.[0]).toMatchObject({
+      replyStatus: 'error',
+      replyError: 'The previous Commonspace process ended before the agent completed.',
     })
+  })
+
+  it('drains active agent work before closing for a development restart', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-development-restart-'))
+    roots.push(root)
+    const firstResult = deferred<{ text: string; sessionId: string }>()
+    const secondResult = deferred<{ text: string; sessionId: string }>()
+    const runAgent = vi.fn(async (input: AgentRunInput) => input.agent.id === 'codex-review-bot'
+      ? firstResult.promise
+      : secondResult.promise)
     const service = new CommonspaceHostService({} as never, { root }, { discoverAgents: async () => [], runAgent })
     await service.initialize()
-    await service.send({ conversation: { kind: 'dm', id: 'codex-review-bot' }, text: 'Continue.' })
+    await service.mutate({ action: 'add-agent', displayName: 'Review Bot', adapter: 'codex' })
+    await service.mutate({ action: 'add-agent', displayName: 'Second Bot', adapter: 'codex' })
+    await service.send({ conversation: { kind: 'dm', id: 'codex-review-bot' }, text: 'Keep working through reload.' })
+    await vi.waitFor(() => { expect(runAgent).toHaveBeenCalledOnce() })
 
-    await vi.waitFor(async () => {
-      expect((await service.bootstrap()).state.messages['dm:codex-review-bot']?.some(message => message.text === 'Recovered.')).toBe(true)
-    })
-    expect(runAgent).toHaveBeenCalledTimes(2)
-    expect(runAgent.mock.calls[0]?.[0]).toMatchObject({ sessionId: staleSessionId })
-    expect(runAgent.mock.calls[1]?.[0].sessionId).toBeUndefined()
-    expect(service.snapshot().agentSessions['codex-review-bot']?.['Bot Chat']).toBe(replacementSessionId)
+    const drain = service.drainAndClose()
+    await expect(Promise.race([
+      drain.then(() => 'closed'),
+      new Promise(resolve => setTimeout(() => resolve('still-running'), 25)),
+    ])).resolves.toBe('still-running')
+    await service.send({ conversation: { kind: 'dm', id: 'codex-second-bot' }, text: 'Join before the swap.' })
+    await vi.waitFor(() => { expect(runAgent).toHaveBeenCalledTimes(2) })
+
+    firstResult.resolve({ text: 'Finished safely.', sessionId: 'codex:thread/reload-safe' })
+    await expect(Promise.race([
+      drain.then(() => 'closed'),
+      new Promise(resolve => setTimeout(() => resolve('still-running'), 25)),
+    ])).resolves.toBe('still-running')
+    secondResult.resolve({ text: 'Also finished safely.', sessionId: 'codex:thread/second-reload-safe' })
+    await drain
+
+    expect(service.snapshot().messages['dm:codex-review-bot']).toEqual([
+      expect.objectContaining({
+        authorType: 'user',
+        replyStatus: 'complete',
+        text: 'Keep working through reload.',
+      }),
+      expect.objectContaining({ authorType: 'agent', text: 'Finished safely.' }),
+    ])
+    expect(service.snapshot().agentSessions['codex-review-bot']?.['Bot Chat']).toBe('codex:thread/reload-safe')
+    expect(service.snapshot().messages['dm:codex-second-bot']?.at(-1)?.text).toBe('Also finished safely.')
+
+    const restarted = new CommonspaceHostService({} as never, { root }, { discoverAgents: async () => [] })
+    await restarted.initialize()
+    expect(restarted.snapshot().messages['dm:codex-review-bot']?.[0]?.replyError).toBeUndefined()
+    await restarted.close()
   })
 
   it('discards an in-flight reply when a managed agent is removed and recreated', async () => {
@@ -171,40 +391,6 @@ describe('Commonspace host authority', () => {
     await service.whenIdle()
 
     expect(service.snapshot().agents).toHaveLength(1)
-    expect(service.snapshot().agentSessions['codex-review-bot']).toBeUndefined()
-    expect(service.snapshot().messages['dm:codex-review-bot']).toBeUndefined()
-  })
-
-  it('does not replace a stale session after its managed agent was removed', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'commonspace-stale-remove-race-'))
-    roots.push(root)
-    const staleSessionId = '123e4567-e89b-42d3-a456-426614174000'
-    await writeFile(join(root, 'state.json'), JSON.stringify({
-      version: 5,
-      revision: 1,
-      defaults: { model: null, reasoning: 'max', maxAgentsPerTurn: 4, memoryThreads: 12 },
-      agents: [{ id: 'codex-review-bot', displayName: 'Review Bot', adapter: 'codex', model: null, createdAt: 'now' }],
-      agentSessions: { 'codex-review-bot': { 'Bot Chat': staleSessionId } },
-      projects: [],
-      channels: [],
-      threads: [],
-      messages: {},
-    }))
-    const stale = deferred<{ text: string; sessionId: string }>()
-    const runAgent = vi.fn(async (input: AgentRunInput) => input.sessionId === undefined
-      ? { text: 'Replacement must not run.', sessionId: '223e4567-e89b-42d3-a456-426614174000' }
-      : stale.promise)
-    const service = new CommonspaceHostService({} as never, { root }, { discoverAgents: async () => [], runAgent })
-    await service.initialize()
-    await service.send({ conversation: { kind: 'dm', id: 'codex-review-bot' }, text: 'Continue.' })
-    await vi.waitFor(() => { expect(runAgent).toHaveBeenCalledOnce() })
-
-    await service.mutate({ action: 'remove-agent', agentId: 'codex-review-bot' })
-    await service.mutate({ action: 'add-agent', displayName: 'Review Bot', adapter: 'codex' })
-    stale.reject(new Error('thread/resume failed: no rollout found for thread id'))
-    await service.whenIdle()
-
-    expect(runAgent).toHaveBeenCalledOnce()
     expect(service.snapshot().agentSessions['codex-review-bot']).toBeUndefined()
     expect(service.snapshot().messages['dm:codex-review-bot']).toBeUndefined()
   })
@@ -252,6 +438,7 @@ describe('Commonspace host authority', () => {
       runAgent,
     })
     await service.initialize()
+    await addDiscoveredAgents(service, 'frontend')
     const firstProject = (await service.mutate({ action: 'create-project', name: 'First', paths: [firstWorkspace] })).projects.at(-1)!
     const secondProject = (await service.mutate({ action: 'create-project', name: 'Second', paths: [secondWorkspace] })).projects.at(-1)!
     const firstChannel = (await service.mutate({ action: 'create-channel', name: 'first', projectId: firstProject.id, agentIds: ['frontend'] })).channels.at(-1)!
@@ -269,7 +456,7 @@ describe('Commonspace host authority', () => {
     expect(runAgent).toHaveBeenCalledTimes(2)
   })
 
-  it('delivers an agent-authored mention once with the root room context', async () => {
+  it('delivers an agent-authored mention once as only the new handoff delta', async () => {
     const root = await mkdtemp(join(tmpdir(), 'commonspace-a2a-room-'))
     roots.push(root)
     const workspace = join(root, 'workspace')
@@ -286,6 +473,7 @@ describe('Commonspace host authority', () => {
       runAgent,
     })
     await service.initialize()
+    await addDiscoveredAgents(service, 'backend', 'frontend')
     const project = (await service.mutate({ action: 'create-project', name: 'App', paths: [workspace] })).projects[0]!
     const channel = (await service.mutate({ action: 'create-channel', name: 'engineering', projectId: project.id, agentIds: ['backend', 'frontend'] })).channels[0]!
 
@@ -293,9 +481,7 @@ describe('Commonspace host authority', () => {
     await service.whenIdle()
 
     expect(runAgent.mock.calls.map(call => call[0].agent.id)).toEqual(['backend', 'frontend'])
-    expect(runAgent.mock.calls[1]?.[0].prompt).toContain('From: @backend')
-    expect(runAgent.mock.calls[1]?.[0].prompt).toContain('API is ready. @frontend connect the configuration view.')
-    expect(runAgent.mock.calls[1]?.[0].prompt).toContain('Root request from Ralph')
+    expect(runAgent.mock.calls[1]?.[0].message).toBe('API is ready. @frontend connect the configuration view.')
     const messages = service.snapshot().messages[`channel:${channel.id}`] ?? []
     expect(messages.filter(message => message.authorType === 'agent').map(message => message.authorId)).toEqual(['backend', 'frontend'])
   })
@@ -317,6 +503,7 @@ describe('Commonspace host authority', () => {
       runAgent,
     })
     await service.initialize()
+    await addDiscoveredAgents(service, 'backend', 'frontend')
     const project = (await service.mutate({ action: 'create-project', name: 'App', paths: [workspace] })).projects[0]!
     const channel = (await service.mutate({ action: 'create-channel', name: 'engineering', projectId: project.id, agentIds: ['backend', 'frontend'] })).channels[0]!
 
@@ -392,6 +579,7 @@ describe('Commonspace host authority', () => {
       runAgent,
     })
     await service.initialize()
+    await addDiscoveredAgents(service, 'frontend')
     const project = (await service.mutate({ action: 'create-project', name: 'App', paths: [workspace] })).projects[0]!
     const channel = (await service.mutate({ action: 'create-channel', name: 'general', projectId: project.id, agentIds: ['frontend'] })).channels[0]!
 
@@ -410,8 +598,8 @@ describe('Commonspace host authority', () => {
     expect(runAgent.mock.calls[0]?.[0]?.sessionName).toBe(`Commonspace Thread: ${accepted.thread?.id ?? ''}`)
   })
 
-  it('merges managed CLI agents and resumes the exact native session for thread replies', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'commonspace-adapters-'))
+  it('merges Hermes and Codex agents and resumes the exact native session for thread replies', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-agents-'))
     roots.push(root)
     const workspace = join(root, 'workspace')
     const sibling = join(root, 'sibling')
@@ -429,6 +617,7 @@ describe('Commonspace host authority', () => {
       runAgent,
     })
     await service.initialize()
+    await addDiscoveredAgents(service, 'frontend')
     await service.mutate({ action: 'add-agent', displayName: 'Review Bot', adapter: 'codex', model: 'gpt-5.4' })
 
     expect((await service.bootstrap()).agents).toEqual([
@@ -478,4 +667,5 @@ describe('Commonspace host authority', () => {
     await vi.waitFor(() => { expect(runAgent).toHaveBeenCalledTimes(4) })
     expect(runAgent.mock.calls[3]?.[0]).toMatchObject({ sessionName: 'Bot Chat', sessionId })
   })
+
 })

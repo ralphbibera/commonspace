@@ -5,7 +5,6 @@ export default defineConfig({
   resolve: {
     alias: {
       '@commonspace/shared': fileURLToPath(new URL('./packages/shared/src/index.ts', import.meta.url)),
-      '@commonspace/adapters': fileURLToPath(new URL('./packages/adapters/src/index.ts', import.meta.url)),
     },
   },
   test: {

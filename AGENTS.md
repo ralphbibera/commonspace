@@ -11,10 +11,9 @@ Commonspace may reuse proven infrastructure patterns, but it must not inherit an
 ## Architecture boundaries
 
 - `packages/shared` is the single writer for cross-process contracts and pure shared helpers.
-- `packages/adapters` owns runtime-neutral CLI argument construction, session parsing, and adapter output parsing.
 - `server` owns the Express API, local persistence, validation, routing, concurrency, and subprocess lifecycle.
 - `ui` owns the Vite/React application and may communicate with the server only through shared contracts and `/api`.
-- Hermes, Codex CLI, and Claude Code own their credentials and native session stores.
+- Hermes and Codex own their credentials and native session stores.
 - Commonspace must not depend on DeepSeek Harness, Cordis, OpenAgents, Hermes Kanban, or another hidden agent runtime.
 
 ## Engineering rules

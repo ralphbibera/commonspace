@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { applyMutation, createInitialState } from '../server/src/state.ts'
 
 describe('Commonspace direct-message sessions', () => {
-  it('starts a fresh adapter session and clears only that DM transcript', () => {
+  it('starts a fresh native session while preserving the visible DM transcript', () => {
     const previousSessionId = '123e4567-e89b-42d3-a456-426614174000'
     const seeded = {
       ...createInitialState(),
@@ -30,17 +30,35 @@ describe('Commonspace direct-message sessions', () => {
       },
     }
 
+    const ids = [
+      '223e4567-e89b-42d3-a456-426614174000',
+      '323e4567-e89b-42d3-a456-426614174000',
+    ]
     const next = applyMutation(
       seeded,
       { action: 'reset-dm', agentId: 'codex-review-bot' } as never,
-      { ids: () => '223e4567-e89b-42d3-a456-426614174000', now: () => '2026-08-25T01:00:00.000Z' },
+      { ids: () => ids.shift()!, now: () => '2026-08-25T01:00:00.000Z' },
     )
 
     expect(next.dmSessions).toEqual({
       'codex-review-bot': 'Commonspace DM: 223e4567-e89b-42d3-a456-426614174000',
     })
     expect(next.agentSessions).toEqual({})
-    expect(next.messages).toEqual({ 'dm:other': [] })
+    expect(next.messages).toEqual({
+      'dm:codex-review-bot': [
+        seeded.messages['dm:codex-review-bot'][0],
+        {
+          id: '323e4567-e89b-42d3-a456-426614174000',
+          conversation: { kind: 'dm', id: 'codex-review-bot' },
+          authorType: 'system',
+          authorId: 'dm-session-boundary',
+          authorName: 'Commonspace',
+          text: 'New session started',
+          createdAt: '2026-08-25T01:00:00.000Z',
+        },
+      ],
+      'dm:other': [],
+    })
     expect(next.revision).toBe(seeded.revision + 1)
   })
 })

@@ -1,10 +1,10 @@
 import { expect, it } from 'vitest'
-import type { CommonspaceState } from '../packages/shared/src/contracts.ts'
+import { COMMONSPACE_STATE_VERSION, type CommonspaceState } from '../packages/shared/src/contracts.ts'
 import { projectChannelMemory } from '../server/src/memory.ts'
 
 it('projects completed thread context into inspectable channel memory', () => {
   const state: CommonspaceState = {
-    version: 6,
+    version: COMMONSPACE_STATE_VERSION,
     revision: 4,
     defaults: { model: null, reasoning: 'max', maxAgentsPerTurn: 4, memoryThreads: 12 },
     agents: [],

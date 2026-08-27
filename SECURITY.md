@@ -12,9 +12,9 @@ Commonspace is a private preview. Security fixes target the latest `main` revisi
 
 - The HTTP server binds to `127.0.0.1`.
 - State-changing API requests require same-origin browser metadata.
-- Project paths are canonicalized before an adapter receives them.
+- Project paths are canonicalized before an agent runtime receives them.
 - Agent CLIs are invoked without a shell and with bounded input, output, and execution time.
 - Commonspace stores session references but never copies runtime credentials.
-- Unsafe adapter modes require explicit environment variables and are disabled by default.
+- Unsafe agent modes require explicit environment variables and are disabled by default.
 
 Do not attach local state files, credential stores, or native agent transcripts to a vulnerability report unless requested through the private thread.

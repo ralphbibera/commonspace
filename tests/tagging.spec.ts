@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { parseTags, routeChannelAgents } from '../packages/adapters/src/hermes.ts'
+import { parseHermesProfileList, parseTags, routeChannelAgents } from '../server/src/relay.ts'
+
+const PROFILE_TABLE = `Profile          Model                        Gateway      Alias        Distribution
+ ───────────────    ───────────────────────────    ───────────    ───────────    ────────────────────
+ ◆AgentOps (default) gpt-5.6-sol                  running      —            —
+  backend         gpt-5.6-luna                 stopped      backend      —
+  frontend        gpt-5.6-luna                 stopped      frontend     —`
 
 describe('Commonspace tagging', () => {
   it('parses agent, project, and channel references without confusing @@ with @', () => {
@@ -23,5 +29,13 @@ describe('Commonspace tagging', () => {
       { id: 'frontend' },
       { id: 'backend' },
     ])).toEqual(['backend'])
+  })
+
+  it('discovers default and named Hermes profiles as agent identities', () => {
+    expect(parseHermesProfileList(PROFILE_TABLE)).toEqual([
+      { id: 'default', displayName: 'AgentOps', adapter: 'hermes', model: 'gpt-5.6-sol', status: 'running' },
+      { id: 'backend', displayName: 'Backend', adapter: 'hermes', model: 'gpt-5.6-luna', status: 'stopped' },
+      { id: 'frontend', displayName: 'Frontend', adapter: 'hermes', model: 'gpt-5.6-luna', status: 'stopped' },
+    ])
   })
 })

@@ -41,7 +41,7 @@ describe('Commonspace direct-message host sessions', () => {
     const root = await mkdtemp(join(tmpdir(), 'commonspace-reset-dm-'))
     roots.push(root)
     const runAgent = vi.fn(async (input: AgentRunInput) => ({
-      text: `Reply to ${input.prompt.at(-1) ?? ''}`,
+      text: `Reply to ${input.message}`,
       sessionId: runAgent.mock.calls.length === 1
         ? '123e4567-e89b-42d3-a456-426614174000'
         : '223e4567-e89b-42d3-a456-426614174000',
@@ -63,8 +63,11 @@ describe('Commonspace direct-message host sessions', () => {
     const freshScope = runAgent.mock.calls[1]?.[0].sessionName
     expect(Object.keys(service.snapshot().agentSessions['codex-review-bot'] ?? {})).toEqual([freshScope])
     expect(service.snapshot().messages['dm:codex-review-bot']?.map(message => message.text)).toEqual([
+      'First',
+      'Reply to First',
+      'New session started',
       'Second',
-      'Reply to d',
+      'Reply to Second',
     ])
     expect((await service.bootstrap()).state.dmSessions).toEqual({})
 
@@ -94,7 +97,14 @@ describe('Commonspace direct-message host sessions', () => {
     result.resolve({ text: 'Stale reply', sessionId: '123e4567-e89b-42d3-a456-426614174000' })
     await service.whenIdle()
 
-    expect(service.snapshot().messages['dm:codex-review-bot']).toBeUndefined()
+    expect(service.snapshot().messages['dm:codex-review-bot']?.map(message => message.text)).toEqual([
+      'Old request',
+      'New session started',
+    ])
+    expect(service.snapshot().messages['dm:codex-review-bot']?.[0]).toMatchObject({
+      replyStatus: 'error',
+      replyError: 'Interrupted by /new.',
+    })
     expect(service.snapshot().agentSessions['codex-review-bot']).toBeUndefined()
   })
 
@@ -117,6 +127,6 @@ describe('Commonspace direct-message host sessions', () => {
     gate.resolve()
 
     await expect(sending).rejects.toThrow('conversation changed before message acceptance')
-    expect(service.snapshot().messages['dm:codex-review-bot']).toBeUndefined()
+    expect(service.snapshot().messages['dm:codex-review-bot']?.map(message => message.text)).toEqual(['New session started'])
   })
 })

@@ -19,6 +19,6 @@ Use `pnpm dev` for the server and Vite UI. The UI runs on port `5173`; the API r
 5. Run `pnpm verify:live` for server, API, or visible UI work.
 6. Review `git diff --check` and the complete diff.
 
-Keep changes inside the conversation-first product model. Shared contracts belong in `packages/shared`, adapter mechanics in `packages/adapters`, host behavior in `server`, and presentation in `ui`.
+Keep changes inside the conversation-first product model. Shared contracts belong in `packages/shared`, host behavior in `server`, and presentation in `ui`.
 
 Never commit credentials, CLI session stores, `~/.commonspace`, generated `dist` output, or browser artifacts.

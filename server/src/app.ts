@@ -1,27 +1,50 @@
 import { join } from 'node:path'
 import type { IncomingMessage } from 'node:http'
 import express, { type ErrorRequestHandler, type Express, type NextFunction, type Request, type Response } from 'express'
-import type { CommonspaceMutation, SendMessageRequest } from '@commonspace/shared'
+import type { CommonspaceMutation, SelectDirectoryResponse, SendMessageRequest } from '@commonspace/shared'
 import type { CommonspaceHostService } from './service.js'
+import type { CommonspaceMcpGateway } from './commonspace-mcp.js'
+import { selectLocalDirectory } from './directory-picker.js'
 
 const MAX_BODY_BYTES = 128 * 1024
 
+function firstHeaderValue(value: string | string[] | undefined): string | undefined {
+  const first = Array.isArray(value) ? value[0] : value
+  const trimmed = first?.split(',')[0]?.trim()
+  return trimmed === '' ? undefined : trimmed
+}
+
+function requestBrowserHost(req: IncomingMessage): string | undefined {
+  return firstHeaderValue(req.headers['x-forwarded-host']) ?? req.headers.host
+}
+
+function urlMatchesRequestHost(value: string, host: string | undefined): boolean {
+  if (host === undefined) return false
+  try {
+    const url = new URL(value)
+    return url.protocol === 'http:' && url.host === host
+  } catch {
+    return false
+  }
+}
+
 export interface CreateCommonspaceAppOptions {
   service: CommonspaceHostService
+  mcpGateway?: CommonspaceMcpGateway
   uiDistPath?: string
+  directoryPicker?: () => Promise<string | null>
 }
 
 export function requestIsSameOrigin(req: IncomingMessage): boolean {
-  const host = req.headers.host
+  const host = requestBrowserHost(req)
   if (host === undefined) return false
   const origin = req.headers.origin
   if (origin !== undefined) {
-    try {
-      const url = new URL(origin)
-      return url.protocol === 'http:' && url.host === host
-    } catch {
-      return false
-    }
+    return urlMatchesRequestHost(origin, host)
+  }
+  const referer = req.headers.referer
+  if (referer !== undefined) {
+    return urlMatchesRequestHost(referer, host)
   }
   return req.headers['sec-fetch-site'] === 'same-origin'
 }
@@ -46,8 +69,9 @@ function recordBody(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>
 }
 
-export function createCommonspaceApp({ service, uiDistPath }: CreateCommonspaceAppOptions): Express {
+export function createCommonspaceApp({ service, mcpGateway, uiDistPath, directoryPicker }: CreateCommonspaceAppOptions): Express {
   const app = express()
+  const pickDirectory = directoryPicker ?? selectLocalDirectory
   app.disable('x-powered-by')
 
   app.use('/api', (req, res, next) => {
@@ -63,6 +87,12 @@ export function createCommonspaceApp({ service, uiDistPath }: CreateCommonspaceA
   app.get('/api/health', (_req, res) => {
     res.json({ status: 'ok' })
   })
+
+  if (mcpGateway !== undefined) {
+    app.all('/api/mcp', (req, res) => {
+      void mcpGateway.handle(req, res)
+    })
+  }
 
   app.get('/api/bootstrap', requireSameOrigin, async (_req, res) => {
     res.json(await service.bootstrap())
@@ -80,6 +110,15 @@ export function createCommonspaceApp({ service, uiDistPath }: CreateCommonspaceA
     writeRevision(service.snapshot().revision)
     const unsubscribe = service.subscribeToRevisions(writeRevision)
     req.on('close', unsubscribe)
+  })
+
+  app.post('/api/select-directory', requireSameOrigin, async (_req, res) => {
+    try {
+      const path = await pickDirectory()
+      res.json({ path } satisfies SelectDirectoryResponse)
+    } catch (error) {
+      res.status(500).json({ code: 'directory_picker_failed', error: error instanceof Error ? error.message : String(error) })
+    }
   })
 
   app.post('/api/mutate', requireSameOrigin, async (req, res) => {

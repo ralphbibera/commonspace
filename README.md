@@ -11,10 +11,10 @@ Commonspace is a local-first workspace for durable conversations with coding age
 - **Projects** bind conversations to one or more local directories.
 - **Channels** give a project a shared conversation with an explicit agent roster.
 - **Direct Messages** preserve one-to-one continuity with a chosen agent.
-- **Agents** connect real Hermes profiles, Codex CLI agents, and Claude Code agents.
+- **Agents** are explicitly chosen from discovered Hermes profiles or created as Codex agents.
 - **Messages and threads** are the work record. Native agent session references keep every continuation attached to the correct context.
 
-Commonspace is conversation-first: context enters through messages, remains inspectable in the transcript, and can be continued without exposing raw CLI session mechanics.
+Commonspace is conversation-first. Hermes and Codex receive only the newly delivered message over ACP, resume their exact provider-native session, and can read bounded shared-room context or post progress through a session-scoped Commonspace MCP server. Each reply can expose a durable, expandable audit of the reasoning summaries, plans, tool calls, results, and usage emitted by its native harness. Raw session mechanics remain host-private.
 
 ## Quick start
 
@@ -22,7 +22,7 @@ Requirements:
 
 - Node.js 22+
 - pnpm 10.34.5
-- Any agent CLIs you want to use already installed and authenticated
+- Hermes and/or Codex installed and authenticated
 
 ```bash
 pnpm install --frozen-lockfile
@@ -44,14 +44,13 @@ The standalone server serves both the API and built UI at `http://127.0.0.1:3100
 
 ```text
 packages/shared    Versioned product and API contracts
-packages/adapters  Safe CLI invocation and output parsing
-server             Express API, persistence, routing, and agent execution
+server             Express API, persistence, local relay, ACP/MCP, and execution
 ui                 Vite and React application
 scripts            Real-path verification
 tests              Cross-package behavior and integration tests
 ```
 
-The split keeps product contracts, runtime adapters, server behavior, and the browser interface independently testable without introducing a second product domain.
+The split keeps product contracts, server behavior, and the browser interface independently testable without introducing a second product domain.
 
 ## Commands
 
@@ -63,7 +62,10 @@ pnpm typecheck              # workspace TypeScript checks
 pnpm build                  # all production builds
 pnpm check                  # complete local gate
 pnpm verify:live            # build, boot, and exercise the standalone browser path
-pnpm verify:adapters        # opt-in real Codex and Claude session smoke tests
+pnpm verify:acp             # opt-in real Hermes and Codex ACP start/resume tests
+pnpm verify:acp:hermes      # real Hermes profile start/resume test
+pnpm verify:acp:codex       # real Codex start/resume test
+pnpm verify:acp:mcp         # real Hermes and Codex scoped-context/progress tests
 ```
 
 ## Runtime configuration
@@ -72,17 +74,18 @@ pnpm verify:adapters        # opt-in real Codex and Claude session smoke tests
 | --- | --- |
 | `COMMONSPACE_PORT` | Standalone server port; defaults to `3100` |
 | `COMMONSPACE_HOME` | State directory; defaults to `~/.commonspace` |
-| `COMMONSPACE_HERMES_PATH` | Hermes executable override |
+| `COMMONSPACE_HERMES_PATH` | Hermes discovery executable and default Hermes ACP executable |
 | `COMMONSPACE_CODEX_PATH` | Codex executable override |
-| `COMMONSPACE_CLAUDE_PATH` | Claude executable override |
+| `COMMONSPACE_HERMES_ACP_PATH` | Hermes ACP executable override; defaults to `COMMONSPACE_HERMES_PATH` or `hermes` |
+| `COMMONSPACE_CODEX_ACP_PATH` | Codex ACP bridge executable override; bundled bridge is the default |
 | `COMMONSPACE_HERMES_YOLO=1` | Explicit Hermes unsafe mode |
-| `COMMONSPACE_AGENT_YOLO=1` | Explicit Codex and Claude unsafe mode |
+| `COMMONSPACE_AGENT_YOLO=1` | Explicit Codex unsafe mode |
 
 Unsafe modes are off by default.
 
 ## Local state and credentials
 
-Commonspace binds only to loopback, rejects cross-origin API mutations, writes versioned state atomically to `~/.commonspace/state.json`, and never copies CLI credentials. Hermes, Codex CLI, and Claude Code continue using their supported credential and session stores.
+Commonspace binds only to loopback, rejects cross-origin API mutations, writes versioned state atomically to `~/.commonspace/state.json`, and never copies provider credentials. ACP uses local stdio; its scoped MCP endpoint uses ephemeral bearer capabilities on loopback. Persisted activity is bounded and strips host paths, native session identifiers, and MCP capabilities. There is no Nostr or remote relay in this local-first phase. Hermes and Codex continue using their supported credential and native session stores.
 
 ## Documentation
 
@@ -90,7 +93,6 @@ Commonspace binds only to loopback, rejects cross-origin API mutations, writes v
 - [Architecture](docs/architecture.md)
 - [Development](docs/development.md)
 - [Operations](docs/operations.md)
-- [Agent adapters](docs/agent-adapters.md)
 - [Design system](docs/design-system.md)
 - [Roadmap](docs/roadmap.md)
 

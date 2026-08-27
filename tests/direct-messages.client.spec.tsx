@@ -23,7 +23,7 @@ describe('Commonspace direct messages', () => {
       bootstrap: {
         agents: [{ id: 'frontend', displayName: 'Frontend', adapter: 'hermes' as const, model: 'gpt-5.6-luna', status: 'stopped' as const }],
         state: {
-          version: 6,
+          version: 9,
           revision: 2,
           defaults: { model: null, reasoning: 'max' as const, maxAgentsPerTurn: 2, memoryThreads: 12 },
           agents: [],
@@ -66,7 +66,7 @@ describe('Commonspace direct messages', () => {
       bootstrap: {
         agents,
         state: {
-          version: 6,
+          version: 9,
           revision: 1,
           defaults: { model: null, reasoning: 'max', maxAgentsPerTurn: 4, memoryThreads: 12 },
           agents: [],

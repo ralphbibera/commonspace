@@ -1,5 +1,7 @@
-import type { CommonspaceAgentDefinition, CommonspaceMutation, CommonspaceState } from '@commonspace/shared'
+import type { AgentAdapterKind, CommonspaceAgentProfile, CommonspaceMutation, CommonspaceState } from '@commonspace/shared'
 import { COMMONSPACE_STATE_VERSION, projectTagName } from '@commonspace/shared'
+
+export const DM_SESSION_BOUNDARY_AUTHOR_ID = 'dm-session-boundary'
 
 export interface StateDependencies {
   ids(): string
@@ -67,7 +69,7 @@ function normalizedChannel(value: string): string {
   return name
 }
 
-export function managedAgentId(adapter: CommonspaceAgentDefinition['adapter'], displayName: string): string {
+export function managedAgentId(adapter: Exclude<AgentAdapterKind, 'hermes'>, displayName: string): string {
   return `${adapter}-${normalizedChannel(normalizedName(displayName, 'agent'))}`
 }
 
@@ -87,6 +89,30 @@ export function createInitialState(): CommonspaceState {
     channels: [],
     threads: [],
     messages: {},
+  }
+}
+
+export function addDiscoveredAgent(
+  state: CommonspaceState,
+  agent: CommonspaceAgentProfile,
+  dependencies: StateDependencies = defaults,
+): CommonspaceState {
+  if (agent.adapter !== 'hermes') throw new Error('only Hermes profiles can be added from discovery')
+  if (agent.id.trim() !== agent.id || agent.id === '' || agent.id.length > 200 || /\s/u.test(agent.id)) {
+    throw new Error('invalid discovered agent id')
+  }
+  const displayName = normalizedName(agent.displayName, 'agent')
+  if (state.agents.some(candidate => candidate.id === agent.id)) throw new Error(`agent ${displayName} already exists`)
+  return {
+    ...state,
+    revision: nextRevision(state),
+    agents: [...state.agents, {
+      id: agent.id,
+      displayName,
+      adapter: 'hermes',
+      model: optionalModel(agent.model, null),
+      createdAt: dependencies.now(),
+    }],
   }
 }
 
@@ -217,7 +243,7 @@ export function applyMutation(
       }
     }
     case 'add-agent': {
-      if (mutation.adapter !== 'codex' && mutation.adapter !== 'claude-code') throw new Error('unsupported agent adapter')
+      if (mutation.adapter !== 'codex') throw new Error('unsupported agent adapter')
       const displayName = normalizedName(mutation.displayName, 'agent')
       const id = managedAgentId(mutation.adapter, displayName)
       if (state.agents.some(agent => agent.id === id)) throw new Error(`agent ${displayName} already exists`)
@@ -233,6 +259,9 @@ export function applyMutation(
         }],
       }
     }
+    case 'add-discovered-agent': {
+      throw new Error('discovered agent must be resolved by the Commonspace host')
+    }
     case 'remove-agent': {
       if (!state.agents.some(agent => agent.id === mutation.agentId)) return state
       return {
@@ -247,6 +276,7 @@ export function applyMutation(
     }
     case 'reset-dm': {
       const previousScope = state.dmSessions[mutation.agentId] ?? 'Bot Chat'
+      const nextScope = `Commonspace DM: ${dependencies.ids()}`
       const scopes = state.agentSessions[mutation.agentId]
       const remainingScopes = scopes === undefined
         ? undefined
@@ -257,14 +287,32 @@ export function applyMutation(
       } else {
         agentSessions[mutation.agentId] = remainingScopes
       }
-      const messages = { ...state.messages }
-      delete messages[`dm:${mutation.agentId}`]
+      const conversation = { kind: 'dm' as const, id: mutation.agentId }
+      const messageKey = `dm:${mutation.agentId}`
+      const previousMessages = state.messages[messageKey] ?? []
+      const messages = {
+        ...state.messages,
+        [messageKey]: [
+          ...previousMessages.map(message => message.replyStatus === 'queued' || message.replyStatus === 'running'
+            ? { ...message, replyStatus: 'error' as const, replyError: 'Interrupted by /new.' }
+            : message),
+          {
+            id: dependencies.ids(),
+            conversation,
+            authorType: 'system' as const,
+            authorId: DM_SESSION_BOUNDARY_AUTHOR_ID,
+            authorName: 'Commonspace',
+            text: 'New session started',
+            createdAt: dependencies.now(),
+          },
+        ],
+      }
       return {
         ...state,
         revision: nextRevision(state),
         dmSessions: {
           ...state.dmSessions,
-          [mutation.agentId]: `Commonspace DM: ${dependencies.ids()}`,
+          [mutation.agentId]: nextScope,
         },
         agentSessions,
         messages,

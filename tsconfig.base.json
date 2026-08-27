@@ -12,8 +12,7 @@
     "isolatedModules": true,
     "baseUrl": ".",
     "paths": {
-      "@commonspace/shared": ["packages/shared/src/index.ts"],
-      "@commonspace/adapters": ["packages/adapters/src/index.ts"]
+      "@commonspace/shared": ["packages/shared/src/index.ts"]
     },
     "skipLibCheck": true,
     "declaration": true,
