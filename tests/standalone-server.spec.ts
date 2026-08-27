@@ -17,8 +17,10 @@ describe('standalone Commonspace server', () => {
     const root = await mkdtemp(join(tmpdir(), 'commonspace-standalone-'))
     roots.push(root)
     const uiDistPath = join(root, 'ui')
+    const workspace = join(root, 'workspace')
     await writeFile(join(root, 'index.html'), 'unused')
     await mkdir(join(uiDistPath, 'assets'), { recursive: true })
+    await mkdir(workspace)
     await writeFile(join(uiDistPath, 'index.html'), '<div id="root"></div><script type="module" src="/assets/app.js"></script>')
     await writeFile(join(uiDistPath, 'assets', 'app.js'), 'window.__COMMONSPACE_STANDALONE__ = true')
 
@@ -26,6 +28,7 @@ describe('standalone Commonspace server', () => {
       root,
       port: 0,
       uiDistPath,
+      directoryPicker: async () => workspace,
       dependencies: { discoverAgents: async () => [] },
       logger: { warn: () => undefined, info: () => undefined },
     })
@@ -45,13 +48,21 @@ describe('standalone Commonspace server', () => {
     const healthResponse = await fetch(`${running.url}/api/health`)
     await expect(healthResponse.json()).resolves.toEqual({ status: 'ok' })
 
+    const directoryResponse = await fetch(`${running.url}/api/select-directory`, {
+      method: 'POST',
+      headers: { origin: running.url },
+    })
+    expect(directoryResponse.status).toBe(200)
+    await expect(directoryResponse.json()).resolves.toEqual({ path: workspace })
+
     const bootstrapResponse = await fetch(`${running.url}/api/bootstrap`, {
       headers: { origin: running.url },
     })
     expect(bootstrapResponse.status).toBe(200)
     await expect(bootstrapResponse.json()).resolves.toMatchObject({
       agents: [],
-      state: { version: 6, revision: 0 },
+      discoveredAgents: [],
+      state: { version: 9, revision: 0 },
     })
   })
 })

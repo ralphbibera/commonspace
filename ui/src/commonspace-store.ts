@@ -4,6 +4,7 @@ import type {
   CommonspaceMessage,
   CommonspaceMutation,
   ConversationRef,
+  SelectDirectoryResponse,
   SendMessageRequest,
   SendMessageResponse,
 } from '@commonspace/shared'
@@ -20,6 +21,7 @@ export interface CommonspaceClientSnapshot {
 }
 
 type Listener = () => void
+const LIVE_UPDATES_DISCONNECTED = 'Commonspace live updates disconnected; retrying…'
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -96,7 +98,10 @@ export class CommonspaceClientStore {
         // Ignore malformed event frames; EventSource will continue.
       }
     })
-    events.onerror = () => { this.set({ ...this.snapshot, error: 'Commonspace live updates disconnected; retrying…' }) }
+    events.onerror = () => { this.set({ ...this.snapshot, error: LIVE_UPDATES_DISCONNECTED }) }
+    events.onopen = () => {
+      if (this.snapshot.error === LIVE_UPDATES_DISCONNECTED) this.set({ ...this.snapshot, error: null })
+    }
     this.events = events
   }
 
@@ -113,6 +118,18 @@ export class CommonspaceClientStore {
       })
       const merged = this.mergeBootstrap(result)
       this.set({ ...this.snapshot, bootstrap: merged, activeProjectId: this.resolveActiveProject(merged), error: null })
+    } catch (error) {
+      this.set({ ...this.snapshot, error: error instanceof Error ? error.message : String(error) })
+      throw error
+    }
+  }
+
+  async selectDirectory(): Promise<string | null> {
+    try {
+      const result = await requestJson<SelectDirectoryResponse>('/api/select-directory', { method: 'POST' })
+      if (result.path !== null && typeof result.path !== 'string') throw new Error('folder picker returned an invalid path')
+      this.set({ ...this.snapshot, error: null })
+      return result.path
     } catch (error) {
       this.set({ ...this.snapshot, error: error instanceof Error ? error.message : String(error) })
       throw error

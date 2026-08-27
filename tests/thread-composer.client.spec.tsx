@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CommonspaceConversation } from '../ui/src/CommonspaceConversation.tsx'
 
-function renderChannelThread() {
+function renderChannelThread(threadStatus: 'complete' | 'queued' | 'running' = 'complete') {
   const send = vi.fn(async () => undefined)
   const snapshot = {
     bootstrap: {
@@ -12,7 +12,7 @@ function renderChannelThread() {
         { id: 'backend', displayName: 'Backend', adapter: 'hermes', model: 'test', status: 'unknown' },
       ],
       state: {
-        version: 6,
+        version: 9,
         revision: 1,
         defaults: { model: null, reasoning: 'max', maxAgentsPerTurn: 4, memoryThreads: 12 },
         agents: [],
@@ -35,7 +35,7 @@ function renderChannelThread() {
           projectId: null,
           rootMessageId: 'root-1',
           agentIds: ['frontend'],
-          status: 'complete',
+          status: threadStatus,
           createdAt: '2026-08-26T00:00:00.000Z',
           updatedAt: '2026-08-26T00:01:00.000Z',
         }],
@@ -89,6 +89,15 @@ afterEach(cleanup)
 beforeEach(() => { HTMLElement.prototype.scrollIntoView = vi.fn() })
 
 describe('Commonspace reply-thread composer', () => {
+  it('shows only the responding agents as animated icons on an active reply thread', () => {
+    renderChannelThread('running')
+
+    const activity = screen.getAllByLabelText('Frontend is responding')
+    expect(activity).toHaveLength(2)
+    expect(activity.every(icon => icon.classList.contains('csp-thread-agent-avatar--responding'))).toBe(true)
+    expect(screen.queryByLabelText('Backend is responding')).toBeNull()
+  })
+
   it('offers tag autocomplete and sends the selected tag in the active thread', async () => {
     const { send } = renderChannelThread()
     const composer = screen.getByRole('textbox', { name: 'Reply in thread' })

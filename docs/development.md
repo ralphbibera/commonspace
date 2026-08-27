@@ -14,17 +14,24 @@ Development services:
 
 Vite proxies `/api` to the server, so browser code always uses same-origin relative paths.
 
+## Self-development hot reload
+
+The development server runs behind a stable local supervisor. Changes under `server/src` or `packages/shared/src` request a new server generation without terminating active agent turns. The old generation keeps its ACP processes and Commonspace MCP endpoint alive, continues accepting concurrent work, and exits at the first all-idle boundary. Multiple edits made while agents are working are coalesced into one restart. The browser reconnects its revision stream after the replacement server is healthy.
+
+`SIGINT` and `SIGTERM` remain explicit forced shutdowns: they cancel active work instead of waiting for a development reload boundary.
+
 ## Workspace map
 
 - `packages/shared/src` — versioned contracts and pure shared helpers.
-- `packages/adapters/src` — Hermes, Codex CLI, and Claude Code invocation and parsing.
 - `server/src/state.ts` — deterministic mutations.
 - `server/src/service.ts` — persistence, routing, sessions, and process lifecycle.
 - `server/src/app.ts` — Express API and production asset serving.
+- `server/src/dev.ts` and `dev-supervisor.ts` — coalesced, idle-gated development restarts.
 - `server/src/index.ts` — process startup and shutdown.
 - `ui/src/commonspace-store.ts` — observable API client state.
 - `ui/src/CommonspaceSidebar.tsx` — Projects, Channels, DMs, and Agents.
 - `ui/src/CommonspaceConversation.tsx` — messages, threads, commands, and composer.
+- `ui/src/AgentTrace.tsx` — expandable provider-emitted reasoning, plan, tool, and usage activity.
 - `ui/src/main.tsx` — standalone browser mount.
 
 ## Test-driven workflow
@@ -56,6 +63,6 @@ Cross-process shapes have one writer: `packages/shared`. When changing persisted
 5. Add malformed-state, migration, and rollback tests.
 6. Update architecture and operations documentation.
 
-## Adapter changes
+## Agent runtime changes
 
-Adapters build argument arrays and parse results; they do not read credentials or spawn processes. Real adapter smoke tests are opt-in because they use the locally authenticated CLI and may consume model access.
+Hermes and Codex ACP lifecycle code lives in the server. Activity traces must remain provider-neutral, bounded, and derived only from ACP updates the native runtime emits. Real runtime smoke tests are opt-in because they use local credentials and model access.

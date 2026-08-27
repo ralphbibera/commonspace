@@ -8,7 +8,7 @@ const emptySnapshot = {
   bootstrap: {
     agents: [],
     state: {
-      version: 6,
+      version: 9,
       revision: 0,
       defaults: { model: null, reasoning: 'max', maxAgentsPerTurn: 4, memoryThreads: 12 },
       agents: [],

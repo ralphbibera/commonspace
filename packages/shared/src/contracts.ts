@@ -1,6 +1,6 @@
-export const COMMONSPACE_STATE_VERSION = 6 as const
+export const COMMONSPACE_STATE_VERSION = 9 as const
 
-export type AgentAdapterKind = 'hermes' | 'codex' | 'claude-code'
+export type AgentAdapterKind = 'hermes' | 'codex'
 
 export type CommonspaceReasoning = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 
@@ -30,7 +30,7 @@ export type HermesAgentProfile = CommonspaceAgentProfile
 export interface CommonspaceAgentDefinition {
   id: string
   displayName: string
-  adapter: Exclude<AgentAdapterKind, 'hermes'>
+  adapter: AgentAdapterKind
   model: string | null
   createdAt: string
 }
@@ -40,6 +40,61 @@ export interface CommonspaceProject {
   name: string
   paths: string[]
   createdAt: string
+}
+
+export type CommonspaceTracePlanStatus = 'pending' | 'in_progress' | 'completed'
+export type CommonspaceTraceToolStatus = 'pending' | 'in_progress' | 'completed' | 'failed'
+
+export interface CommonspaceTracePlanStep {
+  text: string
+  priority: 'high' | 'medium' | 'low'
+  status: CommonspaceTracePlanStatus
+}
+
+export type CommonspaceTraceEntry =
+  | {
+      type: 'reasoning'
+      id: string
+      text: string
+      createdAt: string
+      updatedAt: string
+    }
+  | {
+      type: 'plan'
+      id: string
+      steps: CommonspaceTracePlanStep[]
+      markdown?: string
+      createdAt: string
+      updatedAt: string
+    }
+  | {
+      type: 'tool'
+      id: string
+      title: string
+      toolName?: string
+      toolKind?: string
+      status: CommonspaceTraceToolStatus
+      input?: string
+      output?: string
+      createdAt: string
+      updatedAt: string
+    }
+  | {
+      type: 'usage'
+      id: 'usage'
+      usedTokens: number
+      contextWindow: number
+      costAmount?: number
+      costCurrency?: string
+      createdAt: string
+      updatedAt: string
+    }
+
+export interface CommonspaceAgentTrace {
+  adapter: AgentAdapterKind
+  startedAt: string
+  completedAt: string
+  entries: CommonspaceTraceEntry[]
 }
 
 export interface CommonspaceChannelMemory {
@@ -78,6 +133,8 @@ export interface CommonspaceMessage {
   /** Lifecycle of the agent reply requested by a direct-message user turn. */
   replyStatus?: CommonspaceReplyStatus
   replyError?: string
+  /** Sanitized provider-emitted reasoning, plan, tool, and usage activity for this reply. */
+  trace?: CommonspaceAgentTrace
 }
 
 export type CommonspaceReplyStatus = 'queued' | 'running' | 'complete' | 'error'
@@ -111,6 +168,7 @@ export interface CommonspaceState {
 
 export interface CommonspaceBootstrap {
   agents: CommonspaceAgentProfile[]
+  discoveredAgents: CommonspaceAgentProfile[]
   state: CommonspaceState
 }
 
@@ -124,6 +182,7 @@ export type CommonspaceMutation =
   | { action: 'set-channel-settings'; channelId: string; model?: string | null; reasoning?: CommonspaceReasoning | null }
   | { action: 'set-defaults'; model?: string | null; reasoning?: CommonspaceReasoning; maxAgentsPerTurn?: number; memoryThreads?: number }
   | { action: 'add-agent'; displayName: string; adapter: Exclude<AgentAdapterKind, 'hermes'>; model?: string | null }
+  | { action: 'add-discovered-agent'; agentId: string }
   | { action: 'remove-agent'; agentId: string }
   | { action: 'reset-dm'; agentId: string }
   | { action: 'remove-channel'; channelId: string }
@@ -144,6 +203,10 @@ export interface SendMessageResponse {
 export interface CommonspaceApiError {
   error: string
   code: string
+}
+
+export interface SelectDirectoryResponse {
+  path: string | null
 }
 
 export function conversationKey(ref: ConversationRef): string {

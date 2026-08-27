@@ -1,0 +1,157 @@
+import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { startCommonspaceServer, type RunningCommonspaceServer } from '../server/src/index.ts'
+
+const roots: string[] = []
+const runningServers: RunningCommonspaceServer[] = []
+const fixturePath = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'fake-acp-agent.mjs')
+
+afterEach(async () => {
+  await Promise.all(runningServers.splice(0).map(server => server.close()))
+  vi.unstubAllEnvs()
+  await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))
+})
+
+describe('Commonspace ACP session context', () => {
+  it('attaches a bearer-scoped MCP server instead of replaying room context in the prompt', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-acp-mcp-host-'))
+    roots.push(root)
+    vi.stubEnv('FAKE_ACP_USE_MCP', '1')
+    const running = await startCommonspaceServer({
+      root,
+      port: 0,
+      codexAcpCommand: process.execPath,
+      codexAcpArgs: [fixturePath],
+      dependencies: { discoverAgents: async () => [] },
+      logger: { info: () => undefined, warn: () => undefined },
+    })
+    runningServers.push(running)
+    const workspace = join(root, 'private-workspace')
+    await mkdir(workspace)
+    await running.service.mutate({ action: 'add-agent', displayName: 'Review Bot', adapter: 'codex' })
+    const project = (await running.service.mutate({ action: 'create-project', name: 'App', paths: [workspace] })).projects[0]!
+    const state = await running.service.mutate({
+      action: 'create-channel',
+      name: 'engineering',
+      projectId: project.id,
+      agentIds: ['codex-review-bot'],
+    })
+    const channel = state.channels[0]!
+    await running.service.mutate({ action: 'set-channel-context', channelId: channel.id, instructions: 'Keep changes scoped.' })
+
+    await running.service.send({ conversation: { kind: 'channel', id: channel.id }, text: 'Review the relay.' })
+    await running.service.whenIdle()
+
+    expect(running.service.snapshot().messages[`channel:${channel.id}`]?.at(-1)?.text).toBe([
+      'Context: engineering; instructions: Keep changes scoped.',
+      'Echo: Review the relay.',
+    ].join('\n'))
+    const privateState = running.service.snapshot()
+    const thread = privateState.threads[0]!
+    const context = await running.service.readContext({
+      agentId: 'codex-review-bot',
+      conversation: { kind: 'channel', id: channel.id },
+      threadId: thread.id,
+      sessionName: `Commonspace Thread: ${thread.id}`,
+      projectId: project.id,
+    })
+    expect(context.project).toEqual({ id: project.id, name: 'App' })
+    expect(JSON.stringify(context)).not.toContain(workspace)
+    const nativeSessionId = privateState.agentSessions['codex-review-bot']?.[`Commonspace Thread: ${thread.id}`]
+    expect(nativeSessionId).toEqual(expect.any(String))
+    expect(JSON.stringify(context)).not.toContain(nativeSessionId as string)
+  })
+
+  it('revokes the old MCP capability at a hard DM reset boundary', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-acp-mcp-reset-'))
+    roots.push(root)
+    const logPath = join(root, 'frames.ndjson')
+    vi.stubEnv('FAKE_ACP_LOG', logPath)
+    const running = await startCommonspaceServer({
+      root,
+      port: 0,
+      codexAcpCommand: process.execPath,
+      codexAcpArgs: [fixturePath],
+      dependencies: { discoverAgents: async () => [] },
+      logger: { info: () => undefined, warn: () => undefined },
+    })
+    runningServers.push(running)
+    await running.service.mutate({ action: 'add-agent', displayName: 'Review Bot', adapter: 'codex' })
+    await running.service.send({ conversation: { kind: 'dm', id: 'codex-review-bot' }, text: 'Start generation.' })
+    await running.service.whenIdle()
+    const frames = (await readFile(logPath, 'utf8')).trim().split('\n').map(line => JSON.parse(line))
+    const authorization = frames.find(frame => frame.method === 'session/new')?.params.mcpServers[0].headers
+      .find((header: { name: string; value: string }) => header.name === 'Authorization').value as string
+
+    await running.service.mutate({ action: 'reset-dm', agentId: 'codex-review-bot' })
+    const resetScope = running.service.snapshot().dmSessions['codex-review-bot']!
+    const resetContext = await running.service.readContext({
+      agentId: 'codex-review-bot',
+      conversation: { kind: 'dm', id: 'codex-review-bot' },
+      sessionName: resetScope,
+    })
+    expect(resetContext.messages).toEqual([])
+    expect(running.service.snapshot().messages['dm:codex-review-bot']?.map(message => message.text)).toContain('Start generation.')
+    const response = await fetch(`${running.url}/api/mcp`, {
+      method: 'POST',
+      headers: { authorization, 'content-type': 'application/json' },
+      body: '{}',
+    })
+    expect(response.status).toBe(401)
+  })
+
+  it('gives a Hermes profile scoped Channel context through MCP without prompt replay', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-hermes-acp-mcp-'))
+    roots.push(root)
+    const logPath = join(root, 'frames.ndjson')
+    vi.stubEnv('FAKE_ACP_LOG', logPath)
+    vi.stubEnv('FAKE_ACP_USE_MCP', '1')
+    const running = await startCommonspaceServer({
+      root,
+      port: 0,
+      hermesAcpCommand: process.execPath,
+      hermesAcpArgs: [fixturePath],
+      dependencies: {
+        discoverAgents: async () => [{
+          id: 'default',
+          displayName: 'Default',
+          adapter: 'hermes',
+          model: 'gpt-test',
+          status: 'stopped',
+        }],
+      },
+      logger: { info: () => undefined, warn: () => undefined },
+    })
+    runningServers.push(running)
+    await running.service.mutate({ action: 'add-discovered-agent', agentId: 'default' })
+    const channel = (await running.service.mutate({
+      action: 'create-channel',
+      name: 'general',
+      agentIds: ['default'],
+    })).channels[0]!
+    await running.service.mutate({
+      action: 'set-channel-context',
+      channelId: channel.id,
+      instructions: 'Read this natively.',
+    })
+
+    await running.service.send({ conversation: { kind: 'channel', id: channel.id }, text: 'Only this Hermes delta.' })
+    await running.service.whenIdle()
+
+    expect(running.service.snapshot().messages[`channel:${channel.id}`]?.at(-1)?.text).toBe([
+      'Context: general; instructions: Read this natively.',
+      'Echo: Only this Hermes delta.',
+    ].join('\n'))
+    const frames = (await readFile(logPath, 'utf8')).trim().split('\n').map(line => JSON.parse(line))
+    expect(frames.find(frame => frame.method === 'session/prompt')?.params.prompt).toEqual([
+      { type: 'text', text: 'Only this Hermes delta.' },
+    ])
+    expect(frames.find(frame => frame.method === 'session/new')?.params.mcpServers[0]).toMatchObject({
+      type: 'http',
+      name: 'commonspace',
+    })
+  })
+})

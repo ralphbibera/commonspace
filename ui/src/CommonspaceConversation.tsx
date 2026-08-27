@@ -1,8 +1,18 @@
-import { useEffect, useId, useRef, useState, useSyncExternalStore, type FormEvent } from 'react'
-import type { AgentAdapterKind, ConversationRef, CommonspaceMessage, CommonspaceThread } from '@commonspace/shared'
+import { lazy, Suspense, useEffect, useId, useRef, useState, useSyncExternalStore, type CSSProperties, type FormEvent } from 'react'
+import type { AgentAdapterKind, CommonspaceAgentProfile, ConversationRef, CommonspaceMessage, CommonspaceThread } from '@commonspace/shared'
 import type { CommonspaceClientStore } from './commonspace-store.ts'
+import { AgentTrace } from './AgentTrace.tsx'
 import { resolveSlashCommand, slashCommandSuggestions } from './slash-commands.ts'
 import { insertTag, tagReferenceParts, tagSuggestions, type TagSuggestion } from './tagging.ts'
+
+const LazyMessageMarkdown = lazy(async () => {
+  const module = await import('./MessageMarkdown.tsx')
+  return { default: module.MessageMarkdown }
+})
+
+const messageMarkdownFallback = (
+  <p className="csp-message-loading" role="status" aria-label="Formatting agent message">Formatting message…</p>
+)
 
 export interface CommonspaceConversationProps {
   store: CommonspaceClientStore
@@ -15,9 +25,8 @@ interface CommandFeedback {
   action?: 'reset-dm'
 }
 
-function adapterLabel(adapter: AgentAdapterKind | undefined): string {
-  if (adapter === 'claude-code') return 'Claude Code'
-  if (adapter === 'codex') return 'Codex CLI'
+function runtimeLabel(adapter: AgentAdapterKind | undefined): string {
+  if (adapter === 'codex') return 'Codex'
   return 'Hermes'
 }
 
@@ -26,13 +35,13 @@ function conversationTitle(store: CommonspaceClientStore, ref: ConversationRef |
   if (ref === null || bootstrap === null) return { title: 'Commonspace', subtitle: 'Select a channel or agent' }
   if (ref.kind === 'dm') {
     const agent = bootstrap.agents.find(candidate => candidate.id === ref.id)
-    return { title: agent?.displayName ?? ref.id, subtitle: `${adapterLabel(agent?.adapter)} · ${agent?.model ?? 'default model'}` }
+    return { title: agent?.displayName ?? ref.id, subtitle: `${runtimeLabel(agent?.adapter)} · ${agent?.model ?? 'default model'}` }
   }
   const channel = bootstrap.state.channels.find(candidate => candidate.id === ref.id)
   const project = bootstrap.state.projects.find(candidate => candidate.id === channel?.projectId)
   const members = (channel?.agentIds ?? []).map(id => bootstrap.agents.find(agent => agent.id === id)?.displayName ?? id)
   const roster = members.length === 0 ? 'No agents' : members.map(name => `@${name}`).join(' ')
-  return { title: `#${channel?.name ?? 'channel'}`, subtitle: project === undefined ? roster : `${project.name} · ${roster}` }
+  return { title: channel?.name ?? 'channel', subtitle: project === undefined ? roster : `${project.name} · ${roster}` }
 }
 
 function renderMessageText(message: CommonspaceMessage) {
@@ -45,9 +54,14 @@ function MessageRow({ message, compact = false }: { message: CommonspaceMessage;
   return (
     <article className={`csp-message csp-message--${message.authorType}${compact ? ' csp-message--compact' : ''}`} data-author={message.authorType}>
       <div className="csp-message-avatar" aria-hidden="true">{message.authorName.slice(0, 1).toUpperCase()}</div>
-      <div>
+      <div className="csp-message-main">
         <header><strong>{message.authorName}</strong><time>{new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time></header>
-        <p>{renderMessageText(message)}</p>
+        {message.authorType === 'agent'
+          ? <Suspense fallback={messageMarkdownFallback}>
+              <LazyMessageMarkdown text={message.text} />
+            </Suspense>
+          : <p className="csp-message-plain-text">{renderMessageText(message)}</p>}
+        {message.authorType === 'agent' && message.trace !== undefined && <AgentTrace authorName={message.authorName} trace={message.trace} />}
       </div>
     </article>
   )
@@ -104,12 +118,33 @@ function SuggestionMenu({
   )
 }
 
-function threadStatus(thread: CommonspaceThread | undefined): string {
-  if (thread === undefined) return 'Complete'
+function threadStatus(thread: CommonspaceThread | undefined): string | null {
+  if (thread === undefined) return null
   if (thread.status === 'queued') return 'Queued'
   if (thread.status === 'running') return 'Agents working'
   if (thread.status === 'error') return 'Blocked'
-  return 'Complete'
+  return null
+}
+
+function ThreadAgentActivity({ thread, agents }: { thread: CommonspaceThread; agents: readonly CommonspaceAgentProfile[] }) {
+  if (thread.status !== 'queued' && thread.status !== 'running') return null
+  return (
+    <span className="csp-thread-agent-activity">
+      {thread.agentIds.map((agentId, index) => {
+        const agent = agents.find(candidate => candidate.id === agentId)
+        const name = agent?.displayName ?? agentId
+        return (
+          <span
+            key={agentId}
+            className="csp-thread-agent-avatar csp-thread-agent-avatar--responding"
+            data-runtime={agent?.adapter}
+            aria-label={`${name} is responding`}
+            style={{ '--csp-thread-agent-index': index } as CSSProperties}
+          >{name.slice(0, 1).toLocaleUpperCase()}</span>
+        )
+      })}
+    </span>
+  )
 }
 
 export function CommonspaceConversation({ store }: CommonspaceConversationProps) {
@@ -127,6 +162,9 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
   const messages = store.messages()
   const heading = conversationTitle(store, snapshot.activeConversation)
   const isChannel = snapshot.activeConversation?.kind === 'channel'
+  const activeChannel = isChannel && bootstrap !== null
+    ? bootstrap.state.channels.find(channel => channel.id === snapshot.activeConversation?.id)
+    : undefined
   const slashSuggestions = snapshot.activeConversation === null ? [] : slashCommandSuggestions(draft, snapshot.activeConversation.kind)
   const resolvedDraftCommand = snapshot.activeConversation === null ? null : resolveSlashCommand(draft, snapshot.activeConversation.kind)
   const referenceSuggestions = bootstrap === null || draft.startsWith('/') ? [] : tagSuggestions(draft, bootstrap)
@@ -136,6 +174,7 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
     ? bootstrap.state.threads.filter(thread => thread.channelId === snapshot.activeConversation?.id)
     : []
   const activeThread = channelThreads.find(thread => thread.id === snapshot.activeThreadId)
+  const activeThreadStatus = threadStatus(activeThread)
   const threadSlashSuggestions = activeThread === undefined ? [] : slashCommandSuggestions(threadDraft, 'channel')
   const resolvedThreadCommand = activeThread === undefined ? null : resolveSlashCommand(threadDraft, 'channel')
   const threadReferenceSuggestions = activeThread === undefined || bootstrap === null || threadDraft.startsWith('/') ? [] : tagSuggestions(threadDraft, bootstrap)
@@ -186,7 +225,7 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
     setCommandFeedback({ tone: 'info', title: 'Starting a new chat…', body: 'Clearing this transcript and rotating the agent session.' })
     try {
       await store.mutate({ action: 'reset-dm', agentId: conversation.id })
-      setCommandFeedback({ tone: 'success', title: 'New chat started', body: 'The transcript is clear and your next message starts with fresh agent context.' })
+      setCommandFeedback({ tone: 'success', title: 'New chat started', body: 'Earlier messages remain visible, and your next message starts with fresh agent context.' })
       composer.current?.focus()
     } catch (error) {
       setCommandFeedback({ tone: 'error', title: 'Could not start a new chat', body: error instanceof Error ? error.message : String(error) })
@@ -220,7 +259,7 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
         setCommandFeedback({
           tone: 'info',
           title: 'Direct-message status',
-          body: `${agent?.displayName ?? conversation.id} · ${adapterLabel(agent?.adapter)} · ${agent?.model ?? 'default model'} · ${agent?.status ?? 'unknown'}${project === undefined ? '' : `\nProject context: ${project.name}`}`,
+          body: `${agent?.displayName ?? conversation.id} · ${runtimeLabel(agent?.adapter)} · ${agent?.model ?? 'default model'} · ${agent?.status ?? 'unknown'}${project === undefined ? '' : `\nProject context: ${project.name}`}`,
         })
       } else {
         const channel = bootstrap.state.channels.find(candidate => candidate.id === conversation.id)
@@ -240,7 +279,7 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
         title: 'Available agents',
         body: bootstrap.agents.length === 0
           ? 'No agents are configured.'
-          : bootstrap.agents.map(agent => `${agent.displayName} · ${adapterLabel(agent.adapter)} · ${agent.model ?? 'default model'}`).join('\n'),
+          : bootstrap.agents.map(agent => `${agent.displayName} · ${runtimeLabel(agent.adapter)} · ${agent.model ?? 'default model'}`).join('\n'),
       })
       return
     }
@@ -271,7 +310,7 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
       setCommandFeedback({
         tone: 'info',
         title: 'Start a new chat?',
-        body: 'This clears the visible transcript and starts a fresh native session for this agent.',
+        body: 'This keeps earlier messages visible and starts a fresh native session for this agent.',
         action: 'reset-dm',
       })
     }
@@ -307,19 +346,26 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
     <main className="csp-conversation" aria-label="Commonspace conversation">
       <header className="csp-conversation-header">
         <div className="csp-conversation-heading">
-          <span className="csp-conversation-kicker">{snapshot.activeConversation === null ? 'FIELD' : isChannel ? 'CHANNEL' : 'DIRECT'}</span>
+          <span className="csp-conversation-kicker" aria-hidden="true">{snapshot.activeConversation === null ? '✦' : isChannel ? '#' : '@'}</span>
           <div><h1>{heading.title}</h1><p>{heading.subtitle}</p></div>
         </div>
-        <span className="csp-header-mode">{snapshot.activeConversation === null ? 'local-first' : isChannel ? 'shared room' : 'private session'}</span>
+        <div className="csp-header-actions">
+          {isChannel && <span className="csp-header-roster"><span aria-hidden="true">♙</span>{activeChannel?.agentIds.length ?? 0}</span>}
+          <span className="csp-header-mode">{snapshot.activeConversation === null ? 'local-first' : isChannel ? 'shared room' : 'private session'}</span>
+        </div>
       </header>
 
       {snapshot.activeConversation === null ? (
         <div className="csp-conversation-hero">
           <div className="csp-hero-constellation" aria-hidden="true"><span className="csp-mark csp-mark--large"><span /><span /><span /><span /></span><i /><i /></div>
-          <span className="csp-hero-eyebrow">COMMON CONTEXT · FOCUSED THREADS</span>
+          <span className="csp-hero-eyebrow">YOUR LOCAL AGENT WORKSPACE</span>
           <h2>Make space for the whole team.</h2>
           <p>Projects set context. Channels gather agents. Threads keep work focused.</p>
-          <div className="csp-hero-flow" aria-hidden="true"><span><b>01</b> Project</span><i /><span><b>02</b> Channel</span><i /><span><b>03</b> Thread</span></div>
+          <div className="csp-hero-flow" aria-hidden="true">
+            <span><b>01</b><span>Projects<small>Choose local context.</small></span></span>
+            <span><b>02</b><span>Channels<small>Seat agents together.</small></span></span>
+            <span><b>03</b><span>Threads<small>Keep native sessions exact.</small></span></span>
+          </div>
         </div>
       ) : (
         <div className={`csp-conversation-layout${activeThread === undefined ? '' : ' has-thread'}`}>
@@ -330,12 +376,16 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
                 ? roots.map(root => {
                     const thread = channelThreads.find(candidate => candidate.rootMessageId === root.id)
                     const replyCount = thread === undefined ? 0 : messages.filter(message => message.threadId === thread.id && message.parentMessageId === root.id).length
+                    const status = threadStatus(thread)
                     return (
                       <article key={root.id} className="csp-thread-root">
                         <MessageRow message={root} />
                         <button type="button" className="csp-thread-open" onClick={() => { if (thread !== undefined) store.selectThread(thread.id) }}>
                           <span>{replyCount} {replyCount === 1 ? 'reply' : 'replies'}</span>
-                          <span className={`csp-thread-status csp-thread-status--${thread?.status ?? 'complete'}`}>{threadStatus(thread)}</span>
+                          {status !== null && <span className="csp-thread-meta">
+                            {thread !== undefined && bootstrap !== null && <ThreadAgentActivity thread={thread} agents={bootstrap.agents} />}
+                            <span className={`csp-thread-status csp-thread-status--${thread?.status ?? 'complete'}`}>{status}</span>
+                          </span>}
                         </button>
                       </article>
                     )
@@ -368,7 +418,7 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
                   aria-expanded={suggestionCount > 0}
                   aria-controls={suggestionCount > 0 ? suggestionListId : undefined}
                   aria-activedescendant={activeSuggestionId}
-                  placeholder={isChannel ? `Post new work in ${heading.title} or type /` : `Message ${heading.title} or type /`}
+                  placeholder={isChannel ? `Message #${heading.title}` : `Message ${heading.title}`}
                   value={draft}
                   disabled={snapshot.sending}
                   onChange={event => { setDraft(event.target.value); setSelectedSuggestion(0) }}
@@ -402,8 +452,14 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
                 />}
               </div>
               <div className="csp-composer-footer">
-                <span>{isChannel ? '@ agent · @@ project · # channel · / commands' : 'Enter to send · / for commands'}</span>
-                <button type="submit" disabled={snapshot.sending || draft.trim() === ''}><span aria-hidden="true">↑</span>{draft.startsWith('/') ? 'Run' : isChannel ? 'Post' : 'Send'}</button>
+                <div className="csp-composer-tools" aria-hidden="true"><span>@</span><span>⌁</span><span>☺</span><span>Aa</span></div>
+                <span className="csp-composer-hint">{isChannel ? '@ agent · @@ project · # channel · / commands' : 'Enter to send · / for commands'}</span>
+                <button
+                  type="submit"
+                  aria-label={draft.startsWith('/') ? 'Run command' : isChannel ? 'Post message' : 'Send message'}
+                  title={draft.startsWith('/') ? 'Run command' : isChannel ? 'Post message' : 'Send message'}
+                  disabled={snapshot.sending || draft.trim() === ''}
+                ><span aria-hidden="true">↑</span><span className="csp-send-label">{draft.startsWith('/') ? 'Run' : isChannel ? 'Post' : 'Send'}</span></button>
               </div>
             </form>
           </section>
@@ -411,14 +467,19 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
           {activeThread !== undefined && (
             <aside className="csp-thread-panel" aria-label="Thread replies">
               <header className="csp-thread-header">
-                <div><strong>Thread</strong><span>{threadStatus(activeThread)}</span></div>
+                <div><strong>Thread</strong>{activeThreadStatus !== null && <span>{activeThreadStatus}</span>}</div>
                 <button type="button" aria-label="Close thread" onClick={() => { store.selectThread(null) }}>×</button>
               </header>
               <div className="csp-thread-messages">
                 {activeRoot !== undefined && <MessageRow message={activeRoot} />}
                 <div className="csp-thread-divider">Replies</div>
                 {replies.map(reply => <MessageRow key={reply.id} message={reply} compact />)}
-                {(activeThread.status === 'queued' || activeThread.status === 'running') && <div className="csp-agent-working">Agents are responding…</div>}
+                {(activeThread.status === 'queued' || activeThread.status === 'running') && (
+                  <div className="csp-agent-working">
+                    {bootstrap !== null && <ThreadAgentActivity thread={activeThread} agents={bootstrap.agents} />}
+                    <span>Agents are responding…</span>
+                  </div>
+                )}
                 {activeThread.error !== undefined && <div className="csp-conversation-error">{activeThread.error}</div>}
               </div>
               <form className="csp-thread-composer" onSubmit={(event) => { void sendThreadReply(event) }}>

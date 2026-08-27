@@ -1,11 +1,109 @@
-import { useEffect, useId, useMemo, useState, useSyncExternalStore, type FormEvent } from 'react'
-import type { AgentAdapterKind, CommonspaceAgentProfile, CommonspaceMutation, CommonspaceReasoning } from '@commonspace/shared'
+import { useDeferredValue, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent } from 'react'
+import { createPortal } from 'react-dom'
+import type {
+  AgentAdapterKind,
+  CommonspaceAgentProfile,
+  CommonspaceChannel,
+  CommonspaceMessage,
+  CommonspaceMutation,
+  CommonspaceReasoning,
+} from '@commonspace/shared'
 import type { CommonspaceClientStore } from './commonspace-store.ts'
 
 export interface CommonspaceSidebarProps {
   wide: boolean
   expandSidebar: () => void
   store: CommonspaceClientStore
+  onOpenProject?: (projectId: string) => void
+  onOpenConversation?: () => void
+}
+
+const MODAL_FOCUSABLE_SELECTOR = [
+  'a[href]',
+  'button:not([disabled])',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(',')
+
+function modalFocusableElements(dialog: HTMLElement): HTMLElement[] {
+  return Array.from(dialog.querySelectorAll<HTMLElement>(MODAL_FOCUSABLE_SELECTOR))
+    .filter(element => !element.hidden && element.getAttribute('aria-hidden') !== 'true')
+}
+
+function useModalDialog(onClose: () => void) {
+  const dialogRef = useRef<HTMLElement>(null)
+  const backdropRef = useRef<HTMLDivElement>(null)
+  const closeRef = useRef(onClose)
+  const restoreFocusRef = useRef<HTMLElement | null>(
+    typeof document !== 'undefined' && document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null,
+  )
+
+  useLayoutEffect(() => {
+    closeRef.current = onClose
+  }, [onClose])
+
+  useLayoutEffect(() => {
+    const dialog = dialogRef.current
+    const backdrop = backdropRef.current
+    if (dialog === null || backdrop === null) return
+
+    const background = Array.from(document.body.children)
+      .filter((element): element is HTMLElement => element instanceof HTMLElement && element !== dialog && element !== backdrop)
+      .map(element => ({ element, inert: element.inert, hadInertAttribute: element.hasAttribute('inert') }))
+    for (const { element } of background) {
+      element.inert = true
+      element.setAttribute('inert', '')
+    }
+
+    if (!dialog.contains(document.activeElement)) {
+      const firstFocusable = modalFocusableElements(dialog)[0]
+      const initialFocus = firstFocusable ?? dialog
+      initialFocus.focus()
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        event.stopPropagation()
+        closeRef.current()
+        return
+      }
+      if (event.key !== 'Tab') return
+      const focusable = modalFocusableElements(dialog)
+      if (focusable.length === 0) {
+        event.preventDefault()
+        dialog.focus()
+        return
+      }
+      const first = focusable[0]!
+      const last = focusable.at(-1)!
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+    dialog.addEventListener('keydown', handleKeyDown)
+
+    return () => {
+      dialog.removeEventListener('keydown', handleKeyDown)
+      for (const { element, inert, hadInertAttribute } of background) {
+        element.inert = inert
+        if (hadInertAttribute) element.setAttribute('inert', '')
+        else element.removeAttribute('inert')
+      }
+      const restoreFocus = restoreFocusRef.current
+      if (restoreFocus?.isConnected === true) restoreFocus.focus()
+    }
+  }, [])
+
+  return { backdropRef, dialogRef }
 }
 
 function Section(props: {
@@ -32,9 +130,237 @@ function Section(props: {
   )
 }
 
-function adapterLabel(adapter: AgentAdapterKind): string {
-  if (adapter === 'codex') return 'Codex CLI'
-  if (adapter === 'claude-code') return 'Claude Code'
+function SidebarDialog({ title, onClose, children }: {
+  title: string
+  onClose: () => void
+  children: React.ReactNode
+}) {
+  const titleId = useId()
+  const { backdropRef, dialogRef } = useModalDialog(onClose)
+
+  if (typeof document === 'undefined') return null
+
+  return createPortal(
+    <>
+      <div ref={backdropRef} className="csp-dialog-backdrop" aria-hidden="true" onMouseDown={onClose} />
+      <section ref={dialogRef} className="csp-dialog" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}>
+        <header className="csp-dialog-header">
+          <h2 id={titleId}>{title}</h2>
+          <button type="button" aria-label={`Close ${title}`} onClick={onClose}>×</button>
+        </header>
+        <div className="csp-dialog-body">{children}</div>
+      </section>
+    </>,
+    document.body,
+  )
+}
+
+interface ChannelSearchResult {
+  key: string
+  kind: 'channel' | 'message'
+  channelId: string
+  channelName: string
+  title: string
+  detail: string
+  threadId?: string
+}
+
+const MAX_CHANNEL_SEARCH_RESULTS = 24
+const channelSearchTextCache = new WeakMap<CommonspaceChannel, string>()
+const messageSearchTextCache = new WeakMap<CommonspaceMessage, string>()
+
+function normalizedChannelSearchText(channel: CommonspaceChannel): string {
+  const cached = channelSearchTextCache.get(channel)
+  if (cached !== undefined) return cached
+  const value = `${channel.name} ${channel.instructions}`.toLocaleLowerCase()
+  channelSearchTextCache.set(channel, value)
+  return value
+}
+
+function normalizedMessageSearchText(message: CommonspaceMessage): string {
+  const cached = messageSearchTextCache.get(message)
+  if (cached !== undefined) return cached
+  const value = `${message.authorName} ${message.text}`.toLocaleLowerCase()
+  messageSearchTextCache.set(message, value)
+  return value
+}
+
+function matchesSearch(normalizedValue: string, terms: readonly string[]): boolean {
+  return terms.every(term => normalizedValue.includes(term))
+}
+
+function insertNewestMessageResult(
+  results: Array<ChannelSearchResult & { createdAt: string }>,
+  candidate: ChannelSearchResult & { createdAt: string },
+  limit: number,
+): void {
+  const insertAt = results.findIndex(result => candidate.createdAt.localeCompare(result.createdAt) > 0)
+  if (insertAt === -1) {
+    if (results.length < limit) results.push(candidate)
+    return
+  }
+  results.splice(insertAt, 0, candidate)
+  if (results.length > limit) results.pop()
+}
+
+function channelSearchResults(
+  channels: CommonspaceChannel[],
+  messages: Record<string, CommonspaceMessage[]>,
+  query: string,
+): ChannelSearchResult[] {
+  const normalizedQuery = query.trim().toLocaleLowerCase()
+  if (normalizedQuery === '') {
+    return channels.slice(0, MAX_CHANNEL_SEARCH_RESULTS).map(channel => {
+      const channelMessages = messages[`channel:${channel.id}`] ?? []
+      const latestMessage = channelMessages.at(-1)
+      return {
+        key: `channel:${channel.id}`,
+        kind: 'channel',
+        channelId: channel.id,
+        channelName: channel.name,
+        title: `#${channel.name}`,
+        detail: latestMessage?.text ?? (channel.instructions.trim() || 'No messages yet'),
+      }
+    })
+  }
+
+  const terms = normalizedQuery.split(/\s+/)
+  const results: ChannelSearchResult[] = []
+  for (const channel of channels) {
+    if (matchesSearch(normalizedChannelSearchText(channel), terms)) {
+      results.push({
+        key: `channel:${channel.id}`,
+        kind: 'channel',
+        channelId: channel.id,
+        channelName: channel.name,
+        title: `#${channel.name}`,
+        detail: channel.instructions.trim() || 'Channel',
+      })
+      if (results.length === MAX_CHANNEL_SEARCH_RESULTS) return results
+    }
+  }
+
+  const remainingResultCount = MAX_CHANNEL_SEARCH_RESULTS - results.length
+  const messageResults: Array<ChannelSearchResult & { createdAt: string }> = []
+  for (const channel of channels) {
+    for (const message of messages[`channel:${channel.id}`] ?? []) {
+      if (!matchesSearch(normalizedMessageSearchText(message), terms)) continue
+      insertNewestMessageResult(messageResults, {
+        key: `message:${message.id}`,
+        kind: 'message' as const,
+        channelId: channel.id,
+        channelName: channel.name,
+        title: message.authorName,
+        detail: message.text,
+        createdAt: message.createdAt,
+        ...(message.threadId === undefined ? {} : { threadId: message.threadId }),
+      }, remainingResultCount)
+    }
+  }
+
+  results.push(...messageResults)
+  return results
+}
+
+function ChannelSearchDialog({ channels, messages, onClose, onSelect }: {
+  channels: CommonspaceChannel[]
+  messages: Record<string, CommonspaceMessage[]>
+  onClose: () => void
+  onSelect: (result: ChannelSearchResult) => void
+}) {
+  const titleId = useId()
+  const resultsId = useId()
+  const [query, setQuery] = useState('')
+  const [activeIndex, setActiveIndex] = useState(0)
+  const deferredQuery = useDeferredValue(query)
+  const results = useMemo(() => channelSearchResults(channels, messages, deferredQuery), [channels, messages, deferredQuery])
+  const boundedActiveIndex = results.length === 0 ? 0 : Math.min(activeIndex, results.length - 1)
+  const activeResult = results[boundedActiveIndex]
+  const searchPending = query !== deferredQuery
+  const { backdropRef, dialogRef } = useModalDialog(onClose)
+
+  if (typeof document === 'undefined') return null
+
+  const moveSelection = (offset: number) => {
+    if (results.length === 0) return
+    setActiveIndex(current => (Math.min(current, results.length - 1) + offset + results.length) % results.length)
+  }
+
+  return createPortal(
+    <>
+      <div ref={backdropRef} className="csp-dialog-backdrop csp-search-backdrop" aria-hidden="true" onMouseDown={onClose} />
+      <section ref={dialogRef} className="csp-dialog csp-search-dialog" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}>
+        <header className="csp-search-header">
+          <h2 id={titleId} className="csp-visually-hidden">Search everything</h2>
+          <span className="csp-search-icon" aria-hidden="true" />
+          <input
+            autoFocus
+            type="search"
+            aria-label="Search all channels"
+            aria-controls={resultsId}
+            aria-activedescendant={activeResult === undefined ? undefined : `${resultsId}-${String(boundedActiveIndex)}`}
+            placeholder="Search messages and channels"
+            value={query}
+            onChange={event => { setQuery(event.target.value); setActiveIndex(0) }}
+            onKeyDown={event => {
+              if (event.key === 'ArrowDown') {
+                event.preventDefault()
+                moveSelection(1)
+              } else if (event.key === 'ArrowUp') {
+                event.preventDefault()
+                moveSelection(-1)
+              } else if (event.key === 'Enter' && activeResult !== undefined) {
+                event.preventDefault()
+                onSelect(activeResult)
+              }
+            }}
+          />
+          <kbd aria-hidden="true">ESC</kbd>
+        </header>
+        <div className="csp-search-result-head">
+          <span>{query.trim() === '' ? 'Channels' : 'Results'}</span>
+          <span>{searchPending ? 'Searching…' : results.length}</span>
+        </div>
+        <div id={resultsId} className="csp-search-results" role="listbox" aria-label="Channel search results" aria-busy={searchPending}>
+          {results.length === 0 && (
+            <div className="csp-search-empty">
+              {channels.length === 0 ? 'Create a channel to start searching.' : `No channel results for “${query.trim()}”.`}
+            </div>
+          )}
+          {results.map((result, index) => (
+            <button
+              id={`${resultsId}-${String(index)}`}
+              key={result.key}
+              type="button"
+              role="option"
+              aria-label={result.kind === 'message' ? `Open message in ${result.channelName}: ${result.detail}` : `Open channel ${result.channelName}`}
+              aria-selected={index === boundedActiveIndex}
+              className="csp-search-result"
+              onMouseEnter={() => { setActiveIndex(index) }}
+              onClick={() => { onSelect(result) }}
+            >
+              <span className="csp-search-result-glyph" aria-hidden="true">{result.kind === 'channel' ? '#' : '↳'}</span>
+              <span className="csp-search-result-main">
+                <strong>{result.title}</strong>
+                <small>{result.detail}</small>
+              </span>
+              <span className="csp-search-result-meta">{result.kind === 'channel' ? 'Channel' : `#${result.channelName}`}</span>
+            </button>
+          ))}
+        </div>
+        <footer className="csp-search-footer" aria-hidden="true">
+          <span><kbd>↑</kbd><kbd>↓</kbd> Navigate</span>
+          <span><kbd>↵</kbd> Open</span>
+          <span><kbd>esc</kbd> Close</span>
+        </footer>
+      </section>
+    </>,
+    document.body,
+  )
+}
+
+function runtimeLabel(adapter: AgentAdapterKind): string {
+  if (adapter === 'codex') return 'Codex'
   return 'Hermes'
 }
 
@@ -46,23 +372,23 @@ function agentStatusLabel(status: CommonspaceAgentProfile['status']): string {
 
 function AgentAvatar({ agent }: { agent: CommonspaceAgentProfile }) {
   return (
-    <span className="csp-agent-avatar" data-adapter={agent.adapter} aria-hidden="true">
+    <span className="csp-agent-avatar" data-runtime={agent.adapter} aria-hidden="true">
       {agent.displayName.slice(0, 1).toLocaleUpperCase()}
       <i className={`csp-agent-presence csp-agent-presence--${agent.status}`} />
     </span>
   )
 }
 
-export function CommonspaceSidebar({ wide, expandSidebar, store }: CommonspaceSidebarProps) {
+export function CommonspaceSidebar({ wide, expandSidebar, store, onOpenProject, onOpenConversation }: CommonspaceSidebarProps) {
   const dmPickerListId = useId()
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot)
   const [form, setForm] = useState<'project' | 'channel' | 'dm' | 'agent' | null>(null)
   const [name, setName] = useState('')
   const [path, setPath] = useState('')
+  const [selectingPath, setSelectingPath] = useState(false)
   const [pathProjectId, setPathProjectId] = useState<string | null>(null)
   const [pathDraft, setPathDraft] = useState('')
   const [agentIds, setAgentIds] = useState<string[]>([])
-  const [agentAdapter, setAgentAdapter] = useState<Exclude<AgentAdapterKind, 'hermes'>>('codex')
   const [agentModel, setAgentModel] = useState('')
   const [dmSearch, setDmSearch] = useState('')
   const [editingChannelId, setEditingChannelId] = useState<string | null>(null)
@@ -71,15 +397,29 @@ export function CommonspaceSidebar({ wide, expandSidebar, store }: CommonspaceSi
   const [channelModel, setChannelModel] = useState('')
   const [channelReasoning, setChannelReasoning] = useState<CommonspaceReasoning | ''>('')
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [projectMenuId, setProjectMenuId] = useState<string | null>(null)
   const [defaultModel, setDefaultModel] = useState('')
   const [defaultReasoning, setDefaultReasoning] = useState<CommonspaceReasoning>('max')
   const [defaultMaxAgents, setDefaultMaxAgents] = useState(4)
   const [defaultMemoryThreads, setDefaultMemoryThreads] = useState(12)
+  const [searchOpen, setSearchOpen] = useState(false)
 
   useEffect(() => { void store.refresh() }, [store])
+  useEffect(() => {
+    const openSearch = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLocaleLowerCase() !== 'k') return
+      event.preventDefault()
+      setSearchOpen(true)
+    }
+    window.addEventListener('keydown', openSearch)
+    return () => { window.removeEventListener('keydown', openSearch) }
+  }, [])
   const bootstrap = snapshot.bootstrap
   const state = bootstrap?.state
   const agents = bootstrap?.agents ?? []
+  const discoveredAgents = bootstrap?.discoveredAgents ?? []
+  const configuredAgentIds = new Set(agents.map(agent => agent.id))
+  const availableDiscoveredAgents = discoveredAgents.filter(agent => !configuredAgentIds.has(agent.id))
   const activeDmId = snapshot.activeConversation?.kind === 'dm' ? snapshot.activeConversation.id : null
   const dmAgents = useMemo(
     () => agents.filter(agent => agent.id === activeDmId || (state?.messages[`dm:${agent.id}`]?.length ?? 0) > 0),
@@ -89,6 +429,8 @@ export function CommonspaceSidebar({ wide, expandSidebar, store }: CommonspaceSi
   const matchingDmAgents = agents.filter(agent => normalizedDmSearch === '' ||
     [agent.displayName, agent.id, agent.adapter, agent.model ?? ''].some(value => value.toLocaleLowerCase().includes(normalizedDmSearch)))
   const models = useMemo(() => [...new Set(agents.map(agent => agent.model).filter((model): model is string => model !== null && model !== ''))], [agents])
+  const projects = state?.projects ?? []
+  const channels = state?.channels ?? []
 
   if (!wide) {
     return (
@@ -96,6 +438,18 @@ export function CommonspaceSidebar({ wide, expandSidebar, store }: CommonspaceSi
         <span className="csp-mark" aria-hidden="true"><span /><span /><span /><span /></span>
       </button>
     )
+  }
+
+  const chooseProjectDirectory = async () => {
+    setSelectingPath(true)
+    try {
+      const selectedPath = await store.selectDirectory()
+      if (selectedPath !== null) setPath(selectedPath)
+    } catch {
+      // The store exposes picker failures in the sidebar's existing error surface.
+    } finally {
+      setSelectingPath(false)
+    }
   }
 
   const submit = async (event: FormEvent) => {
@@ -113,7 +467,7 @@ export function CommonspaceSidebar({ wide, expandSidebar, store }: CommonspaceSi
       mutation = {
         action: 'add-agent',
         displayName: name,
-        adapter: agentAdapter,
+        adapter: 'codex',
         model: agentModel || null,
       }
     } else return
@@ -147,36 +501,46 @@ export function CommonspaceSidebar({ wide, expandSidebar, store }: CommonspaceSi
   }
 
   const startDirectMessage = (agentId: string) => {
+    onOpenConversation?.()
     store.selectConversation({ kind: 'dm', id: agentId })
     setDmSearch('')
     setForm(null)
+    setProjectMenuId(null)
+  }
+
+  const openSearchResult = (result: ChannelSearchResult) => {
+    onOpenConversation?.()
+    store.selectConversation({ kind: 'channel', id: result.channelId })
+    if (result.threadId !== undefined) store.selectThread(result.threadId)
+    setSearchOpen(false)
+    setProjectMenuId(null)
   }
 
   return (
     <div className="csp-browser" aria-label="Commonspace browser">
       <header className="csp-browser-header">
-        <div className="csp-browser-brand">
-          <span className="csp-mark csp-mark--brand" aria-hidden="true"><span /><span /><span /><span /></span>
-          <div>
-            <strong>Commonspace</strong>
-            <span>Private agent field</span>
-          </div>
-          <em>LOCAL</em>
+        <div className="csp-workspace-identity" aria-label="Workspace identity">
+          <span className="csp-workspace-mark" aria-hidden="true">
+            <span className="csp-mark"><span /><span /><span /><span /></span>
+          </span>
+          <span className="csp-workspace-name"><strong>Workspace</strong><small>Commonspace</small></span>
+          <span className="csp-workspace-options" aria-hidden="true">•••</span>
         </div>
-        <div className="csp-browser-header-actions">
-          <button type="button" className="csp-browser-refresh" aria-label="Commonspace settings" onClick={() => {
-            const defaults = state?.defaults
-            if (defaults !== undefined) {
-              setDefaultModel(defaults.model ?? '')
-              setDefaultReasoning(defaults.reasoning)
-              setDefaultMaxAgents(defaults.maxAgentsPerTurn)
-              setDefaultMemoryThreads(defaults.memoryThreads)
-            }
-            setSettingsOpen(value => !value)
-          }}>⚙</button>
-          <button type="button" className="csp-browser-refresh" aria-label="Refresh Commonspace" onClick={() => { void store.refresh() }}>↻</button>
-        </div>
+        <button type="button" className="csp-browser-search" aria-label="Search Commonspace" onClick={() => { setSearchOpen(true) }}>
+          <span className="csp-browser-search-icon" aria-hidden="true" />
+          <span className="csp-browser-search-label">Search everything</span>
+          <kbd aria-hidden="true">⌘K</kbd>
+        </button>
       </header>
+
+      {searchOpen && (
+        <ChannelSearchDialog
+          channels={channels}
+          messages={state?.messages ?? {}}
+          onClose={() => { setSearchOpen(false) }}
+          onSelect={openSearchResult}
+        />
+      )}
 
       {snapshot.loading && bootstrap === null && <div className="csp-browser-status">Loading agents…</div>}
       {snapshot.error !== null && <div className="csp-runtime-error" role="alert">{snapshot.error}</div>}
@@ -195,16 +559,27 @@ export function CommonspaceSidebar({ wide, expandSidebar, store }: CommonspaceSi
       )}
 
       <div className="csp-browser-scroll">
-        <Section title="Projects" count={state?.projects.length ?? 0} onAdd={() => { setForm('project') }}>
+        <Section title="Projects" count={projects.length} onAdd={() => { setForm('project') }}>
           {form === 'project' && (
-            <form className="csp-browser-form" onSubmit={(event) => { void submit(event) }}>
-              <input aria-label="Project name" placeholder="Project name" value={name} onChange={event => { setName(event.target.value) }} autoFocus />
-              <input aria-label="Project path" placeholder="/absolute/local/path" value={path} onChange={event => { setPath(event.target.value) }} />
-              <div><button type="submit">Create</button><button type="button" onClick={() => { setForm(null) }}>Cancel</button></div>
-            </form>
+            <SidebarDialog title="Add a project" onClose={() => { setForm(null) }}>
+              <form className="csp-browser-form csp-dialog-form" onSubmit={(event) => { void submit(event) }}>
+                <input aria-label="Project name" placeholder="Project name" value={name} onChange={event => { setName(event.target.value) }} autoFocus />
+                <div className="csp-directory-picker">
+                  <input aria-label="Project path" placeholder="Choose a local folder" value={path} onChange={event => { setPath(event.target.value) }} />
+                  <button type="button" aria-label="Choose project folder" disabled={selectingPath} onClick={() => { void chooseProjectDirectory() }}>{selectingPath ? 'Opening…' : 'Browse'}</button>
+                </div>
+                <div><button type="submit">Create</button><button type="button" onClick={() => { setForm(null) }}>Cancel</button></div>
+              </form>
+            </SidebarDialog>
           )}
-          {state?.projects.map(project => {
+          {projects.map(project => {
             const active = snapshot.activeProjectId === project.id
+            const menuOpen = projectMenuId === project.id
+            const folderSummary = project.paths.length === 1
+              ? '1 folder · working directory'
+              : `${String(project.paths.length)} folders · working + references`
+            const projectConversationCount = channels.filter(channel => channel.projectId === project.id || channel.projectId === null).length +
+              agents.filter(agent => (state?.messages[`dm:${agent.id}`]?.length ?? 0) > 0).length
             return (
               <div key={project.id} className="csp-project-group">
                 <div className="csp-project-head">
@@ -212,11 +587,17 @@ export function CommonspaceSidebar({ wide, expandSidebar, store }: CommonspaceSi
                     type="button"
                     className="csp-browser-row"
                     aria-label={`Select project ${project.name}`}
-                    aria-pressed={active}
-                    onClick={() => { store.selectProject(project.id) }}
+                    aria-pressed={active || menuOpen}
+                    aria-haspopup="menu"
+                    aria-expanded={menuOpen}
+                    aria-controls={`project-menu-${project.id}`}
+                    onClick={() => {
+                      store.selectProject(project.id)
+                      setProjectMenuId(current => current === project.id ? null : project.id)
+                    }}
                   >
                     <span className="csp-project-glyph" aria-hidden="true"><span /></span>
-                    <span className="csp-browser-row-main"><strong>{project.name}</strong><small>{project.paths.length} workspace{project.paths.length === 1 ? '' : 's'}</small></span>
+                    <span className="csp-browser-row-main"><strong>{project.name}</strong><small>{folderSummary}</small></span>
                   </button>
                   <button
                     type="button"
@@ -224,54 +605,91 @@ export function CommonspaceSidebar({ wide, expandSidebar, store }: CommonspaceSi
                     aria-label={`Add workspace to project ${project.name}`}
                     onClick={() => {
                       store.selectProject(project.id)
+                      setProjectMenuId(null)
                       setPathProjectId(project.id)
                       setPathDraft('')
                     }}
                   >+</button>
                 </div>
-                {active && (
-                  <div className="csp-project-workspaces">
-                    {project.paths.map(projectPath => (
-                      <div key={projectPath} className="csp-workspace-row" title={projectPath}>
-                        <span className="csp-workspace-glyph" aria-hidden="true" />
-                        <span>{projectPath.split(/[\\/]/).filter(Boolean).at(-1) ?? projectPath}</span>
-                        <small>{projectPath}</small>
-                      </div>
+
+                {menuOpen && (
+                  <div id={`project-menu-${project.id}`} className="csp-project-menu" role="menu" aria-label={`Project ${project.name}`}>
+                    <div className="csp-project-menu-kicker">Project</div>
+                    <div className="csp-project-menu-identity"><strong>{project.name}</strong><small>{projectConversationCount} {projectConversationCount === 1 ? 'conversation' : 'conversations'} · {folderSummary}</small></div>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="csp-project-menu-item"
+                      onClick={() => { setProjectMenuId(null); onOpenProject?.(project.id) }}
+                    >
+                      <span className="csp-project-menu-icon" aria-hidden="true">□</span>
+                      <span><strong>Conversations</strong><small>{projectConversationCount} real Commonspace {projectConversationCount === 1 ? 'conversation' : 'conversations'}</small></span>
+                    </button>
+                    <div className="csp-project-menu-label">Local folders</div>
+                    {project.paths.map((projectPath, index) => (
+                      <button key={projectPath} type="button" role="menuitem" className="csp-project-menu-item" disabled title="Repository browsing is not available yet">
+                        <span className="csp-project-menu-folder" aria-hidden="true" />
+                        <span><strong>{projectPath.split(/[\\/]/).filter(Boolean).at(-1) ?? projectPath}</strong><small>{index === 0 ? 'Working directory' : 'Reference folder'} · Files unavailable</small></span>
+                      </button>
                     ))}
-                    {pathProjectId === project.id && (
-                      <form className="csp-browser-form csp-path-form" onSubmit={(event) => { void submitPath(event, project.id) }}>
-                        <input aria-label={`Workspace path for ${project.name}`} placeholder="/absolute/local/path" value={pathDraft} onChange={event => { setPathDraft(event.target.value) }} autoFocus />
-                        <div><button type="submit">Add</button><button type="button" onClick={() => { setPathProjectId(null) }}>Cancel</button></div>
-                      </form>
-                    )}
+                    <div className="csp-project-menu-divider" />
+                    <button type="button" role="menuitem" className="csp-project-menu-item" disabled title="Git reading is not available yet">
+                      <span className="csp-project-menu-icon" aria-hidden="true">⌁</span>
+                      <span><strong>Git tracking</strong><small>Changes unavailable without Git read support</small></span>
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="csp-project-menu-item"
+                      onClick={() => {
+                        setProjectMenuId(null)
+                        store.selectProject(project.id)
+                        setPathProjectId(project.id)
+                        setPathDraft('')
+                      }}
+                    >
+                      <span className="csp-project-menu-icon" aria-hidden="true">⚙</span>
+                      <span><strong>Manage project</strong><small>Add local reference folders</small></span>
+                    </button>
+                  </div>
+                )}
+
+                {pathProjectId === project.id && (
+                  <div className="csp-project-workspaces">
+                    <form className="csp-browser-form csp-path-form" onSubmit={(event) => { void submitPath(event, project.id) }}>
+                      <input aria-label={`Workspace path for ${project.name}`} placeholder="/absolute/local/path" value={pathDraft} onChange={event => { setPathDraft(event.target.value) }} autoFocus />
+                      <div><button type="submit">Add</button><button type="button" onClick={() => { setPathProjectId(null) }}>Cancel</button></div>
+                    </form>
                   </div>
                 )}
               </div>
             )
           })}
-          {(state?.projects.length ?? 0) === 0 && form !== 'project' && <div className="csp-browser-empty">Add a local filesystem project.</div>}
+          {projects.length === 0 && form !== 'project' && <div className="csp-browser-empty">Add a local filesystem project.</div>}
         </Section>
 
-        <Section title="Channels" count={state?.channels.length ?? 0} onAdd={() => { setForm('channel'); setAgentIds(agents.map(agent => agent.id)) }}>
+        <Section title="Channels" count={channels.length} onAdd={() => { setForm('channel'); setAgentIds([]) }}>
           {form === 'channel' && (
-            <form className="csp-browser-form" onSubmit={(event) => { void submit(event) }}>
-              <input aria-label="Channel name" placeholder="channel-name" value={name} onChange={event => { setName(event.target.value) }} autoFocus />
-              <fieldset><legend>Agents</legend>{agents.map(agent => (
-                <label key={agent.id}><input type="checkbox" checked={agentIds.includes(agent.id)} onChange={event => {
-                  setAgentIds(current => event.target.checked ? [...current, agent.id] : current.filter(id => id !== agent.id))
-                }} />{agent.displayName}</label>
-              ))}</fieldset>
-              <div><button type="submit">Create</button><button type="button" onClick={() => { setForm(null) }}>Cancel</button></div>
-            </form>
+            <SidebarDialog title="Add a channel" onClose={() => { setForm(null) }}>
+              <form className="csp-browser-form csp-dialog-form" onSubmit={(event) => { void submit(event) }}>
+                <input aria-label="Channel name" placeholder="channel-name" value={name} onChange={event => { setName(event.target.value) }} autoFocus />
+                <fieldset><legend>Agents</legend>{agents.map(agent => (
+                  <label key={agent.id}><input type="checkbox" checked={agentIds.includes(agent.id)} onChange={event => {
+                    setAgentIds(current => event.target.checked ? [...current, agent.id] : current.filter(id => id !== agent.id))
+                  }} />{agent.displayName}</label>
+                ))}</fieldset>
+                <div><button type="submit">Create</button><button type="button" onClick={() => { setForm(null) }}>Cancel</button></div>
+              </form>
+            </SidebarDialog>
           )}
-          {state?.channels.map(channel => (
+          {channels.map(channel => (
             <div key={channel.id} className="csp-channel-group">
               <div className="csp-channel-head">
                 <button
                   type="button"
                   className="csp-browser-row"
                   aria-pressed={snapshot.activeConversation?.kind === 'channel' && snapshot.activeConversation.id === channel.id}
-                  onClick={() => { store.selectConversation({ kind: 'channel', id: channel.id }) }}
+                  onClick={() => { onOpenConversation?.(); setProjectMenuId(null); store.selectConversation({ kind: 'channel', id: channel.id }) }}
                 ><span className="csp-browser-hash">#</span><span className="csp-browser-row-main"><strong>{channel.name}</strong><small>{channel.agentIds.length} agent{channel.agentIds.length === 1 ? '' : 's'}</small></span></button>
                 <button
                   type="button"
@@ -302,7 +720,7 @@ export function CommonspaceSidebar({ wide, expandSidebar, store }: CommonspaceSi
               )}
             </div>
           ))}
-          {(state?.channels.length ?? 0) === 0 && form !== 'channel' && <div className="csp-browser-empty">Create a channel and seat agents.</div>}
+          {channels.length === 0 && form !== 'channel' && <div className="csp-browser-empty">Create a channel and seat agents.</div>}
         </Section>
 
         <Section title="Direct Messages" count={dmAgents.length} onAdd={() => {
@@ -310,22 +728,24 @@ export function CommonspaceSidebar({ wide, expandSidebar, store }: CommonspaceSi
           setForm(current => current === 'dm' ? null : 'dm')
         }}>
           {form === 'dm' && (
-            <div className="csp-browser-form csp-dm-picker">
-              <label className="csp-dm-search">
-                <span>Find an agent</span>
-                <input autoFocus aria-label="Find an agent to message" aria-autocomplete="list" aria-expanded="true" aria-controls={dmPickerListId} value={dmSearch} onChange={event => { setDmSearch(event.target.value) }} placeholder="Name, profile, or adapter" />
-              </label>
-              <div id={dmPickerListId} className="csp-dm-picker-results" role="listbox" aria-label="Agents available for direct messages">
-                {matchingDmAgents.length === 0 && <span className="csp-dm-picker-empty">No matching agents.</span>}
-                {matchingDmAgents.map(agent => (
-                  <button key={agent.id} type="button" role="option" aria-selected="false" className="csp-dm-picker-agent" aria-label={`Start direct message with ${agent.displayName}`} onClick={() => { startDirectMessage(agent.id) }}>
-                    <AgentAvatar agent={agent} />
-                    <span><strong>{agent.displayName}</strong><small>{adapterLabel(agent.adapter)} · {agent.model ?? 'default model'}</small></span>
-                  </button>
-                ))}
+            <SidebarDialog title="New direct message" onClose={() => { setDmSearch(''); setForm(null) }}>
+              <div className="csp-browser-form csp-dialog-form csp-dm-picker">
+                <label className="csp-dm-search">
+                  <span>Find an agent</span>
+                  <input autoFocus aria-label="Find an agent to message" aria-autocomplete="list" aria-expanded="true" aria-controls={dmPickerListId} value={dmSearch} onChange={event => { setDmSearch(event.target.value) }} placeholder="Name, profile, or runtime" />
+                </label>
+                <div id={dmPickerListId} className="csp-dm-picker-results" role="listbox" aria-label="Agents available for direct messages">
+                  {matchingDmAgents.length === 0 && <span className="csp-dm-picker-empty">No matching agents.</span>}
+                  {matchingDmAgents.map(agent => (
+                    <button key={agent.id} type="button" role="option" aria-selected="false" className="csp-dm-picker-agent" aria-label={`Start direct message with ${agent.displayName}`} onClick={() => { startDirectMessage(agent.id) }}>
+                      <AgentAvatar agent={agent} />
+                      <span><strong>{agent.displayName}</strong><small>{runtimeLabel(agent.adapter)} · {agent.model ?? 'default model'}</small></span>
+                    </button>
+                  ))}
+                </div>
+                <div><button type="button" onClick={() => { setDmSearch(''); setForm(null) }}>Cancel</button></div>
               </div>
-              <div><button type="button" onClick={() => { setDmSearch(''); setForm(null) }}>Cancel</button></div>
-            </div>
+            </SidebarDialog>
           )}
           {dmAgents.map(agent => (
             <button key={agent.id} type="button" className="csp-browser-row" aria-label={`Open direct message with ${agent.displayName}`} aria-pressed={snapshot.activeConversation?.kind === 'dm' && snapshot.activeConversation.id === agent.id} onClick={() => { startDirectMessage(agent.id) }}>
@@ -335,17 +755,29 @@ export function CommonspaceSidebar({ wide, expandSidebar, store }: CommonspaceSi
           {dmAgents.length === 0 && form !== 'dm' && <div className="csp-browser-empty">Use + to choose an agent.</div>}
         </Section>
 
-        <Section title="Agents" count={agents.length} onAdd={() => { setForm('agent'); setName(''); setAgentAdapter('codex'); setAgentModel('') }}>
+        <Section title="Agents" count={agents.length} onAdd={() => { setForm('agent'); setName(''); setAgentModel('') }}>
           {form === 'agent' && (
-            <form className="csp-browser-form" onSubmit={(event) => { void submit(event) }}>
-              <input aria-label="Agent name" placeholder="Agent name" value={name} onChange={event => { setName(event.target.value) }} autoFocus />
-              <select aria-label="Agent adapter" value={agentAdapter} onChange={event => { setAgentAdapter(event.target.value as Exclude<AgentAdapterKind, 'hermes'>) }}>
-                <option value="codex">Codex</option>
-                <option value="claude-code">Claude Code</option>
-              </select>
-              <input aria-label="Agent model" list="commonspace-models" placeholder="Use adapter default model" value={agentModel} onChange={event => { setAgentModel(event.target.value) }} />
-              <div><button type="submit">Create agent</button><button type="button" onClick={() => { setForm(null) }}>Cancel</button></div>
-            </form>
+            <SidebarDialog title="Add an agent" onClose={() => { setForm(null) }}>
+              {availableDiscoveredAgents.length > 0 && (
+                <div className="csp-browser-form csp-discovered-agents">
+                  <strong>Discovered profiles</strong>
+                  {availableDiscoveredAgents.map(agent => (
+                    <button key={agent.id} type="button" className="csp-dm-picker-agent" aria-label={`Add discovered agent ${agent.displayName}`} onClick={() => {
+                      void store.mutate({ action: 'add-discovered-agent', agentId: agent.id })
+                      setForm(null)
+                    }}>
+                      <AgentAvatar agent={agent} />
+                      <span><strong>{agent.displayName}</strong><small>{runtimeLabel(agent.adapter)} · {agent.model ?? 'default model'}</small></span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              <form className="csp-browser-form csp-dialog-form" onSubmit={(event) => { void submit(event) }}>
+                <input aria-label="Agent name" placeholder="Agent name" value={name} onChange={event => { setName(event.target.value) }} autoFocus />
+                <input aria-label="Agent model" list="commonspace-models" placeholder="Use Codex default model" value={agentModel} onChange={event => { setAgentModel(event.target.value) }} />
+                <div><button type="submit">Create agent</button><button type="button" onClick={() => { setForm(null) }}>Cancel</button></div>
+              </form>
+            </SidebarDialog>
           )}
           {agents.map(agent => (
             <div key={agent.id} className="csp-agent-head">
@@ -353,7 +785,7 @@ export function CommonspaceSidebar({ wide, expandSidebar, store }: CommonspaceSi
                 <AgentAvatar agent={agent} />
                 <span className="csp-browser-row-main">
                   <strong>{agent.displayName}</strong>
-                  <small className="csp-agent-meta"><span className="csp-adapter-badge" data-adapter={agent.adapter}>{adapterLabel(agent.adapter)}</span><span>{agent.model ?? 'default model'}</span><span className="csp-agent-status">{agentStatusLabel(agent.status)}</span></small>
+                  <small className="csp-agent-meta"><span className="csp-runtime-badge" data-runtime={agent.adapter}>{runtimeLabel(agent.adapter)}</span><span>{agent.model ?? 'default model'}</span><span className="csp-agent-status">{agentStatusLabel(agent.status)}</span></small>
                 </span>
               </button>
               {state?.agents.some(candidate => candidate.id === agent.id) === true && (
@@ -363,6 +795,29 @@ export function CommonspaceSidebar({ wide, expandSidebar, store }: CommonspaceSi
           ))}
         </Section>
       </div>
+      <footer className="csp-browser-footer">
+        <div className="csp-browser-brand">
+          <span className="csp-mark csp-mark--brand" aria-hidden="true"><span /><span /><span /><span /></span>
+          <div>
+            <strong>Commonspace</strong>
+            <span>Local workspace</span>
+          </div>
+          <em>LOCAL</em>
+        </div>
+        <div className="csp-browser-header-actions">
+          <button type="button" className="csp-browser-refresh" aria-label="Commonspace settings" onClick={() => {
+            const defaults = state?.defaults
+            if (defaults !== undefined) {
+              setDefaultModel(defaults.model ?? '')
+              setDefaultReasoning(defaults.reasoning)
+              setDefaultMaxAgents(defaults.maxAgentsPerTurn)
+              setDefaultMemoryThreads(defaults.memoryThreads)
+            }
+            setSettingsOpen(value => !value)
+          }}>⚙</button>
+          <button type="button" className="csp-browser-refresh" aria-label="Refresh Commonspace" onClick={() => { void store.refresh() }}>↻</button>
+        </div>
+      </footer>
     </div>
   )
 }

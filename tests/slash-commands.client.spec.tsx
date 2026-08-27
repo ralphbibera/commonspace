@@ -10,7 +10,7 @@ function renderDirectMessage() {
     bootstrap: {
       agents: [{ id: 'codex-review-bot', displayName: 'Review Bot', adapter: 'codex', model: 'gpt-5.4', status: 'unknown' }],
       state: {
-        version: 6,
+        version: 9,
         revision: 1,
         defaults: { model: null, reasoning: 'max', maxAgentsPerTurn: 4, memoryThreads: 12 },
         agents: [],
@@ -74,7 +74,7 @@ describe('Commonspace composer commands', () => {
     fireEvent.keyDown(composer, { key: 'Enter' })
 
     expect(screen.getByRole('status', { name: 'Command result' }).textContent).toContain('Review Bot')
-    expect(screen.getByRole('status', { name: 'Command result' }).textContent).toContain('Codex CLI')
+    expect(screen.getByRole('status', { name: 'Command result' }).textContent).toContain('Codex')
     expect(send).not.toHaveBeenCalled()
   })
 
@@ -97,6 +97,7 @@ describe('Commonspace composer commands', () => {
     fireEvent.submit(composer.closest('form')!)
 
     expect(mutate).not.toHaveBeenCalled()
+    expect(screen.getByRole('status', { name: 'Command result' }).textContent).toContain('keeps earlier messages visible')
     fireEvent.click(screen.getByRole('button', { name: 'Start new chat' }))
     await waitFor(() => {
       expect(mutate).toHaveBeenCalledWith({ action: 'reset-dm', agentId: 'codex-review-bot' })

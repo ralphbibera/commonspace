@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { CommonspaceBootstrap } from '../packages/shared/src/contracts.ts'
+import { COMMONSPACE_STATE_VERSION, type CommonspaceBootstrap } from '../packages/shared/src/contracts.ts'
 import { CommonspaceClientStore } from '../ui/src/commonspace-store.ts'
 
 function bootstrap(revision: number, projectName: string): CommonspaceBootstrap {
   return {
     agents: [],
+    discoveredAgents: [],
     state: {
-      version: 6,
+      version: COMMONSPACE_STATE_VERSION,
       revision,
       defaults: { model: null, reasoning: 'max', maxAgentsPerTurn: 4, memoryThreads: 12 },
       agents: [],
@@ -35,6 +36,8 @@ class FakeEventSource {
   static readonly instances: FakeEventSource[] = []
   private readonly listeners = new Map<string, (event: MessageEvent<string>) => void>()
   readonly close = vi.fn()
+  onerror: ((event: Event) => void) | null = null
+  onopen: ((event: Event) => void) | null = null
 
   constructor() {
     FakeEventSource.instances.push(this)
@@ -55,6 +58,21 @@ afterEach(() => {
 })
 
 describe('Commonspace client revision ordering', () => {
+  it('clears a transient live-update error when SSE reconnects without a new revision', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response(bootstrap(1, 'Initial'))))
+    vi.stubGlobal('EventSource', FakeEventSource)
+
+    const store = new CommonspaceClientStore()
+    await store.refresh()
+    store.connectEvents()
+    const events = FakeEventSource.instances[0]!
+    events.onerror?.(new Event('error'))
+    expect(store.getSnapshot().error).toContain('disconnected')
+
+    events.onopen?.(new Event('open'))
+    expect(store.getSnapshot().error).toBeNull()
+  })
+
   it('ignores a stale refresh that resolves after a newer mutation', async () => {
     const staleRefresh = deferred<Response>()
     const mutation = deferred<Response>()

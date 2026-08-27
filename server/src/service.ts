@@ -1,57 +1,59 @@
-import { execFile, spawn } from 'node:child_process'
-import { chmod, mkdir, open, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { execFile } from 'node:child_process'
+import { chmod, mkdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
 import { promisify } from 'node:util'
 import type {
   AgentAdapterKind,
+  CommonspaceAgentTrace,
   CommonspaceAgentDefinition,
   CommonspaceBootstrap,
   CommonspaceAgentProfile,
   CommonspaceMessage,
   CommonspaceMutation,
   CommonspaceState,
+  CommonspaceTraceEntry,
+  CommonspaceTracePlanStep,
   CommonspaceThread,
   SendMessageRequest,
   SendMessageResponse,
 } from '@commonspace/shared'
+import type { McpServer as AcpMcpServer } from '@agentclientprotocol/sdk'
 import { COMMONSPACE_STATE_VERSION, conversationKey } from '@commonspace/shared'
-import {
-  buildClaudeCodeInvocation,
-  buildCodexInvocation,
-  buildHermesInvocation,
-  buildRoomPrompt,
-  isAgentSessionId,
-  mentionedChannelAgents,
-  parseClaudeCodeOutput,
-  parseCodexOutput,
-  parseHermesOutput,
-  parseHermesProfileList,
-  routeChannelAgents,
-  type AgentCommandInvocation,
-} from '@commonspace/adapters'
 import { projectChannelMemory } from './memory.js'
-import { applyMutation, createInitialState, defaultCommonspaceDefaults, defaultRunSettings, emptyChannelMemory, isCommonspaceReasoning, managedAgentId } from './state.js'
+import { mentionedChannelAgents, parseHermesProfileList, routeChannelAgents } from './relay.js'
+import { addDiscoveredAgent, applyMutation, createInitialState, defaultCommonspaceDefaults, defaultRunSettings, DM_SESSION_BOUNDARY_AUTHOR_ID, emptyChannelMemory, isCommonspaceReasoning, managedAgentId } from './state.js'
+import { AcpAgentProcess, AcpSessionLoadError, AcpSessionRunError } from './acp-runtime.js'
+import type { CommonspaceMcpGateway, CommonspaceMcpProvider, CommonspaceMcpScope } from './commonspace-mcp.js'
 
 const execFileAsync = promisify(execFile)
+const moduleRequire = createRequire(import.meta.url)
 const MAX_MESSAGE_CHARS = 16_000
-const MAX_CAPTURE_BYTES = 1024 * 1024
-const MANAGED_AGENT_ID_PATTERN = /^(?:codex|claude-code)-[\p{L}\p{N}][\p{L}\p{N}-]{0,79}$/u
+const MAX_PROFILE_LIST_BYTES = 1024 * 1024
+const MAX_AGENT_RESPONSE_CHARS = 64_000
+const MAX_MCP_CONTEXT_CHARS = 64_000
+const MAX_MCP_CONTEXT_MESSAGES = 30
+const MAX_MCP_CREDENTIALS = 10_000
+const MAX_TRACE_ENTRIES = 128
+const MAX_TRACE_CHARS = 256_000
+const MANAGED_AGENT_ID_PATTERN = /^codex-[\p{L}\p{N}][\p{L}\p{N}-]{0,79}$/u
 const THREAD_SESSION_SCOPE_PATTERN = /^Commonspace Thread: [0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const DM_SESSION_SCOPE_PATTERN = /^Commonspace DM: [0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 export interface CommonspaceHostConfig {
   root?: string
+  defaultCwd?: string
   hermesPath?: string
   codexPath?: string
-  claudePath?: string
   maxAgentsPerTurn?: number
-  /** Legacy Hermes-only unsafe mode. */
-  yolo?: boolean
   hermesYolo?: boolean
   externalAgentYolo?: boolean
   runBudgetSeconds?: number
-  maxClaudeTurns?: number
+  hermesAcpCommand?: string
+  hermesAcpArgs?: readonly string[]
+  codexAcpCommand?: string
+  codexAcpArgs?: readonly string[]
 }
 
 export interface CommonspaceHostEnvironment {
@@ -62,7 +64,7 @@ export interface CommonspaceHostEnvironment {
 
 export function unsafeModeForAdapter(config: CommonspaceHostConfig, adapter: AgentAdapterKind): boolean {
   return adapter === 'hermes'
-    ? (config.hermesYolo ?? config.yolo ?? false)
+    ? config.hermesYolo === true
     : config.externalAgentYolo === true
 }
 
@@ -71,7 +73,9 @@ export interface AgentRunInput {
   cwd: string
   additionalCwds: string[]
   sessionName: string
-  prompt: string
+  /** The one newly delivered Commonspace message, without replayed context. */
+  message: string
+  commonspaceScope?: CommonspaceMcpScope
   sessionId?: string
   model?: string
   reasoning?: CommonspaceState['defaults']['reasoning']
@@ -80,6 +84,7 @@ export interface AgentRunInput {
 export interface AgentRunResult {
   text: string
   sessionId?: string
+  trace?: CommonspaceAgentTrace
 }
 
 export interface CommonspaceHostDependencies {
@@ -114,21 +119,39 @@ function now(): string {
   return new Date().toISOString()
 }
 
-function sanitizeManagedAgents(value: unknown): CommonspaceState['agents'] {
+function isNativeSessionId(value: unknown): value is string {
+  if (typeof value !== 'string' || value.length < 1 || value.length > 512) return false
+  for (const character of value) {
+    const codePoint = character.codePointAt(0) ?? 0
+    if (codePoint <= 31 || codePoint === 127) return false
+  }
+  return true
+}
+
+function acpReasoningValue(adapter: AgentAdapterKind, reasoning: CommonspaceState['defaults']['reasoning'] | undefined): string | undefined {
+  if (reasoning === undefined) return undefined
+  if (adapter === 'codex') return reasoning === 'none' || reasoning === 'minimal' ? 'low' : reasoning
+  return undefined
+}
+
+function sanitizeAgents(value: unknown): CommonspaceState['agents'] {
   if (!Array.isArray(value)) return []
   const agents: CommonspaceState['agents'] = []
   for (const candidate of value) {
     if (typeof candidate !== 'object' || candidate === null) continue
     const agent = candidate as Record<string, unknown>
     const adapter = agent.adapter
-    if (adapter !== 'codex' && adapter !== 'claude-code') continue
-    if (typeof agent.id !== 'string' || !MANAGED_AGENT_ID_PATTERN.test(agent.id)) continue
+    if (adapter !== 'hermes' && adapter !== 'codex') continue
+    if (typeof agent.id !== 'string') continue
+    if (adapter === 'hermes') {
+      if (agent.id.trim() !== agent.id || agent.id === '' || agent.id.length > 200 || /\s/u.test(agent.id)) continue
+    } else if (!MANAGED_AGENT_ID_PATTERN.test(agent.id)) continue
     if (typeof agent.displayName !== 'string' || agent.displayName.trim() === '') continue
     if (agent.model !== null && typeof agent.model !== 'string') continue
     if (typeof agent.createdAt !== 'string') continue
     const displayName = agent.displayName.normalize('NFKC').trim().slice(0, 80)
     try {
-      if (managedAgentId(adapter, displayName) !== agent.id) continue
+      if (adapter !== 'hermes' && managedAgentId(adapter, displayName) !== agent.id) continue
     } catch {
       continue
     }
@@ -144,10 +167,10 @@ function sanitizeManagedAgents(value: unknown): CommonspaceState['agents'] {
   return [...new Map(agents.map(agent => [agent.id, agent])).values()]
 }
 
-function sanitizeDmSessions(value: unknown): CommonspaceState['dmSessions'] {
+function sanitizeDmSessions(value: unknown, allowedAgentIds: ReadonlySet<string>): CommonspaceState['dmSessions'] {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return {}
   return Object.fromEntries(Object.entries(value)
-    .filter((entry): entry is [string, string] => entry[0].length > 0 && entry[0].length <= 200 && typeof entry[1] === 'string' && DM_SESSION_SCOPE_PATTERN.test(entry[1]))
+    .filter((entry): entry is [string, string] => allowedAgentIds.has(entry[0]) && typeof entry[1] === 'string' && DM_SESSION_SCOPE_PATTERN.test(entry[1]))
     .slice(-500))
 }
 
@@ -162,99 +185,17 @@ function sanitizeAgentSessions(
     if (!allowedAgentIds.has(agentId)) continue
     if (typeof rawScopes !== 'object' || rawScopes === null || Array.isArray(rawScopes)) continue
     const scopes = Object.fromEntries(Object.entries(rawScopes)
-      .filter((entry): entry is [string, string] => ((entry[0] === 'Bot Chat' && dmSessions[agentId] === undefined) || THREAD_SESSION_SCOPE_PATTERN.test(entry[0]) || dmSessions[agentId] === entry[0]) && isAgentSessionId(entry[1]))
+      .filter((entry): entry is [string, string] => ((entry[0] === 'Bot Chat' && dmSessions[agentId] === undefined) || THREAD_SESSION_SCOPE_PATTERN.test(entry[0]) || dmSessions[agentId] === entry[0]) && isNativeSessionId(entry[1]))
       .slice(-500))
     if (Object.keys(scopes).length > 0) sessions[agentId] = scopes
   }
   return sessions
 }
 
-function isMissingNativeSession(error: unknown, adapter: AgentAdapterKind): boolean {
-  if (adapter === 'hermes') return false
+function isMissingNativeSession(error: unknown): boolean {
+  if (error instanceof AcpSessionLoadError) return error.missing
   const message = error instanceof Error ? error.message : String(error)
-  return /(?:no (?:saved )?(?:session|conversation|thread)|no rollout found for thread id|(?:session|conversation|thread).*(?:not found|does not exist|unknown)|failed to (?:load|resume).*(?:session|conversation|thread))/i.test(message)
-}
-
-
-export async function readBoundedTextFile(path: string, maxBytes: number): Promise<string> {
-  if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) throw new Error('output limit must be a positive integer')
-  const handle = await open(path, 'r')
-  try {
-    const buffer = Buffer.alloc(maxBytes + 1)
-    const { bytesRead } = await handle.read(buffer, 0, buffer.byteLength, 0)
-    if (bytesRead > maxBytes) throw new Error('adapter output exceeded the Commonspace output limit')
-    return buffer.subarray(0, bytesRead).toString('utf8')
-  } finally {
-    await handle.close()
-  }
-}
-
-async function executeAgentCommand(invocation: AgentCommandInvocation, timeoutMs: number): Promise<{ stdout: string; stderr: string }> {
-  return new Promise((resolve, reject) => {
-    const detached = process.platform !== 'win32'
-    const child = spawn(invocation.command, invocation.args, {
-      cwd: invocation.cwd,
-      detached,
-      stdio: ['pipe', 'pipe', 'pipe'],
-      windowsHide: true,
-    })
-    const stdout: Buffer[] = []
-    const stderr: Buffer[] = []
-    let capturedBytes = 0
-    let failure: Error | undefined
-    let settled = false
-    const terminate = (): void => {
-      if (detached && child.pid !== undefined) {
-        try {
-          process.kill(-child.pid, 'SIGKILL')
-          return
-        } catch {
-          // Fall through to direct-child termination.
-        }
-      }
-      child.kill('SIGKILL')
-    }
-    const timer = setTimeout(() => {
-      failure = new Error(`${invocation.command} timed out after ${String(Math.ceil(timeoutMs / 1000))} seconds`)
-      terminate()
-    }, timeoutMs)
-
-    const capture = (target: Buffer[], chunk: Buffer | string): void => {
-      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
-      capturedBytes += buffer.byteLength
-      if (capturedBytes > MAX_CAPTURE_BYTES) {
-        failure = new Error(`${invocation.command} exceeded the Commonspace output limit`)
-        terminate()
-        return
-      }
-      target.push(buffer)
-    }
-    child.stdout.on('data', (chunk: Buffer | string) => { capture(stdout, chunk) })
-    child.stderr.on('data', (chunk: Buffer | string) => { capture(stderr, chunk) })
-    child.stdin.on('error', () => undefined)
-    child.once('error', (error) => {
-      if (settled) return
-      settled = true
-      clearTimeout(timer)
-      reject(error)
-    })
-    child.once('close', (code, signal) => {
-      if (settled) return
-      settled = true
-      clearTimeout(timer)
-      const output = Buffer.concat(stdout).toString('utf8')
-      const errors = Buffer.concat(stderr).toString('utf8')
-      if (failure !== undefined) {
-        const detail = errors.trim() || output.trim()
-        return reject(detail === '' ? failure : new Error(`${failure.message}: ${detail.slice(0, 4_000)}`))
-      }
-      if (code !== 0) {
-        return reject(new Error(errors.trim() || output.trim() || `${invocation.command} exited with ${code === null ? signal ?? 'an unknown signal' : `code ${String(code)}`}`))
-      }
-      resolve({ stdout: output, stderr: errors })
-    })
-    child.stdin.end(invocation.input)
-  })
+  return /(?:invalid agent session id|no (?:saved )?(?:session|conversation|thread)|no rollout found for thread id|(?:session|conversation|thread).*(?:not found|does not exist|unknown)|failed to (?:load|resume).*(?:session|conversation|thread))/i.test(message)
 }
 
 function plainRecord(value: unknown): Record<string, unknown> | null {
@@ -269,8 +210,8 @@ function loadedId(value: unknown): string | null {
   return id === '' ? null : id
 }
 
-function loadedString(value: unknown, maximum: number, fallback = ''): string {
-  return typeof value === 'string' ? value.slice(0, maximum) : fallback
+function loadedString(value: unknown, maximum: number, defaultValue = ''): string {
+  return typeof value === 'string' ? value.slice(0, maximum) : defaultValue
 }
 
 function loadedStringArray(value: unknown, maximumItems = 64, maximumLength = 2_000): string[] {
@@ -282,10 +223,10 @@ function loadedStringArray(value: unknown, maximumItems = 64, maximumLength = 2_
   }))].slice(0, maximumItems)
 }
 
-function loadedBoundedInteger(value: unknown, fallback: number, minimum: number, maximum: number): number {
+function loadedBoundedInteger(value: unknown, defaultValue: number, minimum: number, maximum: number): number {
   return typeof value === 'number' && Number.isFinite(value)
     ? Math.max(minimum, Math.min(maximum, Math.trunc(value)))
-    : fallback
+    : defaultValue
 }
 
 function loadedModel(value: unknown): string | null {
@@ -293,6 +234,92 @@ function loadedModel(value: unknown): string | null {
   if (typeof value !== 'string') return null
   const model = value.trim().slice(0, 200)
   return model === '' ? null : model
+}
+
+function sanitizeAgentTrace(value: unknown): CommonspaceAgentTrace | undefined {
+  const trace = plainRecord(value)
+  if (trace === null || (trace.adapter !== 'hermes' && trace.adapter !== 'codex')) return undefined
+  const startedAt = loadedString(trace.startedAt, 100)
+  const completedAt = loadedString(trace.completedAt, 100)
+  if (startedAt === '' || completedAt === '' || !Array.isArray(trace.entries)) return undefined
+  let remainingChars = MAX_TRACE_CHARS
+  const take = (candidate: unknown, maximum: number): string => {
+    if (remainingChars <= 0 || typeof candidate !== 'string') return ''
+    const text = candidate.slice(0, Math.min(maximum, remainingChars))
+    remainingChars -= text.length
+    return text
+  }
+  const entries: CommonspaceTraceEntry[] = []
+  const seen = new Set<string>()
+  for (const candidate of trace.entries.slice(0, MAX_TRACE_ENTRIES)) {
+    const entry = plainRecord(candidate)
+    const type = entry?.type
+    const id = loadedId(entry?.id)
+    if (entry === null || id === null || (type !== 'reasoning' && type !== 'plan' && type !== 'tool' && type !== 'usage')) continue
+    const normalizedId = type === 'usage' ? 'usage' : id
+    const key = `${type}:${normalizedId}`
+    if (seen.has(key)) continue
+    const createdAt = loadedString(entry.createdAt, 100, startedAt)
+    const updatedAt = loadedString(entry.updatedAt, 100, createdAt)
+    if (type === 'reasoning') {
+      const text = take(entry.text, 64_000)
+      if (text === '') continue
+      entries.push({ type, id: normalizedId, text, createdAt, updatedAt })
+    } else if (type === 'plan') {
+      const steps = Array.isArray(entry.steps)
+        ? entry.steps.slice(0, 64).flatMap((rawStep) => {
+            const step = plainRecord(rawStep)
+            if (step === null || typeof step.text !== 'string') return []
+            const text = take(step.text, 2_000)
+            if (text === '') return []
+            const priority: CommonspaceTracePlanStep['priority'] = step.priority === 'high' || step.priority === 'low' ? step.priority : 'medium'
+            const status: CommonspaceTracePlanStep['status'] = step.status === 'in_progress' || step.status === 'completed' ? step.status : 'pending'
+            return [{ text, priority, status }]
+          })
+        : []
+      const markdown = take(entry.markdown, 64_000)
+      entries.push({ type, id: normalizedId, steps, ...(markdown === '' ? {} : { markdown }), createdAt, updatedAt })
+    } else if (type === 'tool') {
+      const title = take(entry.title, 1_000).trim()
+      const toolName = take(entry.toolName, 200).trim()
+      const toolKind = take(entry.toolKind, 100).trim()
+      const input = take(entry.input, 16_000)
+      const output = take(entry.output, 32_000)
+      const status = entry.status === 'in_progress' || entry.status === 'completed' || entry.status === 'failed'
+        ? entry.status
+        : 'pending'
+      entries.push({
+        type,
+        id: normalizedId,
+        title: title === '' ? 'Tool call' : title,
+        ...(toolName === '' ? {} : { toolName }),
+        ...(toolKind === '' ? {} : { toolKind }),
+        status,
+        ...(input === '' ? {} : { input }),
+        ...(output === '' ? {} : { output }),
+        createdAt,
+        updatedAt,
+      })
+    } else {
+      const usedTokens = loadedBoundedInteger(entry.usedTokens, 0, 0, Number.MAX_SAFE_INTEGER)
+      const contextWindow = loadedBoundedInteger(entry.contextWindow, 0, 0, Number.MAX_SAFE_INTEGER)
+      const costAmount = typeof entry.costAmount === 'number' && Number.isFinite(entry.costAmount) ? entry.costAmount : undefined
+      const costCurrency = take(entry.costCurrency, 20).trim()
+      entries.push({
+        type: 'usage',
+        id: 'usage',
+        usedTokens,
+        contextWindow,
+        ...(costAmount === undefined ? {} : { costAmount }),
+        ...(costCurrency === '' ? {} : { costCurrency }),
+        createdAt,
+        updatedAt,
+      })
+    }
+    seen.add(key)
+    if (remainingChars <= 0) break
+  }
+  return { adapter: trace.adapter, startedAt, completedAt, entries }
 }
 
 function sanitizeRunSettings(value: unknown): CommonspaceState['channels'][number]['settings'] {
@@ -392,6 +419,7 @@ function sanitizeThreads(value: unknown, channels: readonly CommonspaceState['ch
 function sanitizeMessages(
   value: unknown,
   channelIds: ReadonlySet<string>,
+  agentIds: ReadonlySet<string>,
   threads: readonly CommonspaceThread[],
 ): CommonspaceState['messages'] {
   const record = plainRecord(value)
@@ -405,6 +433,7 @@ function sanitizeMessages(
     const conversationId = separator < 1 ? '' : key.slice(separator + 1)
     if ((kind !== 'channel' && kind !== 'dm') || conversationId === '') continue
     if (kind === 'channel' && !channelIds.has(conversationId)) continue
+    if (kind === 'dm' && !agentIds.has(conversationId)) continue
     const seen = new Set<string>()
     const sanitized: CommonspaceMessage[] = []
     for (const candidate of rawMessages.slice(-500)) {
@@ -421,6 +450,7 @@ function sanitizeMessages(
       if (message.threadId !== undefined && (threadId === null || !threadIds.has(threadId))) continue
       const parentMessageId = loadedId(message.parentMessageId)
       if (message.parentMessageId !== undefined && parentMessageId === null) continue
+      const trace = message.authorType === 'agent' ? sanitizeAgentTrace(message.trace) : undefined
       seen.add(id)
       sanitized.push({
         id,
@@ -432,6 +462,7 @@ function sanitizeMessages(
         createdAt: loadedString(message.createdAt, 100),
         ...(threadId === null ? {} : { threadId }),
         ...(parentMessageId === null ? {} : { parentMessageId }),
+        ...(trace === undefined ? {} : { trace }),
         ...(kind === 'dm' && message.authorType === 'user' &&
           (message.replyStatus === 'queued' || message.replyStatus === 'running' || message.replyStatus === 'complete' || message.replyStatus === 'error')
           ? {
@@ -448,57 +479,74 @@ function sanitizeMessages(
 
 function sanitizeLoadedState(value: unknown): CommonspaceState {
   const record = plainRecord(value)
-  if (record === null || (record.version !== 1 && record.version !== 2 && record.version !== 3 && record.version !== 4 && record.version !== 5 && record.version !== COMMONSPACE_STATE_VERSION)) {
+  if (record === null || (record.version !== 1 && record.version !== 2 && record.version !== 3 && record.version !== 4 && record.version !== 5 && record.version !== 6 && record.version !== 7 && record.version !== 8 && record.version !== COMMONSPACE_STATE_VERSION)) {
     return createInitialState()
   }
-  const fallbackDefaults = defaultCommonspaceDefaults()
+  const stateDefaults = defaultCommonspaceDefaults()
   const rawDefaults = plainRecord(record.defaults) ?? {}
   const defaults: CommonspaceState['defaults'] = {
     model: loadedModel(rawDefaults.model),
-    reasoning: isCommonspaceReasoning(rawDefaults.reasoning) ? rawDefaults.reasoning : fallbackDefaults.reasoning,
-    maxAgentsPerTurn: loadedBoundedInteger(rawDefaults.maxAgentsPerTurn, fallbackDefaults.maxAgentsPerTurn, 1, 8),
-    memoryThreads: loadedBoundedInteger(rawDefaults.memoryThreads, fallbackDefaults.memoryThreads, 1, 50),
+    reasoning: isCommonspaceReasoning(rawDefaults.reasoning) ? rawDefaults.reasoning : stateDefaults.reasoning,
+    maxAgentsPerTurn: loadedBoundedInteger(rawDefaults.maxAgentsPerTurn, stateDefaults.maxAgentsPerTurn, 1, 8),
+    memoryThreads: loadedBoundedInteger(rawDefaults.memoryThreads, stateDefaults.memoryThreads, 1, 50),
   }
   const projects = sanitizeProjects(record.projects)
+  const agents = sanitizeAgents(record.agents)
+  const agentIds = new Set(agents.map(agent => agent.id))
   let channels = sanitizeChannels(record.channels, new Set(projects.map(project => project.id)))
+    .map(channel => ({ ...channel, agentIds: channel.agentIds.filter(agentId => agentIds.has(agentId)) }))
   const threads = sanitizeThreads(record.threads, channels)
+    .map(thread => ({ ...thread, agentIds: thread.agentIds.filter(agentId => agentIds.has(agentId)) }))
   const threadIds = new Set(threads.map(thread => thread.id))
   channels = channels.map(channel => ({
     ...channel,
     memory: { ...channel.memory, threadIds: channel.memory.threadIds.filter(id => threadIds.has(id)) },
   }))
-  const agents = sanitizeManagedAgents(record.agents)
-  const dmSessions = sanitizeDmSessions(record.dmSessions)
+  const dmSessions = sanitizeDmSessions(record.dmSessions, agentIds)
   return {
     version: COMMONSPACE_STATE_VERSION,
     revision: loadedBoundedInteger(record.revision, 0, 0, Number.MAX_SAFE_INTEGER),
     defaults,
     agents,
     dmSessions,
-    agentSessions: sanitizeAgentSessions(record.agentSessions, new Set(agents.map(agent => agent.id)), dmSessions),
+    agentSessions: sanitizeAgentSessions(record.agentSessions, agentIds, dmSessions),
     projects,
     channels,
     threads,
-    messages: sanitizeMessages(record.messages, new Set(channels.map(channel => channel.id)), threads),
+    messages: sanitizeMessages(record.messages, new Set(channels.map(channel => channel.id)), agentIds, threads),
   }
 }
 
-export class CommonspaceHostService {
+export class CommonspaceHostService implements CommonspaceMcpProvider {
   readonly root: string
   private readonly statePath: string
+  private readonly defaultCwd: string
   private state: CommonspaceState = createInitialState()
   private writeTail = Promise.resolve()
   private readonly agentSessionTails = new Map<string, Promise<unknown>>()
   private readonly revisionListeners = new Set<(revision: number) => void>()
   private readonly backgroundRuns = new Set<Promise<void>>()
+  private activeAdmissions = 0
+  private readonly admissionIdleWaiters = new Set<() => void>()
+  private readonly acpProcesses = new Map<string, AcpAgentProcess>()
+  private readonly activeAcpSessions = new Map<string, string>()
+  private readonly mcpCredentials = new Map<string, { fingerprint: string; scope: CommonspaceMcpScope; token: string }>()
   private readonly hermesPath: string
   private readonly codexPath: string
-  private readonly claudePath: string
   private readonly maxAgentsPerTurn: number
   private readonly hermesYolo: boolean
   private readonly externalAgentYolo: boolean
   private readonly runBudgetSeconds: number | undefined
-  private readonly maxClaudeTurns: number
+  private readonly hermesAcpCommand: string
+  private readonly hermesAcpArgs: string[]
+  private readonly codexAcpCommand: string
+  private readonly codexAcpArgs: string[]
+  private closeOperation: Promise<void> | undefined
+  private drainOperation: Promise<void> | undefined
+  private closing = false
+  private draining = false
+  private mcpGateway: CommonspaceMcpGateway | undefined
+  private mcpEndpoint: string | undefined
 
   constructor(
     private readonly environment: CommonspaceHostEnvironment,
@@ -507,20 +555,27 @@ export class CommonspaceHostService {
   ) {
     this.root = config.root ?? join(homedir(), '.commonspace')
     this.statePath = join(this.root, 'state.json')
+    this.defaultCwd = config.defaultCwd ?? process.cwd()
     this.hermesPath = config.hermesPath ?? 'hermes'
     this.codexPath = config.codexPath ?? 'codex'
-    this.claudePath = config.claudePath ?? 'claude'
     this.maxAgentsPerTurn = Math.max(1, Math.min(8, config.maxAgentsPerTurn ?? 6))
     this.hermesYolo = unsafeModeForAdapter(config, 'hermes')
     this.externalAgentYolo = unsafeModeForAdapter(config, 'codex')
     this.runBudgetSeconds = config.runBudgetSeconds === undefined
       ? undefined
       : Math.min(3_600, Math.max(30, config.runBudgetSeconds))
-    this.maxClaudeTurns = Math.min(100, Math.max(1, Math.trunc(config.maxClaudeTurns ?? 40)))
+    this.hermesAcpCommand = config.hermesAcpCommand ?? this.hermesPath
+    this.hermesAcpArgs = [...(config.hermesAcpArgs ?? [])]
+    const defaultCodexAcp = moduleRequire.resolve('@agentclientprotocol/codex-acp')
+    this.codexAcpCommand = config.codexAcpCommand ?? process.execPath
+    this.codexAcpArgs = config.codexAcpArgs === undefined
+      ? (config.codexAcpCommand === undefined ? [defaultCodexAcp] : [])
+      : [...config.codexAcpArgs]
   }
 
   async initialize(): Promise<void> {
     await mkdir(this.root, { recursive: true, mode: 0o700 })
+    await chmod(this.root, 0o700)
     try {
       this.state = sanitizeLoadedState(JSON.parse(await readFile(this.statePath, 'utf8')))
     } catch (error) {
@@ -528,6 +583,7 @@ export class CommonspaceHostService {
       this.state = createInitialState()
     }
     this.state = await this.canonicalizeLoadedProjectPaths(this.state)
+    this.state = this.redactLoadedTraces(this.state)
     let memoryChanged = false
     const channels = this.state.channels.map(channel => {
       const memory = projectChannelMemory(this.state, channel.id, this.state.defaults.memoryThreads)
@@ -538,6 +594,7 @@ export class CommonspaceHostService {
     if (memoryChanged) {
       this.state = { ...this.state, revision: this.state.revision + 1, channels }
     }
+    this.markInterruptedRuns('The previous Commonspace process ended before the agent completed.')
     await this.persist()
   }
 
@@ -550,7 +607,7 @@ export class CommonspaceHostService {
           const canonical = await this.validDirectory(path)
           if (!paths.includes(canonical)) paths.push(canonical)
         } catch {
-          // Invalid persisted paths are dropped before they can reach an adapter invocation.
+          // Invalid persisted paths are dropped before they can reach an agent process.
         }
       }
       if (paths.length > 0) projects.push({ ...project, paths })
@@ -576,37 +633,399 @@ export class CommonspaceHostService {
     return { ...this.snapshot(), dmSessions: {}, agentSessions: {} }
   }
 
+  private async withAdmission<T>(operation: () => Promise<T>): Promise<T> {
+    if (this.closing) throw new Error('Commonspace is shutting down')
+    if (this.draining) throw new Error('Commonspace is restarting')
+    this.activeAdmissions += 1
+    try {
+      return await operation()
+    } finally {
+      this.activeAdmissions -= 1
+      if (this.activeAdmissions === 0) {
+        for (const resolveIdle of this.admissionIdleWaiters) resolveIdle()
+        this.admissionIdleWaiters.clear()
+      }
+    }
+  }
+
+  private async whenAdmissionsIdle(): Promise<void> {
+    if (this.activeAdmissions === 0) return
+    await new Promise<void>(resolveIdle => { this.admissionIdleWaiters.add(resolveIdle) })
+  }
+
   async whenIdle(): Promise<void> {
     while (this.backgroundRuns.size > 0) {
       await Promise.all([...this.backgroundRuns].map(operation => operation.catch(() => undefined)))
     }
   }
 
-  async bootstrap(): Promise<CommonspaceBootstrap> {
+  async drainAndClose(): Promise<void> {
+    this.drainOperation ??= (async () => {
+      await this.whenIdle()
+      this.draining = true
+      await this.whenAdmissionsIdle()
+      await this.whenIdle()
+      await this.close()
+    })()
+    await this.drainOperation
+  }
+
+  async close(): Promise<void> {
+    this.closing = true
+    this.closeOperation ??= (async () => {
+      const processes = [...this.acpProcesses.values()]
+      this.acpProcesses.clear()
+      this.activeAcpSessions.clear()
+      await Promise.all(processes.map(processClient => processClient.close().catch(error => {
+        this.environment.logger?.warn(error)
+      })))
+      await this.whenIdle()
+      if (this.markInterruptedRuns('Commonspace shut down before the agent completed.')) {
+        await this.persist()
+        this.broadcastRevision()
+      }
+      await this.writeTail
+      this.mcpCredentials.clear()
+      await this.mcpGateway?.close()
+    })()
+    await this.closeOperation
+  }
+
+  attachMcpGateway(gateway: CommonspaceMcpGateway, endpoint: string): void {
+    if (this.closing) throw new Error('Commonspace is shutting down')
+    const url = new URL(endpoint)
+    if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1') {
+      throw new Error('Commonspace MCP endpoint must use loopback HTTP')
+    }
+    if (this.mcpGateway !== undefined && (this.mcpGateway !== gateway || this.mcpEndpoint !== url.href)) {
+      throw new Error('Commonspace MCP gateway is already attached')
+    }
+    this.mcpGateway = gateway
+    this.mcpEndpoint = url.href
+  }
+
+  async readContext(scope: CommonspaceMcpScope): Promise<Record<string, unknown>> {
+    const scoped = this.resolveMcpScope(scope)
+    const messages = this.boundedMcpMessages(this.messagesForMcpScope(scope), MAX_MCP_CONTEXT_MESSAGES)
+    const conversation = scoped.channel === undefined
+      ? { kind: 'dm', id: scope.conversation.id, name: `Direct message with ${scoped.agent.displayName}` }
+      : { kind: 'channel', id: scoped.channel.id, name: scoped.channel.name }
     return {
-      agents: await this.discoverAgents(),
+      agent: {
+        id: scoped.agent.id,
+        displayName: scoped.agent.displayName,
+        adapter: scoped.agent.adapter,
+      },
+      conversation,
+      ...(scoped.project === undefined ? {} : { project: { id: scoped.project.id, name: scoped.project.name } }),
+      ...(scoped.thread === undefined
+        ? {}
+        : {
+            thread: {
+              id: scoped.thread.id,
+              rootMessageId: scoped.thread.rootMessageId,
+              status: scoped.thread.status,
+            },
+          }),
+      instructions: scoped.channel?.instructions ?? '',
+      memory: scoped.channel?.memory ?? { summary: '', decisions: [], openQuestions: [], threadIds: [], updatedAt: null },
+      participants: scoped.channel === undefined
+        ? [{ id: scoped.agent.id, displayName: scoped.agent.displayName }]
+        : scoped.channel.agentIds.flatMap(id => {
+            const agent = this.state.agents.find(candidate => candidate.id === id)
+            return agent === undefined ? [] : [{ id: agent.id, displayName: agent.displayName, adapter: agent.adapter }]
+          }),
+      messages,
+    }
+  }
+
+  async readMessages(scope: CommonspaceMcpScope, input: { before?: string; limit: number }): Promise<Record<string, unknown>> {
+    this.resolveMcpScope(scope)
+    const source = this.messagesForMcpScope(scope)
+    const end = input.before === undefined ? source.length : source.findIndex(message => message.id === input.before)
+    if (end < 0) throw new Error('message cursor is not in this Commonspace scope')
+    const limit = Math.max(1, Math.min(100, Math.trunc(input.limit)))
+    const pageSource = source.slice(Math.max(0, end - limit), end)
+    const messages = this.boundedMcpMessages(pageSource, limit)
+    const firstId = messages[0]?.id
+    const firstIndex = firstId === undefined ? end : source.findIndex(message => message.id === firstId)
+    return { messages, nextBefore: firstIndex > 0 ? firstId : null }
+  }
+
+  async postProgress(scope: CommonspaceMcpScope, rawText: string): Promise<{ messageId: string }> {
+    if (this.closing) throw new Error('Commonspace is shutting down')
+    const scoped = this.resolveMcpScope(scope)
+    const text = rawText.normalize('NFKC').trim().slice(0, 4_000)
+    if (text === '') throw new Error('progress text is required')
+    if (scoped.channel !== undefined) {
+      const peerMentions = mentionedChannelAgents(scoped.channel.agentIds, text, this.configuredAgents())
+        .filter(agentId => agentId !== scoped.agent.id)
+      if (peerMentions.length > 0) throw new Error('post progress cannot address peers; use the final reply for a routed handoff')
+    }
+    const message: CommonspaceMessage = {
+      id: messageId(),
+      conversation: scope.conversation,
+      authorType: 'agent',
+      authorId: scoped.agent.id,
+      authorName: scoped.agent.displayName,
+      text,
+      createdAt: now(),
+      ...(scoped.thread === undefined ? {} : { threadId: scoped.thread.id, parentMessageId: scoped.thread.rootMessageId }),
+    }
+    this.append(message)
+    await this.persist()
+    this.broadcastRevision()
+    return { messageId: message.id }
+  }
+
+  async bootstrap(): Promise<CommonspaceBootstrap> {
+    const discoveredAgents = await this.discoverAgentCandidates()
+    return {
+      agents: this.configuredAgents(discoveredAgents),
+      discoveredAgents,
       state: this.publicSnapshot(),
     }
   }
 
+  private resolveMcpScope(scope: CommonspaceMcpScope): {
+    agent: CommonspaceAgentDefinition
+    channel?: CommonspaceState['channels'][number]
+    thread?: CommonspaceThread
+    project?: CommonspaceState['projects'][number]
+  } {
+    const agent = this.state.agents.find(candidate => candidate.id === scope.agentId)
+    if (agent === undefined) throw new Error('Commonspace MCP agent scope expired')
+    if (scope.conversation.kind === 'dm') {
+      if (scope.conversation.id !== agent.id || scope.threadId !== undefined) throw new Error('invalid Commonspace MCP direct-message scope')
+      const currentSessionName = this.state.dmSessions[agent.id] ?? 'Bot Chat'
+      if (scope.sessionName !== currentSessionName) throw new Error('Commonspace MCP direct-message generation expired')
+      const project = scope.projectId === undefined
+        ? undefined
+        : this.state.projects.find(candidate => candidate.id === scope.projectId)
+      if (scope.projectId !== undefined && project === undefined) throw new Error('Commonspace MCP project scope expired')
+      return { agent, ...(project === undefined ? {} : { project }) }
+    }
+
+    const channel = this.state.channels.find(candidate => candidate.id === scope.conversation.id)
+    if (channel === undefined || scope.threadId === undefined) throw new Error('Commonspace MCP channel scope expired')
+    const thread = this.state.threads.find(candidate => candidate.id === scope.threadId && candidate.channelId === channel.id)
+    if (thread === undefined || !thread.agentIds.includes(agent.id)) throw new Error('Commonspace MCP thread scope expired')
+    if (scope.sessionName !== `Commonspace Thread: ${thread.id}`) throw new Error('invalid Commonspace MCP native-session scope')
+    if (scope.projectId !== undefined && scope.projectId !== channel.projectId) throw new Error('invalid Commonspace MCP project scope')
+    const project = channel.projectId === null
+      ? undefined
+      : this.state.projects.find(candidate => candidate.id === channel.projectId)
+    if (channel.projectId !== null && project === undefined) throw new Error('Commonspace MCP project scope expired')
+    return { agent, channel, thread, ...(project === undefined ? {} : { project }) }
+  }
+
+  private revokeInvalidMcpCredentials(): void {
+    if (this.mcpGateway === undefined) return
+    for (const [key, credential] of this.mcpCredentials) {
+      try {
+        this.resolveMcpScope(credential.scope)
+      } catch {
+        this.mcpGateway.revoke(credential.token)
+        this.mcpCredentials.delete(key)
+      }
+    }
+  }
+
+  private messagesForMcpScope(scope: CommonspaceMcpScope): CommonspaceMessage[] {
+    const messages = this.state.messages[conversationKey(scope.conversation)] ?? []
+    const boundedToNativeSession = scope.conversation.kind === 'dm'
+      ? messages.slice(messages.findLastIndex(message => message.authorId === DM_SESSION_BOUNDARY_AUTHOR_ID) + 1)
+      : messages
+    return scope.threadId === undefined ? boundedToNativeSession : boundedToNativeSession.filter(message => message.threadId === scope.threadId)
+  }
+
+  private boundedMcpMessages(source: readonly CommonspaceMessage[], limit: number): Array<Record<string, unknown> & { id: string }> {
+    const selected: CommonspaceMessage[] = []
+    let chars = 0
+    for (let index = source.length - 1; index >= 0 && selected.length < limit; index -= 1) {
+      const message = source[index]
+      if (message === undefined) continue
+      const nextChars = chars + message.text.length
+      if (nextChars > MAX_MCP_CONTEXT_CHARS && selected.length > 0) break
+      selected.push(message)
+      chars = nextChars
+    }
+    return selected.reverse().map(message => ({
+      id: message.id,
+      authorType: message.authorType,
+      authorId: message.authorId,
+      authorName: message.authorName,
+      text: message.text.slice(0, MAX_MCP_CONTEXT_CHARS),
+      createdAt: message.createdAt,
+      ...(message.parentMessageId === undefined ? {} : { parentMessageId: message.parentMessageId }),
+    }))
+  }
+
+  private redactHostDetails(value: string, maximum: number): string {
+    let message = value
+    const redactions = new Map<string, string>()
+    const hostPaths = [
+      this.root,
+      homedir(),
+      process.cwd(),
+      this.defaultCwd,
+      this.hermesPath,
+      this.codexPath,
+      this.hermesAcpCommand,
+      this.codexAcpCommand,
+      ...this.hermesAcpArgs,
+      ...this.codexAcpArgs,
+      ...this.state.projects.flatMap(project => project.paths),
+    ]
+    for (const path of hostPaths) {
+      if (isAbsolute(path)) redactions.set(path, '[host path]')
+    }
+    for (const sessions of Object.values(this.state.agentSessions)) {
+      for (const sessionId of Object.values(sessions)) redactions.set(sessionId, '[native session]')
+    }
+    for (const credential of this.mcpCredentials.values()) {
+      redactions.set(credential.token, '[MCP capability]')
+    }
+    for (const [privateValue, replacement] of [...redactions].sort(([left], [right]) => right.length - left.length)) {
+      message = message.replaceAll(privateValue, replacement)
+    }
+    return message.slice(0, maximum)
+  }
+
+  private publicAgentFailure(error: unknown): string {
+    let message = error instanceof Error ? error.message : String(error)
+    if (error instanceof AcpSessionLoadError || error instanceof AcpSessionRunError) {
+      message = message.replaceAll(error.sessionId, '[native session]')
+    }
+    return this.redactHostDetails(message, 8_000)
+  }
+
+  private publicAgentTrace(value: unknown, adapter: AgentAdapterKind): CommonspaceAgentTrace | undefined {
+    const trace = sanitizeAgentTrace({ ...(plainRecord(value) ?? {}), adapter })
+    if (trace === undefined) return undefined
+    const entries = trace.entries.map((entry): CommonspaceTraceEntry => {
+      if (entry.type === 'reasoning') {
+        return { ...entry, text: this.redactHostDetails(entry.text, 64_000) }
+      }
+      if (entry.type === 'plan') {
+        return {
+          ...entry,
+          steps: entry.steps.map(step => ({ ...step, text: this.redactHostDetails(step.text, 2_000) })),
+          ...(entry.markdown === undefined ? {} : { markdown: this.redactHostDetails(entry.markdown, 64_000) }),
+        }
+      }
+      if (entry.type === 'tool') {
+        return {
+          ...entry,
+          title: this.redactHostDetails(entry.title, 1_000),
+          ...(entry.toolName === undefined ? {} : { toolName: this.redactHostDetails(entry.toolName, 200) }),
+          ...(entry.toolKind === undefined ? {} : { toolKind: this.redactHostDetails(entry.toolKind, 100) }),
+          ...(entry.input === undefined ? {} : { input: this.redactHostDetails(entry.input, 16_000) }),
+          ...(entry.output === undefined ? {} : { output: this.redactHostDetails(entry.output, 32_000) }),
+        }
+      }
+      return entry
+    })
+    return { ...trace, entries }
+  }
+
+  private redactLoadedTraces(state: CommonspaceState): CommonspaceState {
+    const messages = Object.fromEntries(Object.entries(state.messages).map(([key, conversationMessages]) => [
+      key,
+      conversationMessages.map((message) => {
+        if (message.trace === undefined) return message
+        const trace = this.publicAgentTrace(message.trace, message.trace.adapter)
+        const sanitized: CommonspaceMessage = { ...message }
+        if (trace === undefined) delete sanitized.trace
+        else sanitized.trace = trace
+        return sanitized
+      }),
+    ]))
+    return { ...state, messages }
+  }
+
+  private markInterruptedRuns(replyError: string): boolean {
+    let changed = false
+    const messages = Object.fromEntries(Object.entries(this.state.messages).map(([key, conversationMessages]) => [
+      key,
+      conversationMessages.map((message) => {
+        if (message.replyStatus !== 'queued' && message.replyStatus !== 'running') return message
+        changed = true
+        return { ...message, replyStatus: 'error' as const, replyError }
+      }),
+    ]))
+    const threads = this.state.threads.map((thread) => {
+      if (thread.status !== 'queued' && thread.status !== 'running') return thread
+      changed = true
+      return { ...thread, status: 'error' as const, error: replyError, updatedAt: now() }
+    })
+    if (changed) {
+      this.state = { ...this.state, revision: this.state.revision + 1, messages, threads }
+    }
+    return changed
+  }
+
   async mutate(mutation: CommonspaceMutation): Promise<CommonspaceState> {
-    const normalized = await this.normalizeMutation(mutation)
-    this.state = applyMutation(this.state, normalized)
-    await this.persist()
-    this.broadcastRevision()
-    return this.publicSnapshot()
+    return this.withAdmission(async () => {
+      const resetScope = mutation.action === 'reset-dm' && typeof mutation.agentId === 'string'
+        ? `${mutation.agentId}\u0000${this.state.dmSessions[mutation.agentId] ?? 'Bot Chat'}`
+        : undefined
+      const activeResetSession = resetScope === undefined ? undefined : this.activeAcpSessions.get(resetScope)
+      const removedChannelSessionNames = mutation.action === 'remove-channel'
+        ? new Set(this.state.threads
+            .filter(thread => thread.channelId === mutation.channelId)
+            .map(thread => `Commonspace Thread: ${thread.id}`))
+        : undefined
+      const activeRemovedChannelSessions = removedChannelSessionNames === undefined
+        ? []
+        : [...this.activeAcpSessions.entries()].flatMap(([key, sessionId]) => {
+            const separator = key.indexOf('\u0000')
+            if (separator < 1 || !removedChannelSessionNames.has(key.slice(separator + 1))) return []
+            return [{ key, agentId: key.slice(0, separator), sessionId }]
+          })
+      if (mutation.action === 'add-discovered-agent') {
+        if (typeof mutation.agentId !== 'string') throw new Error('discovered agent id is required')
+        const agent = (await this.discoverAgentCandidates()).find(candidate => candidate.id === mutation.agentId)
+        if (agent === undefined) throw new Error('unknown discovered agent')
+        this.state = addDiscoveredAgent(this.state, agent)
+      } else {
+        const normalized = await this.normalizeMutation(mutation)
+        this.state = applyMutation(this.state, normalized)
+      }
+      this.revokeInvalidMcpCredentials()
+      if (mutation.action === 'remove-agent') {
+        const processClient = this.acpProcesses.get(mutation.agentId)
+        this.acpProcesses.delete(mutation.agentId)
+        for (const key of this.activeAcpSessions.keys()) {
+          if (key.startsWith(`${mutation.agentId}\u0000`)) this.activeAcpSessions.delete(key)
+        }
+        await processClient?.close()
+      } else if (mutation.action === 'reset-dm' && activeResetSession !== undefined) {
+        await this.acpProcesses.get(mutation.agentId)?.cancelSession(activeResetSession)
+      } else if (mutation.action === 'remove-channel') {
+        await Promise.all(activeRemovedChannelSessions.map(async ({ key, agentId, sessionId }) => {
+          if (this.activeAcpSessions.get(key) === sessionId) this.activeAcpSessions.delete(key)
+          await this.acpProcesses.get(agentId)?.cancelSession(sessionId)
+        }))
+      }
+      await this.persist()
+      this.broadcastRevision()
+      return this.publicSnapshot()
+    })
   }
 
   async send(request: SendMessageRequest): Promise<SendMessageResponse> {
-    const prepared = await this.prepareSend(request)
-    await this.overrides.beforeAcceptSend?.(prepared)
-    const response = await this.acceptSend(prepared)
-    const operation = this.processReplies(prepared, response)
-    this.backgroundRuns.add(operation)
-    void operation.finally(() => {
-      this.backgroundRuns.delete(operation)
-    }).catch(() => undefined)
-    return response
+    return this.withAdmission(async () => {
+      const prepared = await this.prepareSend(request)
+      await this.overrides.beforeAcceptSend?.(prepared)
+      const response = await this.acceptSend(prepared)
+      const operation = this.processReplies(prepared, response)
+      this.backgroundRuns.add(operation)
+      void operation.finally(() => {
+        this.backgroundRuns.delete(operation)
+      }).catch(() => undefined)
+      return response
+    })
   }
 
   subscribeToRevisions(listener: (revision: number) => void): () => void {
@@ -617,7 +1036,7 @@ export class CommonspaceHostService {
   private async prepareSend(request: SendMessageRequest): Promise<PreparedSend> {
     const text = request.text.normalize('NFKC').trim().slice(0, MAX_MESSAGE_CHARS)
     if (text === '') throw new Error('message text is required')
-    const agents = await this.discoverAgents()
+    const agents = this.configuredAgents(await this.discoverAgentCandidates())
     let channel = undefined as PreparedSend['channel']
     let project = undefined as PreparedSend['project']
     let thread = undefined as PreparedSend['thread']
@@ -705,10 +1124,7 @@ export class CommonspaceHostService {
   private async processReplies(prepared: PreparedSend, response: SendMessageResponse): Promise<void> {
     const thread = response.thread
     if (thread !== undefined) await this.setThreadStatus(thread.id, 'running')
-    const cwd = prepared.project?.paths[0] ?? process.cwd()
-    const projectContext = prepared.project?.paths.length
-      ? `Project workspaces:\n${prepared.project.paths.map(path => `- ${path}`).join('\n')}\n\n`
-      : ''
+    const cwd = prepared.project?.paths[0] ?? this.defaultCwd
     const effectiveLimit = Math.min(this.maxAgentsPerTurn, this.state.defaults.maxAgentsPerTurn)
     const effectiveModel = prepared.channel?.settings.model ?? this.state.defaults.model ?? undefined
     const effectiveReasoning = prepared.channel?.settings.reasoning ?? this.state.defaults.reasoning
@@ -726,28 +1142,9 @@ export class CommonspaceHostService {
       delivered.add(agentId)
       const agent = prepared.agents.find(candidate => candidate.id === agentId)
       if (agent === undefined) return
-      const authority = this.managedAgentAuthority(agent)
-      if (agent.adapter !== 'hermes' && authority === undefined) return
-      const executionIsCurrent = () => this.agentAuthorityIsCurrent(agent, authority) && this.conversationIsCurrent(prepared, thread)
-      const prompt = prepared.request.conversation.kind === 'dm'
-        ? [
-            'Commonspace direct message.',
-            `You are @${agent.id}. Use your provider-native identity, instructions, memory, and tools.`,
-            'If this asks for action, do the work now. Return one concise final message with the outcome or a concrete blocker. Do not include private reasoning or tool logs.',
-            `${projectContext}Message from ${delivery.authorName}:\n${delivery.text}`,
-          ].join('\n\n')
-        : buildRoomPrompt({
-            channel: prepared.channel?.name ?? 'channel',
-            agent: agent.id,
-            delivery,
-            rootText: prepared.text,
-            ...(prepared.project === undefined ? {} : { projectPaths: prepared.project.paths }),
-            ...(prepared.channel?.instructions ? { instructions: prepared.channel.instructions } : {}),
-            ...(prepared.channel?.memory.summary ? { memorySummary: prepared.channel.memory.summary } : {}),
-            ...(prepared.channel?.memory.decisions.length ? { decisions: prepared.channel.memory.decisions } : {}),
-            ...(prepared.channel?.memory.openQuestions.length ? { openQuestions: prepared.channel.memory.openQuestions } : {}),
-            recent: (this.state.messages[conversationKey(prepared.request.conversation)] ?? []).slice(-30),
-          })
+      const authority = this.agentAuthority(agent)
+      if (authority === undefined) return
+      const executionIsCurrent = () => !this.closing && this.agentAuthorityIsCurrent(agent, authority) && this.conversationIsCurrent(prepared, thread)
       const sessionName = prepared.request.conversation.kind === 'dm'
         ? prepared.dmSessionName ?? 'Bot Chat'
         : `Commonspace Thread: ${thread?.id ?? crypto.randomUUID()}`
@@ -767,7 +1164,14 @@ export class CommonspaceHostService {
             cwd,
             additionalCwds: prepared.project?.paths.slice(1) ?? [],
             sessionName,
-            prompt,
+            message: delivery.text,
+            commonspaceScope: {
+              agentId: agent.id,
+              conversation: prepared.request.conversation,
+              sessionName,
+              ...(thread === undefined ? {} : { threadId: thread.id }),
+              ...(prepared.project === undefined ? {} : { projectId: prepared.project.id }),
+            },
             ...(sessionId === undefined ? {} : { sessionId }),
             ...(agentModel === undefined ? {} : { model: agentModel }),
             reasoning: effectiveReasoning,
@@ -775,7 +1179,7 @@ export class CommonspaceHostService {
         })
       } catch (error) {
         if (!executionIsCurrent()) return
-        const message = error instanceof Error ? error.message : String(error)
+        const message = this.publicAgentFailure(error)
         if (prepared.request.conversation.kind === 'dm') {
           this.updateMessageReplyStatus(prepared.request.conversation, response.accepted.id, 'error', message)
         }
@@ -798,6 +1202,9 @@ export class CommonspaceHostService {
       if (prepared.request.conversation.kind === 'dm') {
         this.updateMessageReplyStatus(prepared.request.conversation, response.accepted.id, 'complete')
       }
+      const trace = agentResponse.trace === undefined
+        ? undefined
+        : this.publicAgentTrace(agentResponse.trace, agent.adapter)
       const reply: CommonspaceMessage = {
         id: messageId(),
         conversation: prepared.request.conversation,
@@ -806,6 +1213,7 @@ export class CommonspaceHostService {
         authorName: agent.displayName,
         text: agentResponse.text,
         createdAt: now(),
+        ...(trace === undefined ? {} : { trace }),
         ...(thread === undefined ? {} : { threadId: thread.id, parentMessageId: thread.rootMessageId }),
       }
       this.append(reply)
@@ -824,14 +1232,14 @@ export class CommonspaceHostService {
     }
 
     await Promise.all(prepared.agentIds.slice(0, effectiveLimit).map(agentId => deliver(agentId, rootDelivery)))
-    if (thread !== undefined && this.conversationIsCurrent(prepared, thread)) {
+    if (!this.closing && thread !== undefined && this.conversationIsCurrent(prepared, thread)) {
       await this.setThreadStatus(thread.id, 'complete')
       await this.updateChannelMemory(thread.channelId)
     }
   }
 
-  private managedAgentAuthority(agent: CommonspaceAgentProfile): CommonspaceAgentDefinition | null | undefined {
-    return agent.adapter === 'hermes' ? null : this.state.agents.find(candidate => candidate.id === agent.id)
+  private agentAuthority(agent: CommonspaceAgentProfile): CommonspaceAgentDefinition | undefined {
+    return this.state.agents.find(candidate => candidate.id === agent.id && candidate.adapter === agent.adapter)
   }
 
   private conversationIsCurrent(prepared: PreparedSend, thread: CommonspaceThread | undefined): boolean {
@@ -844,11 +1252,9 @@ export class CommonspaceHostService {
 
   private agentAuthorityIsCurrent(
     agent: CommonspaceAgentProfile,
-    authority: CommonspaceAgentDefinition | null | undefined,
+    authority: CommonspaceAgentDefinition | undefined,
   ): boolean {
-    return agent.adapter === 'hermes'
-      ? authority === null
-      : authority !== undefined && this.state.agents.find(candidate => candidate.id === agent.id) === authority
+    return authority !== undefined && this.state.agents.find(candidate => candidate.id === agent.id) === authority
   }
 
   private async withAgentSessionLock<T>(agentId: string, sessionName: string, task: () => Promise<T>): Promise<T> {
@@ -863,7 +1269,7 @@ export class CommonspaceHostService {
   }
 
   private rememberAgentSession(agentId: string, sessionName: string, sessionId: string): void {
-    if (!isAgentSessionId(sessionId)) throw new Error('agent returned an invalid session id')
+    if (!isNativeSessionId(sessionId)) throw new Error('agent returned an invalid session id')
     const current = this.state.agentSessions[agentId] ?? {}
     if (current[sessionName] === sessionId) return
     const bounded = Object.fromEntries([...Object.entries(current), [sessionName, sessionId]].slice(-500))
@@ -970,11 +1376,11 @@ export class CommonspaceHostService {
     }
     if (mutation.action === 'add-agent') {
       const id = managedAgentId(mutation.adapter, mutation.displayName)
-      const conflict = (await this.discoverAgents()).some(agent => agent.id === id && agent.adapter === 'hermes')
+      const conflict = (await this.discoverAgentCandidates()).some(agent => agent.id === id)
       if (conflict) throw new Error(`agent ${mutation.displayName.trim()} conflicts with a Hermes profile`)
     }
     if (mutation.action === 'reset-dm') {
-      if (typeof mutation.agentId !== 'string' || !(await this.discoverAgents()).some(agent => agent.id === mutation.agentId)) {
+      if (typeof mutation.agentId !== 'string' || !this.configuredAgents().some(agent => agent.id === mutation.agentId)) {
         throw new Error('unknown agent')
       }
     }
@@ -988,14 +1394,14 @@ export class CommonspaceHostService {
     return resolved
   }
 
-  private async discoverAgents(): Promise<CommonspaceAgentProfile[]> {
+  private async discoverAgentCandidates(): Promise<CommonspaceAgentProfile[]> {
     let discovered: CommonspaceAgentProfile[] = []
     if (this.overrides.discoverAgents !== undefined) {
       discovered = await this.overrides.discoverAgents()
     } else {
       try {
         const { stdout } = await execFileAsync(this.hermesPath, ['profile', 'list'], {
-          maxBuffer: MAX_CAPTURE_BYTES,
+          maxBuffer: MAX_PROFILE_LIST_BYTES,
           timeout: 30_000,
           encoding: 'utf8',
         })
@@ -1004,18 +1410,28 @@ export class CommonspaceHostService {
         this.environment.logger?.warn(`Commonspace could not discover Hermes profiles: ${error instanceof Error ? error.message : String(error)}`)
       }
     }
-    const managed = this.state.agents.map<CommonspaceAgentProfile>(agent => ({
-      id: agent.id,
-      displayName: agent.displayName,
-      adapter: agent.adapter,
-      model: agent.model,
-      status: 'unknown',
-    }))
     const unique = new Map<string, CommonspaceAgentProfile>()
-    for (const agent of [...discovered, ...managed]) {
-      if (!unique.has(agent.id)) unique.set(agent.id, agent)
+    for (const agent of discovered) {
+      if (agent.adapter === 'hermes' && !unique.has(agent.id)) unique.set(agent.id, agent)
     }
     return [...unique.values()]
+  }
+
+  private configuredAgents(discoveredAgents: CommonspaceAgentProfile[] = []): CommonspaceAgentProfile[] {
+    const discoveredById = new Map(discoveredAgents.map(agent => [agent.id, agent]))
+    return this.state.agents.map<CommonspaceAgentProfile>((agent) => {
+      if (agent.adapter === 'hermes') {
+        const discovered = discoveredById.get(agent.id)
+        if (discovered?.adapter === 'hermes') return discovered
+      }
+      return {
+        id: agent.id,
+        displayName: agent.displayName,
+        adapter: agent.adapter,
+        model: agent.model,
+        status: 'unknown',
+      }
+    })
   }
 
   private async runAgent(input: AgentRunInput): Promise<AgentRunResult> {
@@ -1023,10 +1439,112 @@ export class CommonspaceHostService {
       const result = await this.overrides.runAgent(input)
       return typeof result === 'string' ? { text: result } : result
     }
-    if (input.agent.adapter === 'hermes') return this.runHermesAgent(input)
-    if (input.agent.adapter === 'codex') return this.runCodexAgent(input)
-    if (input.agent.adapter === 'claude-code') return this.runClaudeCodeAgent(input)
-    throw new Error(`unsupported agent adapter ${String(input.agent.adapter)}`)
+    return this.runAcpAgent(input)
+  }
+
+  private async runAcpAgent(input: AgentRunInput): Promise<AgentRunResult> {
+    const mcpServers = this.mcpServersFor(input)
+    const reasoning = acpReasoningValue(input.agent.adapter, input.reasoning)
+    const configOptions: Record<string, string> = {
+      ...(input.model === undefined || input.agent.adapter === 'hermes' ? {} : { model: input.model }),
+      ...(reasoning === undefined
+        ? {}
+        : { reasoning_effort: reasoning }),
+    }
+    let processClient = this.acpProcesses.get(input.agent.id)
+    if (processClient === undefined) {
+      const hermes = input.agent.adapter === 'hermes'
+      processClient = new AcpAgentProcess({
+        command: hermes ? this.hermesAcpCommand : this.codexAcpCommand,
+        args: hermes
+          ? [...this.hermesAcpArgs, '-p', input.agent.id, 'acp', ...(this.hermesYolo ? ['--accept-hooks'] : [])]
+          : this.codexAcpArgs,
+        cwd: input.cwd,
+        env: hermes
+          ? { ...process.env, NO_BROWSER: '1' }
+          : {
+              ...process.env,
+              CODEX_PATH: this.codexPath,
+              INITIAL_AGENT_MODE: this.externalAgentYolo ? 'agent-full-access' : 'agent',
+              NO_BROWSER: '1',
+            },
+        requestTimeoutMs: ((this.runBudgetSeconds ?? 3_600) + 30) * 1000,
+        maxResponseChars: MAX_AGENT_RESPONSE_CHARS,
+        clientName: `commonspace-${input.agent.id}`,
+      })
+      this.acpProcesses.set(input.agent.id, processClient)
+    }
+    const activeScopeKey = `${input.agent.id}\u0000${input.sessionName}`
+    let activeSessionId: string | undefined
+    try {
+      const result = await processClient.run({
+        cwd: input.cwd,
+        additionalCwds: input.additionalCwds,
+        message: input.message,
+        mcpServers,
+        modeId: input.agent.adapter === 'hermes'
+          ? (this.hermesYolo ? 'dont_ask' : 'accept_edits')
+          : (this.externalAgentYolo ? 'agent-full-access' : 'agent'),
+        ...(input.agent.adapter === 'hermes' && input.model !== undefined ? { modelId: input.model } : {}),
+        configOptions,
+        onSessionReady: sessionId => {
+          activeSessionId = sessionId
+          this.activeAcpSessions.set(activeScopeKey, sessionId)
+        },
+        ...(input.sessionId === undefined ? {} : { sessionId: input.sessionId }),
+      })
+      if (result.text.trim() === '') throw new Error(`${input.agent.displayName} returned no response`)
+      return {
+        sessionId: result.sessionId,
+        text: result.text,
+        ...(result.trace === undefined
+          ? {}
+          : { trace: { adapter: input.agent.adapter, ...result.trace } }),
+      }
+    } catch (error) {
+      if (this.acpProcesses.get(input.agent.id) === processClient && error instanceof Error && /(?:exited|not connected|timed out)/i.test(error.message)) {
+        this.acpProcesses.delete(input.agent.id)
+        await processClient.close().catch(() => undefined)
+      }
+      throw error
+    } finally {
+      if (activeSessionId !== undefined && this.activeAcpSessions.get(activeScopeKey) === activeSessionId) {
+        this.activeAcpSessions.delete(activeScopeKey)
+      }
+    }
+  }
+
+  private mcpServersFor(input: AgentRunInput): AcpMcpServer[] {
+    if (this.mcpGateway === undefined || this.mcpEndpoint === undefined || input.commonspaceScope === undefined) return []
+    const scope: CommonspaceMcpScope = {
+      ...input.commonspaceScope,
+      agentId: input.agent.id,
+      sessionName: input.sessionName,
+    }
+    const key = `${input.agent.id}\u0000${input.sessionName}`
+    const fingerprint = JSON.stringify(scope)
+    let credential = this.mcpCredentials.get(key)
+    if (credential?.fingerprint !== fingerprint || (credential !== undefined && !this.mcpGateway.has(credential.token))) {
+      if (credential !== undefined) {
+        this.mcpGateway.revoke(credential.token)
+        this.mcpCredentials.delete(key)
+      }
+      while (this.mcpCredentials.size >= MAX_MCP_CREDENTIALS) {
+        const oldest = this.mcpCredentials.entries().next().value as [string, { token: string }] | undefined
+        if (oldest === undefined) break
+        this.mcpCredentials.delete(oldest[0])
+        this.mcpGateway.revoke(oldest[1].token)
+      }
+      const issued = this.mcpGateway.issue(scope)
+      credential = { fingerprint, scope: structuredClone(scope), token: issued.token }
+      this.mcpCredentials.set(key, credential)
+    }
+    return [{
+      type: 'http',
+      name: 'commonspace',
+      url: this.mcpEndpoint,
+      headers: [{ name: 'Authorization', value: `Bearer ${credential.token}` }],
+    }]
   }
 
   private async runAgentWithSessionRecovery(
@@ -1036,7 +1554,7 @@ export class CommonspaceHostService {
     try {
       return await this.runAgent(input)
     } catch (error) {
-      if (input.sessionId === undefined || !isMissingNativeSession(error, input.agent.adapter)) throw error
+      if (input.sessionId === undefined || !isMissingNativeSession(error)) throw error
       if (!shouldContinue()) return null
       this.forgetAgentSession(input.agent.id, input.sessionName, input.sessionId)
       if (!shouldContinue()) return null
@@ -1044,94 +1562,6 @@ export class CommonspaceHostService {
       delete replacement.sessionId
       return this.runAgent(replacement)
     }
-  }
-
-  private async ensureTempRoot(): Promise<string> {
-    const tempRoot = join(this.root, 'tmp')
-    await mkdir(tempRoot, { recursive: true, mode: 0o700 })
-    await chmod(tempRoot, 0o700)
-    return tempRoot
-  }
-
-  private async runHermesAgent(input: AgentRunInput): Promise<AgentRunResult> {
-    const tempRoot = await this.ensureTempRoot()
-    const queryFile = join(tempRoot, `${crypto.randomUUID()}.txt`)
-    try {
-      await writeFile(queryFile, input.prompt, { encoding: 'utf8', mode: 0o600 })
-      const invocation = buildHermesInvocation({
-        profile: input.agent.id,
-        cwd: input.cwd,
-        sessionName: input.sessionName,
-        queryFile,
-        hermesPath: this.hermesPath,
-        yolo: this.hermesYolo,
-        ...(input.model === undefined ? {} : { model: input.model }),
-        ...(input.reasoning === undefined ? {} : { reasoning: input.reasoning }),
-      })
-      const { stdout, stderr } = await executeAgentCommand({
-        command: invocation.command,
-        args: [
-          ...invocation.args,
-          ...(this.runBudgetSeconds === undefined ? [] : ['--run-budget', String(this.runBudgetSeconds)]),
-        ],
-        cwd: input.cwd,
-        input: '',
-      }, ((this.runBudgetSeconds ?? 3_600) + 30) * 1000)
-      const response = parseHermesOutput(stdout)
-      if (response === '') throw new Error(stderr.trim() || `Hermes profile ${input.agent.id} returned no response`)
-      return { text: response.slice(0, 64_000) }
-    } finally {
-      await rm(queryFile, { force: true })
-    }
-  }
-
-  private async runCodexAgent(input: AgentRunInput): Promise<AgentRunResult> {
-    const tempRoot = await this.ensureTempRoot()
-    const outputFile = join(tempRoot, `${crypto.randomUUID()}.txt`)
-    try {
-      await writeFile(outputFile, '', { encoding: 'utf8', mode: 0o600, flag: 'wx' })
-      const invocation = buildCodexInvocation({
-        cwd: input.cwd,
-        additionalCwds: input.additionalCwds,
-        prompt: input.prompt,
-        outputFile,
-        unsafe: this.externalAgentYolo,
-        codexPath: this.codexPath,
-        ...(input.sessionId === undefined ? {} : { sessionId: input.sessionId }),
-        ...(input.model === undefined ? {} : { model: input.model }),
-        ...(input.reasoning === undefined ? {} : { reasoning: input.reasoning }),
-      })
-      const { stdout } = await executeAgentCommand(invocation, ((this.runBudgetSeconds ?? 3_600) + 30) * 1000)
-      let lastMessage = ''
-      try {
-        lastMessage = await readBoundedTextFile(outputFile, MAX_CAPTURE_BYTES)
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-      }
-      const result = parseCodexOutput(stdout, lastMessage, input.sessionId)
-      return { text: result.text.slice(0, 64_000), sessionId: result.sessionId }
-    } finally {
-      await rm(outputFile, { force: true })
-    }
-  }
-
-  private async runClaudeCodeAgent(input: AgentRunInput): Promise<AgentRunResult> {
-    const invocation = buildClaudeCodeInvocation({
-      cwd: input.cwd,
-      additionalCwds: input.additionalCwds,
-      prompt: input.prompt,
-      sessionName: input.sessionName,
-      newSessionId: crypto.randomUUID(),
-      unsafe: this.externalAgentYolo,
-      maxTurns: this.maxClaudeTurns,
-      claudePath: this.claudePath,
-      ...(input.sessionId === undefined ? {} : { sessionId: input.sessionId }),
-      ...(input.model === undefined ? {} : { model: input.model }),
-      ...(input.reasoning === undefined ? {} : { reasoning: input.reasoning }),
-    })
-    const { stdout } = await executeAgentCommand(invocation, ((this.runBudgetSeconds ?? 3_600) + 30) * 1000)
-    const result = parseClaudeCodeOutput(stdout)
-    return { text: result.text.slice(0, 64_000), sessionId: result.sessionId }
   }
 
   private persist(): Promise<void> {
