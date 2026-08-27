@@ -170,7 +170,8 @@ a:focus-visible {
     pointer-events: auto;
   }
 
-  .csp-conversation-header {
+  .csp-conversation-header,
+  .csp-inbox-header {
     padding-left: 64px;
   }
 }
