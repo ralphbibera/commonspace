@@ -1,17 +1,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { fileURLToPath } from 'node:url'
-
-const apiTarget = 'http://127.0.0.1:3100'
-
-function apiProxy(browserHost: string) {
-  return {
-    target: apiTarget,
-    headers: {
-      'x-forwarded-host': browserHost,
-    },
-  }
-}
+import { apiProxy } from './vite-api-proxy.ts'
 
 export default defineConfig({
   plugins: [react()],
@@ -24,14 +14,14 @@ export default defineConfig({
     host: '127.0.0.1',
     port: 5173,
     proxy: {
-      '/api': apiProxy('127.0.0.1:5173'),
+      '/api': apiProxy(),
     },
   },
   preview: {
     host: '127.0.0.1',
     port: 4173,
     proxy: {
-      '/api': apiProxy('127.0.0.1:4173'),
+      '/api': apiProxy(),
     },
   },
 })
