@@ -74,11 +74,26 @@ async function selectedDirectoryOutput(platform: NodeJS.Platform): Promise<strin
   throw new Error(`folder selection is not supported on ${platform}`)
 }
 
+export async function resolveProjectDirectory(selectedPath: string): Promise<string> {
+  if (!isAbsolute(selectedPath)) throw new Error('folder picker returned a non-absolute path')
+  const path = await realpath(selectedPath)
+  if (!(await stat(path)).isDirectory()) throw new Error('folder picker selection is not a directory')
+
+  try {
+    const repositoryRoot = (await runPickerCommand('git', [
+      '-C', path,
+      'rev-parse',
+      '--show-toplevel',
+    ])).replace(/[\r\n]+$/, '')
+    if (repositoryRoot !== '' && isAbsolute(repositoryRoot)) return realpath(repositoryRoot)
+  } catch {
+    // A regular local folder is still a valid project directory.
+  }
+  return path
+}
+
 export async function selectLocalDirectory(): Promise<string | null> {
   const output = (await selectedDirectoryOutput(process.platform)).replace(/[\r\n]+$/, '')
   if (output === '') return null
-  if (!isAbsolute(output)) throw new Error('folder picker returned a non-absolute path')
-  const path = await realpath(output)
-  if (!(await stat(path)).isDirectory()) throw new Error('folder picker selection is not a directory')
-  return path
+  return resolveProjectDirectory(output)
 }
