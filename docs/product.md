@@ -8,7 +8,7 @@ Commonspace gives one person a clear, local-first shared workspace for working w
 
 Commonspace is bring-your-own-agent by design. It reflects and connects supported ACP harnesses; it does not replace their runtime, credentials, tools, private memory, models, permissions, or native sessions.
 
-See [Product direction](product-direction.md) for the current product boundaries and detailed decisions. [Implementation gap audit](implementation-gap-audit.md) tracks which parts are working, backend-ready, partial, or still missing.
+See [Product specification](product-spec.md) for the complete behavior and acceptance contract, [Product direction](product-direction.md) for the boundary and decision filter, and [Implementation gap audit](implementation-gap-audit.md) for current implementation status.
 
 ## Product principles
 
