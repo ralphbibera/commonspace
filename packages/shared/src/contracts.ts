@@ -1,4 +1,4 @@
-export const COMMONSPACE_STATE_VERSION = 15 as const
+export const COMMONSPACE_STATE_VERSION = 16 as const
 
 export type AgentAdapterKind = 'hermes' | 'codex'
 
@@ -150,6 +150,10 @@ export type CommonspaceRunRootAttribution =
   | {
       available: true
       rootIndex: number
+      /** Project that owns this root when a run spans multiple Projects. */
+      projectId?: string
+      /** Root index inside the owning Project. */
+      projectRootIndex?: number
       branch: string | null
       headBefore: string | null
       headAfter: string | null
@@ -162,6 +166,10 @@ export type CommonspaceRunRootAttribution =
   | {
       available: false
       rootIndex: number
+      /** Project that owns this root when a run spans multiple Projects. */
+      projectId?: string
+      /** Root index inside the owning Project. */
+      projectRootIndex?: number
       reason: string
     }
 
@@ -177,6 +185,19 @@ export interface CommonspaceChannelMemory {
   openQuestions: string[]
   threadIds: string[]
   updatedAt: string | null
+  /** How the current compacted representation was produced. */
+  origin?: 'automatic' | 'inference' | 'user'
+  /** Whether newer source messages exist beyond the current representation. */
+  status?: 'empty' | 'current' | 'stale'
+  sourceMessageCount?: number
+  estimatedTokens?: number
+  compactedThroughMessageId?: string | null
+}
+
+export interface UpdateChannelContextRequest {
+  summary: string
+  decisions?: string[]
+  openQuestions?: string[]
 }
 
 export interface CommonspaceChannel {
@@ -234,7 +255,9 @@ export interface CommonspaceMessage {
   text: string
   attachments?: CommonspaceImageAttachment[]
   createdAt: string
-  /** Optional project context for this message; channels themselves are global. */
+  /** Authoritative Project context for this message; Channels themselves are global. */
+  projectIds?: string[]
+  /** @deprecated Compatibility mirror of the first projectIds entry. */
   projectId?: string
   threadId?: string
   parentMessageId?: string
@@ -264,6 +287,9 @@ export type CommonspaceReplyStatus =
 export interface CommonspaceThread {
   id: string
   channelId: string
+  /** Authoritative Project context inherited by every message in this thread. */
+  projectIds?: string[]
+  /** @deprecated Compatibility mirror of the first projectIds entry. */
   projectId: string | null
   rootMessageId: string
   agentIds: string[]
@@ -370,6 +396,7 @@ export type CommonspaceMutation =
   | { action: 'create-channel'; name: string; agentIds: string[] }
   | { action: 'set-channel-agents'; channelId: string; agentIds: string[] }
   | { action: 'set-channel-context'; channelId: string; instructions: string }
+  | { action: 'set-channel-memory'; channelId: string; summary: string; decisions?: string[]; openQuestions?: string[] }
   | { action: 'set-channel-settings'; channelId: string; model?: string | null; reasoning?: CommonspaceReasoning | null }
   | { action: 'set-defaults'; model?: string | null; reasoning?: CommonspaceReasoning; maxAgentsPerTurn?: number; memoryThreads?: number }
   | { action: 'add-agent'; displayName: string; adapter: Exclude<AgentAdapterKind, 'hermes'>; model?: string | null }
@@ -382,6 +409,9 @@ export type CommonspaceMutation =
 export interface SendMessageRequest {
   conversation: ConversationRef
   text: string
+  /** Zero, one, or many explicit Project references. */
+  projectIds?: string[]
+  /** @deprecated Use projectIds. */
   projectId?: string
   threadId?: string
   /** Restrict a channel-thread reply to one current channel agent. */
@@ -442,4 +472,12 @@ export interface SelectDirectoryResponse {
 
 export function conversationKey(ref: ConversationRef): string {
   return `${ref.kind}:${ref.id}`
+}
+
+/** Read canonical Project references while legacy singular snapshots remain supported. */
+export function referencedProjectIds(value: { projectIds?: readonly string[]; projectId?: string | null }): string[] {
+  return [...new Set([
+    ...(value.projectIds ?? []),
+    ...(value.projectId === undefined || value.projectId === null ? [] : [value.projectId]),
+  ].filter(projectId => projectId !== ''))]
 }

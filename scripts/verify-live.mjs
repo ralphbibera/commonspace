@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { chromium } from 'playwright'
+import { findStartupUrl } from './startup-output.mjs'
 
 const repoRoot = process.cwd()
 const stateRoot = await mkdtemp(join(tmpdir(), 'commonspace-live-'))
@@ -29,10 +30,10 @@ function waitForUrl(child, pattern, label) {
     }, 15_000)
     const inspect = (chunk) => {
       output += chunk.toString()
-      const match = output.match(pattern)
-      if (match?.[1] === undefined) return
+      const url = findStartupUrl(output, pattern)
+      if (url === undefined) return
       clearTimeout(timer)
-      resolve(match[1])
+      resolve(url)
     }
     child.stdout.on('data', inspect)
     child.stderr.on('data', inspect)

@@ -6,7 +6,9 @@ Commonspace is a private preview focused on durable human-agent conversation and
 
 - Standalone local server and browser application.
 - Filesystem Projects with multiple canonical paths.
+- Zero-to-many Project references on messages and threads, including multi-root agent execution and Project-aware search/attribution.
 - Channels with explicit agent rosters, instructions, settings, memory, and threaded native sessions.
+- Editable Channel context with state metadata, manual compaction, and automatic token-pressure compaction through the configured inference layer.
 - Persistent Direct Messages with generation-safe `/new` boundaries.
 - Hermes discovery with explicit roster selection, plus managed Codex agents.
 - Native Hermes/Codex ACP relay with delta-only delivery, exact opaque-session resumption, and scoped Commonspace MCP context/actions.
@@ -16,18 +18,34 @@ Commonspace is a private preview focused on durable human-agent conversation and
 - Explicit completed, needs-input, failed, silent, cancelled, and timeout outcomes with needs-attention surfacing.
 - Inference-only unaddressed Channel routing through a harness or OpenAI-compatible model.
 - Project Files, Git Changes/diffs, image attachments, reply speech playback, and native agent configuration inspection.
+- Work/result binding through per-reply run attribution, changed-file surfaces, activity traces, and validation evidence emitted by the harness.
 - Hard-boundary cancellation, stale-session recovery that distinguishes missing from transient failures, and graceful bridge shutdown.
 - Slash commands and agent/project/channel references.
 - Versioned atomic state, loopback API guards, bounded execution, and live browser verification.
 
-## Next
+## Next: product behavior
 
-- Work/result binding between a request, changed files, validation evidence, and the resulting reply.
-- Better transcript search, filtering, and context-handoff inspection.
-- Runtime availability and authentication diagnostics.
-- Import/export and retention controls for non-secret Commonspace data.
-- A durable relational message store once transcript scale justifies migration from the current versioned state file.
+- Split routed messages into inspectable agent-specific sub-requests.
+- Add Project-reference inference and visible correction when a message has no explicit reference.
+- Add rerouting and compacted routing feedback so corrections improve later decisions.
+- Add thread-specific context snapshots, pins, and general human/agent file attachments.
+- Add message edit branches and visible deletion markers without rewriting delivered native-session history.
+- Normalize native permission requests and add clearer runtime/authentication diagnostics.
+- Add export/import and retention controls for non-secret Commonspace data.
+- Package an installed background service and optional OS notifications.
+
+## Later UI/UX work
+
+- Multi-Project reference controls and inferred-reference correction.
+- Channel/Thread context inspection, editing, pinning, and manual-compaction controls.
+- Sub-request, reroute, message-version, file, permission, and notification surfaces.
 - Keyboard and narrow-screen acceptance coverage across every flow.
+
+## Scale-dependent work
+
+- A durable relational message store once transcript scale justifies migration from the current versioned state file.
+
+See [Implementation gap audit](implementation-gap-audit.md) for the evidence-based status of the complete product model.
 
 ## Release readiness
 

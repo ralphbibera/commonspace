@@ -20,11 +20,14 @@ All notable changes to Commonspace are recorded here.
 - Real standalone health, API, browser-mount, build, and live smoke verification.
 - Inference-only Channel routing through either an agent harness or an OpenAI-compatible model, with inspectable routing decisions.
 - Project Files, Git Changes/diffs, speech playback, live activity, stop controls, and native agent configuration inspection.
+- Zero-to-many Project references on messages and threads, with multi-root agent execution, Project-aware search, correct run attribution, and backward-compatible singular fields for the current UI.
+- Editable Channel context APIs with user-owned context preservation, manual inference compaction, automatic token-pressure compaction, and visible current/stale metadata.
+- ANSI-safe live-preview URL detection so CI can verify Vite startup reliably.
 
 ### Changed
 
 - Hermes profiles are auto-discovered as candidates but join the Commonspace roster only after an explicit user choice; new Channels also start with no agents preselected.
-- Local state migrates from versions 1–13 to version 14 and automatically recovers an invalid primary from the previous valid rollback backup.
+- Local state migrates from versions 1–15 to version 16 for multi-Project references and durable Channel-context metadata, and automatically recovers an invalid primary from the previous valid rollback backup.
 - Independent agents can run concurrently; only the same native agent session is serialized.
 - Hermes and Codex use ACP for every agent turn.
 - Missing native sessions recover once without treating authentication or transport failures as a reason to discard continuity.

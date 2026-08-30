@@ -5,6 +5,7 @@ import type {
   CommonspaceState,
   ConversationRef,
 } from './contracts.js'
+import { referencedProjectIds } from './contracts.js'
 
 export type CommonspaceInboxItemKind =
   | 'agent-reply'
@@ -179,8 +180,12 @@ export function deriveCommonspaceSessions(
   const sessions = new Map<string, CommonspaceSessionItem>()
 
   const projectNameFor = (message: CommonspaceMessage, threadId?: string): string | null => {
-    const projectId = message.projectId ?? (threadId === undefined ? undefined : threads.get(threadId)?.projectId ?? undefined)
-    return projectId === undefined ? null : projects.get(projectId) ?? null
+    const direct = referencedProjectIds(message)
+    const projectIds = direct.length > 0 || threadId === undefined
+      ? direct
+      : referencedProjectIds(threads.get(threadId) ?? {})
+    const names = projectIds.flatMap(projectId => projects.get(projectId) ?? [])
+    return names.length === 0 ? null : names.join(' · ')
   }
 
   for (const item of deriveCommonspaceInboxItems(state)) {

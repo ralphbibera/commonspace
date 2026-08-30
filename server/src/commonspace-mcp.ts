@@ -12,6 +12,8 @@ export interface CommonspaceMcpScope {
   conversation: ConversationRef
   threadId?: string
   sessionName?: string
+  projectIds?: string[]
+  /** @deprecated Compatibility mirror of the first projectIds entry. */
   projectId?: string
 }
 

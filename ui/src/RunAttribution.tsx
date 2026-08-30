@@ -73,7 +73,9 @@ export function RunAttribution({ attribution, authorName, messageId, projectId }
                                 <a href={`#${anchor}`} onClick={() => { setSelected(expanded ? null : anchor) }}>{change.path}</a>
                                 <span>{change.status}{change.preExisting ? ' · also pre-existing' : ''}</span>
                                 <small>+{change.additions ?? '–'} / −{change.deletions ?? '–'}</small>
-                                <button type="button" aria-label={`Open ${change.path} in editor`} onClick={() => { void openInEditor(projectId, root.rootIndex, change) }}>Open in editor</button>
+                                <button type="button" aria-label={`Open ${change.path} in editor`} onClick={() => {
+                                  void openInEditor(root.projectId ?? projectId, root.projectRootIndex ?? root.rootIndex, change)
+                                }}>Open in editor</button>
                               </div>
                               {expanded && change.patch !== undefined && <pre className="csp-run-patch"><code>{change.patch}</code></pre>}
                             </li>

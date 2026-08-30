@@ -79,6 +79,23 @@ describe('standalone Commonspace server', () => {
     const routingReadResponse = await fetch(`${running.url}/api/routing`, { headers: { origin: running.url } })
     expect(JSON.stringify(await routingReadResponse.json())).not.toContain('private-key')
 
+    const channel = (await running.service.mutate({ action: 'create-channel', name: 'context-api', agentIds: [] })).channels[0]!
+    const contextUpdateResponse = await fetch(`${running.url}/api/channels/${encodeURIComponent(channel.id)}/context`, {
+      method: 'PUT',
+      headers: { origin: running.url, 'content-type': 'application/json' },
+      body: JSON.stringify({ summary: 'Editable canonical context.', decisions: ['Keep it local.'] }),
+    })
+    expect(contextUpdateResponse.status).toBe(200)
+    await expect(contextUpdateResponse.json()).resolves.toMatchObject({
+      summary: 'Editable canonical context.',
+      origin: 'user',
+      status: 'current',
+    })
+    const contextReadResponse = await fetch(`${running.url}/api/channels/${encodeURIComponent(channel.id)}/context`, {
+      headers: { origin: running.url },
+    })
+    await expect(contextReadResponse.json()).resolves.toMatchObject({ summary: 'Editable canonical context.' })
+
     const discoveryResponse = await fetch(`${running.url}/api/discover-agents`, {
       method: 'POST',
       headers: { origin: running.url, 'content-type': 'application/json' },
@@ -107,5 +124,4 @@ describe('standalone Commonspace server', () => {
     })
     expect(unsupportedResponse.status).toBe(400)
   })
-
 })
