@@ -7,6 +7,12 @@ import { CommonspaceHostService } from '../server/src/service.ts'
 const roots: string[] = []
 const services: CommonspaceHostService[] = []
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>(done => { resolve = done })
+  return { promise, resolve }
+}
+
 afterEach(async () => {
   await Promise.all(services.splice(0).map(service => service.close()))
   await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))
@@ -135,6 +141,35 @@ describe('multi-project conversation context', () => {
     expect(messages.filter(message => message.projectIds !== undefined).every(message => message.projectId === second.id)).toBe(true)
     const afterRemoval = messages.find(message => message.authorType === 'agent')
     expect(afterRemoval?.runAttribution?.roots.map(root => root.projectId)).toEqual([second.id])
+  })
+
+  it('does not launch queued work with stale Project authority', async () => {
+    const { service, runAgent, first, second } = await fixture()
+    const firstRun = deferred<{ text: string }>()
+    runAgent.mockImplementationOnce(async () => firstRun.promise)
+      .mockResolvedValue({ text: 'Queued work ran.' })
+
+    await service.send({
+      conversation: { kind: 'dm', id: 'codex-review-bot' },
+      projectIds: [first.id, second.id],
+      text: 'Start the first run.',
+    })
+    await vi.waitFor(() => { expect(runAgent).toHaveBeenCalledOnce() })
+    await service.send({
+      conversation: { kind: 'dm', id: 'codex-review-bot' },
+      projectIds: [first.id, second.id],
+      text: 'Queue another run.',
+      delivery: 'queue',
+    })
+
+    await service.mutate({ action: 'remove-project', projectId: first.id })
+    firstRun.resolve({ text: 'First work finished late.' })
+    await service.whenIdle()
+
+    expect(runAgent).toHaveBeenCalledOnce()
+    const messages = service.snapshot().messages['dm:codex-review-bot'] ?? []
+    expect(messages.every(message => message.projectIds?.includes(first.id) !== true)).toBe(true)
+    expect(messages.some(message => message.authorType === 'agent')).toBe(false)
   })
 
   it('removes attribution roots for Projects whose paths disappear before startup', async () => {
