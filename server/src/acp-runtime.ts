@@ -19,6 +19,7 @@ import type { CommonspaceTraceEntry, CommonspaceTracePlanStep, CommonspaceTraceT
 const DEFAULT_REQUEST_TIMEOUT_MS = 3_630_000
 const DEFAULT_MAX_RESPONSE_CHARS = 1024 * 1024
 const DEFAULT_MAX_PROTOCOL_FRAME_BYTES = 1024 * 1024
+const CANCEL_SETTLE_GRACE_MS = 5_000
 const MAX_STDERR_CHARS = 16_000
 const MAX_TRACE_ENTRIES = 128
 const MAX_REASONING_CHARS = 64_000
@@ -74,6 +75,8 @@ interface ActiveTurn {
   chunks: string[]
   chars: number
   exceededLimit: boolean
+  settled: Promise<void>
+  resolveSettled(): void
   traceStartedAt: string
   traceEntries: CommonspaceTraceEntry[]
   onTraceUpdate?: AcpRunInput['onTraceUpdate']
@@ -270,10 +273,14 @@ export class AcpAgentProcess {
       await this.#configureSession(connection, setup, input)
       if (this.#activeTurns.has(sessionId)) throw new Error('ACP native session already has an active turn')
 
+      let resolveSettled = (): void => {}
+      const settled = new Promise<void>(resolve => { resolveSettled = resolve })
       const turn: ActiveTurn = {
         chunks: [],
         chars: 0,
         exceededLimit: false,
+        settled,
+        resolveSettled,
         traceStartedAt: timestamp(),
         traceEntries: [],
         ...(input.onTraceUpdate === undefined ? {} : { onTraceUpdate: input.onTraceUpdate }),
@@ -296,6 +303,7 @@ export class AcpAgentProcess {
         return { sessionId, text: turn.chunks.join(''), ...(trace === undefined ? {} : { trace }) }
       } finally {
         this.#activeTurns.delete(sessionId)
+        turn.resolveSettled()
       }
     } catch (error) {
       if (error instanceof AcpSessionRunError) throw error
@@ -305,8 +313,18 @@ export class AcpAgentProcess {
 
   async cancelSession(sessionId: string): Promise<boolean> {
     const connection = this.#connection
-    if (connection === undefined || connection.signal.aborted || !this.#activeTurns.has(sessionId)) return false
+    const turn = this.#activeTurns.get(sessionId)
+    if (connection === undefined || connection.signal.aborted || turn === undefined) return false
     await connection.agent.notify(methods.agent.session.cancel, { sessionId })
+    let timer: NodeJS.Timeout | undefined
+    try {
+      await Promise.race([
+        turn.settled,
+        new Promise<void>(resolve => { timer = setTimeout(resolve, CANCEL_SETTLE_GRACE_MS) }),
+      ])
+    } finally {
+      if (timer !== undefined) clearTimeout(timer)
+    }
     return true
   }
 
