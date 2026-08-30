@@ -85,7 +85,7 @@ export function parseRoutingResponse(text: string): AiRouteResult {
   }
 }
 
-interface OpenAiRoutingOptions {
+export interface OpenAiInferenceOptions {
   baseUrl: string
   model: string
   apiKey?: string
@@ -93,10 +93,10 @@ interface OpenAiRoutingOptions {
   signal?: AbortSignal
 }
 
-export async function routeWithOpenAICompatible(
-  options: OpenAiRoutingOptions,
-  input: AiRouteInput,
-): Promise<AiRouteResult> {
+export async function completeWithOpenAICompatible(
+  options: OpenAiInferenceOptions,
+  input: { system: string; prompt: string; maxTokens: number },
+): Promise<string> {
   const request = options.fetch ?? fetch
   const response = await request(`${options.baseUrl.replace(/\/$/u, '')}/chat/completions`, {
     method: 'POST',
@@ -107,21 +107,33 @@ export async function routeWithOpenAICompatible(
     body: JSON.stringify({
       model: options.model,
       temperature: 0,
-      max_tokens: 250,
+      max_tokens: input.maxTokens,
       response_format: { type: 'json_object' },
       messages: [
-        { role: 'system', content: 'You are a bounded routing classifier. Return only the requested JSON object.' },
-        { role: 'user', content: buildRoutingPrompt(input) },
+        { role: 'system', content: input.system },
+        { role: 'user', content: input.prompt },
       ],
     }),
     ...(options.signal === undefined ? {} : { signal: options.signal }),
   })
   const body = await boundedResponseText(response)
-  if (!response.ok) throw new Error(`routing provider returned HTTP ${String(response.status)}`)
+  if (!response.ok) throw new Error(`inference provider returned HTTP ${String(response.status)}`)
   const payload = record(JSON.parse(body))
   const choices = payload?.choices
   const choice = Array.isArray(choices) ? record(choices[0]) : null
   const message = record(choice?.message)
-  if (typeof message?.content !== 'string') throw new Error('routing provider returned no message')
-  return parseRoutingResponse(message.content)
+  if (typeof message?.content !== 'string') throw new Error('inference provider returned no message')
+  return message.content
+}
+
+export async function routeWithOpenAICompatible(
+  options: OpenAiInferenceOptions,
+  input: AiRouteInput,
+): Promise<AiRouteResult> {
+  const content = await completeWithOpenAICompatible(options, {
+    system: 'You are a bounded routing classifier. Return only the requested JSON object.',
+    prompt: buildRoutingPrompt(input),
+    maxTokens: 250,
+  })
+  return parseRoutingResponse(content)
 }

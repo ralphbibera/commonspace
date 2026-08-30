@@ -12,7 +12,7 @@ import type {
   CommonspaceTraceEntry,
   ConversationRef,
 } from '@commonspace/shared'
-import { COMMONSPACE_SEARCH_KINDS } from '@commonspace/shared'
+import { COMMONSPACE_SEARCH_KINDS, referencedProjectIds } from '@commonspace/shared'
 
 const DEFAULT_LIMIT = 24
 const MAX_LIMIT = 100
@@ -57,10 +57,15 @@ function conversationLabel(conversation: ConversationRef, bootstrap: Commonspace
   return bootstrap.agents.find(agent => agent.id === conversation.id)?.displayName ?? conversation.id
 }
 
-function projectForMessage(message: CommonspaceMessage, state: CommonspaceState): string | undefined {
-  if (message.projectId !== undefined) return message.projectId
-  if (message.threadId === undefined) return undefined
-  return state.threads.find(thread => thread.id === message.threadId)?.projectId ?? undefined
+function projectsForMessage(message: CommonspaceMessage, state: CommonspaceState): string[] {
+  const direct = referencedProjectIds(message)
+  if (direct.length > 0 || message.threadId === undefined) return direct
+  const thread = state.threads.find(candidate => candidate.id === message.threadId)
+  return thread === undefined ? [] : referencedProjectIds(thread)
+}
+
+function candidateProjectFields(projectIds: readonly string[]): Pick<Candidate, 'projectIds' | 'projectId'> {
+  return projectIds.length === 0 ? {} : { projectIds: [...projectIds], projectId: projectIds[0]! }
 }
 
 function messageTarget(message: CommonspaceMessage) {
@@ -77,7 +82,7 @@ function messageCandidates(bootstrap: CommonspaceBootstrap): Candidate[] {
   for (const messages of Object.values(bootstrap.state.messages)) {
     for (const message of messages) {
       const location = conversationLabel(message.conversation, bootstrap)
-      const projectId = projectForMessage(message, bootstrap.state)
+      const projectIds = projectsForMessage(message, bootstrap.state)
       results.push({
         id: `message:${message.id}`,
         kind: message.conversation.kind === 'dm' ? 'dm' : 'message',
@@ -85,7 +90,7 @@ function messageCandidates(bootstrap: CommonspaceBootstrap): Candidate[] {
         detail: message.text,
         receipt: `${location} · ${message.authorName} · ${message.createdAt}`,
         occurredAt: message.createdAt,
-        ...(projectId === undefined ? {} : { projectId }),
+        ...candidateProjectFields(projectIds),
         target: messageTarget(message),
       })
       if (message.authorType === 'agent') {
@@ -97,7 +102,7 @@ function messageCandidates(bootstrap: CommonspaceBootstrap): Candidate[] {
           detail: message.replyError ?? message.text,
           receipt: `${location} · run ${status} · ${message.trace?.completedAt ?? message.createdAt}`,
           occurredAt: message.trace?.completedAt ?? message.createdAt,
-          ...(projectId === undefined ? {} : { projectId }),
+          ...candidateProjectFields(projectIds),
           target: messageTarget(message),
           searchText: `${message.authorName} ${status} ${message.replyError ?? ''} ${message.text}`,
         })
@@ -112,7 +117,7 @@ function messageCandidates(bootstrap: CommonspaceBootstrap): Candidate[] {
           detail: trace.detail,
           receipt: `${location} · ${message.authorName} trace · ${entry.updatedAt}`,
           occurredAt: entry.updatedAt,
-          ...(projectId === undefined ? {} : { projectId }),
+          ...candidateProjectFields(projectIds),
           target: messageTarget(message),
         })
       }
@@ -126,7 +131,7 @@ function liveActivityCandidates(bootstrap: CommonspaceBootstrap): Candidate[] {
   const results: Candidate[] = []
   for (const activity of bootstrap.liveActivities ?? []) {
     const source = messagesById.get(activity.sourceMessageId)
-    const projectId = source === undefined ? undefined : projectForMessage(source, bootstrap.state)
+    const projectIds = source === undefined ? [] : projectsForMessage(source, bootstrap.state)
     const target = {
       kind: 'conversation' as const,
       conversation: activity.conversation,
@@ -142,7 +147,7 @@ function liveActivityCandidates(bootstrap: CommonspaceBootstrap): Candidate[] {
       detail: latest?.type === 'tool' ? latest.title : 'Working…',
       receipt: `${location} · run running · ${activity.startedAt}`,
       occurredAt: activity.startedAt,
-      ...(projectId === undefined ? {} : { projectId }),
+      ...candidateProjectFields(projectIds),
       target,
       searchText: `${activity.agentName} running ${activity.entries.map(entry => JSON.stringify(entry)).join(' ')}`,
     })
@@ -156,7 +161,7 @@ function liveActivityCandidates(bootstrap: CommonspaceBootstrap): Candidate[] {
         detail: trace.detail,
         receipt: `${location} · ${activity.agentName} live trace · ${entry.updatedAt}`,
         occurredAt: entry.updatedAt,
-        ...(projectId === undefined ? {} : { projectId }),
+        ...candidateProjectFields(projectIds),
         target,
       })
     }
@@ -167,8 +172,9 @@ function liveActivityCandidates(bootstrap: CommonspaceBootstrap): Candidate[] {
 function memoryCandidates(bootstrap: CommonspaceBootstrap): Candidate[] {
   const results: Candidate[] = []
   for (const channel of bootstrap.state.channels) {
-    const projectIds = new Set(bootstrap.state.threads.filter(thread => thread.channelId === channel.id && thread.projectId !== null).map(thread => thread.projectId as string))
-    const projectId = projectIds.size === 1 ? [...projectIds][0] : undefined
+    const projectIds = [...new Set(bootstrap.state.threads
+      .filter(thread => thread.channelId === channel.id)
+      .flatMap(thread => referencedProjectIds(thread)))]
     const target = { kind: 'conversation' as const, conversation: { kind: 'channel' as const, id: channel.id } }
     results.push({
       id: `channel:${channel.id}`,
@@ -176,7 +182,7 @@ function memoryCandidates(bootstrap: CommonspaceBootstrap): Candidate[] {
       title: `#${channel.name}`,
       detail: channel.instructions || 'Channel',
       receipt: `Channel · #${channel.name}`,
-      ...(projectId === undefined ? {} : { projectId }),
+      ...candidateProjectFields(projectIds),
       target,
     })
     if (channel.memory.summary.trim() !== '') {
@@ -187,7 +193,7 @@ function memoryCandidates(bootstrap: CommonspaceBootstrap): Candidate[] {
         detail: channel.memory.summary,
         receipt: `#${channel.name} · brief · ${channel.memory.updatedAt ?? 'saved'}`,
         ...(channel.memory.updatedAt === null ? {} : { occurredAt: channel.memory.updatedAt }),
-        ...(projectId === undefined ? {} : { projectId }),
+        ...candidateProjectFields(projectIds),
         target,
       })
     }
@@ -199,7 +205,7 @@ function memoryCandidates(bootstrap: CommonspaceBootstrap): Candidate[] {
         detail: decision,
         receipt: `#${channel.name} · decision · ${channel.memory.updatedAt ?? 'saved'}`,
         ...(channel.memory.updatedAt === null ? {} : { occurredAt: channel.memory.updatedAt }),
-        ...(projectId === undefined ? {} : { projectId }),
+        ...candidateProjectFields(projectIds),
         target,
       })
     })
@@ -251,6 +257,7 @@ async function fileCandidates(state: CommonspaceState, includedTerms: readonly s
             title: entry.name,
             detail: path,
             receipt: `${project.name} · root ${String(rootIndex + 1)} · ${path}`,
+            projectIds: [project.id],
             projectId: project.id,
             target: { kind: 'project-file', projectId: project.id, rootIndex, path },
           })
@@ -276,7 +283,7 @@ export async function searchCommonspace(bootstrap: CommonspaceBootstrap, request
   ]
   const matching = all.filter(candidate => {
     if (hasKindFilter && !allowedKinds.has(candidate.kind)) return false
-    if (request.projectId !== undefined && candidate.projectId !== request.projectId) return false
+    if (request.projectId !== undefined && !(candidate.projectIds ?? (candidate.projectId === undefined ? [] : [candidate.projectId])).includes(request.projectId)) return false
     if (includedTerms.length === 0) return candidate.kind === 'channel' || candidate.kind === 'agent'
     const searchable = normalized(`${candidate.title} ${candidate.detail} ${candidate.searchText ?? ''}`)
     return includedTerms.every(term => searchable.includes(term))

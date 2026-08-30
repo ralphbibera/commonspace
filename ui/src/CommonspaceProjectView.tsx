@@ -1,5 +1,6 @@
 import { useState, useSyncExternalStore } from 'react'
 import type { CommonspaceBootstrap, CommonspaceProject, CommonspaceState, ConversationRef } from '@commonspace/shared'
+import { referencedProjectIds } from '@commonspace/shared'
 import { CommonspaceProjectChanges } from './CommonspaceProjectChanges.tsx'
 import { CommonspaceProjectFiles } from './CommonspaceProjectFiles.tsx'
 import type { CommonspaceClientStore } from './commonspace-store.ts'
@@ -15,7 +16,7 @@ export interface CommonspaceProjectViewProps {
 type ProjectTab = 'conversations' | 'files' | 'changes'
 
 function conversationReferencesProject(state: CommonspaceState, conversation: ConversationRef, projectId: string): boolean {
-  return (state.messages[`${conversation.kind}:${conversation.id}`] ?? []).some(message => message.projectId === projectId)
+  return (state.messages[`${conversation.kind}:${conversation.id}`] ?? []).some(message => referencedProjectIds(message).includes(projectId))
 }
 
 function ProjectConversations({
@@ -40,7 +41,7 @@ function ProjectConversations({
       </header>
       <div className="csp-project-conversation-list">
         {channels.map(channel => {
-          const latest = state.messages[`channel:${channel.id}`]?.findLast(message => message.projectId === project.id)
+          const latest = state.messages[`channel:${channel.id}`]?.findLast(message => referencedProjectIds(message).includes(project.id))
           return (
             <button
               key={`channel:${channel.id}`}
@@ -60,7 +61,7 @@ function ProjectConversations({
           )
         })}
         {directMessages.map(agent => {
-          const latest = state.messages[`dm:${agent.id}`]?.findLast(message => message.projectId === project.id)
+          const latest = state.messages[`dm:${agent.id}`]?.findLast(message => referencedProjectIds(message).includes(project.id))
           return (
             <button
               key={`dm:${agent.id}`}
