@@ -1,0 +1,299 @@
+import { readdir, realpath } from 'node:fs/promises'
+import { join } from 'node:path'
+import type {
+  CommonspaceBootstrap,
+  CommonspaceMessage,
+  CommonspaceSearchHighlight,
+  CommonspaceSearchKind,
+  CommonspaceSearchRequest,
+  CommonspaceSearchResponse,
+  CommonspaceSearchResult,
+  CommonspaceState,
+  CommonspaceTraceEntry,
+  ConversationRef,
+} from '@commonspace/shared'
+import { COMMONSPACE_SEARCH_KINDS } from '@commonspace/shared'
+
+const DEFAULT_LIMIT = 24
+const MAX_LIMIT = 100
+const MAX_FILE_ENTRIES_SCANNED = 3_000
+const MAX_FILE_RESULTS = 40
+
+interface Candidate extends Omit<CommonspaceSearchResult, 'highlights'> {
+  searchText?: string
+}
+
+function normalized(value: string): string {
+  return value.normalize('NFKC').toLocaleLowerCase()
+}
+
+function terms(query: string): string[] {
+  return [...new Set(normalized(query).trim().split(/\s+/u).filter(Boolean))]
+}
+
+function highlightRanges(title: string, detail: string, includedTerms: readonly string[]): CommonspaceSearchHighlight[] {
+  const ranges: CommonspaceSearchHighlight[] = []
+  for (const [field, value] of [['title', title], ['detail', detail]] as const) {
+    const searchable = normalized(value)
+    for (const term of includedTerms) {
+      const start = searchable.indexOf(term)
+      if (start >= 0) ranges.push({ field, start, end: start + term.length })
+    }
+  }
+  return ranges.sort((left, right) => left.field.localeCompare(right.field) || left.start - right.start)
+}
+
+function traceText(entry: CommonspaceTraceEntry): { title: string; detail: string } | null {
+  if (entry.type === 'reasoning') return { title: 'Reasoning trace', detail: entry.text }
+  if (entry.type === 'plan') return { title: 'Plan trace', detail: entry.markdown ?? entry.steps.map(step => step.text).join(' · ') }
+  if (entry.type === 'tool') return { title: entry.title, detail: [entry.toolName, entry.input, entry.output].filter(Boolean).join(' · ') }
+  return null
+}
+
+function conversationLabel(conversation: ConversationRef, bootstrap: CommonspaceBootstrap): string {
+  if (conversation.kind === 'channel') {
+    return `#${bootstrap.state.channels.find(channel => channel.id === conversation.id)?.name ?? conversation.id}`
+  }
+  return bootstrap.agents.find(agent => agent.id === conversation.id)?.displayName ?? conversation.id
+}
+
+function projectForMessage(message: CommonspaceMessage, state: CommonspaceState): string | undefined {
+  if (message.projectId !== undefined) return message.projectId
+  if (message.threadId === undefined) return undefined
+  return state.threads.find(thread => thread.id === message.threadId)?.projectId ?? undefined
+}
+
+function messageTarget(message: CommonspaceMessage) {
+  return {
+    kind: 'conversation' as const,
+    conversation: message.conversation,
+    ...(message.threadId === undefined ? {} : { threadId: message.threadId }),
+    messageId: message.parentMessageId ?? message.id,
+  }
+}
+
+function messageCandidates(bootstrap: CommonspaceBootstrap): Candidate[] {
+  const results: Candidate[] = []
+  for (const messages of Object.values(bootstrap.state.messages)) {
+    for (const message of messages) {
+      const location = conversationLabel(message.conversation, bootstrap)
+      const projectId = projectForMessage(message, bootstrap.state)
+      results.push({
+        id: `message:${message.id}`,
+        kind: message.conversation.kind === 'dm' ? 'dm' : 'message',
+        title: message.authorName,
+        detail: message.text,
+        receipt: `${location} · ${message.authorName} · ${message.createdAt}`,
+        occurredAt: message.createdAt,
+        ...(projectId === undefined ? {} : { projectId }),
+        target: messageTarget(message),
+      })
+      if (message.authorType === 'agent') {
+        const status = message.replyStatus ?? 'complete'
+        results.push({
+          id: `run:${message.id}`,
+          kind: 'run',
+          title: `${message.authorName} run · ${status}`,
+          detail: message.replyError ?? message.text,
+          receipt: `${location} · run ${status} · ${message.trace?.completedAt ?? message.createdAt}`,
+          occurredAt: message.trace?.completedAt ?? message.createdAt,
+          ...(projectId === undefined ? {} : { projectId }),
+          target: messageTarget(message),
+          searchText: `${message.authorName} ${status} ${message.replyError ?? ''} ${message.text}`,
+        })
+      }
+      for (const entry of message.trace?.entries ?? []) {
+        const trace = traceText(entry)
+        if (trace === null) continue
+        results.push({
+          id: `trace:${message.id}:${entry.id}`,
+          kind: 'trace',
+          title: trace.title,
+          detail: trace.detail,
+          receipt: `${location} · ${message.authorName} trace · ${entry.updatedAt}`,
+          occurredAt: entry.updatedAt,
+          ...(projectId === undefined ? {} : { projectId }),
+          target: messageTarget(message),
+        })
+      }
+    }
+  }
+  return results
+}
+
+function liveActivityCandidates(bootstrap: CommonspaceBootstrap): Candidate[] {
+  const messagesById = new Map(Object.values(bootstrap.state.messages).flat().map(message => [message.id, message]))
+  const results: Candidate[] = []
+  for (const activity of bootstrap.liveActivities ?? []) {
+    const source = messagesById.get(activity.sourceMessageId)
+    const projectId = source === undefined ? undefined : projectForMessage(source, bootstrap.state)
+    const target = {
+      kind: 'conversation' as const,
+      conversation: activity.conversation,
+      ...(activity.threadId === undefined ? {} : { threadId: activity.threadId }),
+      messageId: source?.parentMessageId ?? source?.id ?? activity.sourceMessageId,
+    }
+    const location = conversationLabel(activity.conversation, bootstrap)
+    const latest = activity.entries.at(-1)
+    results.push({
+      id: `live-run:${activity.id}`,
+      kind: 'run',
+      title: `${activity.agentName} run · running`,
+      detail: latest?.type === 'tool' ? latest.title : 'Working…',
+      receipt: `${location} · run running · ${activity.startedAt}`,
+      occurredAt: activity.startedAt,
+      ...(projectId === undefined ? {} : { projectId }),
+      target,
+      searchText: `${activity.agentName} running ${activity.entries.map(entry => JSON.stringify(entry)).join(' ')}`,
+    })
+    for (const entry of activity.entries) {
+      const trace = traceText(entry)
+      if (trace === null) continue
+      results.push({
+        id: `live-trace:${activity.id}:${entry.id}`,
+        kind: 'trace',
+        title: trace.title,
+        detail: trace.detail,
+        receipt: `${location} · ${activity.agentName} live trace · ${entry.updatedAt}`,
+        occurredAt: entry.updatedAt,
+        ...(projectId === undefined ? {} : { projectId }),
+        target,
+      })
+    }
+  }
+  return results
+}
+
+function memoryCandidates(bootstrap: CommonspaceBootstrap): Candidate[] {
+  const results: Candidate[] = []
+  for (const channel of bootstrap.state.channels) {
+    const projectIds = new Set(bootstrap.state.threads.filter(thread => thread.channelId === channel.id && thread.projectId !== null).map(thread => thread.projectId as string))
+    const projectId = projectIds.size === 1 ? [...projectIds][0] : undefined
+    const target = { kind: 'conversation' as const, conversation: { kind: 'channel' as const, id: channel.id } }
+    results.push({
+      id: `channel:${channel.id}`,
+      kind: 'channel',
+      title: `#${channel.name}`,
+      detail: channel.instructions || 'Channel',
+      receipt: `Channel · #${channel.name}`,
+      ...(projectId === undefined ? {} : { projectId }),
+      target,
+    })
+    if (channel.memory.summary.trim() !== '') {
+      results.push({
+        id: `brief:${channel.id}`,
+        kind: 'brief',
+        title: `#${channel.name} brief`,
+        detail: channel.memory.summary,
+        receipt: `#${channel.name} · brief · ${channel.memory.updatedAt ?? 'saved'}`,
+        ...(channel.memory.updatedAt === null ? {} : { occurredAt: channel.memory.updatedAt }),
+        ...(projectId === undefined ? {} : { projectId }),
+        target,
+      })
+    }
+    channel.memory.decisions.forEach((decision, index) => {
+      results.push({
+        id: `decision:${channel.id}:${String(index)}`,
+        kind: 'decision',
+        title: `Decision in #${channel.name}`,
+        detail: decision,
+        receipt: `#${channel.name} · decision · ${channel.memory.updatedAt ?? 'saved'}`,
+        ...(channel.memory.updatedAt === null ? {} : { occurredAt: channel.memory.updatedAt }),
+        ...(projectId === undefined ? {} : { projectId }),
+        target,
+      })
+    })
+  }
+  return results
+}
+
+function agentCandidates(bootstrap: CommonspaceBootstrap): Candidate[] {
+  return bootstrap.agents.map(agent => ({
+    id: `agent:${agent.id}`,
+    kind: 'agent',
+    title: agent.displayName,
+    detail: [agent.description, agent.adapter, agent.model, agent.status].filter(Boolean).join(' · '),
+    receipt: `Agent · ${agent.adapter} · ${agent.status}`,
+    target: { kind: 'agent', agentId: agent.id },
+  }))
+}
+
+async function fileCandidates(state: CommonspaceState, includedTerms: readonly string[], projectFilter?: string): Promise<Candidate[]> {
+  if (includedTerms.length === 0) return []
+  const results: Candidate[] = []
+  let scanned = 0
+  for (const project of state.projects) {
+    if (projectFilter !== undefined && project.id !== projectFilter) continue
+    for (let rootIndex = 0; rootIndex < project.paths.length; rootIndex += 1) {
+      let root: string
+      try { root = await realpath(project.paths[rootIndex] as string) } catch { continue }
+      const pending: Array<{ absolute: string; relative: string }> = [{ absolute: root, relative: '' }]
+      while (pending.length > 0 && scanned < MAX_FILE_ENTRIES_SCANNED && results.length < MAX_FILE_RESULTS) {
+        const directory = pending.shift()
+        if (directory === undefined) break
+        let entries
+        try { entries = await readdir(directory.absolute, { withFileTypes: true }) } catch { continue }
+        for (const entry of entries) {
+          if (scanned >= MAX_FILE_ENTRIES_SCANNED || results.length >= MAX_FILE_RESULTS) break
+          scanned += 1
+          if (entry.name === '.git' || entry.isSymbolicLink()) continue
+          const path = directory.relative === '' ? entry.name : `${directory.relative}/${entry.name}`
+          if (entry.isDirectory()) {
+            pending.push({ absolute: join(directory.absolute, entry.name), relative: path })
+            continue
+          }
+          if (!entry.isFile()) continue
+          const searchable = normalized(`${project.name} ${path}`)
+          if (!includedTerms.every(term => searchable.includes(term))) continue
+          results.push({
+            id: `file:${project.id}:${String(rootIndex)}:${path}`,
+            kind: 'file',
+            title: entry.name,
+            detail: path,
+            receipt: `${project.name} · root ${String(rootIndex + 1)} · ${path}`,
+            projectId: project.id,
+            target: { kind: 'project-file', projectId: project.id, rootIndex, path },
+          })
+        }
+      }
+    }
+  }
+  return results
+}
+
+export async function searchCommonspace(bootstrap: CommonspaceBootstrap, request: CommonspaceSearchRequest): Promise<CommonspaceSearchResponse> {
+  const query = request.query.trim().slice(0, 500)
+  const includedTerms = terms(query)
+  const allowedKinds = new Set<CommonspaceSearchKind>(request.kinds?.filter(kind => COMMONSPACE_SEARCH_KINDS.includes(kind)) ?? [])
+  const hasKindFilter = allowedKinds.size > 0
+  const limit = Math.max(1, Math.min(MAX_LIMIT, Math.trunc(request.limit ?? DEFAULT_LIMIT)))
+  const all = [
+    ...memoryCandidates(bootstrap),
+    ...agentCandidates(bootstrap),
+    ...messageCandidates(bootstrap),
+    ...liveActivityCandidates(bootstrap),
+    ...await fileCandidates(bootstrap.state, includedTerms, request.projectId),
+  ]
+  const matching = all.filter(candidate => {
+    if (hasKindFilter && !allowedKinds.has(candidate.kind)) return false
+    if (request.projectId !== undefined && candidate.projectId !== request.projectId) return false
+    if (includedTerms.length === 0) return candidate.kind === 'channel' || candidate.kind === 'agent'
+    const searchable = normalized(`${candidate.title} ${candidate.detail} ${candidate.searchText ?? ''}`)
+    return includedTerms.every(term => searchable.includes(term))
+  }).map((candidate): CommonspaceSearchResult => {
+    const result = { ...candidate }
+    delete result.searchText
+    return { ...result, highlights: highlightRanges(result.title, result.detail, includedTerms) }
+  }).sort((left, right) => {
+    const leftTitle = includedTerms.some(term => normalized(left.title).includes(term)) ? 1 : 0
+    const rightTitle = includedTerms.some(term => normalized(right.title).includes(term)) ? 1 : 0
+    if (leftTitle !== rightTitle) return rightTitle - leftTitle
+    return (right.occurredAt ?? '').localeCompare(left.occurredAt ?? '') || left.id.localeCompare(right.id)
+  })
+  return {
+    query,
+    results: matching.slice(0, limit),
+    appliedFilters: { kinds: [...allowedKinds], projectId: request.projectId ?? null },
+    truncated: matching.length > limit,
+  }
+}

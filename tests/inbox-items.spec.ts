@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   COMMONSPACE_STATE_VERSION,
   deriveCommonspaceInboxItems,
+  deriveCommonspaceSessions,
+  type CommonspaceLiveAgentActivity,
   type CommonspaceState,
 } from '@commonspace/shared'
 
@@ -10,6 +12,10 @@ function inboxState(): CommonspaceState {
     version: COMMONSPACE_STATE_VERSION,
     revision: 8,
     inboxReadAt: '2026-08-27T10:00:00.000Z',
+    inboxReadMessageIds: [],
+    inboxSavedItemIds: [],
+    followedSessionIds: [],
+    mutedSessionIds: [],
     defaults: { model: null, reasoning: 'max', maxAgentsPerTurn: 4, memoryThreads: 12 },
     agents: [
       { id: 'backend', displayName: 'Backend', adapter: 'hermes', model: null, createdAt: '2026-08-27T08:00:00.000Z' },
@@ -88,23 +94,82 @@ function inboxState(): CommonspaceState {
 }
 
 describe('Commonspace Inbox items', () => {
-  it('contains actual agent replies without thinking, failures, or duplicate completion status', () => {
-    const items = deriveCommonspaceInboxItems(inboxState())
+  it('classifies replies, mentions, failures, timeouts, completions, and input requests', () => {
+    const state = inboxState()
+    state.messages['dm:reviewer']?.push(
+      {
+        id: 'request-timeout',
+        conversation: { kind: 'dm', id: 'reviewer' },
+        authorType: 'user',
+        authorId: 'user',
+        authorName: 'Ralph',
+        text: 'Run the slow checks.',
+        createdAt: '2026-08-27T10:04:00.000Z',
+        replyStatus: 'error',
+        replyError: 'Agent run timed out after 30 seconds.',
+      },
+      {
+        id: 'reply-input',
+        sourceMessageId: 'request-input',
+        conversation: { kind: 'dm', id: 'reviewer' },
+        authorType: 'agent',
+        authorId: 'reviewer',
+        authorName: 'Reviewer',
+        text: 'I need your input: which environment should I deploy to?',
+        createdAt: '2026-08-27T10:05:00.000Z',
+      },
+      {
+        id: 'reply-mention',
+        sourceMessageId: 'request-mention',
+        conversation: { kind: 'dm', id: 'reviewer' },
+        authorType: 'agent',
+        authorId: 'reviewer',
+        authorName: 'Reviewer',
+        text: '@Ralph the release summary is ready.',
+        createdAt: '2026-08-27T10:06:00.000Z',
+      },
+    )
+    const items = deriveCommonspaceInboxItems(state)
 
-    expect(items.map(item => ({
-      kind: item.kind,
-      actor: item.actorName,
-      conversation: item.conversationName,
-      threadId: item.threadId,
-      unread: item.unread,
-    }))).toEqual([
-      { kind: 'thread-reply', actor: 'Backend', conversation: '#general', threadId: 'thread-1', unread: true },
-      { kind: 'agent-reply', actor: 'Reviewer', conversation: 'Reviewer', threadId: undefined, unread: false },
+    expect(items.map(item => item.kind)).toEqual([
+      'mention',
+      'input-request',
+      'timeout',
+      'failure',
+      'completion',
+      'completion',
     ])
-    expect(items.find(item => item.kind === 'thread-reply')?.text).toBe('Found the issue and fixed it.')
+    expect(items.find(item => item.messageId === 'reply-1')?.text).toBe('Found the issue and fixed it.')
     expect(items.some(item => item.text === 'Please investigate.')).toBe(false)
     expect(JSON.stringify(items)).not.toContain('/Users/private')
     expect(JSON.stringify(items)).not.toContain('private-native')
+  })
+
+  it('derives running, needs-attention, and completed sessions with durable preferences', () => {
+    const state = inboxState()
+    state.followedSessionIds = ['root-1:backend']
+    state.mutedSessionIds = ['request-failed:reviewer']
+    const liveActivities: CommonspaceLiveAgentActivity[] = [{
+      id: 'run-live',
+      sourceMessageId: 'root-1',
+      agentId: 'backend',
+      agentName: 'Backend',
+      adapter: 'hermes',
+      conversation: { kind: 'channel', id: 'general' },
+      threadId: 'thread-1',
+      startedAt: '2026-08-27T10:03:00.000Z',
+      entries: [],
+    }]
+
+    const sessions = deriveCommonspaceSessions(state, liveActivities)
+
+    expect(sessions.map(session => session.status)).toEqual(['running', 'needs-attention', 'completed'])
+    expect(sessions.find(session => session.id === 'request-failed:reviewer')).toMatchObject({
+      attentionKind: 'failure',
+      muted: true,
+    })
+    expect(sessions.find(session => session.id === 'root-1:backend')?.followed).toBe(true)
+    expect(sessions[0]).toMatchObject({ projectName: 'App', conversationName: '#general' })
   })
 
   it('treats malformed legacy timestamps as read once a valid cursor exists', () => {

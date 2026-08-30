@@ -20,6 +20,12 @@ Endpoints:
 
 - `GET /api/health`
 - `GET /api/bootstrap`
+- `GET|PUT /api/agents/:agentId/configuration`
+- `GET|PUT /api/routing`
+- `GET /api/projects/:projectId/files|file|changes|diff`
+- `POST /api/discover-agents`
+- `POST /api/stop`
+- `GET /api/attachments/:attachmentId`
 - `GET /api/events`
 - `POST /api/mcp` (bearer-scoped ACP clients only)
 - `POST /api/select-directory`
@@ -69,4 +75,8 @@ Hermes launches one profile-scoped ACP process with `hermes -p <profile> acp`; C
 
 ## Persistence
 
-State v12 persists the Hermes/Codex roster, Commonspace-local agent appearance, opaque provider-native session references, sanitized per-reply activity traces, the single-owner Inbox read cursor, and managed image attachment metadata. Versions 1–11 migrate on load through structural sanitization. Writes use a `0600` temporary file followed by atomic rename. Trace payloads are bounded and host details are redacted before persistence; MCP capabilities stay in memory and native session references are removed from browser snapshots.
+State v14 persists the roster, local appearance, opaque native-session references, sanitized activity traces, Inbox read state, image metadata, routing decisions, and current Channel/DM execution state. Versions 1–13 migrate on load through structural sanitization. Writes use a `0600` temporary file and atomic rename while retaining the previous valid state as `state.backup.json`. If the primary is invalid and the backup is valid, startup preserves the primary as `state.corrupt.json` and recovers the backup. Trace payloads are bounded and host details are redacted before persistence; MCP capabilities remain in memory and native session references are removed from browser snapshots.
+
+## Routing inference
+
+Every unaddressed Channel message is classified by inference before acceptance. Commonspace supports either a configured agent harness or an OpenAI-compatible endpoint; there is no deterministic/no-inference provider mode. Explicit `@agent` addressing remains authoritative. Stored API keys are never returned to the browser, are cleared when the configured endpoint origin changes, and `OPENAI_API_KEY` is used only for the canonical OpenAI origin.

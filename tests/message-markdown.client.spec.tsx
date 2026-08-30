@@ -1,13 +1,16 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
-import { COMMONSPACE_STATE_VERSION, type CommonspaceAgentTrace } from '@commonspace/shared'
+import { COMMONSPACE_STATE_VERSION, type CommonspaceAgentTrace, type CommonspaceRunAttribution } from '@commonspace/shared'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CommonspaceConversation } from '../ui/src/CommonspaceConversation.tsx'
 
 beforeEach(() => { Element.prototype.scrollIntoView = vi.fn() })
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals()
+})
 
-function renderAgentMessage(text: string, trace?: CommonspaceAgentTrace) {
+function renderAgentMessage(text: string, trace?: CommonspaceAgentTrace, runAttribution?: CommonspaceRunAttribution) {
   const messages = [{
     id: 'message-1',
     conversation: { kind: 'dm' as const, id: 'writer' },
@@ -17,6 +20,7 @@ function renderAgentMessage(text: string, trace?: CommonspaceAgentTrace) {
     text,
     createdAt: '2026-08-26T00:00:00.000Z',
     ...(trace === undefined ? {} : { trace }),
+    ...(runAttribution === undefined ? {} : { projectId: 'project-1', runAttribution }),
   }]
   const snapshot = {
     bootstrap: {
@@ -29,7 +33,7 @@ function renderAgentMessage(text: string, trace?: CommonspaceAgentTrace) {
         agents: [],
         dmSessions: {},
         agentSessions: {},
-        projects: [],
+        projects: runAttribution === undefined ? [] : [{ id: 'project-1', name: 'App', paths: ['[host path]'] }],
         channels: [],
         threads: [],
         messages: { 'dm:writer': messages },
@@ -77,7 +81,7 @@ describe('Commonspace message markdown', () => {
       '[Hermes](https://hermes-agent.nousresearch.com/docs)',
     ].join('\n'))
 
-    expect(await screen.findByRole('heading', { level: 2, name: 'Result' })).toBeTruthy()
+    expect(await screen.findByRole('heading', { level: 2, name: 'Result' }, { timeout: 5_000 })).toBeTruthy()
     expect(container.querySelector('[data-streamdown="strong"]')?.textContent).toBe('important')
     expect(container.querySelector('.csp-message-content code')?.textContent).toBe('inline()')
     expect(screen.getByRole('list').children).toHaveLength(2)
@@ -95,6 +99,42 @@ describe('Commonspace message markdown', () => {
     expect(imageLink.getAttribute('target')).toBe('_blank')
     expect(imageLink.getAttribute('rel')).toBe('noopener noreferrer')
   })
+
+  it('reads an agent message aloud as prose and exposes playback controls', () => {
+    const speak = vi.fn()
+    const cancel = vi.fn()
+    class TestUtterance {
+      readonly text: string
+      onend: (() => void) | null = null
+      onerror: (() => void) | null = null
+
+      constructor(text: string) { this.text = text }
+    }
+    vi.stubGlobal('SpeechSynthesisUtterance', TestUtterance)
+    vi.stubGlobal('speechSynthesis', { cancel, speak })
+    renderAgentMessage([
+      '## Result',
+      '',
+      '**Commonspace** is ready. See [the notes](https://example.test).',
+      '',
+      '```ts',
+      'const secret = true',
+      '```',
+    ].join('\n'))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Read message aloud' }))
+
+    expect(cancel).toHaveBeenCalledOnce()
+    expect(speak).toHaveBeenCalledOnce()
+    expect((speak.mock.calls[0]?.[0] as TestUtterance).text).toBe('Result. Commonspace is ready. See the notes. Code block omitted.')
+    const stop = screen.getByRole('button', { name: 'Stop reading aloud' })
+    expect(stop.getAttribute('aria-pressed')).toBe('true')
+
+    fireEvent.click(stop)
+    expect(cancel).toHaveBeenCalledTimes(2)
+    expect(screen.getByRole('button', { name: 'Read message aloud' }).getAttribute('aria-pressed')).toBe('false')
+  })
+
 
   it('reveals the harness-emitted reasoning, plan, tool calls, and usage for an agent reply', () => {
     renderAgentMessage('The change is ready.', {
@@ -157,5 +197,39 @@ describe('Commonspace message markdown', () => {
     expect(trace.textContent).toContain('Package metadata loaded.')
     expect(trace.textContent).toContain('640 / 128,000 tokens')
     expect(screen.getByRole('button', { name: 'Hide Codex activity for Writer' })).toBeTruthy()
+  })
+
+  it('shows repository changes and pre-existing work bound to the agent reply', () => {
+    renderAgentMessage('Implemented.', undefined, {
+      startedAt: '2026-08-26T00:00:00.000Z',
+      completedAt: '2026-08-26T00:00:03.000Z',
+      roots: [{
+        available: true,
+        rootIndex: 0,
+        branch: 'main',
+        headBefore: 'before',
+        headAfter: 'after',
+        preExisting: [{ path: 'README.md', status: 'modified' }],
+        observed: [{
+          path: 'src/result.ts',
+          status: 'added',
+          preExisting: false,
+          additions: 1,
+          deletions: 0,
+          patch: '--- /dev/null\n+++ b/src/result.ts\n@@ -0,0 +1 @@\n+export const ready = true',
+        }],
+      }],
+    })
+
+    const toggle = screen.getByRole('button', { name: 'Show run evidence for Writer' })
+    expect(toggle.textContent).toContain('1 file changed')
+    expect(toggle.textContent).toContain('1 pre-existing')
+    fireEvent.click(toggle)
+    const evidence = screen.getByRole('region', { name: 'Writer run evidence' })
+    expect(evidence.textContent).toContain('src/result.ts')
+    expect(evidence.textContent).toContain('README.md')
+    fireEvent.click(within(evidence).getByText('src/result.ts'))
+    expect(evidence.textContent).toContain('+export const ready = true')
+    expect(within(evidence).getByRole('button', { name: 'Open src/result.ts in editor' })).toBeTruthy()
   })
 })

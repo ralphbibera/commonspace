@@ -14,6 +14,7 @@ function renderDirectMessage(messages: CommonspaceMessage[] = []) {
         version: COMMONSPACE_STATE_VERSION,
         revision: 1,
         inboxReadAt: null,
+        inboxReadMessageIds: [],
         defaults: { model: null, reasoning: 'max' as const, maxAgentsPerTurn: 4, memoryThreads: 12 },
         agents: [],
         dmSessions: {},

@@ -25,14 +25,18 @@ describe('Commonspace ACP session context', () => {
       port: 0,
       codexAcpCommand: process.execPath,
       codexAcpArgs: [fixturePath],
-      dependencies: { discoverAgents: async () => [] },
+      dependencies: {
+        discoverAgents: async () => [],
+        routeAgents: async input => ({ agentIds: [input.candidates[0]!.id], reason: 'Test inference selected the channel agent.' }),
+      },
       logger: { info: () => undefined, warn: () => undefined },
     })
     runningServers.push(running)
     const workspace = join(root, 'private-workspace')
     await mkdir(workspace)
     await running.service.mutate({ action: 'add-agent', displayName: 'Review Bot', adapter: 'codex' })
-    const project = (await running.service.mutate({ action: 'create-project', name: 'App', paths: [workspace] })).projects[0]!
+    const project = (await running.service.mutate({ action: 'create-project', name: 'App', paths: [workspace] }))
+      .projects.find(project => project.name === 'App')!
     const state = await running.service.mutate({
       action: 'create-channel',
       name: 'engineering',
@@ -42,7 +46,7 @@ describe('Commonspace ACP session context', () => {
     const channel = state.channels[0]!
     await running.service.mutate({ action: 'set-channel-context', channelId: channel.id, instructions: 'Keep changes scoped.' })
 
-    await running.service.send({ conversation: { kind: 'channel', id: channel.id }, text: 'Review the relay.' })
+    await running.service.send({ conversation: { kind: 'channel', id: channel.id }, projectId: project.id, text: 'Review the relay.' })
     await running.service.whenIdle()
 
     expect(running.service.snapshot().messages[`channel:${channel.id}`]?.at(-1)?.text).toBe([
@@ -63,6 +67,32 @@ describe('Commonspace ACP session context', () => {
     const nativeSessionId = privateState.agentSessions['codex-review-bot']?.[`Commonspace Thread: ${thread.id}`]
     expect(nativeSessionId).toEqual(expect.any(String))
     expect(JSON.stringify(context)).not.toContain(nativeSessionId as string)
+
+    const search = await running.service.searchMessages({
+      agentId: 'codex-review-bot',
+      conversation: { kind: 'channel', id: channel.id },
+      threadId: thread.id,
+      sessionName: `Commonspace Thread: ${thread.id}`,
+      projectId: project.id,
+    }, { query: '"review the relay" -echo', limit: 20 })
+    expect(search).toMatchObject({
+      results: [{
+        text: 'Review the relay.',
+        authorName: 'Ralph',
+        threadId: thread.id,
+      }],
+    })
+
+    const scope = {
+      agentId: 'codex-review-bot',
+      conversation: { kind: 'channel' as const, id: channel.id },
+      threadId: thread.id,
+      sessionName: `Commonspace Thread: ${thread.id}`,
+      projectId: project.id,
+    }
+    await running.service.postProgress(scope, `${'prefix '.repeat(90)}unique needle${' suffix'.repeat(90)}`)
+    const distantMatch = await running.service.searchMessages(scope, { query: '"unique needle"', limit: 1 })
+    expect(distantMatch).toMatchObject({ results: [{ text: expect.stringContaining('unique needle') }] })
   })
 
   it('revokes the old MCP capability at a hard DM reset boundary', async () => {
@@ -122,6 +152,7 @@ describe('Commonspace ACP session context', () => {
           model: 'gpt-test',
           status: 'stopped',
         }],
+        routeAgents: async input => ({ agentIds: [input.candidates[0]!.id], reason: 'Test inference selected the channel agent.' }),
       },
       logger: { info: () => undefined, warn: () => undefined },
     })
@@ -153,5 +184,54 @@ describe('Commonspace ACP session context', () => {
       type: 'http',
       name: 'commonspace',
     })
+  })
+
+  it('isolates MCP context between channel threads when the ACP adapter caches MCP servers per process', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-acp-mcp-thread-isolation-'))
+    roots.push(root)
+    vi.stubEnv('FAKE_ACP_USE_MCP', '1')
+    vi.stubEnv('FAKE_ACP_PROCESS_MCP', '1')
+    vi.stubEnv('FAKE_ACP_THREAD_CONTEXT', '1')
+    const running = await startCommonspaceServer({
+      root,
+      port: 0,
+      hermesAcpCommand: process.execPath,
+      hermesAcpArgs: [fixturePath],
+      dependencies: {
+        discoverAgents: async () => [{
+          id: 'default',
+          displayName: 'Default',
+          adapter: 'hermes',
+          model: 'gpt-test',
+          status: 'stopped',
+        }],
+        routeAgents: async input => ({ agentIds: [input.candidates[0]!.id], reason: 'Test inference selected the channel agent.' }),
+      },
+      logger: { info: () => undefined, warn: () => undefined },
+    })
+    runningServers.push(running)
+    await running.service.mutate({ action: 'add-discovered-agent', agentId: 'default' })
+    const channel = (await running.service.mutate({
+      action: 'create-channel',
+      name: 'engineering',
+      agentIds: ['default'],
+    })).channels[0]!
+
+    const first = await running.service.send({
+      conversation: { kind: 'channel', id: channel.id },
+      text: 'First root task.',
+    })
+    await running.service.whenIdle()
+    const second = await running.service.send({
+      conversation: { kind: 'channel', id: channel.id },
+      text: 'Second unrelated root task.',
+    })
+    await running.service.whenIdle()
+
+    const messages = running.service.snapshot().messages[`channel:${channel.id}`] ?? []
+    const secondReply = messages.find(message =>
+      message.authorType === 'agent' && message.threadId === second.thread?.id)
+    expect(first.thread?.id).not.toBe(second.thread?.id)
+    expect(secondReply?.text).toContain(`Context thread: ${second.thread?.id ?? ''}; root: Second unrelated root task.`)
   })
 })

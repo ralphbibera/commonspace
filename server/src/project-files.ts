@@ -51,6 +51,20 @@ const VIDEO_CONTENT_TYPES = new Map([
   ['.ogv', 'video/ogg'],
   ['.webm', 'video/webm'],
 ])
+const SENSITIVE_FILE_NAMES = new Set([
+  '.netrc', '.npmrc', '.pypirc',
+  'credentials', 'credentials.json',
+  'id_dsa', 'id_ecdsa', 'id_ed25519', 'id_rsa',
+])
+
+function isSensitiveFileName(name: string): boolean {
+  const lowerName = name.toLocaleLowerCase()
+  return lowerName === '.env' || lowerName.startsWith('.env.') ||
+    SENSITIVE_FILE_NAMES.has(lowerName) ||
+    /^(?:auth|credential|credentials|secret|secrets)(?:\.[^.]+)*$/u.test(lowerName) ||
+    /^(?:service[-_]?account).+\.json$/u.test(lowerName) ||
+    /\.(?:key|pem|p12|pfx)$/u.test(lowerName)
+}
 
 export class ProjectFileError extends Error {
   constructor(
@@ -73,6 +87,24 @@ export interface OpenProjectFile extends ProjectPath {
   size: number
   preview: ProjectFilePreview
   contentType: string
+}
+
+export async function openProjectFileInEditor(
+  state: CommonspaceState,
+  projectId: string,
+  rootIndex: number,
+  path: string,
+  line: number,
+  editorPath = process.env.COMMONSPACE_EDITOR_PATH ?? 'code',
+): Promise<{ opened: true }> {
+  if (!Number.isSafeInteger(line) || line < 1 || line > 10_000_000) {
+    throw new ProjectFileError(400, 'invalid_project_line', 'Editor line must be a positive integer')
+  }
+  const target = await resolveProjectPath(state, projectId, rootIndex, path, false)
+  const info = await stat(target.absolutePath)
+  if (!info.isFile()) throw new ProjectFileError(400, 'project_path_not_file', 'Project path is not a file')
+  await execFileAsync(editorPath, ['--goto', `${target.absolutePath}:${String(line)}`], { timeout: 10_000 })
+  return { opened: true }
 }
 
 interface FileClassification {
@@ -136,6 +168,7 @@ async function resolveProjectPath(
 
 function namedClassification(name: string): FileClassification {
   const lowerName = name.toLocaleLowerCase()
+  if (isSensitiveFileName(lowerName)) return { preview: 'blocked', contentType: 'application/octet-stream' }
   const extension = extname(lowerName)
   const image = IMAGE_CONTENT_TYPES.get(extension)
   if (image !== undefined) return { preview: 'image', contentType: image }
@@ -228,6 +261,9 @@ export async function openProjectFile(
   if (!file.isFile()) throw new ProjectFileError(400, 'project_path_not_file', 'Project path is not a file')
   const name = basename(resolved.relativePath)
   const classification = await inspectClassification(resolved.absolutePath, name, file.size)
+  if (classification.preview === 'blocked') {
+    throw new ProjectFileError(403, 'project_file_sensitive', 'Sensitive files cannot be previewed')
+  }
   if (classification.preview === 'binary') {
     throw new ProjectFileError(415, 'project_file_not_previewable', 'Only text, image, and video files can be previewed')
   }

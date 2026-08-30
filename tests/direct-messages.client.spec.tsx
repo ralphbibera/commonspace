@@ -21,21 +21,25 @@ describe('Commonspace direct messages', () => {
     }]
     const snapshot = {
       bootstrap: {
-        agents: [{ id: 'frontend', displayName: 'Frontend', adapter: 'hermes' as const, model: 'gpt-5.6-luna', status: 'stopped' as const }],
+        agents: [{ id: 'frontend', displayName: 'Frontend', adapter: 'codex' as const, model: 'gpt-5.6-luna', status: 'stopped' as const }],
         liveActivities: [{
           id: 'run-1',
+          sourceMessageId: 'message-1',
           agentId: 'frontend',
           agentName: 'Frontend',
-          adapter: 'hermes' as const,
+          adapter: 'codex' as const,
           conversation: { kind: 'dm' as const, id: 'frontend' },
           startedAt: '2026-08-26T00:00:01.000Z',
-          entries: [{
-            type: 'reasoning' as const,
-            id: 'reasoning',
-            text: 'Inspecting the request now.',
-            createdAt: '2026-08-26T00:00:02.000Z',
-            updatedAt: '2026-08-26T00:00:02.000Z',
-          }],
+          entries: [],
+        }],
+        queuedFollowups: [{
+          messageId: 'message-2',
+          conversation: { kind: 'dm' as const, id: 'frontend' },
+          agentIds: ['frontend'],
+          text: 'Then check the narrow layout.',
+          position: 0,
+          createdAt: '2026-08-26T00:00:02.000Z',
+          delivery: 'queue' as const,
         }],
         state: {
           version: 9,
@@ -63,6 +67,9 @@ describe('Commonspace direct messages', () => {
       messages: () => messages,
       send: vi.fn(),
       mutate: vi.fn(),
+      stopAgentRuns: vi.fn(async () => ['frontend']),
+      reorderFollowup: vi.fn(),
+      removeFollowup: vi.fn(),
       selectThread: vi.fn(),
     }
 
@@ -70,11 +77,23 @@ describe('Commonspace direct messages', () => {
 
     const activity = screen.getByRole('status', { name: 'Live agent activity' })
     expect(activity.textContent).toContain('Frontend')
-    expect(activity.textContent).toContain('Inspecting the request now.')
+    expect(activity.textContent).toContain('Waiting for Codex activity…')
     expect(screen.queryByText('Frontend is responding…')).toBeNull()
+    const stop = screen.getByRole('button', { name: 'Stop Frontend' })
+    expect(screen.getByRole('button', { name: 'Frontend activity' }).getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(stop)
+    expect(store.stopAgentRuns).toHaveBeenCalledWith('message-1', 'frontend')
+    expect(screen.getByRole('region', { name: 'Queued follow-ups' }).textContent).toContain('Then check the narrow layout.')
+    fireEvent.click(screen.getByRole('button', { name: 'Remove queued follow-up' }))
+    expect(store.removeFollowup).toHaveBeenCalledWith('message-2')
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Message Frontend' }), { target: { value: 'Use this direction instead.' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Stop and send' }))
+    fireEvent.submit(screen.getByRole('textbox', { name: 'Message Frontend' }).closest('form')!)
+    expect(store.send).toHaveBeenCalledWith('Use this direction instead.', undefined, [], 'stop-and-send')
   })
 
-  it('starts a direct message from a searchable agent picker', () => {
+  it('starts a direct message from the Agents section with configuration beside each agent', () => {
     const agents = [
       { id: 'backend', displayName: 'Backend', adapter: 'hermes' as const, model: 'openai/gpt-5.4', status: 'running' as const },
       { id: 'codex-review-bot', displayName: 'Review Bot', adapter: 'codex' as const, model: 'gpt-5.4', status: 'unknown' as const },
@@ -114,17 +133,13 @@ describe('Commonspace direct messages', () => {
 
     render(<CommonspaceSidebar wide expandSidebar={() => undefined} store={store as never} />)
 
-    expect(screen.getByRole('button', { name: 'Open direct message with Backend' })).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'Add direct message' }))
-    const search = screen.getByLabelText('Find an agent to message')
-    const listbox = screen.getByRole('listbox', { name: 'Agents available for direct messages' })
-    expect(listbox.id).not.toBe('')
-    expect(search.getAttribute('aria-controls')).toBe(listbox.id)
-    fireEvent.change(search, { target: { value: 'review' } })
-    expect(screen.queryByRole('button', { name: 'Start direct message with Backend' })).toBeNull()
-    fireEvent.click(screen.getByRole('option', { name: 'Start direct message with Review Bot' }))
+    expect(screen.queryByText('Direct Messages')).toBeNull()
+    const backend = screen.getByRole('button', { name: 'Message agent Backend' })
+    expect(backend.getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByRole('button', { name: 'Customize agent Backend' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Customize agent Review Bot' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Message agent Review Bot' }))
 
     expect(selectConversation).toHaveBeenCalledWith({ kind: 'dm', id: 'codex-review-bot' })
-    expect(screen.queryByLabelText('Find an agent to message')).toBeNull()
   })
 })

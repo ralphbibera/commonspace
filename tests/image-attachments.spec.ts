@@ -31,6 +31,7 @@ describe('managed chat image attachments', () => {
       version: 10,
       revision: 1,
       inboxReadAt: null,
+      inboxReadMessageIds: [],
       defaults: { model: null, reasoning: 'max', maxAgentsPerTurn: 4, memoryThreads: 12 },
       agents: [{ id: 'codex-review-bot', displayName: 'Review Bot', adapter: 'codex', model: null, createdAt: 'now' }],
       dmSessions: {},

@@ -6,12 +6,17 @@ import type { CommonspaceClientStore } from './commonspace-store.ts'
 
 export interface CommonspaceProjectViewProps {
   projectId: string
+  targetFile?: { rootIndex: number; path: string } | null
   store: CommonspaceClientStore
   onBack: () => void
   onOpenConversation: (conversation: ConversationRef) => void
 }
 
 type ProjectTab = 'conversations' | 'files' | 'changes'
+
+function conversationReferencesProject(state: CommonspaceState, conversation: ConversationRef, projectId: string): boolean {
+  return (state.messages[`${conversation.kind}:${conversation.id}`] ?? []).some(message => message.projectId === projectId)
+}
 
 function ProjectConversations({
   bootstrap,
@@ -24,8 +29,8 @@ function ProjectConversations({
   project: CommonspaceProject
   onOpenConversation: (conversation: ConversationRef) => void
 }) {
-  const channels = state.channels.filter(channel => channel.projectId === project.id || channel.projectId === null)
-  const directMessages = bootstrap.agents.filter(agent => (state.messages[`dm:${agent.id}`]?.length ?? 0) > 0)
+  const channels = state.channels.filter(channel => conversationReferencesProject(state, { kind: 'channel', id: channel.id }, project.id))
+  const directMessages = bootstrap.agents.filter(agent => conversationReferencesProject(state, { kind: 'dm', id: agent.id }, project.id))
   const conversationCount = channels.length + directMessages.length
   return (
     <section className="csp-project-card" aria-labelledby="project-conversations-heading">
@@ -35,8 +40,7 @@ function ProjectConversations({
       </header>
       <div className="csp-project-conversation-list">
         {channels.map(channel => {
-          const latest = state.messages[`channel:${channel.id}`]?.at(-1)
-          const bound = channel.projectId === project.id
+          const latest = state.messages[`channel:${channel.id}`]?.findLast(message => message.projectId === project.id)
           return (
             <button
               key={`channel:${channel.id}`}
@@ -48,7 +52,7 @@ function ProjectConversations({
               <span className="csp-project-conversation-glyph" aria-hidden="true">#</span>
               <span className="csp-project-conversation-main">
                 <strong># {channel.name}</strong>
-                <small>Channel · {bound ? `project ${project.name}` : 'unbound Workspace conversation'}</small>
+                <small>Global Channel · references {project.name}</small>
                 <p>{latest?.text ?? (channel.instructions.trim() || 'No messages yet.')}</p>
               </span>
               <span className="csp-project-conversation-arrow" aria-hidden="true">→</span>
@@ -56,7 +60,7 @@ function ProjectConversations({
           )
         })}
         {directMessages.map(agent => {
-          const latest = state.messages[`dm:${agent.id}`]?.at(-1)
+          const latest = state.messages[`dm:${agent.id}`]?.findLast(message => message.projectId === project.id)
           return (
             <button
               key={`dm:${agent.id}`}
@@ -84,6 +88,7 @@ function ProjectConversations({
 
 export function CommonspaceProjectView({
   projectId,
+  targetFile,
   store,
   onBack,
   onOpenConversation,
@@ -116,8 +121,8 @@ export function CommonspaceProjectView({
     )
   }
 
-  const channels = state.channels.filter(channel => channel.projectId === project.id || channel.projectId === null)
-  const directMessageCount = bootstrap.agents.filter(agent => (state.messages[`dm:${agent.id}`]?.length ?? 0) > 0).length
+  const channels = state.channels.filter(channel => conversationReferencesProject(state, { kind: 'channel', id: channel.id }, project.id))
+  const directMessageCount = bootstrap.agents.filter(agent => conversationReferencesProject(state, { kind: 'dm', id: agent.id }, project.id)).length
   const conversationCount = channels.length + directMessageCount
   const folderCount = project.paths.length
   const folderSummary = folderCount === 1 ? '1 folder · working directory' : `${String(folderCount)} folders · working + references`
@@ -151,7 +156,7 @@ export function CommonspaceProjectView({
       </nav>
 
       <div className={`csp-project-content${workbench ? ' csp-project-content--workbench' : ''}`}>
-        {activeTab === 'files' && <CommonspaceProjectFiles projectId={project.id} roots={project.paths} />}
+        {activeTab === 'files' && <CommonspaceProjectFiles projectId={project.id} roots={project.paths} targetFile={targetFile ?? null} />}
         {activeTab === 'changes' && <CommonspaceProjectChanges projectId={project.id} />}
         {activeTab === 'conversations' && <ProjectConversations bootstrap={bootstrap} state={state} project={project} onOpenConversation={onOpenConversation} />}
       </div>

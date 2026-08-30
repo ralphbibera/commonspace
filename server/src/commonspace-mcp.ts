@@ -18,6 +18,7 @@ export interface CommonspaceMcpScope {
 export interface CommonspaceMcpProvider {
   readContext(scope: CommonspaceMcpScope): Promise<Record<string, unknown>>
   readMessages(scope: CommonspaceMcpScope, input: { before?: string; limit: number }): Promise<Record<string, unknown>>
+  searchMessages(scope: CommonspaceMcpScope, input: { query: string; limit: number }): Promise<Record<string, unknown>>
   postProgress(scope: CommonspaceMcpScope, text: string): Promise<{ messageId: string }>
 }
 
@@ -153,6 +154,15 @@ export class CommonspaceMcpGateway {
       ...(before === undefined ? {} : { before }),
       limit,
     })))
+    server.registerTool('commonspace_search', {
+      title: 'Search Commonspace messages',
+      description: 'Search messages in this MCP session\'s conversation and thread using case-insensitive terms, quoted phrases, and -excluded terms.',
+      inputSchema: {
+        query: z.string().trim().min(1).max(500),
+        limit: z.number().int().min(1).max(100).default(20),
+      },
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    }, async ({ query, limit }) => toolResult(await this.#provider.searchMessages(scope, { query, limit })))
     server.registerTool('commonspace_post_progress', {
       title: 'Post Commonspace progress',
       description: 'Post one visible progress note to the current Commonspace conversation/thread. Peer handoffs remain part of the final reply so the relay can route them exactly once.',

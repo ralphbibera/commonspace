@@ -2,14 +2,20 @@ import type {
   AgentAdapterKind,
   CommonspaceApiError,
   CommonspaceBootstrap,
+
   CommonspaceLiveAgentActivity,
+  CommonspaceQueuedFollowup,
   CommonspaceMessage,
   CommonspaceMutation,
+  CommonspaceRoutingConfiguration,
   ConversationRef,
   SelectDirectoryResponse,
   SendImageAttachment,
   SendMessageRequest,
   SendMessageResponse,
+  FollowupQueueResponse,
+  StopAgentRunsResponse,
+  UpdateRoutingConfigurationRequest,
 } from '@commonspace/shared'
 import { conversationKey } from '@commonspace/shared'
 
@@ -107,13 +113,23 @@ export class CommonspaceClientStore {
     })
     events.addEventListener('activity', (event) => {
       try {
-        const value = JSON.parse((event as MessageEvent<string>).data) as { activities?: unknown }
+        const value = JSON.parse((event as MessageEvent<string>).data) as { activities?: unknown; queuedFollowups?: unknown }
         if (!Array.isArray(value.activities)) return
         const activities = value.activities as CommonspaceLiveAgentActivity[]
         this.pendingLiveActivities = activities
         const bootstrap = this.snapshot.bootstrap
         if (bootstrap === null) return
-        this.set({ ...this.snapshot, bootstrap: { ...bootstrap, liveActivities: activities } })
+        const queuedFollowups = Array.isArray(value.queuedFollowups)
+          ? value.queuedFollowups as CommonspaceQueuedFollowup[]
+          : bootstrap.queuedFollowups
+        this.set({
+          ...this.snapshot,
+          bootstrap: {
+            ...bootstrap,
+            liveActivities: activities,
+            ...(queuedFollowups === undefined ? {} : { queuedFollowups }),
+          },
+        })
       } catch {
         // Ignore malformed event frames; EventSource will continue.
       }
@@ -138,6 +154,24 @@ export class CommonspaceClientStore {
       })
       const merged = this.mergeBootstrap(result)
       this.set({ ...this.snapshot, bootstrap: merged, activeProjectId: this.resolveActiveProject(merged), error: null })
+    } catch (error) {
+      this.set({ ...this.snapshot, error: error instanceof Error ? error.message : String(error) })
+      throw error
+    }
+  }
+
+  async updateRoutingConfiguration(request: UpdateRoutingConfigurationRequest): Promise<void> {
+    try {
+      const routing = await requestJson<CommonspaceRoutingConfiguration>('/api/routing', {
+        method: 'PUT',
+        body: JSON.stringify(request),
+      })
+      const bootstrap = this.snapshot.bootstrap
+      this.set({
+        ...this.snapshot,
+        ...(bootstrap === null ? {} : { bootstrap: { ...bootstrap, routing } }),
+        error: null,
+      })
     } catch (error) {
       this.set({ ...this.snapshot, error: error instanceof Error ? error.message : String(error) })
       throw error
@@ -190,20 +224,55 @@ export class CommonspaceClientStore {
     return this.snapshot.bootstrap?.state.messages[conversationKey(conversation)] ?? []
   }
 
-  async send(text: string, threadId?: string, attachments: readonly SendImageAttachment[] = []): Promise<void> {
-    return this.sendMessage(text, threadId, undefined, attachments)
+  async send(text: string, threadId?: string, attachments: readonly SendImageAttachment[] = [], delivery?: SendMessageRequest['delivery']): Promise<void> {
+    return this.sendMessage(text, threadId, undefined, attachments, delivery)
   }
 
   async sendDirectReply(text: string, threadId: string, targetAgentId: string, attachments: readonly SendImageAttachment[] = []): Promise<void> {
     return this.sendMessage(text, threadId, targetAgentId, attachments)
   }
 
-  private async sendMessage(text: string, threadId?: string, targetAgentId?: string, attachments: readonly SendImageAttachment[] = []): Promise<void> {
+  async stopAgentRuns(messageId: string, agentId?: string): Promise<string[]> {
+    try {
+      const result = await requestJson<StopAgentRunsResponse>('/api/stop', {
+        method: 'POST',
+        body: JSON.stringify({ messageId, ...(agentId === undefined ? {} : { agentId }) }),
+      })
+      this.set({ ...this.snapshot, error: null })
+      return result.stoppedAgentIds
+    } catch (error) {
+      this.set({ ...this.snapshot, error: error instanceof Error ? error.message : String(error) })
+      throw error
+    }
+  }
+
+  async reorderFollowup(messageId: string, direction: 'up' | 'down'): Promise<void> {
+    await this.updateFollowupQueue('/api/followups/reorder', { messageId, direction })
+  }
+
+  async removeFollowup(messageId: string): Promise<void> {
+    await this.updateFollowupQueue('/api/followups/remove', { messageId })
+  }
+
+  private async updateFollowupQueue(path: string, body: object): Promise<void> {
+    try {
+      const result = await requestJson<FollowupQueueResponse>(path, { method: 'POST', body: JSON.stringify(body) })
+      const bootstrap = this.snapshot.bootstrap
+      this.set({
+        ...this.snapshot,
+        ...(bootstrap === null ? {} : { bootstrap: { ...bootstrap, queuedFollowups: result.queuedFollowups } }),
+        error: null,
+      })
+    } catch (error) {
+      this.set({ ...this.snapshot, error: error instanceof Error ? error.message : String(error) })
+      throw error
+    }
+  }
+
+  private async sendMessage(text: string, threadId?: string, targetAgentId?: string, attachments: readonly SendImageAttachment[] = [], delivery?: SendMessageRequest['delivery']): Promise<void> {
     const conversation = this.snapshot.activeConversation
     if (conversation === null || this.snapshot.sending) return
-    const projectId = conversation.kind === 'channel'
-      ? this.snapshot.bootstrap?.state.channels.find(channel => channel.id === conversation.id)?.projectId ?? undefined
-      : this.snapshot.activeProjectId ?? undefined
+    const projectId = this.snapshot.activeProjectId ?? undefined
     const request: SendMessageRequest = {
       conversation,
       text,
@@ -211,6 +280,8 @@ export class CommonspaceClientStore {
       ...(threadId === undefined ? {} : { threadId }),
       ...(targetAgentId === undefined ? {} : { targetAgentId }),
       ...(attachments.length === 0 ? {} : { attachments: [...attachments] }),
+
+      ...(delivery === undefined ? {} : { delivery }),
     }
     this.set({ ...this.snapshot, sending: true, error: null })
     try {

@@ -1,15 +1,26 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CommonspaceConversation } from '../ui/src/CommonspaceConversation.tsx'
+import { commonspacePolish } from '../ui/src/polish.ts'
+import { commonspaceStyles } from '../ui/src/styles.ts'
 
 function renderChannelThread(
   threadStatus: 'complete' | 'queued' | 'running' = 'complete',
   includeBackendActivity = false,
+  threadOpen = true,
+  routingPending = false,
 ) {
+  const listeners = new Set<() => void>()
+  const initialThreadId: string | null = threadOpen ? 'thread-1' : null
   const send = vi.fn(async () => undefined)
   const sendDirectReply = vi.fn(async () => undefined)
-  const liveActivities = [{
+  const mutate = vi.fn(async () => undefined)
+  const selectThread = vi.fn((threadId: string | null) => {
+    snapshot = { ...snapshot, activeThreadId: threadId }
+    for (const listener of listeners) listener()
+  })
+  const liveActivities = threadStatus === 'complete' ? [] : [{
     id: 'run-1',
     agentId: 'frontend',
     agentName: 'Frontend',
@@ -48,16 +59,19 @@ function renderChannelThread(
       updatedAt: '2026-08-26T00:00:04.000Z',
     }],
   }] : [])]
-  const snapshot = {
+  let snapshot = {
     bootstrap: {
       agents: [
         { id: 'frontend', displayName: 'Frontend', adapter: 'hermes', model: 'test', status: 'unknown' },
         { id: 'backend', displayName: 'Backend', adapter: 'hermes', model: 'test', status: 'unknown' },
+        { id: 'reviewer', displayName: 'Reviewer', adapter: 'hermes', model: 'test', status: 'unknown' },
       ],
       liveActivities,
       state: {
         version: 9,
         revision: 1,
+        inboxReadAt: null,
+        inboxReadMessageIds: [],
         defaults: { model: null, reasoning: 'max', maxAgentsPerTurn: 4, memoryThreads: 12 },
         agents: [],
         dmSessions: {},
@@ -66,7 +80,6 @@ function renderChannelThread(
         channels: [{
           id: 'general',
           name: 'general',
-          projectId: null,
           agentIds: ['frontend', 'backend'],
           instructions: '',
           memory: { summary: '', decisions: [], openQuestions: [], threadIds: [], updatedAt: null },
@@ -79,9 +92,7 @@ function renderChannelThread(
           projectId: null,
           rootMessageId: 'root-1',
           agentIds: ['frontend'],
-          status: threadStatus,
           createdAt: '2026-08-26T00:00:00.000Z',
-          updatedAt: '2026-08-26T00:01:00.000Z',
         }],
         messages: {
           'channel:general': [
@@ -94,6 +105,7 @@ function renderChannelThread(
               text: 'Start the investigation',
               createdAt: '2026-08-26T00:00:00.000Z',
               threadId: 'thread-1',
+              ...(routingPending ? { routing: { source: 'ai' as const, status: 'pending' as const, agentIds: [], reason: 'Routing with inference.' } } : {}),
             },
             {
               id: 'reply-1',
@@ -137,25 +149,79 @@ function renderChannelThread(
     error: null,
     activeConversation: { kind: 'channel', id: 'general' },
     activeProjectId: null,
-    activeThreadId: 'thread-1',
+    activeThreadId: initialThreadId,
   } as const
   const store = {
-    subscribe: () => () => undefined,
+    subscribe: (listener: () => void) => {
+      listeners.add(listener)
+      return () => { listeners.delete(listener) }
+    },
     getSnapshot: () => snapshot,
     messages: () => snapshot.bootstrap.state.messages['channel:general'],
     send,
     sendDirectReply,
-    mutate: vi.fn(async () => undefined),
-    selectThread: vi.fn(),
+    mutate,
+    selectThread,
   }
   render(<CommonspaceConversation store={store as never} />)
-  return { send, sendDirectReply }
+  return { mutate, selectThread, send, sendDirectReply }
 }
 
 afterEach(cleanup)
-beforeEach(() => { HTMLElement.prototype.scrollIntoView = vi.fn() })
+beforeEach(() => {
+  HTMLElement.prototype.scrollIntoView = vi.fn()
+  HTMLElement.prototype.scrollTo = vi.fn()
+})
 
 describe('Commonspace reply-thread composer', () => {
+
+  it('shows routing state while an accepted message awaits inference', () => {
+    renderChannelThread('complete', false, true, true)
+
+    expect(screen.getAllByRole('status', { name: 'Routing message' }).map(element => element.textContent)).toEqual(['Routing…', 'Routing…'])
+    expect(screen.getAllByText('Start the investigation')).toHaveLength(2)
+  })
+
+  it('opens at an equal split and lets the thread be widened by dragging', () => {
+    const style = document.createElement('style')
+    style.textContent = `${commonspaceStyles}\n${commonspacePolish}`
+    document.head.append(style)
+    renderChannelThread()
+
+    const separator = screen.getByRole('separator', { name: 'Resize thread' })
+    const layout = separator.parentElement as HTMLElement
+    expect(layout.style.getPropertyValue('--csp-channel-width')).toBe('50fr')
+    expect(layout.style.getPropertyValue('--csp-thread-width')).toBe('50fr')
+    expect(getComputedStyle(layout).gridTemplateColumns)
+      .toBe('minmax(0, var(--csp-channel-width, 50fr)) 6px minmax(0, var(--csp-thread-width, 50fr))')
+    layout.getBoundingClientRect = vi.fn(() => ({
+      bottom: 800,
+      height: 800,
+      left: 0,
+      right: 1000,
+      top: 0,
+      width: 1000,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    }))
+
+    fireEvent.pointerDown(separator, { clientX: 500, pointerId: 1 })
+    fireEvent.pointerMove(window, { clientX: 400, pointerId: 1 })
+    fireEvent.pointerUp(window, { pointerId: 1 })
+
+    expect(layout.style.getPropertyValue('--csp-channel-width')).toBe('40fr')
+    expect(layout.style.getPropertyValue('--csp-thread-width')).toBe('60fr')
+  })
+
+  it('highlights the channel message for the thread currently in focus', () => {
+    renderChannelThread()
+
+    const root = document.getElementById('csp-message-root-1')
+    expect(root?.classList.contains('csp-thread-root--focused')).toBe(true)
+    expect(root?.getAttribute('aria-current')).toBe('true')
+  })
+
   it('shows every agent who replied beside the thread reply count', () => {
     renderChannelThread()
 
@@ -163,6 +229,27 @@ describe('Commonspace reply-thread composer', () => {
     expect(threadSummary.querySelector('[aria-label="Frontend replied"]')).toBeTruthy()
     expect(threadSummary.querySelector('[aria-label="Backend replied"]')).toBeTruthy()
     expect(threadSummary.querySelectorAll('.csp-thread-agent-avatar')).toHaveLength(2)
+  })
+
+  it('shows a notification dot for unseen agent replies and marks them read when the thread opens', () => {
+    const { mutate, selectThread } = renderChannelThread('complete', false, false)
+    const scrollTo = vi.mocked(HTMLElement.prototype.scrollTo)
+    const scrollCallsBeforeOpen = scrollTo.mock.calls.length
+
+    const threadSummary = screen.getByRole('button', { name: '3 replies, 2 unread' })
+    expect(threadSummary.classList.contains('csp-thread-open--unread')).toBe(true)
+    expect(within(threadSummary).getByText('2 new replies')).toBeTruthy()
+    expect(threadSummary.querySelector('.csp-thread-unread-indicator')).toBeTruthy()
+
+    fireEvent.click(threadSummary)
+
+    expect(selectThread).toHaveBeenCalledWith('thread-1')
+    expect(screen.getByRole('complementary', { name: 'Thread replies' })).toBeTruthy()
+    expect(scrollTo).toHaveBeenCalledTimes(scrollCallsBeforeOpen + 1)
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 0, behavior: 'auto' })
+    expect(mutate).toHaveBeenCalledWith({ action: 'mark-inbox-item-read', messageId: 'reply-2' })
+    expect(mutate).toHaveBeenCalledWith({ action: 'mark-inbox-item-read', messageId: 'reply-3' })
+    expect(mutate).not.toHaveBeenCalledWith({ action: 'mark-inbox-item-read', messageId: 'reply-1' })
   })
 
   it('shows only the responding agents as animated icons on an active reply thread', () => {
@@ -178,15 +265,20 @@ describe('Commonspace reply-thread composer', () => {
     expect(screen.queryByText('Agents are responding…')).toBeNull()
   })
 
-  it('shows one live agent trace at a time and switches focus between agents', () => {
+  it('collapses live agent traces by default and shows one at a time when opened', () => {
     renderChannelThread('running', true)
 
     const frontend = screen.getByRole('button', { name: 'Frontend activity' })
     const backend = screen.getByRole('button', { name: 'Backend activity' })
-    expect(frontend.getAttribute('aria-expanded')).toBe('true')
+    expect(frontend.getAttribute('aria-expanded')).toBe('false')
     expect(backend.getAttribute('aria-expanded')).toBe('false')
-    expect(screen.getByRole('region', { name: 'Frontend live activity' }).textContent).toContain('Tracing the request through the UI.')
+    expect(screen.queryByRole('region', { name: 'Frontend live activity' })).toBeNull()
     expect(screen.queryByRole('region', { name: 'Backend live activity' })).toBeNull()
+
+    fireEvent.click(frontend)
+
+    expect(frontend.getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByRole('region', { name: 'Frontend live activity' }).textContent).toContain('Tracing the request through the UI.')
 
     fireEvent.click(backend)
 
@@ -194,6 +286,22 @@ describe('Commonspace reply-thread composer', () => {
     expect(backend.getAttribute('aria-expanded')).toBe('true')
     expect(screen.queryByRole('region', { name: 'Frontend live activity' })).toBeNull()
     expect(screen.getByRole('region', { name: 'Backend live activity' }).textContent).toContain('Checking the API lifecycle.')
+  })
+
+  it('allows the expanded live activity to close', () => {
+    renderChannelThread('running')
+
+    const frontend = screen.getByRole('button', { name: 'Frontend activity' })
+    expect(frontend.getAttribute('aria-expanded')).toBe('false')
+
+    fireEvent.click(frontend)
+
+    expect(frontend.getAttribute('aria-expanded')).toBe('true')
+
+    fireEvent.click(frontend)
+
+    expect(frontend.getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByRole('region', { name: 'Frontend live activity' })).toBeNull()
   })
 
   it('offers tag autocomplete and sends the selected tag in the active thread', async () => {
@@ -212,13 +320,28 @@ describe('Commonspace reply-thread composer', () => {
     await waitFor(() => { expect(send).toHaveBeenCalledWith('@backend', 'thread-1') })
   })
 
+  it('separates agents outside the channel and explains that tagging adds them', () => {
+    renderChannelThread()
+    const composer = screen.getByRole('textbox', { name: 'Reply in thread' })
+
+    fireEvent.change(composer, { target: { value: '@' } })
+
+    expect(screen.getByText('In this channel')).toBeTruthy()
+    expect(screen.getByText('Not in this channel · tagging adds them')).toBeTruthy()
+    expect(screen.getByRole('option', { name: /@reviewer.*will be added/i })).toBeTruthy()
+  })
+
   it('replies directly to the agent selected from a channel message', async () => {
     const { send, sendDirectReply } = renderChannelThread()
     const composer = screen.getByRole('textbox', { name: 'Reply in thread' })
+    const scrollTo = vi.mocked(HTMLElement.prototype.scrollTo)
+    const scrollCallsBeforeReply = scrollTo.mock.calls.length
 
     fireEvent.click(screen.getByRole('button', { name: 'Reply directly to Frontend' }))
 
     expect(document.activeElement).toBe(composer)
+    expect(scrollTo).toHaveBeenCalledTimes(scrollCallsBeforeReply + 1)
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 0, behavior: 'auto' })
     expect(screen.getByText('Replying to Frontend')).toBeTruthy()
     fireEvent.change(composer, { target: { value: 'Check that boundary again.' } })
     fireEvent.keyDown(composer, { key: 'Enter' })
@@ -227,6 +350,24 @@ describe('Commonspace reply-thread composer', () => {
       expect(sendDirectReply).toHaveBeenCalledWith('Check that boundary again.', 'thread-1', 'frontend')
     })
     expect(send).not.toHaveBeenCalled()
+  })
+
+  it('scrolls the thread to the bottom when the Reply button sends a message', async () => {
+    const { send } = renderChannelThread()
+    const composer = screen.getByRole('textbox', { name: 'Reply in thread' })
+    const messagesViewport = document.querySelector<HTMLElement>('.csp-thread-messages')!
+    const scrollTo = vi.mocked(HTMLElement.prototype.scrollTo)
+    const scrollCallsBeforeReply = scrollTo.mock.calls.length
+    Object.defineProperty(messagesViewport, 'scrollHeight', { configurable: true, value: 500 })
+    messagesViewport.scrollTop = 0
+
+    fireEvent.change(composer, { target: { value: 'A new thread reply.' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Reply' }))
+
+    expect(messagesViewport.scrollTop).toBe(500)
+    expect(scrollTo).toHaveBeenCalledTimes(scrollCallsBeforeReply + 1)
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 500, behavior: 'auto' })
+    await waitFor(() => { expect(send).toHaveBeenCalledWith('A new thread reply.', 'thread-1') })
   })
 
   it('offers slash commands and executes them in the active thread', async () => {

@@ -21,7 +21,7 @@ A named context containing one or more canonical filesystem directories. The fir
 
 ### Channel
 
-A Project-scoped shared conversation with an explicit agent roster, instructions, settings, and projected memory. An `@agent-id` mention targets a seated agent. A message without a valid mention routes to the Channel roster within the configured limit.
+A Project-scoped shared conversation with an explicit agent roster, instructions, settings, and projected memory. An `@agent-id` mention targets a seated agent. Every unaddressed message is classified by configured inference and routes to the selected seated agents within the configured limit; Commonspace has no deterministic/no-inference routing mode.
 
 ### Direct Message
 

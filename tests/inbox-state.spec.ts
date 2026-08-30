@@ -3,6 +3,71 @@ import { describe, expect, it } from 'vitest'
 import { applyMutation, createInitialState } from '../server/src/state.ts'
 
 describe('Commonspace Inbox state', () => {
+  it('persists follow, mute, and save-for-later independently', () => {
+    const state = {
+      ...createInitialState(),
+      agents: [{ id: 'backend', displayName: 'Backend', adapter: 'hermes' as const, model: null, createdAt: 'now' }],
+      messages: {
+        'dm:backend': [{
+          id: 'reply-1',
+          sourceMessageId: 'request-1',
+          conversation: { kind: 'dm' as const, id: 'backend' },
+          authorType: 'agent' as const,
+          authorId: 'backend',
+          authorName: 'Backend',
+          text: 'Done.',
+          createdAt: '2026-08-27T09:00:00.000Z',
+        }],
+      },
+    }
+
+    const saved = applyMutation(state, { action: 'set-inbox-item-saved', messageId: 'reply-1', saved: true })
+    const followed = applyMutation(saved, { action: 'set-session-followed', sessionId: 'request-1:backend', followed: true })
+    const muted = applyMutation(followed, { action: 'set-session-muted', sessionId: 'request-1:backend', muted: true })
+
+    expect(muted).toMatchObject({
+      inboxSavedItemIds: ['reply-1'],
+      followedSessionIds: [],
+      mutedSessionIds: ['request-1:backend'],
+    })
+    expect(deriveCommonspaceInboxItems(muted)[0]).toMatchObject({ saved: true, muted: true, unread: false })
+  })
+
+  it('marks one agent reply read without clearing a different unread reply', () => {
+    const state = {
+      ...createInitialState(),
+      messages: {
+        'dm:backend': [
+          {
+            id: 'reply-1',
+            conversation: { kind: 'dm' as const, id: 'backend' },
+            authorType: 'agent' as const,
+            authorId: 'backend',
+            authorName: 'Backend',
+            text: 'First reply.',
+            createdAt: '2026-08-27T09:00:00.000Z',
+          },
+          {
+            id: 'reply-2',
+            conversation: { kind: 'dm' as const, id: 'backend' },
+            authorType: 'agent' as const,
+            authorId: 'backend',
+            authorName: 'Backend',
+            text: 'Second reply.',
+            createdAt: '2026-08-27T09:01:00.000Z',
+          },
+        ],
+      },
+    }
+
+    const next = applyMutation(state, { action: 'mark-inbox-item-read', messageId: 'reply-2' } as never)
+    const items = deriveCommonspaceInboxItems(next)
+
+    expect(items.find(item => item.id === 'message:reply-2')?.unread).toBe(false)
+    expect(items.find(item => item.id === 'message:reply-1')?.unread).toBe(true)
+    expect(next.revision).toBe(1)
+  })
+
   it('persists the read cursor when all Inbox activity is marked read', () => {
     const state = {
       ...createInitialState(),

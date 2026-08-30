@@ -18,6 +18,7 @@ function projectStore() {
         version: COMMONSPACE_STATE_VERSION,
         revision: 0,
         inboxReadAt: null,
+        inboxReadMessageIds: [],
         defaults: { model: null, reasoning: 'max', maxAgentsPerTurn: 4, memoryThreads: 12 },
         agents: [],
         dmSessions: {},

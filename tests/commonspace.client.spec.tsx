@@ -3,9 +3,13 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { COMMONSPACE_STATE_VERSION, type CommonspaceBootstrap, type CommonspaceState } from '@commonspace/shared'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CommonspaceSidebar } from '../ui/src/CommonspaceSidebar.tsx'
+import { commonspacePolish } from '../ui/src/polish.ts'
 import { tagReferenceParts, tagSuggestions } from '../ui/src/tagging.ts'
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals()
+})
 
 function state(overrides: Partial<CommonspaceState> = {}): CommonspaceState {
   return {
@@ -51,6 +55,7 @@ function sidebarStore(
       discoverAgents: vi.fn(async () => undefined),
       mutate,
       selectConversation: vi.fn(),
+      selectThread: vi.fn(),
       selectProject: vi.fn(),
       ...additions,
     },
@@ -58,6 +63,38 @@ function sidebarStore(
 }
 
 describe('Commonspace interface', () => {
+  it('keeps each agent runtime status visible in the sidebar', () => {
+    const style = document.createElement('style')
+    style.textContent = commonspacePolish
+    document.head.append(style)
+    const agents = [
+      { id: 'agentops', displayName: 'AgentOps', adapter: 'hermes' as const, model: 'gpt-test', status: 'unknown' as const },
+      { id: 'backend', displayName: 'Backend', adapter: 'hermes' as const, model: 'gpt-test', status: 'stopped' as const },
+      { id: 'frontend', displayName: 'Frontend', adapter: 'hermes' as const, model: 'gpt-test', status: 'unknown' as const },
+    ]
+    const { store } = sidebarStore({
+      agents,
+      liveActivities: [{
+        id: 'run-agentops',
+        sourceMessageId: 'message-1',
+        agentId: 'agentops',
+        agentName: 'AgentOps',
+        adapter: 'hermes',
+        conversation: { kind: 'dm', id: 'agentops' },
+        startedAt: '2026-08-28T00:00:00.000Z',
+        entries: [],
+      }],
+    })
+
+    render(<CommonspaceSidebar wide expandSidebar={() => undefined} store={store as never} />)
+
+    expect(screen.getByText('online').getAttribute('data-status')).toBe('running')
+    expect(screen.getByText('available').getAttribute('data-status')).toBe('stopped')
+    expect(screen.getByText('configured').getAttribute('data-status')).toBe('unknown')
+    expect(getComputedStyle(screen.getByText('online')).display).not.toBe('none')
+    style.remove()
+  })
+
   it('formats and suggests agent, project, and channel references', () => {
     expect(tagReferenceParts('Ask @backend about @@commonspace in #general')).toEqual([
       { text: 'Ask ', kind: 'text' },
@@ -72,6 +109,7 @@ describe('Commonspace interface', () => {
       agents: [
         { id: 'backend', displayName: 'Backend', adapter: 'hermes', model: 'x', status: 'running' },
         { id: 'default', displayName: 'AgentOps', adapter: 'hermes', model: 'x', status: 'running' },
+        { id: 'codex-default', displayName: 'default (Codex)', adapter: 'codex', nativeProfile: 'default', model: 'x', status: 'unknown' },
       ],
       discoveredAgents: [],
       state: state({
@@ -88,18 +126,34 @@ describe('Commonspace interface', () => {
         }],
       }),
     }
+    expect(tagReferenceParts('@anything', bootstrap)).toEqual([
+      { text: '@anything', kind: 'text' },
+    ])
+    expect(tagReferenceParts('@backend @@client-portal #general', bootstrap)).toEqual([
+      { text: '@backend', kind: 'agent' },
+      { text: ' ', kind: 'text' },
+      { text: '@@client-portal', kind: 'project' },
+      { text: ' ', kind: 'text' },
+      { text: '#general', kind: 'channel' },
+    ])
     expect(tagSuggestions('Please ask @ba', bootstrap)).toEqual([
       { kind: 'agent', id: 'backend', label: 'Backend', token: '@backend' },
     ])
     expect(tagSuggestions('Please ask @ag', bootstrap)).toEqual([
       { kind: 'agent', id: 'default', label: 'AgentOps', token: '@agentops' },
     ])
+    expect(tagSuggestions('Please ask @def', bootstrap)).toEqual([
+      { kind: 'agent', id: 'codex-default', label: 'default (Codex)', token: '@default-codex' },
+    ])
+    expect(tagSuggestions('Please ask @all', bootstrap)).toEqual([
+      { kind: 'agent', id: 'all', label: 'All agents', token: '@all' },
+    ])
     expect(tagSuggestions('Please inspect @@client-p', bootstrap)).toEqual([
       { kind: 'project', id: 'project-1', label: 'Client Portal', token: '@@client-portal' },
     ])
   })
 
-  it('searches channel history from a command dialog and opens the matching channel', () => {
+  it('searches unified history, highlights receipts, and opens the matching thread', async () => {
     const { store } = sidebarStore({
       agents: [
         { id: 'frontend', displayName: 'Frontend', adapter: 'hermes', model: null, status: 'running' },
@@ -130,22 +184,40 @@ describe('Commonspace interface', () => {
         },
       }),
     })
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      query: 'launch checklist',
+      results: [{
+        id: 'message:message-1',
+        kind: 'message',
+        title: 'Ralph',
+        detail: 'The deployment plan is in the launch checklist.',
+        receipt: '#general · Ralph · 2026-08-26T00:00:00.000Z',
+        highlights: [{ field: 'detail', start: 30, end: 36 }, { field: 'detail', start: 37, end: 46 }],
+        target: { kind: 'conversation', conversation: { kind: 'channel', id: 'general' }, threadId: 'thread-1', messageId: 'message-1' },
+      }],
+      appliedFilters: { kinds: [], projectId: null },
+      truncated: false,
+    }), { status: 200, headers: { 'content-type': 'application/json' } })))
     render(<CommonspaceSidebar wide expandSidebar={() => undefined} store={store as never} />)
 
     expect(screen.getByRole('button', { name: 'Search Commonspace' })).toBeTruthy()
     fireEvent.keyDown(window, { key: 'k', metaKey: true })
     expect(screen.getByRole('dialog', { name: 'Search everything' })).toBeTruthy()
 
-    const search = screen.getByRole('searchbox', { name: 'Search all channels' })
+    const search = screen.getByRole('searchbox', { name: 'Search Commonspace' })
     expect(document.activeElement).toBe(search)
     fireEvent.change(search, { target: { value: 'launch checklist' } })
-    fireEvent.click(screen.getByRole('option', { name: /Open message in general/ }))
+    const result = await screen.findByRole('option', { name: 'Open Message: Ralph' })
+    expect(within(result).getAllByText(/launch|checklist/u, { selector: 'mark' })).toHaveLength(2)
+    expect(within(result).getByText(/#general · Ralph/u)).toBeTruthy()
+    fireEvent.click(result)
 
     expect(store.selectConversation).toHaveBeenCalledWith({ kind: 'channel', id: 'general' })
+    expect(store.selectThread).toHaveBeenCalledWith('thread-1')
     expect(screen.queryByRole('dialog', { name: 'Search everything' })).toBeNull()
   })
 
-  it('keeps the command palette result set bounded', () => {
+  it('keeps the command palette result set bounded', async () => {
     const channels = Array.from({ length: 30 }, (_, index) => ({
       id: `channel-${String(index)}`,
       name: `channel-${String(index)}`,
@@ -157,11 +229,25 @@ describe('Commonspace interface', () => {
       createdAt: '',
     }))
     const { store } = sidebarStore({ state: state({ channels }) })
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      query: '',
+      results: channels.slice(0, 24).map(channel => ({
+        id: `channel:${channel.id}`,
+        kind: 'channel',
+        title: `#${channel.name}`,
+        detail: 'Channel',
+        receipt: `Channel · #${channel.name}`,
+        highlights: [],
+        target: { kind: 'conversation', conversation: { kind: 'channel', id: channel.id } },
+      })),
+      appliedFilters: { kinds: [], projectId: null },
+      truncated: true,
+    }), { status: 200, headers: { 'content-type': 'application/json' } })))
     render(<CommonspaceSidebar wide expandSidebar={() => undefined} store={store as never} />)
 
     fireEvent.keyDown(window, { key: 'k', metaKey: true })
 
-    expect(screen.getAllByRole('option')).toHaveLength(24)
+    expect(await within(screen.getByRole('listbox', { name: 'Commonspace search results' })).findAllByRole('option')).toHaveLength(24)
   })
 
   it('contains modal focus and restores it to the control that opened the dialog', () => {
@@ -200,19 +286,19 @@ describe('Commonspace interface', () => {
       expect((screen.getByLabelText('Project path') as HTMLInputElement).value)
         .toBe('/Users/example/Developer/storefront')
     })
-    fireEvent.change(screen.getByLabelText('Project name'), { target: { value: 'Storefront' } })
+    expect((screen.getByLabelText('Project name') as HTMLInputElement).value).toBe('storefront')
     fireEvent.click(screen.getByRole('button', { name: 'Create' }))
 
     await waitFor(() => {
       expect(mutate).toHaveBeenCalledWith({
         action: 'create-project',
-        name: 'Storefront',
+        name: 'storefront',
         paths: ['/Users/example/Developer/storefront'],
       })
     })
   })
 
-  it('shows project creation errors at the top of the modal', async () => {
+  it('keeps a failed project form open without duplicating the application toast', async () => {
     const mutate = vi.fn(async () => { throw new Error('project name is required') })
     const { store } = sidebarStore({}, { mutate })
     render(<CommonspaceSidebar wide expandSidebar={() => undefined} store={store as never} />)
@@ -221,10 +307,9 @@ describe('Commonspace interface', () => {
     const dialog = screen.getByRole('dialog', { name: 'Add a project' })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Create' }))
 
-    const alert = await within(dialog).findByRole('alert')
-    expect(alert.textContent).toBe('project name is required')
-    expect(alert.classList.contains('csp-dialog-error')).toBe(true)
-    expect(screen.getAllByRole('alert')).toEqual([alert])
+    await waitFor(() => { expect(mutate).toHaveBeenCalledOnce() })
+    expect(screen.getByRole('dialog', { name: 'Add a project' })).toBe(dialog)
+    expect(within(dialog).queryByRole('alert')).toBeNull()
   })
 
   it('creates an unbound channel', async () => {
@@ -300,6 +385,53 @@ describe('Commonspace interface', () => {
         avatarEmoji: '🧭',
         accentColor: '#7c3aed',
       })
+    })
+  })
+
+  it('edits fast mode when the native harness exposes it', async () => {
+    const agent = { id: 'frontend', displayName: 'Frontend', adapter: 'hermes' as const, model: 'gpt-test', status: 'running' as const }
+    const configuration = {
+      agentId: agent.id,
+      adapter: agent.adapter,
+      model: 'gpt-test',
+      reasoning: 'max' as const,
+      fastMode: false,
+      editable: true,
+      instructions: 'Native instructions',
+      memoryPolicy: { enabled: true, userProfileEnabled: true, writeApproval: 'ask' },
+      permissions: { approvalMode: 'smart', secretRedaction: true },
+      sessionHealth: { status: 'healthy' as const, activeSessions: 0, knownSessions: 1, lastRunAt: null },
+      lastRuns: [],
+      cost: { amount: 0, currency: null },
+      capabilities: { tools: [], mcp: [], skills: [], services: [] },
+      refreshedAt: '2026-08-28T00:00:00.000Z',
+    }
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => ({
+      ok: true,
+      json: async () => init?.method === 'PUT' ? { ...configuration, fastMode: true } : configuration,
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    const { store } = sidebarStore({
+      agents: [agent],
+      state: state({ agents: [{ ...agent, createdAt: '2026-08-25T00:00:00.000Z' }] }),
+    })
+    render(<CommonspaceSidebar wide expandSidebar={() => undefined} store={store as never} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Customize agent Frontend' }))
+    const fastMode = await screen.findByLabelText('Native fast mode')
+    expect((fastMode as HTMLInputElement).checked).toBe(false)
+    fireEvent.click(fastMode)
+    fireEvent.click(screen.getByRole('button', { name: 'Save native configuration' }))
+
+    await waitFor(() => { expect(fetchMock).toHaveBeenCalledTimes(2) })
+    expect(JSON.parse(fetchMock.mock.calls[1]?.[1]?.body as string)).toEqual({
+      model: 'gpt-test',
+      reasoning: 'max',
+      fastMode: true,
+      instructions: 'Native instructions',
+      memoryPolicy: { enabled: true, userProfileEnabled: true, writeApproval: 'ask' },
+      permissions: { approvalMode: 'smart', secretRedaction: true },
+      toolStates: {},
     })
   })
 

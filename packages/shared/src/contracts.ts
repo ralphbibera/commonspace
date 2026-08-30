@@ -1,4 +1,4 @@
-export const COMMONSPACE_STATE_VERSION = 12 as const
+export const COMMONSPACE_STATE_VERSION = 15 as const
 
 export type AgentAdapterKind = 'hermes' | 'codex'
 
@@ -13,6 +13,35 @@ export interface CommonspaceDefaults extends Omit<CommonspaceRunSettings, 'reaso
   reasoning: CommonspaceReasoning
   maxAgentsPerTurn: number
   memoryThreads: number
+}
+
+export type CommonspaceRoutingProvider = 'harness' | 'openai-compatible'
+
+/** Public, Commonspace-wide AI routing configuration. Credentials are never included. */
+export interface CommonspaceRoutingConfiguration {
+  provider: CommonspaceRoutingProvider
+  model: string
+  harnessAgentId: string | null
+  baseUrl: string
+  apiKeyConfigured: boolean
+}
+
+export type UpdateRoutingConfigurationRequest =
+  | { provider: 'harness'; harnessAgentId: string }
+  | {
+      provider: 'openai-compatible'
+      model: string
+      baseUrl?: string
+      /** Omit to preserve the saved key, provide a value to replace it, or null to clear it. */
+      apiKey?: string | null
+    }
+
+export interface CommonspaceRoutingDecision {
+  source: 'explicit' | 'ai' | 'local'
+  status?: 'pending' | 'resolved' | 'failed'
+  agentIds: string[]
+  confidence?: number
+  reason: string
 }
 
 export interface CommonspaceAgentProfile {
@@ -107,6 +136,41 @@ export interface CommonspaceAgentTrace {
   entries: CommonspaceTraceEntry[]
 }
 
+export interface CommonspaceRunFileChange {
+  path: string
+  status: 'modified' | 'added' | 'deleted' | 'renamed' | 'untracked' | 'conflicted'
+  preExisting: boolean
+  additions: number | null
+  deletions: number | null
+  patch?: string
+  patchTruncated?: boolean
+}
+
+export type CommonspaceRunRootAttribution =
+  | {
+      available: true
+      rootIndex: number
+      branch: string | null
+      headBefore: string | null
+      headAfter: string | null
+      preExisting: Array<{
+        path: string
+        status: CommonspaceRunFileChange['status']
+      }>
+      observed: CommonspaceRunFileChange[]
+    }
+  | {
+      available: false
+      rootIndex: number
+      reason: string
+    }
+
+export interface CommonspaceRunAttribution {
+  startedAt: string
+  completedAt: string
+  roots: CommonspaceRunRootAttribution[]
+}
+
 export interface CommonspaceChannelMemory {
   summary: string
   decisions: string[]
@@ -118,7 +182,6 @@ export interface CommonspaceChannelMemory {
 export interface CommonspaceChannel {
   id: string
   name: string
-  projectId: string | null
   agentIds: string[]
   instructions: string
   memory: CommonspaceChannelMemory
@@ -147,9 +210,12 @@ export interface SendImageAttachment {
   data: string
 }
 
+
 /** Provider-emitted activity for an agent turn that is still running. */
 export interface CommonspaceLiveAgentActivity {
   id: string
+  /** User message whose delivery started this agent run. */
+  sourceMessageId: string
   agentId: string
   agentName: string
   adapter: AgentAdapterKind
@@ -168,28 +234,40 @@ export interface CommonspaceMessage {
   text: string
   attachments?: CommonspaceImageAttachment[]
   createdAt: string
+  /** Optional project context for this message; channels themselves are global. */
+  projectId?: string
   threadId?: string
   parentMessageId?: string
+  /** User message that initiated the agent run represented by this message. */
+  sourceMessageId?: string
   /** Lifecycle of the agent reply requested by a direct-message user turn. */
   replyStatus?: CommonspaceReplyStatus
   replyError?: string
   /** Sanitized provider-emitted reasoning, plan, tool, and usage activity for this reply. */
   trace?: CommonspaceAgentTrace
+  /** Repository changes observed between this run's start and completion. */
+  runAttribution?: CommonspaceRunAttribution
+  /** Inspectable routing decision for a channel user message. */
+  routing?: CommonspaceRoutingDecision
 }
 
-export type CommonspaceReplyStatus = 'queued' | 'running' | 'complete' | 'error'
-export type CommonspaceThreadStatus = CommonspaceReplyStatus
-
+export type CommonspaceReplyStatus =
+  | 'queued'
+  | 'running'
+  | 'complete'
+  | 'needs_input'
+  | 'failed'
+  | 'cancelled'
+  | 'silent'
+  | 'timeout'
+  | 'error'
 export interface CommonspaceThread {
   id: string
   channelId: string
   projectId: string | null
   rootMessageId: string
   agentIds: string[]
-  status: CommonspaceThreadStatus
   createdAt: string
-  updatedAt: string
-  error?: string
 }
 
 export interface CommonspaceState {
@@ -197,6 +275,11 @@ export interface CommonspaceState {
   revision: number
   /** Single-owner cursor for activity shown in the Inbox. */
   inboxReadAt: string | null
+  /** Agent message IDs opened individually after the global read cursor. */
+  inboxReadMessageIds: string[]
+  inboxSavedItemIds: string[]
+  followedSessionIds: string[]
+  mutedSessionIds: string[]
   defaults: CommonspaceDefaults
   agents: CommonspaceAgentDefinition[]
   /** Host-private native session scope selected for each direct message. */
@@ -213,18 +296,78 @@ export interface CommonspaceBootstrap {
   discoveredAgents: CommonspaceAgentProfile[]
   state: CommonspaceState
   liveActivities?: CommonspaceLiveAgentActivity[]
+  queuedFollowups?: CommonspaceQueuedFollowup[]
+  routing?: CommonspaceRoutingConfiguration
 }
 
 export interface DiscoverAgentsRequest {
   adapter: AgentAdapterKind
 }
 
+export type CommonspaceCapabilityState = 'enabled' | 'configured' | 'available' | 'blocked'
+
+export interface CommonspaceCapabilityItem {
+  id: string
+  label: string
+  state: CommonspaceCapabilityState
+  detail?: string
+}
+
+export interface CommonspaceAgentRunSummary {
+  messageId: string
+  conversation: ConversationRef
+  startedAt: string
+  completedAt: string
+  status: 'complete' | 'failed' | 'running'
+  usedTokens?: number
+  costAmount?: number
+  costCurrency?: string
+}
+
+export interface CommonspaceAgentConfiguration {
+  agentId: string
+  adapter: AgentAdapterKind
+  model: string | null
+  reasoning: CommonspaceReasoning | null
+  /** Provider priority/fast processing when the native harness supports it. */
+  fastMode: boolean | null
+  editable: boolean
+  editBlockedReason?: string
+  instructions: string | null
+  memoryPolicy: { enabled: boolean | null; userProfileEnabled: boolean | null; writeApproval: string | null }
+  permissions: { approvalMode: string | null; secretRedaction: boolean | null }
+  sessionHealth: { status: 'healthy' | 'idle' | 'unavailable'; activeSessions: number; knownSessions: number; lastRunAt: string | null }
+  lastRuns: CommonspaceAgentRunSummary[]
+  cost: { amount: number; currency: string | null }
+  capabilities: {
+    tools: CommonspaceCapabilityItem[]
+    mcp: CommonspaceCapabilityItem[]
+    skills: CommonspaceCapabilityItem[]
+    services: CommonspaceCapabilityItem[]
+  }
+  refreshedAt: string
+}
+
+export interface UpdateAgentConfigurationRequest {
+  model: string
+  reasoning: CommonspaceReasoning
+  fastMode: boolean
+  instructions?: string
+  memoryPolicy?: { enabled: boolean; userProfileEnabled: boolean; writeApproval: string }
+  permissions?: { approvalMode: string; secretRedaction: boolean }
+  toolStates?: Record<string, boolean>
+}
+
 export type CommonspaceMutation =
   | { action: 'mark-inbox-read' }
+  | { action: 'mark-inbox-item-read'; messageId: string }
+  | { action: 'set-inbox-item-saved'; messageId: string; saved: boolean }
+  | { action: 'set-session-followed'; sessionId: string; followed: boolean }
+  | { action: 'set-session-muted'; sessionId: string; muted: boolean }
   | { action: 'create-project'; name: string; paths: string[] }
   | { action: 'add-project-path'; projectId: string; path: string }
   | { action: 'remove-project'; projectId: string }
-  | { action: 'create-channel'; name: string; projectId?: string; agentIds: string[] }
+  | { action: 'create-channel'; name: string; agentIds: string[] }
   | { action: 'set-channel-agents'; channelId: string; agentIds: string[] }
   | { action: 'set-channel-context'; channelId: string; instructions: string }
   | { action: 'set-channel-settings'; channelId: string; model?: string | null; reasoning?: CommonspaceReasoning | null }
@@ -244,12 +387,48 @@ export interface SendMessageRequest {
   /** Restrict a channel-thread reply to one current channel agent. */
   targetAgentId?: string
   attachments?: SendImageAttachment[]
+  /** Behavior when the same conversation session already has an active run. */
+  delivery?: 'queue' | 'steer' | 'stop-and-send'
+}
+
+export interface CommonspaceQueuedFollowup {
+  messageId: string
+  conversation: ConversationRef
+  threadId?: string
+  agentIds: string[]
+  text: string
+  position: number
+  createdAt: string
+  delivery: 'queue' | 'steer' | 'stop-and-send'
+}
+
+export interface ReorderFollowupRequest {
+  messageId: string
+  direction: 'up' | 'down'
+}
+
+export interface RemoveFollowupRequest {
+  messageId: string
+}
+
+export interface FollowupQueueResponse {
+  queuedFollowups: CommonspaceQueuedFollowup[]
 }
 
 export interface SendMessageResponse {
   accepted: CommonspaceMessage
   thread?: CommonspaceThread
   state: CommonspaceState
+}
+
+export interface StopAgentRunsRequest {
+  messageId: string
+  /** When omitted, stop every agent run initiated by the message. */
+  agentId?: string
+}
+
+export interface StopAgentRunsResponse {
+  stoppedAgentIds: string[]
 }
 
 export interface CommonspaceApiError {

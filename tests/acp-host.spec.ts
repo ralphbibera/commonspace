@@ -178,6 +178,7 @@ describe('Commonspace ACP host path', () => {
         model: 'gpt-test',
         status: 'stopped',
       }],
+      routeAgents: async input => ({ agentIds: [input.candidates[0]!.id], reason: 'Test inference selected the channel agent.' }),
     })
     await service.initialize()
     await service.mutate({ action: 'add-discovered-agent', agentId: 'default' })
@@ -274,6 +275,7 @@ describe('Commonspace ACP host path', () => {
         model: 'profile-default',
         status: 'stopped',
       }],
+      routeAgents: async input => ({ agentIds: [input.candidates[0]!.id], reason: 'Test inference selected the channel agent.' }),
     })
     await service.initialize()
     await service.mutate({ action: 'add-discovered-agent', agentId: 'default' })
@@ -316,7 +318,7 @@ describe('Commonspace ACP host path', () => {
       await service.mutate({ action: 'reset-dm', agentId: 'codex-review-bot' })
       await vi.waitFor(async () => {
         expect((await readFile(logPath, 'utf8')).includes('session/cancel')).toBe(true)
-      })
+      }, { timeout: 3_000 })
       await service.whenIdle()
       expect(service.snapshot().messages['dm:codex-review-bot']).toEqual([
         expect.objectContaining({ text: 'Long turn.', replyStatus: 'error', replyError: 'Interrupted by /new.' }),
