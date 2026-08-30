@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { applyMutation, createInitialState } from '../server/src/state.ts'
+import { addDiscoveredAgent, applyMutation, createInitialState } from '../server/src/state.ts'
 
 describe('Commonspace local state', () => {
-  it('creates filesystem projects and channels with real agent membership', () => {
+  it('creates filesystem projects and project-independent channels with real agent membership', () => {
     const initial = createInitialState()
     const withProject = applyMutation(initial, {
       action: 'create-project',
@@ -12,7 +12,6 @@ describe('Commonspace local state', () => {
     const withChannel = applyMutation(withProject, {
       action: 'create-channel',
       name: 'checkout',
-      projectId: 'project-1',
       agentIds: ['frontend', 'backend'],
     }, { ids: () => 'channel-1', now: () => '2026-08-25T00:00:01.000Z' })
 
@@ -24,9 +23,9 @@ describe('Commonspace local state', () => {
     expect(withChannel.channels[0]).toMatchObject({
       id: 'channel-1',
       name: 'checkout',
-      projectId: 'project-1',
       agentIds: ['frontend', 'backend'],
     })
+    expect(withChannel.channels[0]).not.toHaveProperty('projectId')
     expect(withChannel.revision).toBe(2)
   })
 
@@ -45,17 +44,17 @@ describe('Commonspace local state', () => {
       .toThrow('project name already exists')
   })
 
-  it('removing a project detaches its channels without deleting room history', () => {
+  it('removing a project leaves global channels and room history unchanged', () => {
     const seeded = {
       ...createInitialState(),
       revision: 2,
       projects: [{ id: 'p', name: 'P', paths: ['/tmp/p'], createdAt: 'now' }],
-      channels: [{ id: 'c', name: 'general', projectId: 'p', agentIds: [], instructions: '', memory: { summary: '', decisions: [], openQuestions: [], threadIds: [], updatedAt: null }, settings: { model: null, reasoning: null }, createdAt: 'now' }],
+      channels: [{ id: 'c', name: 'general', agentIds: [], instructions: '', memory: { summary: '', decisions: [], openQuestions: [], threadIds: [], updatedAt: null }, settings: { model: null, reasoning: null }, createdAt: 'now' }],
       messages: { 'channel:c': [] },
     }
     const next = applyMutation(seeded, { action: 'remove-project', projectId: 'p' })
     expect(next.projects).toHaveLength(0)
-    expect(next.channels[0]?.projectId).toBeNull()
+    expect(next.channels).toEqual(seeded.channels)
     expect(next.messages['channel:c']).toEqual([])
   })
 
@@ -64,7 +63,7 @@ describe('Commonspace local state', () => {
     state = applyMutation(state, { action: 'set-defaults', model: 'openai/gpt-5.2', reasoning: 'high', maxAgentsPerTurn: 99, memoryThreads: 0 })
     expect(state.defaults).toEqual({ model: 'openai/gpt-5.2', reasoning: 'high', maxAgentsPerTurn: 8, memoryThreads: 1 })
     state = applyMutation(state, { action: 'create-project', name: 'P', paths: ['/tmp/p'] }, { ids: () => 'p', now: () => 'now' })
-    state = applyMutation(state, { action: 'create-channel', name: 'general', projectId: 'p', agentIds: [] }, { ids: () => 'c', now: () => 'now' })
+    state = applyMutation(state, { action: 'create-channel', name: 'general', agentIds: [] }, { ids: () => 'c', now: () => 'now' })
     state = applyMutation(state, { action: 'set-channel-settings', channelId: 'c', model: null, reasoning: null })
     expect(state.channels[0]?.settings).toEqual({ model: null, reasoning: null })
   })
@@ -115,6 +114,49 @@ describe('Commonspace local state', () => {
     expect(removed.channels[0]?.agentIds).toEqual([])
     expect(removed.agentSessions).toEqual({})
     expect(removed.messages).toEqual({})
+  })
+
+  it('keeps imported harness names as unique Commonspace workspace names', () => {
+    const withHermes = addDiscoveredAgent(createInitialState(), {
+      id: 'default',
+      displayName: 'default',
+      adapter: 'hermes',
+      model: null,
+      status: 'running',
+    }, { ids: () => 'unused', now: () => 'now' })
+    const withCodex = addDiscoveredAgent(withHermes, {
+      id: 'codex-default',
+      displayName: 'default',
+      adapter: 'codex',
+      nativeProfile: 'default',
+      model: null,
+      status: 'unknown',
+    }, { ids: () => 'unused', now: () => 'now' })
+
+    expect(withCodex.agents.map(agent => ({
+      id: agent.id,
+      displayName: agent.displayName,
+      nativeProfile: agent.nativeProfile,
+    }))).toEqual([
+      { id: 'default', displayName: 'default', nativeProfile: undefined },
+      { id: 'codex-default', displayName: 'default (Codex)', nativeProfile: 'default' },
+    ])
+  })
+
+  it('rejects a workspace-name edit that duplicates another agent tag', () => {
+    const state = {
+      ...createInitialState(),
+      agents: [
+        { id: 'frontend', displayName: 'Front End', adapter: 'hermes' as const, model: null, createdAt: 'now' },
+        { id: 'codex-reviewer', displayName: 'Reviewer', adapter: 'codex' as const, nativeProfile: 'reviewer', model: null, createdAt: 'now' },
+      ],
+    }
+
+    expect(() => applyMutation(state, {
+      action: 'update-agent-profile',
+      agentId: 'codex-reviewer',
+      displayName: 'front-end',
+    })).toThrow('agent workspace name already exists')
   })
 
   it('removes native thread sessions with a deleted channel while preserving DMs', () => {

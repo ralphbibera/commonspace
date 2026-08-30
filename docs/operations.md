@@ -14,6 +14,9 @@ The API server binds to `127.0.0.1:3100` by default and serves `/api` plus the r
 ## Local data
 
 - State: `~/.commonspace/state.json`
+- Previous valid state: `~/.commonspace/state.backup.json`
+- Last invalid primary preserved after automatic recovery: `~/.commonspace/state.corrupt.json`
+- Routing provider configuration: `~/.commonspace/routing.json`
 - Credentials and native transcripts: each agent CLI's supported stores
 
 ACP runs over child-process stdio. The Commonspace MCP endpoint is authenticated, loopback-only, and uses in-memory bearer capabilities that are never persisted. There is no Nostr or remote relay service to configure.
@@ -51,6 +54,14 @@ Project paths must be absolute, exist, resolve through `realpath`, and be direct
 
 Authenticate with Hermes or Codex. Unsafe mode does not solve authentication and should not be used for that purpose.
 
+### Routing inference fails
+
+Unaddressed Channel messages are not accepted unless inference selects a valid seated agent. Configure either a harness router or an OpenAI-compatible model in Defaults. A stored endpoint key is cleared when its origin changes and must be entered again. `OPENAI_API_KEY` is used only with the canonical OpenAI origin; local and third-party endpoints need their own explicit key when authentication is required.
+
+### A Project file is marked sensitive
+
+Commonspace lists known credential-bearing files but does not preview their contents. This includes `.env*`, common credential/auth/secret files, private keys, and certificate key containers. Inspect such files outside Commonspace with an appropriate secret-safe workflow.
+
 ### ACP bridge fails to start
 
 Run `hermes acp --check` and `codex --version` in the same environment as Commonspace. Hermes ACP defaults to `COMMONSPACE_HERMES_PATH` or `hermes`; `COMMONSPACE_HERMES_ACP_PATH` overrides its ACP executable. The Codex bridge uses `COMMONSPACE_CODEX_PATH` when set.
@@ -81,4 +92,4 @@ Before changing state versions:
 cp ~/.commonspace/state.json ~/.commonspace/state.backup.json
 ```
 
-Local agent appearance, Inbox read state, agent activity traces, and managed image attachment metadata use state version 12, which migrates versions 1–11 on startup. Restore a version 11 backup before rolling back to an older build.
+State version 14 migrates versions 1–13 on startup. Each write automatically keeps the previous valid primary as `state.backup.json`. When `state.json` is invalid and the backup is valid, startup moves the invalid primary to `state.corrupt.json`, restores the backup, and writes a fresh primary. If both files are invalid, startup stops without replacing either one. Restore a backup compatible with the target release before rolling back to an older build.

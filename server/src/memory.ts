@@ -31,8 +31,8 @@ export function projectChannelMemory(
   maxThreads = 12,
 ): CommonspaceChannelMemory {
   const threads = state.threads
-    .filter(thread => thread.channelId === channelId && (thread.status === 'complete' || thread.status === 'error'))
-    .sort((left, right) => left.updatedAt.localeCompare(right.updatedAt))
+    .filter(thread => thread.channelId === channelId)
+    .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
     .slice(-Math.max(1, maxThreads))
   const messages = state.messages[conversationKey({ kind: 'channel', id: channelId })] ?? []
   const byId = new Map(messages.map(message => [message.id, message]))
@@ -57,6 +57,6 @@ export function projectChannelMemory(
     decisions,
     openQuestions: unique([...explicitQuestions, ...sentenceQuestions], 20),
     threadIds: threads.map(thread => thread.id),
-    updatedAt: threads.at(-1)?.updatedAt ?? null,
+    updatedAt: sourceMessages.at(-1)?.createdAt ?? null,
   }
 }

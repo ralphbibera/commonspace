@@ -26,7 +26,7 @@ The development server runs behind a stable local supervisor. Changes under `ser
 - `packages/shared/src` — versioned contracts and pure shared helpers.
 - `server/src/state.ts` — deterministic mutations.
 - `server/src/service.ts` — persistence, routing, sessions, and process lifecycle.
-- `server/src/app.ts` — Express API and production asset serving.
+- `server/src/app.ts` — Express API, loopback/origin guards, SSE, and media streaming.
 - `server/src/dev.ts` and `dev-supervisor.ts` — coalesced, idle-gated development restarts.
 - `server/src/index.ts` — process startup and shutdown.
 - `ui/src/commonspace-store.ts` — observable API client state.
@@ -67,3 +67,5 @@ Cross-process shapes have one writer: `packages/shared`. When changing persisted
 ## Agent runtime changes
 
 Hermes and Codex ACP lifecycle code lives in the server. Activity traces must remain provider-neutral, bounded, and derived only from ACP updates the native runtime emits. Real runtime smoke tests are opt-in because they use local credentials and model access.
+
+Native Hermes configuration writes must be treated as a transaction: capture original values, apply the requested model/reasoning/tier settings, verify through readback, and restore every original value on failure. Tests must inject a fake runner; they must never mutate the developer's live Hermes profile.

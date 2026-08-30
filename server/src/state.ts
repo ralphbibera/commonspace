@@ -1,5 +1,5 @@
 import type { AgentAdapterKind, CommonspaceAgentDefinition, CommonspaceAgentProfile, CommonspaceMutation, CommonspaceState } from '@commonspace/shared'
-import { COMMONSPACE_STATE_VERSION, projectTagName } from '@commonspace/shared'
+import { agentTagName, COMMONSPACE_STATE_VERSION, projectTagName, uniqueAgentDisplayName } from '@commonspace/shared'
 
 export const DM_SESSION_BOUNDARY_AUTHOR_ID = 'dm-session-boundary'
 
@@ -95,6 +95,10 @@ export function createInitialState(): CommonspaceState {
     version: COMMONSPACE_STATE_VERSION,
     revision: 0,
     inboxReadAt: null,
+    inboxReadMessageIds: [],
+    inboxSavedItemIds: [],
+    followedSessionIds: [],
+    mutedSessionIds: [],
     defaults: defaultCommonspaceDefaults(),
     agents: [],
     dmSessions: {},
@@ -119,7 +123,11 @@ export function addDiscoveredAgent(
   if (agent.adapter === 'codex' && (nativeProfile === undefined || nativeProfile.trim() !== nativeProfile || nativeProfile === '' || nativeProfile.length > 200 || /\s/u.test(nativeProfile))) {
     throw new Error('invalid native Codex profile')
   }
-  const displayName = normalizedName(agent.displayName, 'agent')
+  const displayName = uniqueAgentDisplayName(
+    normalizedName(agent.displayName, 'agent'),
+    agent.adapter,
+    state.agents,
+  )
   const id = agent.adapter === 'hermes' ? agent.id : managedAgentId('codex', nativeProfile!)
   if (state.agents.some(candidate => candidate.id === id)) throw new Error(`agent ${displayName} already exists`)
   return {
@@ -144,8 +152,51 @@ export function applyMutation(
   switch (mutation.action) {
     case 'mark-inbox-read': {
       const readAt = dependencies.now()
-      if (state.inboxReadAt !== null && state.inboxReadAt >= readAt) return state
-      return { ...state, revision: nextRevision(state), inboxReadAt: readAt }
+      if (state.inboxReadAt !== null && state.inboxReadAt >= readAt && state.inboxReadMessageIds.length === 0) return state
+      return { ...state, revision: nextRevision(state), inboxReadAt: readAt, inboxReadMessageIds: [] }
+    }
+    case 'mark-inbox-item-read': {
+      const messageId = mutation.messageId.trim()
+      const message = Object.values(state.messages).flat().find(candidate =>
+        candidate.id === messageId && (candidate.authorType === 'agent' || (candidate.authorType === 'system' && /\brun failed:/iu.test(candidate.text)) || candidate.replyStatus === 'error' || candidate.replyStatus === 'failed' || candidate.replyStatus === 'timeout' || candidate.replyStatus === 'silent' || candidate.replyStatus === 'needs_input'))
+      if (message === undefined) throw new Error('inbox item not found')
+      if (state.inboxReadMessageIds.includes(messageId)) return state
+      return {
+        ...state,
+        revision: nextRevision(state),
+        inboxReadMessageIds: [...state.inboxReadMessageIds, messageId],
+      }
+    }
+    case 'set-inbox-item-saved': {
+      const messageId = mutation.messageId.trim()
+      const message = Object.values(state.messages).flat().find(candidate =>
+        candidate.id === messageId && (candidate.authorType === 'agent' || (candidate.authorType === 'system' && /\brun failed:/iu.test(candidate.text)) || candidate.replyStatus === 'error' || candidate.replyStatus === 'failed' || candidate.replyStatus === 'timeout' || candidate.replyStatus === 'silent' || candidate.replyStatus === 'needs_input'))
+      if (message === undefined) throw new Error('inbox item not found')
+      const inboxSavedItemIds = mutation.saved
+        ? [...new Set([...state.inboxSavedItemIds, messageId])]
+        : state.inboxSavedItemIds.filter(id => id !== messageId)
+      if (inboxSavedItemIds.length === state.inboxSavedItemIds.length && inboxSavedItemIds.every((id, index) => id === state.inboxSavedItemIds[index])) return state
+      return { ...state, revision: nextRevision(state), inboxSavedItemIds }
+    }
+    case 'set-session-followed': {
+      const sessionId = mutation.sessionId.trim()
+      if (sessionId === '' || sessionId.length > 500) throw new Error('invalid session id')
+      const followedSessionIds = mutation.followed
+        ? [...new Set([...state.followedSessionIds, sessionId])]
+        : state.followedSessionIds.filter(id => id !== sessionId)
+      const mutedSessionIds = mutation.followed ? state.mutedSessionIds.filter(id => id !== sessionId) : state.mutedSessionIds
+      if (followedSessionIds.length === state.followedSessionIds.length && mutedSessionIds.length === state.mutedSessionIds.length) return state
+      return { ...state, revision: nextRevision(state), followedSessionIds, mutedSessionIds }
+    }
+    case 'set-session-muted': {
+      const sessionId = mutation.sessionId.trim()
+      if (sessionId === '' || sessionId.length > 500) throw new Error('invalid session id')
+      const mutedSessionIds = mutation.muted
+        ? [...new Set([...state.mutedSessionIds, sessionId])]
+        : state.mutedSessionIds.filter(id => id !== sessionId)
+      const followedSessionIds = mutation.muted ? state.followedSessionIds.filter(id => id !== sessionId) : state.followedSessionIds
+      if (mutedSessionIds.length === state.mutedSessionIds.length && followedSessionIds.length === state.followedSessionIds.length) return state
+      return { ...state, revision: nextRevision(state), followedSessionIds, mutedSessionIds }
     }
     case 'create-project': {
       const name = normalizedName(mutation.name, 'project')
@@ -184,28 +235,29 @@ export function applyMutation(
         ...state,
         revision: nextRevision(state),
         projects: state.projects.filter(project => project.id !== mutation.projectId),
-        channels: state.channels.map(channel => channel.projectId === mutation.projectId
-          ? { ...channel, projectId: null }
-          : channel),
         threads: state.threads.map(thread => thread.projectId === mutation.projectId
           ? { ...thread, projectId: null }
           : thread),
+        messages: Object.fromEntries(Object.entries(state.messages).map(([key, messages]) => [
+          key,
+          messages.map((message) => {
+            if (message.projectId !== mutation.projectId) return message
+            const updated = { ...message }
+            delete updated.projectId
+            return updated
+          }),
+        ])),
       }
     }
     case 'create-channel': {
       const name = normalizedChannel(mutation.name)
       if (state.channels.some(channel => channel.name === name)) throw new Error(`channel #${name} already exists`)
-      const projectId = mutation.projectId
-      if (projectId !== undefined && !state.projects.some(project => project.id === projectId)) {
-        throw new Error('unknown project')
-      }
       return {
         ...state,
         revision: nextRevision(state),
         channels: [...state.channels, {
           id: dependencies.ids(),
           name,
-          projectId: projectId ?? null,
           agentIds: [...new Set(mutation.agentIds.filter(Boolean))],
           instructions: '',
           memory: emptyChannelMemory(),
@@ -269,9 +321,10 @@ export function applyMutation(
     }
     case 'add-agent': {
       if (mutation.adapter !== 'codex') throw new Error('unsupported agent adapter')
-      const displayName = normalizedName(mutation.displayName, 'agent')
-      const id = managedAgentId(mutation.adapter, displayName)
-      if (state.agents.some(agent => agent.id === id)) throw new Error(`agent ${displayName} already exists`)
+      const requestedName = normalizedName(mutation.displayName, 'agent')
+      const id = managedAgentId(mutation.adapter, requestedName)
+      if (state.agents.some(agent => agent.id === id)) throw new Error(`agent ${requestedName} already exists`)
+      const displayName = uniqueAgentDisplayName(requestedName, mutation.adapter, state.agents)
       return {
         ...state,
         revision: nextRevision(state),
@@ -289,6 +342,10 @@ export function applyMutation(
     }
     case 'update-agent-profile': {
       const displayName = normalizedName(mutation.displayName, 'agent')
+      const displayHandle = agentTagName(displayName)
+      if (displayHandle === 'all' || state.agents.some(agent => agent.id !== mutation.agentId && agentTagName(agent.displayName) === displayHandle)) {
+        throw new Error('agent workspace name already exists')
+      }
       const avatarEmoji = normalizedAvatarEmoji(mutation.avatarEmoji)
       const accentColor = normalizedAccentColor(mutation.accentColor)
       let matched = false

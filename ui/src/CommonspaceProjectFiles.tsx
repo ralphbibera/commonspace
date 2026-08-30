@@ -5,6 +5,7 @@ import { fetchProjectJson, fetchProjectText, folderName, formatFileSize, project
 export interface CommonspaceProjectFilesProps {
   projectId: string
   roots: readonly string[]
+  targetFile?: { rootIndex: number; path: string } | null
 }
 
 function entryGlyph(entry: ProjectFileEntry): string {
@@ -12,17 +13,25 @@ function entryGlyph(entry: ProjectFileEntry): string {
   if (entry.preview === 'image') return 'IMG'
   if (entry.preview === 'video') return 'VID'
   if (entry.preview === 'text') return 'TXT'
+  if (entry.preview === 'blocked') return 'LOCK'
   return 'BIN'
 }
 
-export function CommonspaceProjectFiles({ projectId, roots }: CommonspaceProjectFilesProps) {
-  const [rootIndex, setRootIndex] = useState(0)
-  const [directoryPath, setDirectoryPath] = useState('')
+export function CommonspaceProjectFiles({ projectId, roots, targetFile = null }: CommonspaceProjectFilesProps) {
+  const [rootIndex, setRootIndex] = useState(targetFile?.rootIndex ?? 0)
+  const [directoryPath, setDirectoryPath] = useState(targetFile?.path.split('/').slice(0, -1).join('/') ?? '')
   const [listing, setListing] = useState<ProjectDirectoryResponse | null>(null)
   const [selected, setSelected] = useState<ProjectFileEntry | null>(null)
   const [text, setText] = useState<string | null>(null)
   const [listingError, setListingError] = useState<string | null>(null)
   const [previewError, setPreviewError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (targetFile === null) return
+    setRootIndex(targetFile.rootIndex)
+    setDirectoryPath(targetFile.path.split('/').slice(0, -1).join('/'))
+    setSelected(null)
+  }, [targetFile])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -52,6 +61,12 @@ export function CommonspaceProjectFiles({ projectId, roots }: CommonspaceProject
     })
     return () => { controller.abort() }
   }, [projectId, rootIndex, selected])
+
+  useEffect(() => {
+    if (targetFile === null || listing === null || listing.rootIndex !== targetFile.rootIndex) return
+    const match = listing.entries.find(entry => entry.kind === 'file' && entry.path === targetFile.path)
+    if (match !== undefined) setSelected(match)
+  }, [listing, targetFile])
 
   const breadcrumbs = useMemo(() => {
     const segments = directoryPath === '' ? [] : directoryPath.split('/')
@@ -140,6 +155,7 @@ export function CommonspaceProjectFiles({ projectId, roots }: CommonspaceProject
                 {previewError === null && selected.preview === 'image' && mediaUrl !== null && <img src={mediaUrl} alt={`Preview ${selected.name}`} />}
                 {previewError === null && selected.preview === 'video' && mediaUrl !== null && <video src={mediaUrl} aria-label={`Preview ${selected.name}`} controls playsInline preload="metadata" />}
                 {previewError === null && selected.preview === 'binary' && <div className="csp-project-preview-empty"><strong>Preview unavailable</strong><p>Commonspace renders text, raster images, and videos only.</p></div>}
+                {previewError === null && selected.preview === 'blocked' && <div className="csp-project-preview-empty"><strong>Sensitive file</strong><p>Commonspace does not render credential-bearing files.</p></div>}
               </div>
             </>}
       </div>

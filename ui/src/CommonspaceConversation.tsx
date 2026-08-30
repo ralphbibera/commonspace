@@ -1,7 +1,9 @@
-import { lazy, Suspense, useEffect, useId, useRef, useState, useSyncExternalStore, type CSSProperties, type Dispatch, type FormEvent, type SetStateAction } from 'react'
-import type { AgentAdapterKind, CommonspaceAgentProfile, CommonspaceLiveAgentActivity, CommonspaceTraceEntry, ConversationRef, CommonspaceMessage, CommonspaceThread, SendImageAttachment } from '@commonspace/shared'
+import { Fragment, lazy, Suspense, useEffect, useId, useRef, useState, useSyncExternalStore, type CSSProperties, type Dispatch, type FormEvent, type SetStateAction } from 'react'
+import { deriveCommonspaceInboxItems, type AgentAdapterKind, type CommonspaceAgentProfile, type CommonspaceBootstrap, type CommonspaceLiveAgentActivity, type CommonspaceTraceEntry, type ConversationRef, type CommonspaceMessage, type CommonspaceThread, type SendImageAttachment } from '@commonspace/shared'
 import type { CommonspaceClientStore } from './commonspace-store.ts'
 import { AgentTrace, AgentTraceTimeline } from './AgentTrace.tsx'
+import { RunAttribution } from './RunAttribution.tsx'
+import { useMessageSpeech, type MessageSpeechControls } from './message-speech.ts'
 import { resolveSlashCommand, slashCommandSuggestions } from './slash-commands.ts'
 import { insertTag, tagReferenceParts, tagSuggestions, type TagSuggestion } from './tagging.ts'
 
@@ -16,6 +18,8 @@ const messageMarkdownFallback = (
 
 export interface CommonspaceConversationProps {
   store: CommonspaceClientStore
+  targetMessageId?: string | null
+  onTargetMessageHandled?: () => void
 }
 
 interface CommandFeedback {
@@ -74,9 +78,14 @@ function PendingImageStrip({
   )
 }
 
+
 function runtimeLabel(adapter: AgentAdapterKind | undefined): string {
   if (adapter === 'codex') return 'Codex'
   return 'Hermes'
+}
+
+function waitingActivityText(adapter: AgentAdapterKind): string {
+  return `Waiting for ${runtimeLabel(adapter)} activity…`
 }
 
 function conversationTitle(store: CommonspaceClientStore, ref: ConversationRef | null): { title: string; subtitle: string } {
@@ -87,27 +96,31 @@ function conversationTitle(store: CommonspaceClientStore, ref: ConversationRef |
     return { title: agent?.displayName ?? ref.id, subtitle: `${runtimeLabel(agent?.adapter)} · ${agent?.model ?? 'default model'}` }
   }
   const channel = bootstrap.state.channels.find(candidate => candidate.id === ref.id)
-  const project = bootstrap.state.projects.find(candidate => candidate.id === channel?.projectId)
   const members = (channel?.agentIds ?? []).map(id => bootstrap.agents.find(agent => agent.id === id)?.displayName ?? id)
   const roster = members.length === 0 ? 'No agents' : members.map(name => `@${name}`).join(' ')
-  return { title: channel?.name ?? 'channel', subtitle: project === undefined ? roster : `${project.name} · ${roster}` }
+  return { title: channel?.name ?? 'channel', subtitle: `Global Channel · ${roster}` }
 }
 
-function renderMessageText(message: CommonspaceMessage) {
-  return tagReferenceParts(message.text).map((part, index) => part.kind === 'text'
+function renderMessageText(message: CommonspaceMessage, bootstrap?: CommonspaceBootstrap) {
+  return tagReferenceParts(message.text, bootstrap).map((part, index) => part.kind === 'text'
     ? <span key={`${message.id}-${String(index)}`}>{part.text}</span>
     : <mark key={`${message.id}-${String(index)}`} className={`csp-tag csp-tag--${part.kind}`}>{part.text}</mark>)
 }
 
 function MessageRow({
   message,
+  bootstrap,
   compact = false,
   onReplyToAgent,
+  speech,
 }: {
   message: CommonspaceMessage
+  bootstrap?: CommonspaceBootstrap | null
   compact?: boolean
   onReplyToAgent?: (message: CommonspaceMessage) => void
+  speech: MessageSpeechControls
 }) {
+  const reading = speech.activeMessageId === message.id
   return (
     <article className={`csp-message csp-message--${message.authorType}${compact ? ' csp-message--compact' : ''}`} data-author={message.authorType}>
       <div className="csp-message-avatar" aria-hidden="true">{message.authorName.slice(0, 1).toUpperCase()}</div>
@@ -123,12 +136,34 @@ function MessageRow({
               onClick={() => { onReplyToAgent(message) }}
             ><span aria-hidden="true">↩</span> Reply</button>
           )}
+          {message.authorType === 'agent' && message.text.trim() !== '' && speech.supported && (
+            <button
+              type="button"
+              className="csp-message-speech"
+              aria-label={reading ? 'Stop reading aloud' : 'Read message aloud'}
+              aria-pressed={reading}
+              title={reading ? 'Stop reading aloud' : 'Read message aloud'}
+              onClick={() => { speech.toggle(message.id, message.text) }}
+            ><span aria-hidden="true">{reading ? '■' : '◖))'}</span></button>
+          )}
         </header>
         {message.text !== '' && (message.authorType === 'agent'
           ? <Suspense fallback={messageMarkdownFallback}>
               <LazyMessageMarkdown text={message.text} />
             </Suspense>
-          : <p className="csp-message-plain-text">{renderMessageText(message)}</p>)}
+          : <p className="csp-message-plain-text">{renderMessageText(message, bootstrap ?? undefined)}</p>)}
+        {message.routing !== undefined && message.routing.source !== 'explicit' && (
+          message.routing.status === 'pending'
+            ? <div className="csp-message-routing" role="status" aria-label="Routing message">Routing…</div>
+            : message.routing.status === 'failed'
+              ? <div className="csp-message-routing" role="alert">Routing failed · {message.routing.reason}</div>
+              : <div className="csp-message-routing" title={message.routing.reason}>
+                  {message.routing.source === 'ai' ? 'AI routed' : 'Local routing'} to {message.routing.agentIds.map((agentId) => {
+                    const agent = bootstrap?.agents.find(candidate => candidate.id === agentId)
+                    return `@${agent?.displayName ?? agentId}`
+                  }).join(', ')} · {message.routing.reason}
+                </div>
+        )}
         {message.attachments !== undefined && message.attachments.length > 0 && (
           <div className="csp-message-attachments">
             {message.attachments.map(attachment => (
@@ -141,14 +176,16 @@ function MessageRow({
             ))}
           </div>
         )}
+
         {message.authorType === 'agent' && message.trace !== undefined && <AgentTrace authorName={message.authorName} trace={message.trace} />}
+        {message.authorType === 'agent' && message.projectId !== undefined && message.runAttribution !== undefined && <RunAttribution attribution={message.runAttribution} authorName={message.authorName} messageId={message.id} projectId={message.projectId} />}
       </div>
     </article>
   )
 }
 
 function suggestionLabel(suggestion: TagSuggestion): string {
-  if (suggestion.kind === 'agent') return `Agent · ${suggestion.label}`
+  if (suggestion.kind === 'agent') return `Agent · ${suggestion.label}${suggestion.channelMembership === 'outside' ? ' · will be added' : ''}`
   if (suggestion.kind === 'project') return `Project · ${suggestion.label}`
   return `Channel · ${suggestion.label}`
 }
@@ -183,28 +220,31 @@ function SuggestionMenu({
           onMouseDown={event => { event.preventDefault(); onSelectSlash(command.name) }}
         ><strong>{command.name}</strong><span>{command.description}</span></button>
       ))}
-      {referenceSuggestions.map((suggestion, index) => (
-        <button
-          key={`${suggestion.kind}-${suggestion.id}`}
-          id={`${id}-option-${String(index + slashSuggestions.length)}`}
-          type="button"
-          role="option"
-          aria-selected={index + slashSuggestions.length === selectedSuggestion}
-          className={index + slashSuggestions.length === selectedSuggestion ? 'is-selected' : ''}
-          onMouseDown={event => { event.preventDefault(); onSelectTag(suggestion) }}
-        ><strong>{suggestion.token}</strong><span>{suggestionLabel(suggestion)}</span></button>
-      ))}
+      {referenceSuggestions.map((suggestion, index) => {
+        const previousMembership = referenceSuggestions[index - 1]?.channelMembership
+        const showMembershipHeading = suggestion.channelMembership !== undefined && suggestion.channelMembership !== previousMembership
+        return (
+          <Fragment key={`${suggestion.kind}-${suggestion.id}`}>
+            {showMembershipHeading && (
+              <div className="csp-tag-suggestion-group" role="presentation">
+                {suggestion.channelMembership === 'member' ? 'In this channel' : 'Not in this channel · tagging adds them'}
+              </div>
+            )}
+            <button
+              id={`${id}-option-${String(index + slashSuggestions.length)}`}
+              type="button"
+              role="option"
+              aria-selected={index + slashSuggestions.length === selectedSuggestion}
+              className={index + slashSuggestions.length === selectedSuggestion ? 'is-selected' : ''}
+              onMouseDown={event => { event.preventDefault(); onSelectTag(suggestion) }}
+            ><strong>{suggestion.token}</strong><span>{suggestionLabel(suggestion)}</span></button>
+          </Fragment>
+        )
+      })}
     </div>
   )
 }
 
-function threadStatus(thread: CommonspaceThread | undefined): string | null {
-  if (thread === undefined) return null
-  if (thread.status === 'queued') return 'Queued'
-  if (thread.status === 'running') return 'Agents working'
-  if (thread.status === 'error') return 'Blocked'
-  return null
-}
 
 function liveActivitiesFor(
   activities: readonly CommonspaceLiveAgentActivity[] | undefined,
@@ -225,7 +265,7 @@ function latestTraceEntry(entries: readonly CommonspaceTraceEntry[]): Commonspac
 
 function liveActivityDetail(activity: CommonspaceLiveAgentActivity): { kind: string; text: string } {
   const entry = latestTraceEntry(activity.entries)
-  if (entry === undefined) return { kind: 'Waiting', text: 'Waiting for harness activity…' }
+  if (entry === undefined) return { kind: 'Waiting', text: waitingActivityText(activity.adapter) }
   if (entry.type === 'reasoning') return { kind: 'Reasoning', text: entry.text }
   if (entry.type === 'plan') {
     const step = entry.steps.findLast(candidate => candidate.status === 'in_progress') ?? entry.steps.at(-1)
@@ -239,17 +279,19 @@ function LiveAgentActivity({
   activities,
   fallbackAgents,
   phase,
+  onStop,
 }: {
   activities: readonly CommonspaceLiveAgentActivity[]
   fallbackAgents: readonly CommonspaceAgentProfile[]
   phase: 'queued' | 'running'
+  onStop: (activity: CommonspaceLiveAgentActivity) => void
 }) {
   const panelIdPrefix = useId()
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null)
   if (activities.length === 0 && fallbackAgents.length === 0) return null
   const expandedActivityId = activities.some(activity => activity.id === selectedActivityId)
     ? selectedActivityId
-    : activities[0]?.id ?? null
+    : null
   return (
     <div className="csp-live-activity" role="status" aria-label="Live agent activity" aria-live="polite">
       {activities.length > 0
@@ -259,29 +301,37 @@ function LiveAgentActivity({
             const panelId = `${panelIdPrefix}-${String(index)}`
             return (
               <article key={activity.id} className={`csp-live-activity-row${expanded ? ' is-expanded' : ''}`} data-runtime={activity.adapter}>
-                <button
-                  type="button"
-                  className="csp-live-activity-trigger"
-                  aria-label={`${activity.agentName} activity`}
-                  aria-expanded={expanded}
-                  aria-controls={panelId}
-                  onClick={() => { setSelectedActivityId(activity.id) }}
-                >
-                  <span
-                    className="csp-thread-agent-avatar csp-thread-agent-avatar--responding"
-                    aria-label={`${activity.agentName} is responding`}
-                  >{activity.agentName.slice(0, 1).toLocaleUpperCase()}</span>
-                  <span className="csp-live-activity-copy">
-                    <span className="csp-live-activity-heading"><strong>{activity.agentName}</strong><span>{runtimeLabel(activity.adapter)} · {detail.kind}</span></span>
-                    <span className="csp-live-activity-summary">{detail.text}</span>
-                  </span>
-                  <span className="csp-live-activity-chevron" aria-hidden="true">⌄</span>
-                </button>
+                <div className="csp-live-activity-header">
+                  <button
+                    type="button"
+                    className="csp-live-activity-trigger"
+                    aria-label={`${activity.agentName} activity`}
+                    aria-expanded={expanded}
+                    aria-controls={panelId}
+                    onClick={() => { setSelectedActivityId(expanded ? null : activity.id) }}
+                  >
+                    <span
+                      className="csp-thread-agent-avatar csp-thread-agent-avatar--responding"
+                      aria-label={`${activity.agentName} is responding`}
+                    >{activity.agentName.slice(0, 1).toLocaleUpperCase()}</span>
+                    <span className="csp-live-activity-copy">
+                      <span className="csp-live-activity-heading"><strong>{activity.agentName}</strong><span>{runtimeLabel(activity.adapter)} · {detail.kind}</span></span>
+                      <span className="csp-live-activity-summary">{detail.text}</span>
+                    </span>
+                    <span className="csp-live-activity-chevron" aria-hidden="true">⌄</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="csp-live-activity-stop"
+                    aria-label={`Stop ${activity.agentName}`}
+                    onClick={() => { onStop(activity) }}
+                  ><span aria-hidden="true">■</span> Stop</button>
+                </div>
                 {expanded && (
                   <section id={panelId} className="csp-live-activity-panel" role="region" aria-label={`${activity.agentName} live activity`}>
                     {activity.entries.length > 0
                       ? <AgentTraceTimeline entries={activity.entries} />
-                      : <p className="csp-live-activity-empty">Waiting for harness activity…</p>}
+                      : <p className="csp-live-activity-empty">{waitingActivityText(activity.adapter)}</p>}
                   </section>
                 )}
               </article>
@@ -296,7 +346,7 @@ function LiveAgentActivity({
                 >{agent.displayName.slice(0, 1).toLocaleUpperCase()}</span>
                 <span className="csp-live-activity-copy">
                   <span className="csp-live-activity-heading"><strong>{agent.displayName}</strong><span>{runtimeLabel(agent.adapter)} · {phase === 'queued' ? 'Queued' : 'Waiting'}</span></span>
-                  <span className="csp-live-activity-summary">{phase === 'queued' ? 'Queued for provider run…' : 'Waiting for harness activity…'}</span>
+                  <span className="csp-live-activity-summary">{phase === 'queued' ? 'Queued for provider run…' : waitingActivityText(agent.adapter)}</span>
                 </span>
               </div>
             </div>
@@ -314,7 +364,6 @@ function ThreadAgentActivity({
   agents: readonly CommonspaceAgentProfile[]
   respondingAgentIds?: readonly string[]
 }) {
-  if (thread.status !== 'queued' && thread.status !== 'running') return null
   return (
     <span className="csp-thread-agent-activity">
       {respondingAgentIds.map((agentId, index) => {
@@ -361,23 +410,37 @@ function ThreadReplyAgents({
   )
 }
 
-export function CommonspaceConversation({ store }: CommonspaceConversationProps) {
+export function CommonspaceConversation({ store, targetMessageId = null, onTargetMessageHandled }: CommonspaceConversationProps) {
   const suggestionListId = useId()
   const threadSuggestionListId = useId()
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot)
+  const speech = useMessageSpeech(snapshot.activeConversation === null
+    ? null
+    : `${snapshot.activeConversation.kind}:${snapshot.activeConversation.id}`)
   const [draft, setDraft] = useState('')
+  const [activeDelivery, setActiveDelivery] = useState<'queue' | 'steer' | 'stop-and-send'>('queue')
+  const [threadDelivery, setThreadDelivery] = useState<'queue' | 'steer' | 'stop-and-send'>('queue')
   const [threadDraft, setThreadDraft] = useState('')
   const [pendingImages, setPendingImages] = useState<SendImageAttachment[]>([])
   const [pendingThreadImages, setPendingThreadImages] = useState<SendImageAttachment[]>([])
+
   const [threadReplyTarget, setThreadReplyTarget] = useState<{ agentId: string; agentName: string } | null>(null)
   const [selectedSuggestion, setSelectedSuggestion] = useState(0)
   const [selectedThreadSuggestion, setSelectedThreadSuggestion] = useState(0)
   const [commandFeedback, setCommandFeedback] = useState<CommandFeedback | null>(null)
+  const [focusedRootMessageId, setFocusedRootMessageId] = useState<string | null>(targetMessageId ?? null)
+  const [threadWidth, setThreadWidth] = useState(50)
+  const [resizingThread, setResizingThread] = useState(false)
+  const conversationLayout = useRef<HTMLDivElement>(null)
   const bottom = useRef<HTMLDivElement>(null)
+  const threadMessages = useRef<HTMLDivElement>(null)
   const composer = useRef<HTMLTextAreaElement>(null)
   const threadComposer = useRef<HTMLTextAreaElement>(null)
   const bootstrap = snapshot.bootstrap
   const messages = store.messages()
+  const unreadMessageIds = new Set(bootstrap === null
+    ? []
+    : deriveCommonspaceInboxItems(bootstrap.state).filter(item => item.unread).map(item => item.messageId))
   const heading = conversationTitle(store, snapshot.activeConversation)
   const isChannel = snapshot.activeConversation?.kind === 'channel'
   const activeChannel = isChannel && bootstrap !== null
@@ -385,17 +448,17 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
     : undefined
   const slashSuggestions = snapshot.activeConversation === null || pendingImages.length > 0 ? [] : slashCommandSuggestions(draft, snapshot.activeConversation.kind)
   const resolvedDraftCommand = snapshot.activeConversation === null || pendingImages.length > 0 ? null : resolveSlashCommand(draft, snapshot.activeConversation.kind)
-  const referenceSuggestions = bootstrap === null || draft.startsWith('/') ? [] : tagSuggestions(draft, bootstrap)
+  const referenceSuggestions = bootstrap === null || draft.startsWith('/') ? [] : tagSuggestions(draft, bootstrap, activeChannel?.agentIds)
   const suggestionCount = slashSuggestions.length + referenceSuggestions.length
   const activeSuggestionId = suggestionCount > 0 ? `${suggestionListId}-option-${String(selectedSuggestion)}` : undefined
   const channelThreads = isChannel && bootstrap !== null
     ? bootstrap.state.threads.filter(thread => thread.channelId === snapshot.activeConversation?.id)
     : []
   const activeThread = channelThreads.find(thread => thread.id === snapshot.activeThreadId)
-  const activeThreadStatus = threadStatus(activeThread)
+
   const threadSlashSuggestions = activeThread === undefined || pendingThreadImages.length > 0 ? [] : slashCommandSuggestions(threadDraft, 'channel')
   const resolvedThreadCommand = activeThread === undefined || pendingThreadImages.length > 0 ? null : resolveSlashCommand(threadDraft, 'channel')
-  const threadReferenceSuggestions = activeThread === undefined || bootstrap === null || threadDraft.startsWith('/') ? [] : tagSuggestions(threadDraft, bootstrap)
+  const threadReferenceSuggestions = activeThread === undefined || bootstrap === null || threadDraft.startsWith('/') ? [] : tagSuggestions(threadDraft, bootstrap, activeChannel?.agentIds)
   const threadSuggestionCount = threadSlashSuggestions.length + threadReferenceSuggestions.length
   const activeThreadSuggestionId = threadSuggestionCount > 0 ? `${threadSuggestionListId}-option-${String(selectedThreadSuggestion)}` : undefined
   const roots = isChannel
@@ -408,6 +471,9 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
     ? pendingDirectMessage.replyStatus
     : null
   const directMessageActivities = liveActivitiesFor(bootstrap?.liveActivities, snapshot.activeConversation, undefined)
+  const directMessageFollowups = snapshot.activeConversation?.kind === 'dm'
+    ? (bootstrap?.queuedFollowups ?? []).filter(item => item.conversation.kind === 'dm' && item.conversation.id === snapshot.activeConversation?.id)
+    : []
   const directMessageAgents = snapshot.activeConversation?.kind === 'dm' && bootstrap !== null
     ? bootstrap.agents.filter(agent => agent.id === snapshot.activeConversation?.id)
     : []
@@ -416,13 +482,29 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
     ? []
     : messages.filter(message => message.threadId === activeThread.id && message.parentMessageId === activeThread.rootMessageId)
   const activeThreadActivities = liveActivitiesFor(bootstrap?.liveActivities, snapshot.activeConversation, activeThread?.id)
-  const activeThreadAgents = activeThread === undefined || bootstrap === null
+  const activeThreadFollowups = activeThread === undefined
     ? []
-    : activeThread.agentIds.flatMap(agentId => bootstrap.agents.filter(agent => agent.id === agentId))
+    : (bootstrap?.queuedFollowups ?? []).filter(item => item.threadId === activeThread.id)
   const rootIsCommand = pendingImages.length === 0 && draft.startsWith('/')
   const threadIsCommand = pendingThreadImages.length === 0 && threadDraft.startsWith('/')
 
+  const scrollThreadToBottom = () => {
+    const messagesViewport = threadMessages.current
+    if (messagesViewport === null) return
+    const bottomOffset = messagesViewport.scrollHeight
+    messagesViewport.scrollTop = bottomOffset
+    messagesViewport.scrollTo?.({ top: bottomOffset, behavior: 'auto' })
+  }
+
   useEffect(() => { bottom.current?.scrollIntoView({ block: 'end' }) }, [messages.length, snapshot.sending, directMessagePhase])
+  useEffect(() => {
+    if (targetMessageId == null) return
+    setFocusedRootMessageId(targetMessageId)
+    const target = document.getElementById(`csp-message-${targetMessageId}`)
+    if (target === null) return
+    target.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    onTargetMessageHandled?.()
+  }, [messages.length, onTargetMessageHandled, targetMessageId])
   useEffect(() => {
     composer.current?.focus()
     setCommandFeedback(null)
@@ -432,6 +514,27 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
     setThreadReplyTarget(null)
     setPendingThreadImages([])
   }, [snapshot.activeConversation?.id, snapshot.activeConversation?.kind, snapshot.activeThreadId])
+  useEffect(() => {
+    if (snapshot.activeThreadId === null) return
+    scrollThreadToBottom()
+  }, [replies.length, snapshot.activeThreadId])
+  useEffect(() => {
+    if (!resizingThread) return
+
+    const resize = (event: PointerEvent) => {
+      const bounds = conversationLayout.current?.getBoundingClientRect()
+      if (bounds === undefined || bounds.width === 0) return
+      const nextWidth = ((bounds.right - event.clientX) / bounds.width) * 100
+      setThreadWidth(Math.min(75, Math.max(25, Math.round(nextWidth))))
+    }
+    const stopResizing = () => { setResizingThread(false) }
+    window.addEventListener('pointermove', resize)
+    window.addEventListener('pointerup', stopResizing, { once: true })
+    return () => {
+      window.removeEventListener('pointermove', resize)
+      window.removeEventListener('pointerup', stopResizing)
+    }
+  }, [resizingThread])
 
   const attachPastedImages = async (
     files: readonly File[],
@@ -499,6 +602,30 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
       return
     }
 
+    if (resolved.command.id === 'stop') {
+      const matchingActivities = (bootstrap.liveActivities ?? []).filter(activity =>
+        activity.conversation.kind === conversation.kind && activity.conversation.id === conversation.id &&
+        (threadId === undefined || activity.threadId === threadId))
+      const targetMessageId = matchingActivities.at(-1)?.sourceMessageId ??
+        [...messages].reverse().find(message => message.authorType === 'user' &&
+          (threadId === undefined
+            ? conversation.kind === 'dm' || message.parentMessageId === undefined
+            : message.threadId === threadId))?.id
+      if (targetMessageId === undefined) {
+        setCommandFeedback({ tone: 'info', title: 'Nothing to stop', body: 'No agent is currently working in this conversation.' })
+        return
+      }
+      try {
+        const stopped = await store.stopAgentRuns(targetMessageId)
+        setCommandFeedback(stopped.length === 0
+          ? { tone: 'info', title: 'Nothing to stop', body: 'That agent work has already finished.' }
+          : { tone: 'success', title: 'Agent work stopped', body: `Stopped ${stopped.length === 1 ? stopped[0] : `${String(stopped.length)} agents`}.` })
+      } catch (error) {
+        setCommandFeedback({ tone: 'error', title: 'Could not stop agent work', body: error instanceof Error ? error.message : String(error) })
+      }
+      return
+    }
+
     if (resolved.command.id === 'status') {
       if (conversation.kind === 'dm') {
         const agent = bootstrap.agents.find(candidate => candidate.id === conversation.id)
@@ -510,11 +637,11 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
         })
       } else {
         const channel = bootstrap.state.channels.find(candidate => candidate.id === conversation.id)
-        const project = bootstrap.state.projects.find(candidate => candidate.id === channel?.projectId)
+        const project = bootstrap.state.projects.find(candidate => candidate.id === snapshot.activeProjectId)
         setCommandFeedback({
           tone: 'info',
           title: 'Channel status',
-          body: `${heading.title} · ${project?.name ?? 'No project'} · ${channel?.agentIds.length ?? 0} agents\nModel: ${channel?.settings.model ?? bootstrap.state.defaults.model ?? 'agent defaults'} · Reasoning: ${channel?.settings.reasoning ?? bootstrap.state.defaults.reasoning}`,
+          body: `${heading.title} · Global Channel · ${channel?.agentIds.length ?? 0} agents${project === undefined ? '' : `\nNext thread project context: ${project.name}`}\nModel: ${channel?.settings.model ?? bootstrap.state.defaults.model ?? 'agent defaults'} · Reasoning: ${channel?.settings.reasoning ?? bootstrap.state.defaults.reasoning}`,
         })
       }
       return
@@ -563,6 +690,17 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
     }
   }
 
+  const stopActivity = async (activity: CommonspaceLiveAgentActivity) => {
+    try {
+      const stopped = await store.stopAgentRuns(activity.sourceMessageId, activity.agentId)
+      setCommandFeedback(stopped.length === 0
+        ? { tone: 'info', title: 'Nothing to stop', body: `${activity.agentName} has already finished.` }
+        : { tone: 'success', title: `${activity.agentName} stopped`, body: 'No further work from this run will be posted.' })
+    } catch (error) {
+      setCommandFeedback({ tone: 'error', title: `Could not stop ${activity.agentName}`, body: error instanceof Error ? error.message : String(error) })
+    }
+  }
+
   const sendRoot = async (event: FormEvent) => {
     event.preventDefault()
     const text = draft.trim()
@@ -576,8 +714,9 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
     setPendingImages([])
     setCommandFeedback(null)
     try {
-      if (attachments.length === 0) await store.send(text)
-      else await store.send(text, undefined, attachments)
+      if (directMessageActivities.length > 0 && !isChannel) await store.send(text, undefined, attachments, activeDelivery)
+      else if (attachments.length > 0) await store.send(text, undefined, attachments)
+      else await store.send(text)
     } catch {
       setDraft(text)
       setPendingImages(attachments)
@@ -597,14 +736,15 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
     }
     setPendingThreadImages([])
     setCommandFeedback(null)
+    scrollThreadToBottom()
     try {
       if (threadReplyTarget === null) {
-        if (attachments.length === 0) await store.send(text, activeThread.id)
-        else await store.send(text, activeThread.id, attachments)
-      } else if (attachments.length === 0) {
-        await store.sendDirectReply(text, activeThread.id, threadReplyTarget.agentId)
+        if (activeThreadActivities.length > 0) await store.send(text, activeThread.id, attachments, threadDelivery)
+        else if (attachments.length > 0) await store.send(text, activeThread.id, attachments)
+        else await store.send(text, activeThread.id)
       } else {
-        await store.sendDirectReply(text, activeThread.id, threadReplyTarget.agentId, attachments)
+        if (attachments.length > 0) await store.sendDirectReply(text, activeThread.id, threadReplyTarget.agentId, attachments)
+        else await store.sendDirectReply(text, activeThread.id, threadReplyTarget.agentId)
       }
       setThreadReplyTarget(null)
     } catch {
@@ -616,6 +756,7 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
   const replyDirectlyToAgent = (message: CommonspaceMessage) => {
     setThreadReplyTarget({ agentId: message.authorId, agentName: message.authorName })
     threadComposer.current?.focus()
+    scrollThreadToBottom()
   }
 
   return (
@@ -644,45 +785,91 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
           </div>
         </div>
       ) : (
-        <div className={`csp-conversation-layout${activeThread === undefined ? '' : ' has-thread'}`}>
+        <div
+          ref={conversationLayout}
+          className={`csp-conversation-layout${activeThread === undefined ? '' : ' has-thread'}${resizingThread ? ' is-resizing' : ''}`}
+          style={activeThread === undefined ? undefined : {
+            '--csp-channel-width': `${String(100 - threadWidth)}fr`,
+            '--csp-thread-width': `${String(threadWidth)}fr`,
+          } as CSSProperties}
+        >
           <section className="csp-channel-feed" aria-label={isChannel ? `${heading.title} posts` : `${heading.title} messages`}>
             <div className="csp-message-list">
               {roots.length === 0 && <div className="csp-conversation-empty">No messages yet. Start the conversation.</div>}
               {isChannel
                 ? roots.map(root => {
                     const thread = channelThreads.find(candidate => candidate.rootMessageId === root.id)
+                    const threadIsFocused = thread?.id === activeThread?.id || root.id === focusedRootMessageId
                     const threadReplies = thread === undefined ? [] : messages.filter(message => message.threadId === thread.id && message.parentMessageId === root.id)
                     const replyCount = threadReplies.length
-                    const status = threadStatus(thread)
+                    const unreadReplies = threadReplies.filter(reply => unreadMessageIds.has(reply.id))
+                    const unreadCount = unreadReplies.length
                     const threadActivities = liveActivitiesFor(bootstrap?.liveActivities, snapshot.activeConversation, thread?.id)
                     return (
-                      <article key={root.id} className="csp-thread-root">
-                        <MessageRow message={root} />
-                        <button type="button" className="csp-thread-open" onClick={() => { if (thread !== undefined) store.selectThread(thread.id) }}>
+                      <article
+                        key={root.id}
+                        id={`csp-message-${root.id}`}
+                        className={`csp-thread-root${threadIsFocused ? ' csp-thread-root--focused' : ''}`}
+                        aria-current={thread?.id === activeThread?.id ? 'true' : undefined}
+                      >
+                        <MessageRow message={root} bootstrap={bootstrap} speech={speech} />
+                        <button
+                          type="button"
+                          className={`csp-thread-open${unreadCount === 0 ? '' : ' csp-thread-open--unread'}`}
+                          aria-label={`${String(replyCount)} ${replyCount === 1 ? 'reply' : 'replies'}${unreadCount === 0 ? '' : `, ${String(unreadCount)} unread`}`}
+                          onClick={() => {
+                            if (thread === undefined) return
+                            store.selectThread(thread.id)
+                            for (const reply of unreadReplies) {
+                              void store.mutate({ action: 'mark-inbox-item-read', messageId: reply.id })
+                            }
+                          }}
+                        >
                           <span className="csp-thread-reply-summary">
                             {bootstrap !== null && <ThreadReplyAgents replies={threadReplies} agents={bootstrap.agents} />}
-                            <span>{replyCount} {replyCount === 1 ? 'reply' : 'replies'}</span>
+                            <span>{unreadCount > 0
+                              ? `${String(unreadCount)} new ${unreadCount === 1 ? 'reply' : 'replies'}`
+                              : `${String(replyCount)} ${replyCount === 1 ? 'reply' : 'replies'}`}</span>
                           </span>
-                          {status !== null && <span className="csp-thread-meta">
+                          {threadActivities.length > 0 && <span className="csp-thread-meta">
                             {thread !== undefined && bootstrap !== null && <ThreadAgentActivity
                               thread={thread}
                               agents={bootstrap.agents}
                               {...(threadActivities.length === 0 ? {} : { respondingAgentIds: threadActivities.map(activity => activity.agentId) })}
                             />}
-                            <span className={`csp-thread-status csp-thread-status--${thread?.status ?? 'complete'}`}>{status}</span>
+                            <span className="csp-thread-status csp-thread-status--running">Agents working</span>
                           </span>}
+                          {unreadCount > 0 && <span className="csp-thread-unread-indicator" aria-hidden="true" />}
                         </button>
                       </article>
                     )
                   })
-                : roots.map(message => <MessageRow key={message.id} message={message} />)}
+                : roots.map(message => <MessageRow key={message.id} message={message} bootstrap={bootstrap} speech={speech} />)}
               {directMessagePhase !== null && <LiveAgentActivity
                 activities={directMessageActivities}
                 fallbackAgents={directMessageAgents}
                 phase={directMessagePhase}
+                onStop={(activity) => { void stopActivity(activity) }}
               />}
               <div ref={bottom} />
             </div>
+
+            {directMessageFollowups.length > 0 && (
+              <section className="csp-followup-queue" role="region" aria-label="Queued follow-ups">
+                <header><strong>Up next</strong><span>{directMessageFollowups.length}</span></header>
+                {directMessageFollowups.map((followup, index) => (
+                  <div key={followup.messageId} className="csp-followup-item">
+                    <span>{followup.delivery === 'steer' ? 'Steer' : 'Queued'}</span>
+                    <p>{followup.text}</p>
+                    <div>
+                      <button type="button" aria-label="Move queued follow-up up" disabled={index === 0} onClick={() => { void store.reorderFollowup(followup.messageId, 'up') }}>↑</button>
+                      <button type="button" aria-label="Move queued follow-up down" disabled={index === directMessageFollowups.length - 1} onClick={() => { void store.reorderFollowup(followup.messageId, 'down') }}>↓</button>
+                      <button type="button" aria-label="Remove queued follow-up" onClick={() => { void store.removeFollowup(followup.messageId) }}>×</button>
+                    </div>
+                  </div>
+                ))}
+              </section>
+            )}
 
             {commandFeedback !== null && (
               <section
@@ -739,6 +926,7 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
                   images={pendingImages}
                   onRemove={index => { setPendingImages(current => current.filter((_, candidate) => candidate !== index)) }}
                 />
+                <p className="csp-tag-hint" aria-label="Tagging help"><b>@</b> agent <b>@@</b> project context <b>#</b> channel</p>
                 {suggestionCount > 0 && <SuggestionMenu
                   id={suggestionListId}
                   selectedSuggestion={selectedSuggestion}
@@ -749,7 +937,13 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
                 />}
               </div>
               <div className="csp-composer-footer">
-                <div className="csp-composer-tools" aria-hidden="true"><span>@</span><span>⌁</span><span>☺</span><span>Aa</span></div>
+                {directMessageActivities.length > 0 && !isChannel
+                  ? <div className="csp-delivery-controls" role="group" aria-label="Active run delivery">
+                      <button type="button" aria-pressed={activeDelivery === 'queue'} onClick={() => { setActiveDelivery('queue') }}>Queue</button>
+                      <button type="button" aria-pressed={activeDelivery === 'steer'} onClick={() => { setActiveDelivery('steer') }}>Steer</button>
+                      <button type="button" aria-label="Stop and send" aria-pressed={activeDelivery === 'stop-and-send'} onClick={() => { setActiveDelivery('stop-and-send') }}>Stop + send</button>
+                    </div>
+                  : <div className="csp-composer-tools" aria-hidden="true"><span>@</span><span>⌁</span><span>☺</span><span>Aa</span></div>}
                 <span className="csp-composer-hint">{isChannel ? '@ agent · @@ project · # channel · paste image · / commands' : 'Enter to send · paste image · / commands'}</span>
                 <button
                   type="submit"
@@ -762,26 +956,62 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
           </section>
 
           {activeThread !== undefined && (
+            <div
+              className="csp-thread-resizer"
+              role="separator"
+              aria-label="Resize thread"
+              aria-orientation="vertical"
+              aria-valuemin={25}
+              aria-valuemax={75}
+              aria-valuenow={threadWidth}
+              tabIndex={0}
+              onDoubleClick={() => { setThreadWidth(50) }}
+              onPointerDown={event => { event.preventDefault(); setResizingThread(true) }}
+              onKeyDown={event => {
+                if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+                event.preventDefault()
+                setThreadWidth(current => Math.min(75, Math.max(25, current + (event.key === 'ArrowLeft' ? 5 : -5))))
+              }}
+            />
+          )}
+
+          {activeThread !== undefined && (
             <aside className="csp-thread-panel" aria-label="Thread replies">
               <header className="csp-thread-header">
-                <div><strong>Thread</strong>{activeThreadStatus !== null && <span>{activeThreadStatus}</span>}</div>
+                <div><strong>Thread</strong>{activeThreadActivities.length > 0 && <span>Agents working</span>}</div>
                 <button type="button" aria-label="Close thread" onClick={() => { store.selectThread(null) }}>×</button>
               </header>
-              <div className="csp-thread-messages">
-                {activeRoot !== undefined && <MessageRow message={activeRoot} />}
+              <div ref={threadMessages} className="csp-thread-messages">
+                {activeRoot !== undefined && <MessageRow message={activeRoot} bootstrap={bootstrap} speech={speech} />}
                 <div className="csp-thread-divider">Replies</div>
                 {replies.map(reply => (
-                  <MessageRow key={reply.id} message={reply} compact onReplyToAgent={replyDirectlyToAgent} />
+                  <MessageRow key={reply.id} message={reply} bootstrap={bootstrap} compact onReplyToAgent={replyDirectlyToAgent} speech={speech} />
                 ))}
-                {(activeThread.status === 'queued' || activeThread.status === 'running') && (
+                {activeThreadActivities.length > 0 && (
                   <LiveAgentActivity
                     activities={activeThreadActivities}
-                    fallbackAgents={activeThreadAgents}
-                    phase={activeThread.status}
+                    fallbackAgents={[]}
+                    phase="running"
+                    onStop={(activity) => { void stopActivity(activity) }}
                   />
                 )}
-                {activeThread.error !== undefined && <div className="csp-conversation-error">{activeThread.error}</div>}
               </div>
+              {activeThreadFollowups.length > 0 && (
+                <section className="csp-followup-queue csp-followup-queue--thread" role="region" aria-label="Queued thread follow-ups">
+                  <header><strong>Up next</strong><span>{activeThreadFollowups.length}</span></header>
+                  {activeThreadFollowups.map((followup, index) => (
+                    <div key={followup.messageId} className="csp-followup-item">
+                      <span>{followup.delivery === 'steer' ? 'Steer' : 'Queued'}</span>
+                      <p>{followup.text}</p>
+                      <div>
+                        <button type="button" aria-label="Move queued thread follow-up up" disabled={index === 0} onClick={() => { void store.reorderFollowup(followup.messageId, 'up') }}>↑</button>
+                        <button type="button" aria-label="Move queued thread follow-up down" disabled={index === activeThreadFollowups.length - 1} onClick={() => { void store.reorderFollowup(followup.messageId, 'down') }}>↓</button>
+                        <button type="button" aria-label="Remove queued thread follow-up" onClick={() => { void store.removeFollowup(followup.messageId) }}>×</button>
+                      </div>
+                    </div>
+                  ))}
+                </section>
+              )}
               <form className="csp-thread-composer" onSubmit={(event) => { void sendThreadReply(event) }}>
                 <div className="csp-composer-input-wrap">
                   {threadReplyTarget !== null && (
@@ -834,6 +1064,7 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
                     images={pendingThreadImages}
                     onRemove={index => { setPendingThreadImages(current => current.filter((_, candidate) => candidate !== index)) }}
                   />
+                  <p className="csp-tag-hint" aria-label="Tagging help"><b>@</b> agent <b>@@</b> project context <b>#</b> channel</p>
                   {threadSuggestionCount > 0 && <SuggestionMenu
                     id={threadSuggestionListId}
                     selectedSuggestion={selectedThreadSuggestion}
@@ -843,13 +1074,19 @@ export function CommonspaceConversation({ store }: CommonspaceConversationProps)
                     onSelectTag={selectThreadSuggestion}
                   />}
                 </div>
+                {activeThreadActivities.length > 0 && threadReplyTarget === null && (
+                  <div className="csp-delivery-controls" role="group" aria-label="Active thread run delivery">
+                    <button type="button" aria-pressed={threadDelivery === 'queue'} onClick={() => { setThreadDelivery('queue') }}>Queue</button>
+                    <button type="button" aria-pressed={threadDelivery === 'steer'} onClick={() => { setThreadDelivery('steer') }}>Steer</button>
+                    <button type="button" aria-label="Stop and send thread follow-up" aria-pressed={threadDelivery === 'stop-and-send'} onClick={() => { setThreadDelivery('stop-and-send') }}>Stop + send</button>
+                  </div>
+                )}
                 <button type="submit" disabled={snapshot.sending || (threadDraft.trim() === '' && pendingThreadImages.length === 0)}>{threadIsCommand ? 'Run' : 'Reply'}</button>
               </form>
             </aside>
           )}
         </div>
       )}
-      {snapshot.error !== null && <div className="csp-conversation-error" role="alert">{snapshot.error}</div>}
     </main>
   )
 }

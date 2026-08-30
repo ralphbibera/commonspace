@@ -1,13 +1,24 @@
 import type {
   CommonspaceAgentDefinition,
+  CommonspaceLiveAgentActivity,
+  CommonspaceMessage,
   CommonspaceState,
   ConversationRef,
 } from './contracts.js'
 
-export type CommonspaceInboxItemKind = 'agent-reply' | 'thread-reply'
+export type CommonspaceInboxItemKind =
+  | 'agent-reply'
+  | 'thread-reply'
+  | 'mention'
+  | 'failure'
+  | 'completion'
+  | 'timeout'
+  | 'input-request'
 
 export interface CommonspaceInboxItem {
   id: string
+  messageId: string
+  sessionId: string
   kind: CommonspaceInboxItemKind
   actorId: string
   actorName: string
@@ -17,6 +28,28 @@ export interface CommonspaceInboxItem {
   createdAt: string
   text: string
   unread: boolean
+  saved: boolean
+  muted: boolean
+}
+
+export type CommonspaceSessionStatus = 'running' | 'needs-attention' | 'completed'
+
+export interface CommonspaceSessionItem {
+  id: string
+  sourceMessageId: string
+  messageId: string
+  agentId: string
+  agentName: string
+  conversation: ConversationRef
+  conversationName: string
+  projectName: string | null
+  threadId?: string
+  status: CommonspaceSessionStatus
+  attentionKind?: 'failure' | 'timeout' | 'input-request'
+  summary: string
+  updatedAt: string
+  followed: boolean
+  muted: boolean
 }
 
 function conciseText(value: string, fallback: string): string {
@@ -41,33 +74,83 @@ function conversationName(
   return agents.get(conversation.id)?.displayName ?? 'Direct message'
 }
 
-/** Derive the single-owner Inbox from actual persisted agent replies. */
+function isTimeout(value: string): boolean {
+  return /\b(?:timed?\s*out|timeout)\b/iu.test(value)
+}
+
+function requestsInput(value: string): boolean {
+  return /\b(?:need|requires?|waiting for|please provide|please choose|which|what)\b[^.!]{0,80}\b(?:input|answer|decision|approval|choose|provide|confirm|environment)\b/iu.test(value)
+}
+
+function mentionsOwner(value: string): boolean {
+  return /(^|\s)@(?:ralph|user)\b/iu.test(value)
+}
+
+function sourceMessageId(message: CommonspaceMessage): string {
+  return message.sourceMessageId ?? message.parentMessageId ?? message.id
+}
+
+function sessionId(message: CommonspaceMessage, agentId: string): string {
+  return `${sourceMessageId(message)}:${agentId}`
+}
+
+function inboxKind(message: CommonspaceMessage): CommonspaceInboxItemKind | null {
+  if (message.authorType === 'agent') {
+    if (mentionsOwner(message.text)) return 'mention'
+    if (requestsInput(message.text)) return 'input-request'
+    return 'completion'
+  }
+  if (message.replyStatus === 'needs_input') return 'input-request'
+  if ((message.authorType === 'system' && /\brun failed:/iu.test(message.text)) || message.replyStatus === 'error' || message.replyStatus === 'failed' || message.replyStatus === 'timeout' || message.replyStatus === 'silent') {
+    return isTimeout(message.replyError ?? message.text) || message.replyStatus === 'timeout' ? 'timeout' : 'failure'
+  }
+  return null
+}
+
+/** Derive the single-owner attention Inbox from persisted run outcomes. */
 export function deriveCommonspaceInboxItems(state: CommonspaceState): CommonspaceInboxItem[] {
   const agents = new Map(state.agents.map(agent => [agent.id, agent]))
   const channelNames = new Map(state.channels.map(channel => [channel.id, channel.name]))
   const readAt = state.inboxReadAt === null ? null : timestampValue(state.inboxReadAt)
-  const unread = (createdAt: string): boolean => {
-    if (readAt === null) return true
-    const created = timestampValue(createdAt)
-    return created !== null && created > readAt
-  }
+  const readMessageIds = new Set(state.inboxReadMessageIds)
+  const savedMessageIds = new Set(state.inboxSavedItemIds)
+  const mutedSessionIds = new Set(state.mutedSessionIds)
+  const failedSources = new Set(Object.values(state.messages).flat()
+    .filter(message => message.authorType === 'user' && (message.replyStatus === 'error' || message.replyStatus === 'failed' || message.replyStatus === 'timeout' || message.replyStatus === 'silent'))
+    .map(message => message.id))
   const items: CommonspaceInboxItem[] = []
 
   for (const messages of Object.values(state.messages)) {
     for (const message of messages) {
-      if (message.authorType !== 'agent') continue
-      const kind = message.threadId === undefined ? 'agent-reply' : 'thread-reply'
+      const kind = inboxKind(message)
+      if (kind === null) continue
+      if (message.authorType === 'system' && message.sourceMessageId !== undefined && failedSources.has(message.sourceMessageId)) continue
+      const actorId = message.authorType === 'user'
+        ? message.conversation.kind === 'dm' ? message.conversation.id : 'system'
+        : message.authorType === 'system'
+          ? message.text.match(/^@([^\s]+)\s/u)?.[1] ?? 'system'
+          : message.authorId
+      const actorName = agents.get(actorId)?.displayName ?? (actorId === 'system' ? 'Commonspace' : message.authorName)
+      const itemSessionId = sessionId(message, actorId)
+      const muted = mutedSessionIds.has(itemSessionId)
+      const created = timestampValue(message.createdAt)
+      const unread = !muted && !readMessageIds.has(message.id) &&
+        (readAt === null || (created !== null && created > readAt))
       items.push({
         id: `message:${message.id}`,
+        messageId: message.id,
+        sessionId: itemSessionId,
         kind,
-        actorId: message.authorId,
-        actorName: message.authorName,
+        actorId,
+        actorName,
         conversation: message.conversation,
         conversationName: conversationName(message.conversation, channelNames, agents),
         ...(message.threadId === undefined ? {} : { threadId: message.threadId }),
         createdAt: message.createdAt,
-        text: conciseText(message.text, kind === 'thread-reply' ? 'Replied in a thread.' : 'Replied in a conversation.'),
-        unread: unread(message.createdAt),
+        text: conciseText(message.replyError ?? message.text, kind === 'failure' ? 'Agent run failed.' : 'Agent activity updated.'),
+        unread,
+        saved: savedMessageIds.has(message.id),
+        muted,
       })
     }
   }
@@ -77,5 +160,83 @@ export function deriveCommonspaceInboxItems(state: CommonspaceState): Commonspac
     const rightTime = timestampValue(right.createdAt)
     const byTime = leftTime === rightTime ? 0 : leftTime === null ? 1 : rightTime === null ? -1 : rightTime - leftTime
     return byTime === 0 ? right.id.localeCompare(left.id) : byTime
+  })
+}
+
+/** Derive compact session supervision rows from persisted outcomes and current live runs. */
+export function deriveCommonspaceSessions(
+  state: CommonspaceState,
+  liveActivities: readonly CommonspaceLiveAgentActivity[] = [],
+): CommonspaceSessionItem[] {
+  const agents = new Map(state.agents.map(agent => [agent.id, agent]))
+  const channelNames = new Map(state.channels.map(channel => [channel.id, channel.name]))
+  const projects = new Map(state.projects.map(project => [project.id, project.name]))
+  const threads = new Map(state.threads.map(thread => [thread.id, thread]))
+  const messages = Object.values(state.messages).flat()
+  const messagesById = new Map(messages.map(message => [message.id, message]))
+  const followed = new Set(state.followedSessionIds)
+  const muted = new Set(state.mutedSessionIds)
+  const sessions = new Map<string, CommonspaceSessionItem>()
+
+  const projectNameFor = (message: CommonspaceMessage, threadId?: string): string | null => {
+    const projectId = message.projectId ?? (threadId === undefined ? undefined : threads.get(threadId)?.projectId ?? undefined)
+    return projectId === undefined ? null : projects.get(projectId) ?? null
+  }
+
+  for (const item of deriveCommonspaceInboxItems(state)) {
+    const message = messagesById.get(item.messageId)
+    if (message === undefined) continue
+    const sourceId = sourceMessageId(message)
+    const source = messagesById.get(sourceId) ?? message
+    const status: CommonspaceSessionStatus = item.kind === 'failure' || item.kind === 'timeout' || item.kind === 'input-request'
+      ? 'needs-attention'
+      : 'completed'
+    sessions.set(item.sessionId, {
+      id: item.sessionId,
+      sourceMessageId: sourceId,
+      messageId: item.messageId,
+      agentId: item.actorId,
+      agentName: item.actorName,
+      conversation: item.conversation,
+      conversationName: item.conversationName,
+      projectName: projectNameFor(source, item.threadId),
+      ...(item.threadId === undefined ? {} : { threadId: item.threadId }),
+      status,
+      ...(status === 'needs-attention' ? { attentionKind: item.kind as 'failure' | 'timeout' | 'input-request' } : {}),
+      summary: item.text,
+      updatedAt: item.createdAt,
+      followed: followed.has(item.sessionId),
+      muted: muted.has(item.sessionId),
+    })
+  }
+
+  for (const activity of liveActivities) {
+    const id = `${activity.sourceMessageId}:${activity.agentId}`
+    const source = messagesById.get(activity.sourceMessageId)
+    const current = sessions.get(id)
+    const latestEntry = activity.entries.at(-1)
+    sessions.set(id, {
+      id,
+      sourceMessageId: activity.sourceMessageId,
+      messageId: current?.messageId ?? activity.sourceMessageId,
+      agentId: activity.agentId,
+      agentName: activity.agentName,
+      conversation: activity.conversation,
+      conversationName: conversationName(activity.conversation, channelNames, agents),
+      projectName: source === undefined ? null : projectNameFor(source, activity.threadId),
+      ...(activity.threadId === undefined ? {} : { threadId: activity.threadId }),
+      status: 'running',
+      summary: latestEntry?.type === 'tool' ? latestEntry.title : 'Working…',
+      updatedAt: activity.startedAt,
+      followed: followed.has(id),
+      muted: muted.has(id),
+    })
+  }
+
+  const statusRank: Record<CommonspaceSessionStatus, number> = { running: 0, 'needs-attention': 1, completed: 2 }
+  return [...sessions.values()].sort((left, right) => {
+    const byStatus = statusRank[left.status] - statusRank[right.status]
+    if (byStatus !== 0) return byStatus
+    return (timestampValue(right.updatedAt) ?? 0) - (timestampValue(left.updatedAt) ?? 0)
   })
 }

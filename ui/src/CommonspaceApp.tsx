@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import type { CommonspaceClientStore } from './commonspace-store.ts'
 import { CommonspaceConversation } from './CommonspaceConversation.tsx'
 import { CommonspaceInbox } from './CommonspaceInbox.tsx'
@@ -10,9 +10,12 @@ export interface CommonspaceAppProps {
 }
 
 export function CommonspaceApp({ store }: CommonspaceAppProps) {
+  const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot)
   const [navigationOpen, setNavigationOpen] = useState(false)
   const [activeDestination, setActiveDestination] = useState<'conversation' | 'inbox'>('conversation')
   const [activeProjectViewId, setActiveProjectViewId] = useState<string | null>(null)
+  const [targetProjectFile, setTargetProjectFile] = useState<{ rootIndex: number; path: string } | null>(null)
+  const [targetMessageId, setTargetMessageId] = useState<string | null>(null)
 
   useEffect(() => {
     store.connectEvents()
@@ -60,17 +63,21 @@ export function CommonspaceApp({ store }: CommonspaceAppProps) {
             inboxActive={activeDestination === 'inbox'}
             onOpenInbox={() => {
               setActiveProjectViewId(null)
+              setTargetProjectFile(null)
               setActiveDestination('inbox')
               setNavigationOpen(false)
             }}
-            onOpenProject={projectId => {
+            onOpenProject={(projectId, file) => {
               setActiveProjectViewId(projectId)
+              setTargetProjectFile(file ?? null)
               setActiveDestination('conversation')
               setNavigationOpen(false)
             }}
-            onOpenConversation={() => {
+            onOpenConversation={messageId => {
               setActiveProjectViewId(null)
+              setTargetProjectFile(null)
               setActiveDestination('conversation')
+              setTargetMessageId(messageId ?? null)
               setNavigationOpen(false)
             }}
           />
@@ -83,12 +90,22 @@ export function CommonspaceApp({ store }: CommonspaceAppProps) {
                   onOpenItem={item => {
                     store.selectConversation(item.conversation)
                     if (item.threadId !== undefined) store.selectThread(item.threadId)
+                    if (item.conversation.kind === 'channel') {
+                      const messages = snapshot.bootstrap?.state.messages[`channel:${item.conversation.id}`] ?? []
+                      const sourceMessage = messages.find(message => message.id === item.messageId)
+                      setTargetMessageId(sourceMessage?.parentMessageId ?? item.messageId)
+                    }
                     setActiveDestination('conversation')
                   }}
                 />
-              : <CommonspaceConversation store={store} />
+              : <CommonspaceConversation
+                  store={store}
+                  targetMessageId={targetMessageId}
+                  onTargetMessageHandled={() => { setTargetMessageId(null) }}
+                />
             : <CommonspaceProjectView
                 projectId={activeProjectViewId}
+                targetFile={targetProjectFile}
                 store={store}
                 onBack={() => { setActiveProjectViewId(null) }}
                 onOpenConversation={conversation => {
@@ -98,6 +115,7 @@ export function CommonspaceApp({ store }: CommonspaceAppProps) {
               />}
         </section>
       </div>
+      {snapshot.error !== null && <div className="csp-app-toast" role="alert">{snapshot.error}</div>}
     </div>
   )
 }

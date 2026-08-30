@@ -1,5 +1,5 @@
 export type SlashCommandContext = 'channel' | 'dm'
-export type SlashCommandId = 'help' | 'new' | 'retry' | 'status' | 'agents'
+export type SlashCommandId = 'help' | 'stop' | 'new' | 'retry' | 'status' | 'agents'
 
 export interface SlashCommandDefinition {
   id: SlashCommandId
@@ -20,6 +20,13 @@ export const COMMONSPACE_SLASH_COMMANDS: readonly SlashCommandDefinition[] = [
     name: '/help',
     aliases: ['/commands'],
     description: 'Show the commands available in this chat',
+    contexts: ['channel', 'dm'],
+  },
+  {
+    id: 'stop',
+    name: '/stop',
+    aliases: ['/cancel'],
+    description: 'Stop agent work started by the current message',
     contexts: ['channel', 'dm'],
   },
   {

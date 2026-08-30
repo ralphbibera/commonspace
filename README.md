@@ -17,6 +17,8 @@ Commonspace is a local-first workspace for durable conversations with coding age
 
 Commonspace is conversation-first. Hermes and Codex receive only the newly delivered message over ACP, resume their exact provider-native session, and can read bounded shared-room context or post progress through a session-scoped Commonspace MCP server. Each reply can expose a durable, expandable audit of the reasoning summaries, plans, tool calls, results, and usage emitted by its native harness. Raw session mechanics remain host-private.
 
+Unaddressed Channel messages always use configured inference—either an agent harness or a BYO OpenAI-compatible model—to select the right seated agents. Explicit mentions remain authoritative; there is no deterministic/no-inference routing mode.
+
 ## Quick start
 
 Requirements:
@@ -88,9 +90,13 @@ pnpm verify:acp:mcp         # real Hermes and Codex scoped-context/progress test
 
 Unsafe modes are off by default.
 
+Routing provider settings live in the Defaults panel. Endpoint changes clear the previously stored key so credentials cannot silently cross origins. `OPENAI_API_KEY` is considered only for the canonical OpenAI origin; other providers use the explicitly supplied key or an unauthenticated local endpoint.
+
 ## Local state and credentials
 
 Commonspace binds only to loopback, rejects cross-origin API mutations, writes versioned state atomically to `~/.commonspace/state.json`, and never copies provider credentials. ACP uses local stdio; its scoped MCP endpoint uses ephemeral bearer capabilities on loopback. Persisted activity is bounded and strips host paths, native session identifiers, and MCP capabilities. There is no Nostr or remote relay in this local-first phase. Hermes and Codex continue using their supported credential and native session stores.
+
+The Project Files browser refuses to preview known credential-bearing files such as `.env*`, common auth/credential/secret files, private keys, and key containers.
 
 ## Documentation
 

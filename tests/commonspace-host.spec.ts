@@ -2,11 +2,29 @@ import { chmod, mkdtemp, mkdir, readFile, realpath, rm, stat, writeFile } from '
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { COMMONSPACE_STATE_VERSION } from '@commonspace/shared'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { requestIsLoopback, requestIsSameOrigin } from '../server/src/app.ts'
 import { CommonspaceHostService, unsafeModeForAdapter, type AgentRunInput } from '../server/src/service.ts'
 
 const roots: string[] = []
+
+beforeEach(() => {
+  vi.stubGlobal('fetch', vi.fn(async (_resource: string | URL | Request, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body)) as { messages: Array<{ role: string; content: string }> }
+    const prompt = body.messages.find(message => message.role === 'user')?.content ?? ''
+    const candidatesJson = /Candidates: (\[[^\n]+\])/u.exec(prompt)?.[1] ?? '[]'
+    const candidates = JSON.parse(candidatesJson) as Array<{ id: string; routingScore: number }>
+    const selected = candidates.toSorted((left, right) => right.routingScore - left.routingScore)[0]
+    return new Response(JSON.stringify({
+      choices: [{ message: { content: JSON.stringify({
+        agentIds: selected === undefined ? [] : [selected.id],
+        confidence: 0.9,
+        reason: 'Test inference selected the strongest candidate.',
+      }) } }],
+    }), { status: 200, headers: { 'content-type': 'application/json' } })
+  }))
+})
+
 function deferred<T>() {
   let resolve!: (value: T) => void
   const promise = new Promise<T>(done => { resolve = done })
@@ -20,10 +38,77 @@ async function addDiscoveredAgents(service: CommonspaceHostService, ...agentIds:
 }
 
 afterEach(async () => {
+  vi.unstubAllGlobals()
   await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))
 })
 
 describe('Commonspace host authority', () => {
+  it('refuses to overwrite unreadable persisted state during startup', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-invalid-state-'))
+    roots.push(root)
+    const statePath = join(root, 'state.json')
+    const invalidState = '{"version":'
+    await writeFile(statePath, invalidState)
+    const service = new CommonspaceHostService({} as never, { root }, { discoverAgents: async () => [] })
+
+    await expect(service.initialize()).rejects.toThrow()
+    expect(await readFile(statePath, 'utf8')).toBe(invalidState)
+  })
+
+  it('keeps the previous persisted state as a rollback backup', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-state-backup-'))
+    roots.push(root)
+    const statePath = join(root, 'state.json')
+    const original = JSON.stringify({
+      version: COMMONSPACE_STATE_VERSION,
+      revision: 7,
+      inboxReadAt: null,
+      inboxReadMessageIds: [],
+      defaults: { model: null, reasoning: 'max', maxAgentsPerTurn: 4, memoryThreads: 12 },
+      agents: [],
+      dmSessions: {},
+      agentSessions: {},
+      projects: [],
+      channels: [],
+      threads: [],
+      messages: {},
+    })
+    await writeFile(statePath, original)
+    const service = new CommonspaceHostService({} as never, { root }, { discoverAgents: async () => [] })
+
+    await service.initialize()
+
+    expect(await readFile(join(root, 'state.backup.json'), 'utf8')).toBe(original)
+  })
+
+  it('recovers an unreadable primary state from a valid rollback backup', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-state-recovery-'))
+    roots.push(root)
+    const recovered = JSON.stringify({
+      version: COMMONSPACE_STATE_VERSION,
+      revision: 9,
+      inboxReadAt: null,
+      inboxReadMessageIds: [],
+      defaults: { model: null, reasoning: 'max', maxAgentsPerTurn: 4, memoryThreads: 12 },
+      agents: [],
+      dmSessions: {},
+      agentSessions: {},
+      projects: [],
+      channels: [],
+      threads: [],
+      messages: {},
+    })
+    await writeFile(join(root, 'state.json'), '{"version":')
+    await writeFile(join(root, 'state.backup.json'), recovered)
+    const service = new CommonspaceHostService({} as never, { root }, { discoverAgents: async () => [] })
+
+    await service.initialize()
+
+    expect(service.snapshot().revision).toBe(9)
+    expect(JSON.parse(await readFile(join(root, 'state.json'), 'utf8'))).toMatchObject({ revision: 9 })
+    expect(await readFile(join(root, 'state.corrupt.json'), 'utf8')).toBe('{"version":')
+  })
+
   it('tightens an existing Commonspace state directory to owner-only access', async () => {
     const root = await mkdtemp(join(tmpdir(), 'commonspace-private-root-'))
     roots.push(root)
@@ -87,6 +172,25 @@ describe('Commonspace host authority', () => {
 
     expect(runAgent).toHaveBeenCalledOnce()
     expect(runAgent.mock.calls[0]?.[0]).toMatchObject({ cwd: defaultCwd, additionalCwds: [] })
+  })
+
+  it('uses an explicit project tag as the message project context', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-tagged-project-'))
+    roots.push(root)
+    const fallback = join(root, 'fallback')
+    const workspace = join(root, 'workspace')
+    await Promise.all([mkdir(fallback), mkdir(workspace)])
+    const runAgent = vi.fn(async (input: AgentRunInput) => { void input; return { text: 'Done.' } })
+    const service = new CommonspaceHostService({} as never, { root, defaultCwd: fallback }, { discoverAgents: async () => [], runAgent })
+    await service.initialize()
+    await service.mutate({ action: 'add-agent', displayName: 'Review Bot', adapter: 'codex' })
+    const project = (await service.mutate({ action: 'create-project', name: 'Tagged Workspace', paths: [workspace] })).projects[0]!
+
+    const sent = await service.send({ conversation: { kind: 'dm', id: 'codex-review-bot' }, text: 'Review @@tagged-workspace.' })
+    await service.whenIdle()
+
+    expect(sent.accepted.projectId).toBe(project.id)
+    expect(runAgent.mock.calls[0]?.[0]).toMatchObject({ cwd: await realpath(workspace), additionalCwds: [] })
   })
 
   it('redacts host paths from agent failures before publishing them', async () => {
@@ -174,7 +278,6 @@ describe('Commonspace host authority', () => {
       projects: [{ id: 'project-1', paths: [canonicalWorkspace] }],
       channels: [{
         id: 'channel-1',
-        projectId: 'project-1',
         agentIds: [],
         instructions: '',
         settings: { model: null, reasoning: null },
@@ -487,6 +590,430 @@ describe('Commonspace host authority', () => {
     expect(messages.filter(message => message.authorType === 'agent').map(message => message.authorId)).toEqual(['backend', 'frontend'])
   })
 
+  it('exposes peer responsibilities and handoff guidance in channel context', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-agent-directory-'))
+    roots.push(root)
+    const agents = [
+      { id: 'backend', displayName: 'Backend', adapter: 'hermes' as const, model: 'test', status: 'stopped' as const, description: 'Owns APIs, persistence, and migrations.' },
+      { id: 'frontend', displayName: 'Frontend', adapter: 'hermes' as const, model: 'test', status: 'stopped' as const, description: 'Owns React UI and browser interactions.' },
+    ]
+    const service = new CommonspaceHostService({} as never, { root }, {
+      discoverAgents: async () => agents,
+      runAgent: async () => 'Done.',
+    })
+    await service.initialize()
+    await addDiscoveredAgents(service, 'backend', 'frontend')
+    const channel = (await service.mutate({
+      action: 'create-channel',
+      name: 'engineering',
+      agentIds: agents.map(agent => agent.id),
+    })).channels[0]!
+    const accepted = await service.send({ conversation: { kind: 'channel', id: channel.id }, text: '@backend start.' })
+    await service.whenIdle()
+
+    const context = await service.readContext({
+      agentId: 'backend',
+      conversation: { kind: 'channel', id: channel.id },
+      threadId: accepted.thread!.id,
+      sessionName: `Commonspace Thread: ${accepted.thread!.id}`,
+    })
+
+    expect(context.participants).toEqual([
+      { id: 'backend', displayName: 'Backend', adapter: 'hermes', description: 'Owns APIs, persistence, and migrations.' },
+      { id: 'frontend', displayName: 'Frontend', adapter: 'hermes', description: 'Owns React UI and browser interactions.' },
+    ])
+    expect(context.collaboration).toMatchObject({
+      handoff: expect.stringContaining('final reply'),
+      limits: expect.stringContaining('one peer'),
+    })
+  })
+
+  it('rehydrates persisted agent responsibilities before routing after restart', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-routing-restart-'))
+    roots.push(root)
+    const agents = [
+      { id: 'backend', displayName: 'Backend', adapter: 'hermes' as const, model: 'test', status: 'stopped' as const, description: 'Owns persistence, validation, APIs, and services.' },
+      { id: 'frontend', displayName: 'Frontend', adapter: 'hermes' as const, model: 'test', status: 'stopped' as const, description: 'Owns React UI, styling, and browser interactions.' },
+    ]
+    const first = new CommonspaceHostService({} as never, { root }, {
+      discoverAgents: async () => agents,
+      runAgent: async () => 'Done.',
+    })
+    await first.initialize()
+    await addDiscoveredAgents(first, 'backend', 'frontend')
+    const channel = (await first.mutate({
+      action: 'create-channel',
+      name: 'engineering',
+      agentIds: agents.map(agent => agent.id),
+    })).channels[0]!
+    await first.close()
+
+    const runAgent = vi.fn(async (input: AgentRunInput) => {
+      void input
+      return 'Done.'
+    })
+    const restarted = new CommonspaceHostService({} as never, { root }, {
+      discoverAgents: async () => agents,
+      runAgent,
+    })
+    await restarted.initialize()
+    await restarted.send({
+      conversation: { kind: 'channel', id: channel.id },
+      text: 'Please fix persisted message validation.',
+    })
+    await restarted.whenIdle()
+
+    expect(runAgent.mock.calls.map(call => call[0].agent.id)).toEqual(['backend'])
+    await restarted.close()
+  })
+
+  it('uses the configured Commonspace router for an unmentioned channel message', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-ai-routing-'))
+    roots.push(root)
+    const agents = [
+      { id: 'backend', displayName: 'Backend', adapter: 'hermes' as const, model: 'test', status: 'stopped' as const, description: 'Owns APIs and persistence.' },
+      { id: 'frontend', displayName: 'Frontend', adapter: 'hermes' as const, model: 'test', status: 'stopped' as const, description: 'Owns browser UI, React, and CSS.' },
+    ]
+    const runAgent = vi.fn(async (input: AgentRunInput) => `${input.agent.displayName} handled it.`)
+    const routeAgents = vi.fn(async () => ({
+      agentIds: ['frontend'],
+      confidence: 0.97,
+      reason: 'The request is browser UI work.',
+    }))
+    const service = new CommonspaceHostService({} as never, { root }, {
+      discoverAgents: async () => agents,
+      runAgent,
+      routeAgents,
+    })
+    await service.initialize()
+    await addDiscoveredAgents(service, 'backend', 'frontend')
+    const channel = (await service.mutate({
+      action: 'create-channel',
+      name: 'engineering',
+      agentIds: agents.map(agent => agent.id),
+    })).channels[0]!
+    await service.updateRoutingConfiguration({
+      provider: 'harness',
+      harnessAgentId: 'backend',
+    })
+
+    const sent = await service.send({
+      conversation: { kind: 'channel', id: channel.id },
+      text: 'Fix the login screen CSS.',
+    })
+    await service.whenIdle()
+
+    expect(routeAgents).toHaveBeenCalledWith(expect.objectContaining({
+      text: 'Fix the login screen CSS.',
+      candidates: [
+        expect.objectContaining({ id: 'frontend', routingScore: 1, matchedTerms: ['css'] }),
+        expect.objectContaining({ id: 'backend', routingScore: 0, matchedTerms: [] }),
+      ],
+      maxAgents: 2,
+    }))
+    expect(runAgent.mock.calls.map(call => call[0].agent.id)).toEqual(['frontend'])
+    expect((await service.bootstrap()).state.messages[`channel:${channel.id}`]
+      ?.find(message => message.id === sent.accepted.id)?.routing).toEqual({
+      source: 'ai',
+      status: 'resolved',
+      agentIds: ['frontend'],
+      confidence: 0.97,
+      reason: 'The request is browser UI work.',
+    })
+  })
+
+  it('persists the global OpenAI-compatible router without exposing its API key', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-routing-secret-'))
+    roots.push(root)
+    const service = new CommonspaceHostService({} as never, { root }, { discoverAgents: async () => [] })
+    await service.initialize()
+
+    await expect(service.updateRoutingConfiguration({
+      provider: 'openai-compatible',
+      model: 'gpt-4.1-mini',
+      baseUrl: 'https://api.openai.com/v1/',
+      apiKey: 'private-router-key',
+    })).resolves.toEqual({
+      provider: 'openai-compatible',
+      model: 'gpt-4.1-mini',
+      harnessAgentId: null,
+      baseUrl: 'https://api.openai.com/v1',
+      apiKeyConfigured: true,
+    })
+    expect(JSON.stringify(await service.bootstrap())).not.toContain('private-router-key')
+    expect((await stat(join(root, 'routing.json'))).mode & 0o777).toBe(0o600)
+    await service.close()
+
+    const restarted = new CommonspaceHostService({} as never, { root }, { discoverAgents: async () => [] })
+    await restarted.initialize()
+    expect(restarted.routing()).toMatchObject({
+      provider: 'openai-compatible',
+      model: 'gpt-4.1-mini',
+      apiKeyConfigured: true,
+    })
+  })
+
+  it('clears a saved routing credential when the provider origin changes', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-routing-origin-'))
+    roots.push(root)
+    const service = new CommonspaceHostService({} as never, { root }, { discoverAgents: async () => [] })
+    await service.initialize()
+    await service.updateRoutingConfiguration({
+      provider: 'openai-compatible',
+      model: 'router-a',
+      baseUrl: 'https://router-a.example/v1',
+      apiKey: 'router-a-key',
+    })
+
+    await expect(service.updateRoutingConfiguration({
+      provider: 'openai-compatible',
+      model: 'router-b',
+      baseUrl: 'https://router-b.example/v1',
+    })).resolves.toMatchObject({
+      baseUrl: 'https://router-b.example/v1',
+      apiKeyConfigured: false,
+    })
+  })
+
+  it('does not offer OPENAI_API_KEY to a custom routing origin', async () => {
+    vi.stubEnv('OPENAI_API_KEY', 'openai-environment-key')
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-routing-env-origin-'))
+    roots.push(root)
+    const service = new CommonspaceHostService({} as never, { root }, { discoverAgents: async () => [] })
+    await service.initialize()
+
+    await service.updateRoutingConfiguration({
+      provider: 'openai-compatible',
+      model: 'local-router',
+      baseUrl: 'http://127.0.0.1:11434/v1',
+    })
+
+    expect(service.routing().apiKeyConfigured).toBe(false)
+  })
+
+  it('rejects routing configurations that do not use inference', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-routing-required-'))
+    roots.push(root)
+    const service = new CommonspaceHostService({} as never, { root }, { discoverAgents: async () => [] })
+    await service.initialize()
+
+    await expect(service.updateRoutingConfiguration({ provider: 'deterministic' } as never))
+      .rejects.toThrow('unsupported routing provider')
+  })
+
+  it('can use a configured agent harness as the stateless routing model', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-harness-router-'))
+    roots.push(root)
+    const agents = [
+      { id: 'backend', displayName: 'Backend', adapter: 'hermes' as const, model: 'test', status: 'stopped' as const, description: 'Owns APIs.' },
+      { id: 'frontend', displayName: 'Frontend', adapter: 'hermes' as const, model: 'test', status: 'stopped' as const, description: 'Owns UI and CSS.' },
+    ]
+    const runAgent = vi.fn(async (input: AgentRunInput) => input.sessionName === 'Commonspace Router'
+      ? '{"agentIds":["frontend"],"confidence":0.93,"reason":"CSS work"}'
+      : 'Handled.')
+    const service = new CommonspaceHostService({} as never, { root }, { discoverAgents: async () => agents, runAgent })
+    await service.initialize()
+    await addDiscoveredAgents(service, 'backend', 'frontend')
+    const channel = (await service.mutate({ action: 'create-channel', name: 'engineering', agentIds: ['backend', 'frontend'] })).channels[0]!
+    await service.updateRoutingConfiguration({ provider: 'harness', harnessAgentId: 'backend' })
+
+    await service.send({ conversation: { kind: 'channel', id: channel.id }, text: 'Fix the CSS layout.' })
+    await service.whenIdle()
+
+    expect(runAgent.mock.calls[0]?.[0]).toMatchObject({
+      agent: expect.objectContaining({ id: 'backend' }),
+      sessionName: 'Commonspace Router',
+      reasoning: 'minimal',
+    })
+    expect(runAgent.mock.calls[0]?.[0].model).toBeUndefined()
+    expect(runAgent.mock.calls[1]?.[0].agent.id).toBe('frontend')
+  })
+
+  it('marks an accepted channel message failed when inference routing fails', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-routing-fallback-'))
+    roots.push(root)
+    const agents = [
+      { id: 'backend', displayName: 'Backend', adapter: 'hermes' as const, model: 'test', status: 'stopped' as const },
+      { id: 'frontend', displayName: 'Frontend', adapter: 'hermes' as const, model: 'test', status: 'stopped' as const },
+    ]
+    const runAgent = vi.fn(async (input: AgentRunInput) => `${input.agent.displayName} handled it.`)
+    const service = new CommonspaceHostService({ warn: () => undefined } as never, { root }, {
+      discoverAgents: async () => agents,
+      runAgent,
+      routeAgents: async () => { throw new Error('router unavailable') },
+    })
+    await service.initialize()
+    await addDiscoveredAgents(service, 'backend', 'frontend')
+    const channel = (await service.mutate({ action: 'create-channel', name: 'engineering', agentIds: ['backend', 'frontend'] })).channels[0]!
+    await service.updateRoutingConfiguration({ provider: 'harness', harnessAgentId: 'backend' })
+
+    const sent = await service.send({ conversation: { kind: 'channel', id: channel.id }, text: 'Please take a look.' })
+    await service.whenIdle()
+
+    expect(runAgent).not.toHaveBeenCalled()
+    expect((await service.bootstrap()).state.messages[`channel:${channel.id}`]
+      ?.find(message => message.id === sent.accepted.id)?.routing).toEqual({
+      source: 'ai',
+      status: 'failed',
+      agentIds: [],
+      reason: 'inference routing failed',
+    })
+  })
+
+  it('persists an unaddressed message as routing before inference resolves', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-routing-pending-'))
+    roots.push(root)
+    const route = deferred<{ agentIds: string[]; confidence: number; reason: string }>()
+    const agents = [
+      { id: 'backend', displayName: 'Backend', adapter: 'hermes' as const, model: 'test', status: 'stopped' as const },
+      { id: 'frontend', displayName: 'Frontend', adapter: 'hermes' as const, model: 'test', status: 'stopped' as const },
+    ]
+    const service = new CommonspaceHostService({} as never, { root }, {
+      discoverAgents: async () => agents,
+      runAgent: async input => `${input.agent.displayName} handled it.`,
+      routeAgents: async () => route.promise,
+    })
+    await service.initialize()
+    await addDiscoveredAgents(service, 'backend', 'frontend')
+    const channel = (await service.mutate({ action: 'create-channel', name: 'engineering', agentIds: ['backend', 'frontend'] })).channels[0]!
+
+    const sending = service.send({ conversation: { kind: 'channel', id: channel.id }, text: 'Fix the API.' })
+    const immediate = await Promise.race([
+      sending.then(response => ({ status: 'accepted' as const, response })),
+      new Promise<{ status: 'blocked' }>(resolve => { setTimeout(() => { resolve({ status: 'blocked' }) }, 50) }),
+    ])
+    route.resolve({ agentIds: ['backend'], confidence: 0.95, reason: 'API work belongs to Backend.' })
+
+    expect(immediate.status).toBe('accepted')
+    if (immediate.status !== 'accepted') return
+    expect(immediate.response.accepted.routing).toEqual({
+      source: 'ai',
+      status: 'pending',
+      agentIds: [],
+      reason: 'Routing with inference.',
+    })
+    expect(immediate.response.state.messages[`channel:${channel.id}`]?.at(-1)?.text).toBe('Fix the API.')
+    await service.whenIdle()
+    expect((await service.bootstrap()).state.messages[`channel:${channel.id}`]
+      ?.find(message => message.id === immediate.response.accepted.id)?.routing).toEqual({
+      source: 'ai',
+      status: 'resolved',
+      agentIds: ['backend'],
+      confidence: 0.95,
+      reason: 'API work belongs to Backend.',
+    })
+  })
+
+  it('adds an explicitly tagged outside agent to the channel and active thread', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-tag-join-'))
+    roots.push(root)
+    const runAgent = vi.fn(async (input: AgentRunInput) => `${input.agent.displayName} joined.`)
+    const agents = [
+      { id: 'frontend', displayName: 'Frontend', adapter: 'hermes' as const, model: 'test', status: 'stopped' as const },
+      { id: 'reviewer', displayName: 'Reviewer', adapter: 'hermes' as const, model: 'test', status: 'stopped' as const },
+    ]
+    const service = new CommonspaceHostService({} as never, { root }, {
+      discoverAgents: async () => agents,
+      runAgent,
+    })
+    await service.initialize()
+    await addDiscoveredAgents(service, 'frontend', 'reviewer')
+    const channel = (await service.mutate({
+      action: 'create-channel',
+      name: 'engineering',
+      agentIds: ['frontend'],
+    })).channels[0]!
+    const accepted = await service.send({ conversation: { kind: 'channel', id: channel.id }, text: 'Start.' })
+    await service.whenIdle()
+    runAgent.mockClear()
+
+    await service.send({
+      conversation: { kind: 'channel', id: channel.id },
+      threadId: accepted.thread!.id,
+      text: '@reviewer please join this review.',
+    })
+    await service.whenIdle()
+
+    expect(runAgent.mock.calls.map(call => call[0].agent.id)).toEqual(['reviewer'])
+    expect(service.snapshot().channels.find(candidate => candidate.id === channel.id)?.agentIds)
+      .toEqual(['frontend', 'reviewer'])
+    expect(service.snapshot().threads.find(candidate => candidate.id === accepted.thread!.id)?.agentIds)
+      .toEqual(['frontend', 'reviewer'])
+  })
+
+  it('delivers @all to every channel agent even when the normal turn limit is lower', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-tag-all-'))
+    roots.push(root)
+    const runAgent = vi.fn(async (input: AgentRunInput) => `${input.agent.displayName} replied.`)
+    const agents = ['frontend', 'backend', 'reviewer'].map(id => ({
+      id,
+      displayName: id.slice(0, 1).toLocaleUpperCase() + id.slice(1),
+      adapter: 'hermes' as const,
+      model: 'test',
+      status: 'stopped' as const,
+    }))
+    const service = new CommonspaceHostService({} as never, { root }, {
+      discoverAgents: async () => agents,
+      runAgent,
+    })
+    await service.initialize()
+    await addDiscoveredAgents(service, ...agents.map(agent => agent.id))
+    await service.mutate({ action: 'set-defaults', maxAgentsPerTurn: 2 })
+    const channel = (await service.mutate({
+      action: 'create-channel',
+      name: 'engineering',
+      agentIds: agents.map(agent => agent.id),
+    })).channels[0]!
+
+    await service.send({ conversation: { kind: 'channel', id: channel.id }, text: '@all please check.' })
+    await service.whenIdle()
+
+    expect(runAgent.mock.calls.map(call => call[0].agent.id)).toEqual(['frontend', 'backend', 'reviewer'])
+  })
+
+  it('keeps a channel tag as context without onboarding or routing its agents', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-tag-channel-'))
+    roots.push(root)
+    const runAgent = vi.fn(async (input: AgentRunInput) => `${input.agent.displayName} replied.`)
+    const agents = ['facilitator', 'frontend', 'backend', 'reviewer'].map(id => ({
+      id,
+      displayName: id.slice(0, 1).toLocaleUpperCase() + id.slice(1),
+      adapter: 'hermes' as const,
+      model: 'test',
+      status: 'stopped' as const,
+    }))
+    const service = new CommonspaceHostService({} as never, { root }, {
+      discoverAgents: async () => agents,
+      runAgent,
+    })
+    await service.initialize()
+    await addDiscoveredAgents(service, ...agents.map(agent => agent.id))
+    await service.mutate({ action: 'set-defaults', maxAgentsPerTurn: 2 })
+    const general = (await service.mutate({
+      action: 'create-channel',
+      name: 'general',
+      agentIds: ['facilitator'],
+    })).channels.find(channel => channel.name === 'general')!
+    await service.mutate({
+      action: 'create-channel',
+      name: 'engineering',
+      agentIds: ['frontend', 'backend', 'reviewer'],
+    })
+
+    const accepted = await service.send({
+      conversation: { kind: 'channel', id: general.id },
+      text: '#engineering please check.',
+    })
+    await service.whenIdle()
+
+    expect(runAgent.mock.calls.map(call => call[0].agent.id)).toEqual(['facilitator'])
+    expect(runAgent.mock.calls[0]?.[0].message).toBe('#engineering please check.')
+    expect(service.snapshot().channels.find(channel => channel.id === general.id)?.agentIds)
+      .toEqual(['facilitator'])
+    expect(service.snapshot().threads.find(thread => thread.id === accepted.thread?.id)?.agentIds)
+      .toEqual(['facilitator'])
+  })
+
   it('delivers a direct channel reply only to the selected agent', async () => {
     const root = await mkdtemp(join(tmpdir(), 'commonspace-direct-reply-'))
     roots.push(root)
@@ -587,7 +1114,7 @@ describe('Commonspace host authority', () => {
     const project = (await service.mutate({ action: 'create-project', name: 'App', paths: [workspace] })).projects[0]!
     const channel = (await service.mutate({ action: 'create-channel', name: 'engineering', projectId: project.id, agentIds: ['backend', 'frontend'] })).channels[0]!
 
-    await service.send({ conversation: { kind: 'channel', id: channel.id }, text: 'Share your current findings.' })
+    await service.send({ conversation: { kind: 'channel', id: channel.id }, text: '@all share your current findings.' })
     await service.whenIdle()
 
     expect(runAgent).toHaveBeenCalledTimes(2)
@@ -609,7 +1136,7 @@ describe('Commonspace host authority', () => {
       .rejects.toThrow('conflicts with a Hermes profile')
   })
 
-  it('rejects unknown conversations and project overrides before appending messages', async () => {
+  it('rejects unknown conversations and attaches project context to channel threads', async () => {
     const root = await mkdtemp(join(tmpdir(), 'commonspace-host-'))
     roots.push(root)
     const projectAPath = join(root, 'a')
@@ -622,6 +1149,7 @@ describe('Commonspace host authority', () => {
       runAgent,
     })
     await service.initialize()
+    await addDiscoveredAgents(service, 'frontend')
 
     await expect(service.send({ conversation: { kind: 'channel', id: 'missing' }, text: 'hello' }))
       .rejects.toThrow('unknown channel')
@@ -629,20 +1157,24 @@ describe('Commonspace host authority', () => {
       .rejects.toThrow('unknown agent')
     expect((await service.bootstrap()).state.messages).toEqual({})
 
-    const first = await service.mutate({ action: 'create-project', name: 'A', paths: [projectAPath] })
+    await service.mutate({ action: 'create-project', name: 'A', paths: [projectAPath] })
     const second = await service.mutate({ action: 'create-project', name: 'B', paths: [projectBPath] })
-    const projectA = first.projects.find(project => project.name === 'A')!
     const projectB = second.projects.find(project => project.name === 'B')!
-    const channelState = await service.mutate({ action: 'create-channel', name: 'general', projectId: projectA.id, agentIds: ['frontend'] })
+    const channelState = await service.mutate({ action: 'create-channel', name: 'general', agentIds: ['frontend'] })
     const channel = channelState.channels[0]!
 
-    await expect(service.send({
+    const accepted = await service.send({
       conversation: { kind: 'channel', id: channel.id },
       projectId: projectB.id,
-      text: 'wrong project',
-    })).rejects.toThrow('channel project cannot be overridden')
-    expect((await service.bootstrap()).state.messages).toEqual({})
-    expect(runAgent).not.toHaveBeenCalled()
+      text: 'work in project B',
+    })
+    expect(channel).not.toHaveProperty('projectId')
+    expect(accepted.thread).toMatchObject({ projectId: projectB.id })
+    expect(accepted.thread).not.toHaveProperty('status')
+    expect(accepted.accepted).toMatchObject({ projectId: projectB.id })
+    await vi.waitFor(() => { expect(runAgent).toHaveBeenCalledOnce() })
+    expect(runAgent.mock.calls[0]?.[0]?.cwd).toBe(await realpath(projectBPath))
+    await service.whenIdle()
   })
 
   it('accepts a channel root immediately and appends agent replies inside its thread', async () => {
@@ -665,14 +1197,14 @@ describe('Commonspace host authority', () => {
     const channel = (await service.mutate({ action: 'create-channel', name: 'general', projectId: project.id, agentIds: ['frontend'] })).channels[0]!
 
     const accepted = await service.send({ conversation: { kind: 'channel', id: channel.id }, projectId: project.id, text: 'Investigate checkout.' })
-    expect(accepted.thread?.status).toBe('queued')
+    expect(accepted.thread).not.toHaveProperty('status')
     expect(accepted.accepted.parentMessageId).toBeUndefined()
     await vi.waitFor(() => { expect(runAgent).toHaveBeenCalledOnce() })
 
     release?.('Found the issue.')
     await vi.waitFor(async () => {
       const state = (await service.bootstrap()).state
-      expect(state.threads.find(thread => thread.id === accepted.thread?.id)?.status).toBe('complete')
+      expect(state.threads.find(thread => thread.id === accepted.thread?.id)).not.toHaveProperty('status')
       const messages = state.messages[`channel:${channel.id}`] ?? []
       expect(messages.some(message => message.text === 'Found the issue.' && message.parentMessageId === accepted.accepted.id)).toBe(true)
     })
@@ -713,13 +1245,11 @@ describe('Commonspace host authority', () => {
       projectId: project.id,
       agentIds: ['codex-review-bot'],
     })).channels[0]!
-    const accepted = await service.send({ conversation: { kind: 'channel', id: channel.id }, text: 'Review this.' })
+    const accepted = await service.send({ conversation: { kind: 'channel', id: channel.id }, projectId: project.id, text: 'Review this.' })
     const thread = accepted.thread
     if (thread === undefined) throw new Error('expected a channel thread')
 
-    await vi.waitFor(async () => {
-      expect((await service.bootstrap()).state.threads.find(candidate => candidate.id === thread.id)?.status).toBe('complete')
-    })
+    await service.whenIdle()
     const sessionName = `Commonspace Thread: ${thread.id}`
     expect(runAgent.mock.calls[0]?.[0]).toMatchObject({
       agent: { id: 'codex-review-bot', adapter: 'codex' },

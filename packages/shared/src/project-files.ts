@@ -1,4 +1,4 @@
-export type ProjectFilePreview = 'text' | 'image' | 'video' | 'binary'
+export type ProjectFilePreview = 'text' | 'image' | 'video' | 'binary' | 'blocked'
 
 export interface ProjectFileEntry {
   name: string

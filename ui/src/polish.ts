@@ -11,12 +11,12 @@ export const commonspacePolish = String.raw`
   --csp-raised: var(--dsw-alias-fill-l1, #ffffff);
   --csp-border: var(--dsw-alias-border-l2, #e5e5e5);
   --csp-border-soft: var(--csp-border);
-  --csp-hover: rgba(17, 17, 17, 0.05);
-  --csp-active: rgba(17, 17, 17, 0.08);
+  --csp-hover: var(--dsw-alias-interactive-bg-hover, rgba(17, 17, 17, 0.05));
+  --csp-active: color-mix(in srgb, var(--csp-fg) 9%, transparent);
   --csp-sidebar-fg: var(--csp-fg);
   --csp-sidebar-muted: var(--csp-muted);
-  --csp-sidebar-hover: rgba(17, 17, 17, 0.05);
-  --csp-sidebar-active: rgba(17, 17, 17, 0.08);
+  --csp-sidebar-hover: var(--csp-hover);
+  --csp-sidebar-active: var(--csp-active);
   --csp-accent: #2f6feb;
   --csp-accent-soft: color-mix(in srgb, var(--csp-accent) 11%, transparent);
   --csp-success: #17a34a;
@@ -531,8 +531,13 @@ export const commonspacePolish = String.raw`
 }
 
 .csp-agent-status {
-  display: none;
+  display: inline;
+  flex: none;
+  white-space: nowrap;
 }
+
+.csp-agent-status[data-status='running'] { color: var(--csp-success); }
+.csp-agent-status[data-status='stopped'] { color: var(--csp-warning); }
 
 .csp-browser-empty,
 .csp-browser-status {
@@ -805,6 +810,47 @@ export const commonspacePolish = String.raw`
   padding: 4px 5px;
 }
 
+.csp-search-filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px 2px;
+  overflow-x: auto;
+}
+
+.csp-search-filters select,
+.csp-search-kind-filters button {
+  min-height: 28px;
+  box-sizing: border-box;
+  border: 1px solid var(--csp-border-soft);
+  border-radius: 7px;
+  background: var(--csp-surface);
+  color: var(--csp-muted);
+  font: inherit;
+  font-size: 10px;
+}
+
+.csp-search-filters select {
+  max-width: 150px;
+  padding: 0 8px;
+}
+
+.csp-search-kind-filters {
+  display: flex;
+  gap: 5px;
+}
+
+.csp-search-kind-filters button {
+  padding: 0 8px;
+  white-space: nowrap;
+}
+
+.csp-search-kind-filters button[aria-pressed='true'] {
+  border-color: color-mix(in srgb, var(--csp-accent) 48%, var(--csp-border-soft));
+  background: color-mix(in srgb, var(--csp-accent) 12%, var(--csp-surface));
+  color: var(--csp-accent);
+}
+
 .csp-search-result-head {
   display: flex;
   align-items: center;
@@ -877,6 +923,17 @@ export const commonspacePolish = String.raw`
 .csp-search-result-main strong {
   font-size: 13px;
   font-weight: 650;
+}
+
+.csp-search-result-main mark {
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--csp-accent) 20%, transparent);
+  color: inherit;
+}
+
+.csp-search-result-main .csp-search-result-receipt {
+  color: color-mix(in srgb, var(--csp-subtle) 78%, transparent);
+  font-size: 9px;
 }
 
 .csp-search-result-main small,
@@ -968,16 +1025,24 @@ export const commonspacePolish = String.raw`
   color: var(--csp-fg);
 }
 
-.csp-dialog-error {
-  margin: 14px 18px 0;
-  padding: 9px 12px;
+.csp-app-toast {
+  position: fixed;
+  z-index: 60;
+  top: 18px;
+  left: 50%;
+  width: max-content;
+  max-width: min(520px, calc(100vw - 32px));
+  box-sizing: border-box;
+  padding: 10px 14px;
   border: 1px solid rgba(180, 35, 24, 0.24);
-  border-radius: 9px;
-  background: rgba(197, 48, 48, 0.08);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--dsw-alias-bg-base, #ffffff) 92%, #dc2626);
+  box-shadow: 0 10px 32px rgba(20, 22, 26, 0.16);
   color: #b42318;
   font-size: 12px;
   line-height: 16px;
   text-align: center;
+  transform: translateX(-50%);
 }
 
 .csp-dialog-body {
@@ -1034,6 +1099,7 @@ export const commonspacePolish = String.raw`
 }
 
 .csp-global-settings > label,
+.csp-global-settings .csp-run-defaults > label,
 .csp-dm-search {
   display: grid !important;
   align-items: stretch !important;
@@ -1044,6 +1110,8 @@ export const commonspacePolish = String.raw`
 
 .csp-global-settings > label input,
 .csp-global-settings > label select,
+.csp-global-settings .csp-run-defaults > label input,
+.csp-global-settings .csp-run-defaults > label select,
 .csp-dm-search input {
   width: 100% !important;
   height: 30px !important;
@@ -2342,6 +2410,12 @@ export const commonspacePolish = String.raw`
   box-shadow: none;
 }
 
+.csp-thread-root--focused,
+.csp-thread-root--focused:hover {
+  background: var(--csp-accent-soft);
+  box-shadow: inset 3px 0 0 var(--csp-accent);
+}
+
 .csp-thread-root .csp-message {
   margin: 0;
 }
@@ -2351,6 +2425,7 @@ export const commonspacePolish = String.raw`
 }
 
 .csp-thread-open {
+  position: relative;
   display: inline-flex;
   width: auto;
   min-height: 44px;
@@ -2359,13 +2434,33 @@ export const commonspacePolish = String.raw`
   margin: 0 0 0 48px;
   padding: 4px 8px;
   border-radius: 8px;
+  background: var(--csp-accent-soft);
   color: var(--csp-accent);
   font-size: 12px;
   font-weight: 600;
 }
 
 .csp-thread-open:hover {
-  background: var(--csp-hover);
+  background: color-mix(in srgb, var(--csp-accent) 14%, transparent);
+}
+
+.csp-thread-open--unread,
+.csp-thread-open--unread:hover {
+  background: var(--csp-accent-soft);
+  color: var(--csp-accent);
+  box-shadow: none;
+}
+
+.csp-thread-unread-indicator {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 9px;
+  height: 9px;
+  box-sizing: border-box;
+  border: 2px solid var(--csp-surface);
+  border-radius: 50%;
+  background: var(--csp-danger);
 }
 
 .csp-thread-status {
@@ -2584,7 +2679,7 @@ export const commonspacePolish = String.raw`
 }
 
 .csp-conversation-layout.has-thread {
-  grid-template-columns: minmax(0, 1fr) minmax(340px, 400px);
+  grid-template-columns: minmax(0, var(--csp-channel-width, 50fr)) 6px minmax(0, var(--csp-thread-width, 50fr));
 }
 
 .csp-thread-panel {
@@ -2684,8 +2779,7 @@ button.csp-live-activity-trigger:hover {
   background: color-mix(in srgb, var(--csp-accent) 3%, var(--csp-surface));
 }
 
-.csp-conversation-error,
-.csp-runtime-error {
+.csp-conversation-error {
   border: 1px solid color-mix(in srgb, var(--csp-danger) 24%, transparent);
   background: color-mix(in srgb, var(--csp-danger) 9%, transparent);
   color: var(--csp-danger);
@@ -2715,20 +2809,6 @@ button.csp-live-activity-trigger:hover {
 .csp-live-activity-trigger:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--csp-fg) 62%, transparent);
   outline-offset: 1px;
-}
-
-@media (max-width: 1100px) {
-  .csp-conversation-layout.has-thread {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .csp-thread-panel {
-    position: absolute;
-    z-index: 3;
-    inset: 0 0 0 auto;
-    width: min(92vw, 400px);
-    box-shadow: -12px 0 36px rgba(17, 17, 17, 0.1);
-  }
 }
 
 @media (max-width: 720px) {
@@ -2873,6 +2953,37 @@ button.csp-live-activity-trigger:hover {
     display: none;
   }
 }
+
+.csp-followup-queue {
+  width: min(760px, calc(100% - 48px));
+  margin: 0 auto 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--csp-border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--csp-panel) 92%, var(--csp-accent) 8%);
+}
+
+.csp-followup-queue > header,
+.csp-followup-item,
+.csp-followup-item > div,
+.csp-delivery-controls,
+.csp-run-signal {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.csp-followup-queue > header { justify-content: space-between; margin-bottom: 6px; }
+.csp-followup-item { padding: 6px 0; border-top: 1px solid var(--csp-border); }
+.csp-followup-item > span { color: var(--csp-accent); font-size: 11px; font-weight: 700; text-transform: uppercase; }
+.csp-followup-item > p { flex: 1; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.csp-followup-item button,
+.csp-delivery-controls button { border: 0; border-radius: 6px; background: transparent; color: var(--csp-muted); padding: 4px 7px; cursor: pointer; }
+.csp-followup-item button:hover,
+.csp-delivery-controls button[aria-pressed="true"] { background: color-mix(in srgb, var(--csp-accent) 16%, transparent); color: var(--csp-ink); }
+.csp-delivery-controls { flex-wrap: wrap; }
+.csp-run-signal { margin-top: 8px; color: var(--csp-muted); font-size: 12px; }
+.csp-run-signal--attention { color: var(--csp-danger); }
 
 @media (prefers-reduced-motion: reduce) {
   .csp-section-chevron,

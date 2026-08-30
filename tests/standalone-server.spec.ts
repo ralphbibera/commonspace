@@ -58,6 +58,27 @@ describe('standalone Commonspace server', () => {
     })
     expect(discoveryCalls).toBe(0)
 
+    const routingResponse = await fetch(`${running.url}/api/routing`, {
+      method: 'PUT',
+      headers: { origin: running.url, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        provider: 'openai-compatible',
+        model: 'local-router',
+        baseUrl: 'http://127.0.0.1:11434/v1',
+        apiKey: 'private-key',
+      }),
+    })
+    expect(routingResponse.status).toBe(200)
+    await expect(routingResponse.json()).resolves.toEqual({
+      provider: 'openai-compatible',
+      model: 'local-router',
+      harnessAgentId: null,
+      baseUrl: 'http://127.0.0.1:11434/v1',
+      apiKeyConfigured: true,
+    })
+    const routingReadResponse = await fetch(`${running.url}/api/routing`, { headers: { origin: running.url } })
+    expect(JSON.stringify(await routingReadResponse.json())).not.toContain('private-key')
+
     const discoveryResponse = await fetch(`${running.url}/api/discover-agents`, {
       method: 'POST',
       headers: { origin: running.url, 'content-type': 'application/json' },

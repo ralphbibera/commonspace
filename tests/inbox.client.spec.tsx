@@ -20,6 +20,10 @@ function state(overrides: Partial<CommonspaceState> = {}): CommonspaceState {
     version: COMMONSPACE_STATE_VERSION,
     revision: 4,
     inboxReadAt: null,
+    inboxReadMessageIds: [],
+    inboxSavedItemIds: [],
+    followedSessionIds: [],
+    mutedSessionIds: [],
     defaults: { model: null, reasoning: 'max', maxAgentsPerTurn: 4, memoryThreads: 12 },
     agents: [
       { id: 'backend', displayName: 'Backend', adapter: 'hermes', model: null, createdAt: '2026-08-27T08:00:00.000Z' },
@@ -31,7 +35,6 @@ function state(overrides: Partial<CommonspaceState> = {}): CommonspaceState {
     channels: [{
       id: 'general',
       name: 'general',
-      projectId: null,
       agentIds: ['backend'],
       instructions: '',
       memory: { summary: '', decisions: [], openQuestions: [], threadIds: ['thread-1'], updatedAt: null },
@@ -44,12 +47,18 @@ function state(overrides: Partial<CommonspaceState> = {}): CommonspaceState {
       projectId: null,
       rootMessageId: 'root-1',
       agentIds: ['backend'],
-      status: 'complete',
       createdAt: '2026-08-27T09:59:00.000Z',
-      updatedAt: '2026-08-27T10:02:00.000Z',
     }],
     messages: {
       'channel:general': [{
+        id: 'root-1',
+        conversation: { kind: 'channel', id: 'general' },
+        authorType: 'user',
+        authorId: 'user',
+        authorName: 'Ralph',
+        text: 'Please investigate this.',
+        createdAt: '2026-08-27T09:59:00.000Z',
+      }, {
         id: 'reply-thread',
         conversation: { kind: 'channel', id: 'general' },
         authorType: 'agent',
@@ -83,6 +92,7 @@ function appStore(initialState: CommonspaceState, includeLiveActivity = true) {
       state: initialState,
       liveActivities: includeLiveActivity ? [{
         id: 'run-live',
+        sourceMessageId: 'root-1',
         agentId: 'backend',
         agentName: 'Backend',
         adapter: 'hermes' as const,
@@ -108,7 +118,21 @@ function appStore(initialState: CommonspaceState, includeLiveActivity = true) {
   }
   const emit = () => { for (const listener of listeners) listener() }
   const mutate = vi.fn(async (mutation: CommonspaceMutation) => {
-    if (mutation.action !== 'mark-inbox-read') return
+    const current = snapshot.bootstrap.state
+    let preferenceUpdate: Partial<CommonspaceState> = {}
+    if (mutation.action === 'set-inbox-item-saved') {
+      preferenceUpdate = { inboxSavedItemIds: mutation.saved ? [...current.inboxSavedItemIds, mutation.messageId] : current.inboxSavedItemIds.filter(id => id !== mutation.messageId) }
+    } else if (mutation.action === 'set-session-followed') {
+      preferenceUpdate = {
+        followedSessionIds: mutation.followed ? [...current.followedSessionIds, mutation.sessionId] : current.followedSessionIds.filter(id => id !== mutation.sessionId),
+        mutedSessionIds: mutation.followed ? current.mutedSessionIds.filter(id => id !== mutation.sessionId) : current.mutedSessionIds,
+      }
+    } else if (mutation.action === 'set-session-muted') {
+      preferenceUpdate = {
+        mutedSessionIds: mutation.muted ? [...current.mutedSessionIds, mutation.sessionId] : current.mutedSessionIds.filter(id => id !== mutation.sessionId),
+        followedSessionIds: mutation.muted ? current.followedSessionIds.filter(id => id !== mutation.sessionId) : current.followedSessionIds,
+      }
+    } else if (mutation.action !== 'mark-inbox-read' && mutation.action !== 'mark-inbox-item-read') return
     snapshot = {
       ...snapshot,
       bootstrap: {
@@ -116,7 +140,11 @@ function appStore(initialState: CommonspaceState, includeLiveActivity = true) {
         state: {
           ...snapshot.bootstrap.state,
           revision: snapshot.bootstrap.state.revision + 1,
-          inboxReadAt: '2026-08-27T11:00:00.000Z',
+          ...(mutation.action === 'mark-inbox-read'
+            ? { inboxReadAt: '2026-08-27T11:00:00.000Z', inboxReadMessageIds: [] }
+            : mutation.action === 'mark-inbox-item-read'
+              ? { inboxReadMessageIds: [...snapshot.bootstrap.state.inboxReadMessageIds, mutation.messageId] }
+              : preferenceUpdate),
         },
       },
     }
@@ -146,24 +174,45 @@ function appStore(initialState: CommonspaceState, includeLiveActivity = true) {
       selectThread,
       selectProject: vi.fn(),
       selectDirectory: vi.fn(async () => null),
-      messages: vi.fn(() => []),
+      messages: vi.fn(() => snapshot.activeConversation === null
+        ? []
+        : snapshot.bootstrap.state.messages[`${snapshot.activeConversation.kind}:${snapshot.activeConversation.id}`] ?? []),
       send: vi.fn(async () => undefined),
     },
   }
 }
 
 describe('Commonspace Inbox', () => {
-  it('marks Inbox activity read when an unread reply is opened', async () => {
+  it('shows the unread Inbox count on its channel', () => {
+    const { store } = appStore(state())
+    render(<CommonspaceApp store={store as never} />)
+
+    const channel = screen.getByRole('button', { name: 'Open channel general, 1 unread' })
+    expect(within(channel).getByText('1')).toBeTruthy()
+  })
+
+  it('marks only the opened Inbox reply read', async () => {
     const { store, mutate } = appStore(state())
     render(<CommonspaceApp store={store as never} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Open Inbox, 2 unread' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Open thread reply from Backend in #general, unread' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Open completed from Backend in #general, unread' }))
 
-    await waitFor(() => { expect(mutate).toHaveBeenCalledWith({ action: 'mark-inbox-read' }) })
+    await waitFor(() => {
+      expect(mutate).toHaveBeenCalledWith({ action: 'mark-inbox-item-read', messageId: 'reply-thread' })
+      expect(mutate).not.toHaveBeenCalledWith({ action: 'mark-inbox-read' })
+    })
+    expect(screen.getByRole('button', { name: 'Open Inbox, 1 unread' })).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open Inbox, 1 unread' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Unread 1' }))
+    expect(screen.getByRole('button', { name: 'Open completed from Reviewer in Reviewer, unread' })).toBeTruthy()
+    expect(screen.queryByText('Thread result.')).toBeNull()
   })
 
   it('opens from navigation, filters unread replies, marks them read, and opens a thread', async () => {
+    const scrollIntoView = vi.fn()
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: scrollIntoView })
     const { store, mutate, selectConversation, selectThread } = appStore(state())
     render(<CommonspaceApp store={store as never} />)
 
@@ -181,11 +230,13 @@ describe('Commonspace Inbox', () => {
     expect(screen.getByRole('button', { name: 'Open Inbox' })).toBeTruthy()
 
     fireEvent.click(within(inbox).getByRole('button', { name: 'All' }))
-    fireEvent.click(within(inbox).getByRole('button', { name: 'Open thread reply from Backend in #general' }))
+    fireEvent.click(within(inbox).getByRole('button', { name: 'Open completed from Backend in #general' }))
 
     expect(selectConversation).toHaveBeenCalledWith({ kind: 'channel', id: 'general' })
     expect(selectThread).toHaveBeenCalledWith('thread-1')
     expect(screen.queryByRole('main', { name: 'Inbox' })).toBeNull()
+    await waitFor(() => { expect(scrollIntoView).toHaveBeenCalledWith({ block: 'center', behavior: 'smooth' }) })
+    expect(document.getElementById('csp-message-root-1')?.classList.contains('csp-thread-root--focused')).toBe(true)
   })
 
   it('shows a meaningful empty state', () => {
@@ -194,7 +245,41 @@ describe('Commonspace Inbox', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Open Inbox' }))
 
-    expect(screen.getByText('No agent activity yet.')).toBeTruthy()
-    expect(screen.getByText('Agent replies will appear here.')).toBeTruthy()
+    expect(screen.getByText('You’re all caught up.')).toBeTruthy()
+    expect(screen.getByText('New agent activity will appear here.')).toBeTruthy()
+  })
+
+  it('saves attention items and supervises running, attention, and completed sessions', async () => {
+    const failed = {
+      id: 'failed-request',
+      conversation: { kind: 'dm' as const, id: 'reviewer' },
+      authorType: 'user' as const,
+      authorId: 'user',
+      authorName: 'Ralph',
+      text: 'Run checks.',
+      createdAt: '2026-08-27T10:02:00.000Z',
+      replyStatus: 'error' as const,
+      replyError: 'Provider timed out.',
+    }
+    const initial = state({ messages: { ...state().messages, 'dm:reviewer': [...state().messages['dm:reviewer']!, failed] } })
+    const { store, mutate } = appStore(initial)
+    render(<CommonspaceApp store={store as never} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open Inbox, 3 unread' }))
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Save for later' })[0]!)
+    await waitFor(() => { expect(mutate).toHaveBeenCalledWith({ action: 'set-inbox-item-saved', messageId: 'failed-request', saved: true }) })
+    fireEvent.click(screen.getByRole('button', { name: 'Saved' }))
+    expect(screen.getAllByRole('listitem')).toHaveLength(1)
+
+    fireEvent.click(screen.getByRole('button', { name: /^Sessions/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Running' }))
+    expect(screen.getByText('Run focused tests')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Follow' }))
+    await waitFor(() => { expect(mutate).toHaveBeenCalledWith({ action: 'set-session-followed', sessionId: 'root-1:backend', followed: true }) })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Needs attention' }))
+    expect(screen.getByText('Provider timed out.')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Completed' }))
+    expect(screen.getByText('Review complete.')).toBeTruthy()
   })
 })

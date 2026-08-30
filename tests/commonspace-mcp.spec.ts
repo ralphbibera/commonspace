@@ -18,6 +18,9 @@ describe('Commonspace MCP gateway', () => {
       messages: [{ id: 'message-older', authorName: 'Ralph', text: 'Earlier context.' }],
       nextBefore: null,
     }))
+    const searchMessages = vi.fn(async () => ({
+      results: [{ id: 'message-match', authorName: 'Ralph', text: 'Session recovery details.' }],
+    }))
     const postProgress = vi.fn(async (_scope: unknown, text: string) => ({ messageId: `posted:${text}` }))
     const gateway = new CommonspaceMcpGateway({
       readContext: async scope => ({
@@ -27,6 +30,7 @@ describe('Commonspace MCP gateway', () => {
         messages: [{ id: 'message-1', authorName: 'Ralph', text: 'Review the relay.' }],
       }),
       readMessages,
+      searchMessages,
       postProgress,
     })
     const credential = gateway.issue({
@@ -56,6 +60,7 @@ describe('Commonspace MCP gateway', () => {
     expect(tools.tools.map(tool => tool.name)).toEqual([
       'commonspace_get_context',
       'commonspace_read_messages',
+      'commonspace_search',
       'commonspace_post_progress',
     ])
     const context = await client.callTool({ name: 'commonspace_get_context', arguments: {} })
@@ -76,6 +81,18 @@ describe('Commonspace MCP gateway', () => {
       conversation: { kind: 'channel', id: 'channel-1' },
       threadId: 'thread-1',
     }), { before: 'message-1', limit: 7 })
+    const search = await client.callTool({
+      name: 'commonspace_search',
+      arguments: { query: '"session recovery" -failed', limit: 9 },
+    })
+    expect(search.structuredContent).toMatchObject({
+      results: [{ id: 'message-match', text: 'Session recovery details.' }],
+    })
+    expect(searchMessages).toHaveBeenCalledWith(expect.objectContaining({
+      agentId: 'codex-review-bot',
+      conversation: { kind: 'channel', id: 'channel-1' },
+      threadId: 'thread-1',
+    }), { query: '"session recovery" -failed', limit: 9 })
     const progress = await client.callTool({
       name: 'commonspace_post_progress',
       arguments: { text: 'Reviewing now.' },

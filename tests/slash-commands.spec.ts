@@ -5,6 +5,7 @@ describe('Commonspace slash commands', () => {
   it('suggests commands and aliases case-insensitively for the active conversation', () => {
     expect(slashCommandSuggestions('/', 'dm').map(command => command.name)).toEqual([
       '/help',
+      '/stop',
       '/new',
       '/retry',
       '/status',
@@ -17,6 +18,7 @@ describe('Commonspace slash commands', () => {
 
   it('resolves canonical commands and Hermes-style aliases without forwarding unknown input', () => {
     expect(resolveSlashCommand('/status', 'dm')).toMatchObject({ command: { id: 'status' }, args: '' })
+    expect(resolveSlashCommand('/stop', 'channel')).toMatchObject({ command: { id: 'stop' }, args: '' })
     expect(resolveSlashCommand('/clear now', 'dm')).toMatchObject({ command: { id: 'new' }, args: 'now' })
     expect(resolveSlashCommand('/reset', 'dm')).toMatchObject({ command: { id: 'new' }, args: '' })
     expect(resolveSlashCommand('/new', 'channel')).toBeNull()

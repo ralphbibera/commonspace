@@ -1,17 +1,19 @@
 import type { IncomingMessage } from 'node:http'
 import express, { type ErrorRequestHandler, type Express, type NextFunction, type Request, type Response } from 'express'
-import type { CommonspaceLiveAgentActivity, CommonspaceMutation, DiscoverAgentsRequest, SelectDirectoryResponse, SendMessageRequest } from '@commonspace/shared'
+import { COMMONSPACE_SEARCH_KINDS, type CommonspaceLiveAgentActivity, type CommonspaceMutation, type CommonspaceSearchKind, type DiscoverAgentsRequest, type RemoveFollowupRequest, type ReorderFollowupRequest, type SelectDirectoryResponse, type SendMessageRequest, type StopAgentRunsRequest, type UpdateAgentConfigurationRequest, type UpdateRoutingConfigurationRequest } from '@commonspace/shared'
 import type { CommonspaceHostService } from './service.js'
 import type { CommonspaceMcpGateway } from './commonspace-mcp.js'
 import { selectLocalDirectory } from './directory-picker.js'
 import {
   listProjectFiles,
   openProjectFile,
+  openProjectFileInEditor,
   ProjectFileError,
   projectGitDiff,
   projectGitStatus,
   streamProjectFile,
 } from './project-files.js'
+import { searchCommonspace } from './search.js'
 
 const MAX_BODY_BYTES = 128 * 1024
 const MAX_SEND_BODY_BYTES = 24 * 1024 * 1024
@@ -135,6 +137,58 @@ export function createCommonspaceApp({ service, mcpGateway, directoryPicker }: C
     res.json(await service.bootstrap())
   })
 
+  app.get('/api/search', requireSameOrigin, async (req, res) => {
+    try {
+      const query = queryString(req.query.q)
+      const rawKinds = queryString(req.query.types)
+      const kinds = rawKinds === '' ? [] : rawKinds.split(',').filter((kind): kind is CommonspaceSearchKind => COMMONSPACE_SEARCH_KINDS.includes(kind as CommonspaceSearchKind))
+      if (rawKinds !== '' && kinds.length !== rawKinds.split(',').length) throw new Error('search contains an invalid result type')
+      const rawLimit = queryString(req.query.limit, '24')
+      if (!/^\d+$/u.test(rawLimit)) throw new Error('search limit must be a positive integer')
+      const projectId = queryString(req.query.project)
+      res.json(await searchCommonspace(await service.bootstrap(), {
+        query,
+        ...(kinds.length === 0 ? {} : { kinds }),
+        ...(projectId === '' ? {} : { projectId }),
+        limit: Number(rawLimit),
+      }))
+    } catch (error) {
+      res.status(400).json({ code: 'search_failed', error: error instanceof Error ? error.message : String(error) })
+    }
+  })
+
+  app.get('/api/agents/:agentId/configuration', requireSameOrigin, async (req, res) => {
+    try {
+      const agentId = req.params.agentId
+      if (typeof agentId !== 'string' || agentId === '') throw new Error('agent id is required')
+      res.json(await service.agentConfiguration(agentId))
+    } catch (error) {
+      res.status(400).json({ code: 'agent_configuration_failed', error: error instanceof Error ? error.message : String(error) })
+    }
+  })
+
+  app.put('/api/agents/:agentId/configuration', requireSameOrigin, async (req, res) => {
+    try {
+      const agentId = req.params.agentId
+      if (typeof agentId !== 'string' || agentId === '') throw new Error('agent id is required')
+      res.json(await service.updateAgentConfiguration(agentId, recordBody(req.body) as unknown as UpdateAgentConfigurationRequest))
+    } catch (error) {
+      res.status(400).json({ code: 'agent_configuration_update_failed', error: error instanceof Error ? error.message : String(error) })
+    }
+  })
+
+  app.get('/api/routing', requireSameOrigin, (_req, res) => {
+    res.json(service.routing())
+  })
+
+  app.put('/api/routing', requireSameOrigin, async (req, res) => {
+    try {
+      res.json(await service.updateRoutingConfiguration(recordBody(req.body) as unknown as UpdateRoutingConfigurationRequest))
+    } catch (error) {
+      res.status(400).json({ code: 'routing_configuration_failed', error: error instanceof Error ? error.message : String(error) })
+    }
+  })
+
   app.get('/api/projects/:projectId/files', requireSameOrigin, async (req, res) => {
     try {
       res.json(await listProjectFiles(
@@ -162,6 +216,24 @@ export function createCommonspaceApp({ service, mcpGateway, directoryPicker }: C
         res.destroy()
         return
       }
+      sendProjectError(res, error)
+    }
+  })
+
+  app.post('/api/projects/:projectId/open', requireSameOrigin, async (req, res) => {
+    try {
+      const body = recordBody(req.body)
+      if (typeof body.path !== 'string' || typeof body.rootIndex !== 'number' || typeof body.line !== 'number') {
+        throw new ProjectFileError(400, 'invalid_editor_target', 'Editor target requires path, rootIndex, and line')
+      }
+      res.json(await openProjectFileInEditor(
+        service.snapshot(),
+        projectIdParam(req.params.projectId),
+        body.rootIndex,
+        body.path,
+        body.line,
+      ))
+    } catch (error) {
       sendProjectError(res, error)
     }
   })
@@ -207,7 +279,7 @@ export function createCommonspaceApp({ service, mcpGateway, directoryPicker }: C
       res.write(`event: revision\ndata: ${JSON.stringify({ revision })}\n\n`)
     }
     const writeActivity = (activities: readonly CommonspaceLiveAgentActivity[]) => {
-      res.write(`event: activity\ndata: ${JSON.stringify({ activities })}\n\n`)
+      res.write(`event: activity\ndata: ${JSON.stringify({ activities, queuedFollowups: service.queuedFollowups() })}\n\n`)
     }
     writeRevision(service.snapshot().revision)
     writeActivity(service.liveActivities())
@@ -242,6 +314,30 @@ export function createCommonspaceApp({ service, mcpGateway, directoryPicker }: C
       res.status(202).json(await service.send(recordBody(req.body) as unknown as SendMessageRequest))
     } catch (error) {
       res.status(400).json({ code: 'send_failed', error: error instanceof Error ? error.message : String(error) })
+    }
+  })
+
+  app.post('/api/stop', requireSameOrigin, async (req, res) => {
+    try {
+      res.json(await service.stopAgentRuns(recordBody(req.body) as unknown as StopAgentRunsRequest))
+    } catch (error) {
+      res.status(400).json({ code: 'stop_failed', error: error instanceof Error ? error.message : String(error) })
+    }
+  })
+
+  app.post('/api/followups/reorder', requireSameOrigin, async (req, res) => {
+    try {
+      res.json(await service.reorderFollowup(recordBody(req.body) as unknown as ReorderFollowupRequest))
+    } catch (error) {
+      res.status(400).json({ code: 'followup_reorder_failed', error: error instanceof Error ? error.message : String(error) })
+    }
+  })
+
+  app.post('/api/followups/remove', requireSameOrigin, async (req, res) => {
+    try {
+      res.json(await service.removeFollowup(recordBody(req.body) as unknown as RemoveFollowupRequest))
+    } catch (error) {
+      res.status(400).json({ code: 'followup_remove_failed', error: error instanceof Error ? error.message : String(error) })
     }
   })
 

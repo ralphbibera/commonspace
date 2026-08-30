@@ -1,10 +1,10 @@
 // @vitest-environment node
 import { execFile } from 'node:child_process'
-import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { startCommonspaceServer, type RunningCommonspaceServer } from '../server/src/index.ts'
 
 const execFileAsync = promisify(execFile)
@@ -12,6 +12,7 @@ const roots: string[] = []
 const servers: RunningCommonspaceServer[] = []
 
 afterEach(async () => {
+  vi.unstubAllEnvs()
   await Promise.all(servers.splice(0).map(server => server.close()))
   await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))
 })
@@ -37,6 +38,9 @@ async function fixture(): Promise<{
   await writeFile(join(workspace, 'demo.mp4'), Buffer.from([0, 1, 2, 3, 4, 5, 6, 7]))
   await writeFile(join(workspace, 'blob.bin'), Buffer.from([0, 1, 2]))
   await writeFile(join(workspace, 'NOTICE'), 'plain text without an extension\n')
+  await writeFile(join(workspace, '.env.local'), 'API_KEY=do-not-render\n')
+  await writeFile(join(workspace, 'id_rsa'), '-----BEGIN OPENSSH PRIVATE KEY-----\ndo-not-render\n')
+  await writeFile(join(workspace, 'credentials.json'), '{"token":"do-not-render"}\n')
   await writeFile(outside, 'host private\n')
   await symlink(outside, join(workspace, 'outside-link.txt'))
 
@@ -72,6 +76,25 @@ function projectUrl(
 }
 
 describe('project file API', () => {
+  it('opens a validated project file at a requested line in the configured editor', async () => {
+    const { running, projectId, workspace } = await fixture()
+    const editorLog = join(workspace, 'editor.log')
+    const editor = join(workspace, 'fake-editor.sh')
+    await writeFile(editor, `#!/bin/sh\nprintf '%s\\n' "$@" > ${JSON.stringify(editorLog)}\n`)
+    await chmod(editor, 0o755)
+    vi.stubEnv('COMMONSPACE_EDITOR_PATH', editor)
+
+    const response = await fetch(projectUrl(running, projectId, 'open'), {
+      method: 'POST',
+      headers: { origin: running.url, 'content-type': 'application/json' },
+      body: JSON.stringify({ rootIndex: 0, path: 'src/index.ts', line: 12 }),
+    })
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({ opened: true })
+    expect(await readFile(editorLog, 'utf8')).toBe(`--goto\n${await realpath(join(workspace, 'src', 'index.ts'))}:12\n`)
+  })
+
   it('lists project files and serves text, images, and ranged video without exposing symlinks', async () => {
     const { running, projectId } = await fixture()
     const headers = { origin: running.url }
@@ -156,5 +179,24 @@ describe('project file API', () => {
     })
     const diff = await (await fetch(projectUrl(running, projectId, 'diff', { path: 'README.md' }), { headers })).json() as { patch: string }
     expect(diff.patch).toContain('+after')
+  })
+
+  it('lists sensitive files without allowing their contents to be previewed', async () => {
+    const { running, projectId } = await fixture()
+    const headers = { origin: running.url }
+    const listing = await (await fetch(projectUrl(running, projectId, 'files'), { headers })).json() as {
+      entries: Array<{ name: string; preview?: string }>
+    }
+
+    expect(listing.entries).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: '.env.local', preview: 'blocked' }),
+      expect.objectContaining({ name: 'id_rsa', preview: 'blocked' }),
+      expect.objectContaining({ name: 'credentials.json', preview: 'blocked' }),
+    ]))
+    for (const path of ['.env.local', 'id_rsa', 'credentials.json']) {
+      const response = await fetch(projectUrl(running, projectId, 'file', { path }), { headers })
+      expect(response.status).toBe(403)
+      await expect(response.json()).resolves.toMatchObject({ code: 'project_file_sensitive' })
+    }
   })
 })

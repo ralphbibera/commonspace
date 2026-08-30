@@ -16,6 +16,23 @@ export const standaloneStyles = String.raw`
   font-synthesis: none;
 }
 
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --csp-shell-bg: #111315;
+    --dsw-alias-label-primary: #f3f4f6;
+    --dsw-alias-label-secondary: #b7bbc2;
+    --dsw-alias-label-tertiary: #858b94;
+    --dsw-alias-bg-base: #17191c;
+    --dsw-alias-fill-l1: #1d2024;
+    --dsw-specific-sidebar-fill: #111315;
+    --dsw-alias-border-l2: #30343a;
+    --dsw-alias-interactive-bg-hover: rgba(255, 255, 255, 0.07);
+    --dsw-alias-interactive-brand: #70a0ff;
+    --csp-shell-ink: #f3f4f6;
+  }
+}
+
 html,
 body,
 #root {

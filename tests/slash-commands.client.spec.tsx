@@ -6,6 +6,7 @@ import { CommonspaceConversation } from '../ui/src/CommonspaceConversation.tsx'
 function renderDirectMessage() {
   const send = vi.fn(async () => undefined)
   const mutate = vi.fn(async () => undefined)
+  const stopAgentRuns = vi.fn(async () => ['codex-review-bot'])
   const snapshot = {
     bootstrap: {
       agents: [{ id: 'codex-review-bot', displayName: 'Review Bot', adapter: 'codex', model: 'gpt-5.4', status: 'unknown' }],
@@ -45,10 +46,11 @@ function renderDirectMessage() {
     messages: () => snapshot.bootstrap.state.messages['dm:codex-review-bot'],
     send,
     mutate,
+    stopAgentRuns,
     selectThread: vi.fn(),
   }
   render(<CommonspaceConversation store={store as never} />)
-  return { mutate, send }
+  return { mutate, send, stopAgentRuns }
 }
 
 afterEach(cleanup)
@@ -87,6 +89,17 @@ describe('Commonspace composer commands', () => {
 
     await waitFor(() => { expect(send).toHaveBeenCalledWith('Please review this') })
     expect(send).not.toHaveBeenCalledWith('/retry')
+  })
+
+  it('stops the work associated with the latest message', async () => {
+    const { stopAgentRuns, send } = renderDirectMessage()
+    const composer = screen.getByLabelText('Message Review Bot')
+
+    fireEvent.change(composer, { target: { value: '/stop' } })
+    fireEvent.submit(composer.closest('form')!)
+
+    await waitFor(() => { expect(stopAgentRuns).toHaveBeenCalledWith('message-1') })
+    expect(send).not.toHaveBeenCalledWith('/stop')
   })
 
   it('confirms before starting a fresh direct-message session', async () => {

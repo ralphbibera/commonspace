@@ -5,6 +5,7 @@ import { URL } from 'node:url'
 const sessionId = process.env.FAKE_ACP_SESSION_ID ?? '123e4567-e89b-42d3-a456-426614174000'
 const logPath = process.env.FAKE_ACP_LOG
 const mcpServersBySession = new Map()
+let processMcpServers
 const pendingPrompts = new Map()
 
 async function writeFrame(frame) {
@@ -85,12 +86,14 @@ for await (const line of lines) {
 
   if (frame.method === 'session/new') {
     mcpServersBySession.set(sessionId, frame.params.mcpServers ?? [])
+    processMcpServers ??= frame.params.mcpServers ?? []
     await writeFrame({ jsonrpc: '2.0', id: frame.id, result: { sessionId, ...sessionSettings() } })
     continue
   }
 
   if (frame.method === 'session/load') {
     mcpServersBySession.set(frame.params.sessionId, frame.params.mcpServers ?? [])
+    processMcpServers ??= frame.params.mcpServers ?? []
     if (process.env.FAKE_ACP_LOAD_ERROR !== undefined) {
       await writeFrame({ jsonrpc: '2.0', id: frame.id, error: { code: -32000, message: process.env.FAKE_ACP_LOAD_ERROR } })
       continue
@@ -173,7 +176,10 @@ for await (const line of lines) {
       : 'x'.repeat(Number(process.env.FAKE_ACP_LARGE_CHUNK))
     let contextPrefix = ''
     if (process.env.FAKE_ACP_USE_MCP === '1') {
-      const mcpServer = mcpServersBySession.get(frame.params.sessionId)?.[0]
+      const mcpServers = process.env.FAKE_ACP_PROCESS_MCP === '1'
+        ? processMcpServers
+        : mcpServersBySession.get(frame.params.sessionId)
+      const mcpServer = mcpServers?.[0]
       if (!mcpServer || mcpServer.type !== 'http') throw new Error('Commonspace MCP server was not attached')
       const [{ Client }, { StreamableHTTPClientTransport }] = await Promise.all([
         import('@modelcontextprotocol/sdk/client/index.js'),
@@ -185,7 +191,9 @@ for await (const line of lines) {
       const result = await client.callTool({ name: 'commonspace_get_context', arguments: {} })
       await client.close()
       const context = result.structuredContent
-      contextPrefix = `Context: ${context.conversation.name}; instructions: ${context.instructions}\n`
+      contextPrefix = process.env.FAKE_ACP_THREAD_CONTEXT === '1'
+        ? `Context thread: ${context.thread.id}; root: ${context.messages[0].text}\n`
+        : `Context: ${context.conversation.name}; instructions: ${context.instructions}\n`
     }
     if (process.env.FAKE_ACP_TRACE === '1') {
       await writeFrame({
