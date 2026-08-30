@@ -687,6 +687,9 @@ describe('Commonspace host authority', () => {
     })
     await service.initialize()
     await addDiscoveredAgents(service, 'backend', 'frontend')
+    const projectRoot = join(root, 'billing-api')
+    await mkdir(projectRoot)
+    const project = (await service.mutate({ action: 'create-project', name: 'Billing API', paths: [projectRoot] })).projects[0]!
     const channel = (await service.mutate({
       action: 'create-channel',
       name: 'engineering',
@@ -699,6 +702,7 @@ describe('Commonspace host authority', () => {
 
     const sent = await service.send({
       conversation: { kind: 'channel', id: channel.id },
+      projectId: project.id,
       text: 'Fix the login screen CSS.',
     })
     await service.whenIdle()
@@ -709,6 +713,7 @@ describe('Commonspace host authority', () => {
         expect.objectContaining({ id: 'frontend', routingScore: 1, matchedTerms: ['css'] }),
         expect.objectContaining({ id: 'backend', routingScore: 0, matchedTerms: [] }),
       ],
+      context: expect.arrayContaining(['Referenced Project: Billing API']),
       maxAgents: 2,
     }))
     expect(runAgent.mock.calls.map(call => call[0].agent.id)).toEqual(['frontend'])

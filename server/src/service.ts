@@ -1821,6 +1821,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
     if (explicitProjectIds !== undefined && compatibilityProjectId !== undefined && explicitProjectIds[0] !== compatibilityProjectId) {
       throw new Error('project id must match the first project ids entry')
     }
+    const projectSelectionProvided = explicitProjectIds !== undefined || compatibilityProjectId !== undefined || taggedProjects.length > 0
     const legacyThreadProjectSelection = request.threadId !== undefined && request.projectIds === undefined &&
       compatibilityProjectId !== undefined && taggedProjects.length === 0
     const requestedProjectIds = [...new Set([
@@ -1845,7 +1846,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
         thread = this.state.threads.find(candidate => candidate.id === request.threadId)
         if (thread === undefined || thread.channelId !== channel.id) throw new Error('unknown channel thread')
         const threadProjectIds = referencedProjectIds(thread)
-        if (requestedProjectIds.length > 0 && !sameProjectSet(requestedProjectIds, threadProjectIds)) {
+        if (projectSelectionProvided && !sameProjectSet(requestedProjectIds, threadProjectIds)) {
           const selectedExistingThreadProject = legacyThreadProjectSelection && requestedProjectIds.length === 1 &&
             threadProjectIds.includes(requestedProjectIds[0]!)
           if (!selectedExistingThreadProject) throw new Error('thread projects cannot be changed')
@@ -2306,8 +2307,9 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
       return { prepared, response }
     }
     try {
+      const routingThread = prepared.thread ?? response.thread
       const memberIds = prepared.thread?.agentIds ?? prepared.channel?.agentIds ?? []
-      const decision = await this.routeChannelMessage(prepared.text, prepared.request, prepared.thread, memberIds, prepared.agents)
+      const decision = await this.routeChannelMessage(prepared.text, prepared.request, routingThread, memberIds, prepared.agents)
       const routing: CommonspaceRoutingDecision = { source: 'ai', status: 'resolved', ...decision }
       const thread = response.thread === undefined ? undefined : { ...response.thread, agentIds: decision.agentIds }
       const accepted: CommonspaceMessage = { ...response.accepted, routing }
