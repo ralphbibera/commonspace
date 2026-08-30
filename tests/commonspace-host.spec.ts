@@ -808,7 +808,7 @@ describe('Commonspace host authority', () => {
       { id: 'backend', displayName: 'Backend', adapter: 'hermes' as const, model: 'test', status: 'stopped' as const, description: 'Owns APIs.' },
       { id: 'frontend', displayName: 'Frontend', adapter: 'hermes' as const, model: 'test', status: 'stopped' as const, description: 'Owns UI and CSS.' },
     ]
-    const runAgent = vi.fn(async (input: AgentRunInput) => input.sessionName === 'Commonspace Inference'
+    const runAgent = vi.fn(async (input: AgentRunInput) => input.sessionName.startsWith('Commonspace Inference: ')
       ? '{"agentIds":["frontend"],"confidence":0.93,"reason":"CSS work"}'
       : 'Handled.')
     const service = new CommonspaceHostService({} as never, { root }, { discoverAgents: async () => agents, runAgent })
@@ -822,7 +822,7 @@ describe('Commonspace host authority', () => {
 
     expect(runAgent.mock.calls[0]?.[0]).toMatchObject({
       agent: expect.objectContaining({ id: 'backend' }),
-      sessionName: 'Commonspace Inference',
+      sessionName: expect.stringMatching(/^Commonspace Inference: /u),
       reasoning: 'minimal',
     })
     expect(runAgent.mock.calls[0]?.[0].model).toBeUndefined()
