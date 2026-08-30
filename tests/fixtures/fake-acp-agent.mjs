@@ -60,6 +60,9 @@ const lines = createInterface({ input: process.stdin, crlfDelay: Infinity })
 
 for await (const line of lines) {
   const frame = JSON.parse(line)
+  if (frame.method === 'session/cancel' && process.env.FAKE_ACP_DELAY_CANCEL_MS) {
+    await new Promise(resolve => setTimeout(resolve, Number(process.env.FAKE_ACP_DELAY_CANCEL_MS)))
+  }
   await record(frame)
 
   if (frame.method === 'initialize') {

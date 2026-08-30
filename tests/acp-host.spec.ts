@@ -306,6 +306,7 @@ describe('Commonspace ACP host path', () => {
     const logPath = join(root, 'frames.ndjson')
     vi.stubEnv('FAKE_ACP_LOG', logPath)
     vi.stubEnv('FAKE_ACP_HANG_PROMPT', '1')
+    vi.stubEnv('FAKE_ACP_DELAY_CANCEL_MS', '250')
     const service = new CommonspaceHostService({}, acpConfig(root), { discoverAgents: async () => [] })
     try {
       await service.initialize()
@@ -316,9 +317,7 @@ describe('Commonspace ACP host path', () => {
       })
 
       await service.mutate({ action: 'reset-dm', agentId: 'codex-review-bot' })
-      await vi.waitFor(async () => {
-        expect((await readFile(logPath, 'utf8')).includes('session/cancel')).toBe(true)
-      }, { timeout: 3_000 })
+      expect((await readFile(logPath, 'utf8')).includes('session/cancel')).toBe(true)
       await service.whenIdle()
       expect(service.snapshot().messages['dm:codex-review-bot']).toEqual([
         expect.objectContaining({ text: 'Long turn.', replyStatus: 'error', replyError: 'Interrupted by /new.' }),
