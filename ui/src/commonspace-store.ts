@@ -272,7 +272,9 @@ export class CommonspaceClientStore {
   private async sendMessage(text: string, threadId?: string, targetAgentId?: string, attachments: readonly SendImageAttachment[] = [], delivery?: SendMessageRequest['delivery']): Promise<void> {
     const conversation = this.snapshot.activeConversation
     if (conversation === null || this.snapshot.sending) return
-    const projectId = this.snapshot.activeProjectId ?? undefined
+    // A thread already owns its complete Project scope. The singular selection is
+    // only a compatibility input for new roots and DMs, not a thread mutation.
+    const projectId = threadId === undefined ? this.snapshot.activeProjectId ?? undefined : undefined
     const request: SendMessageRequest = {
       conversation,
       text,

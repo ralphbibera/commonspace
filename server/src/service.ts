@@ -913,6 +913,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
   private routingConfiguration: PrivateRoutingConfiguration = defaultRoutingConfiguration()
   private writeTail = Promise.resolve()
   private readonly agentSessionTails = new Map<string, Promise<unknown>>()
+  private readonly channelMemoryTails = new Map<string, Promise<unknown>>()
   private readonly revisionListeners = new Set<(revision: number) => void>()
   private readonly liveActivityListeners = new Set<(activities: readonly CommonspaceLiveAgentActivity[]) => void>()
   private readonly liveActivitiesById = new Map<string, CommonspaceLiveAgentActivity>()
@@ -1329,11 +1330,13 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
   }
 
   async compactChannelContext(channelId: string): Promise<CommonspaceChannelMemory> {
-    return this.withAdmission(async () => {
+    return this.withAdmission(async () => this.withChannelMemoryLock(channelId, async () => {
       const channel = this.state.channels.find(candidate => candidate.id === channelId)
       if (channel === undefined) throw new Error('unknown channel')
       const projection = projectChannelMemory(this.state, channelId, this.state.defaults.memoryThreads)
-      const memory = await this.inferChannelMemory(channelId, projection)
+      const inferred = await this.inferChannelMemory(channelId, projection)
+      const memory = this.reconcileInferredChannelMemory(channelId, channel.memory, projection, inferred)
+      if (memory === undefined) throw new Error('channel was removed during context compaction')
       this.state = {
         ...this.state,
         revision: this.state.revision + 1,
@@ -1342,7 +1345,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
       await this.persist()
       this.broadcastRevision()
       return structuredClone(memory)
-    })
+    }))
   }
 
   async discoverAgents(adapter: AgentAdapterKind): Promise<CommonspaceBootstrap> {
@@ -1795,6 +1798,8 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
       return project === undefined ? [] : [project]
     })
     if (request.projectIds !== undefined && !Array.isArray(request.projectIds)) throw new Error('project ids must be an array')
+    const legacyThreadProjectSelection = request.threadId !== undefined && request.projectIds === undefined &&
+      request.projectId !== undefined && taggedProjects.length === 0
     const requestedProjectIds = [...new Set([
       ...taggedProjects.map(project => project.id),
       ...(request.projectIds ?? []).map((projectId) => {
@@ -1821,7 +1826,9 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
         if (thread === undefined || thread.channelId !== channel.id) throw new Error('unknown channel thread')
         const threadProjectIds = referencedProjectIds(thread)
         if (requestedProjectIds.length > 0 && !sameProjectSet(requestedProjectIds, threadProjectIds)) {
-          throw new Error('thread projects cannot be changed')
+          const selectedExistingThreadProject = legacyThreadProjectSelection && requestedProjectIds.length === 1 &&
+            threadProjectIds.includes(requestedProjectIds[0]!)
+          if (!selectedExistingThreadProject) throw new Error('thread projects cannot be changed')
         }
         projects = threadProjectIds.map((projectId) => {
           const referenced = this.state.projects.find(candidate => candidate.id === projectId)
@@ -2063,6 +2070,15 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
             }
             return updated
           }),
+    }
+    if (prepared.channel !== undefined) {
+      const projection = projectChannelMemory(this.state, prepared.channel.id, this.state.defaults.memoryThreads)
+      this.state = {
+        ...this.state,
+        channels: this.state.channels.map(channel => channel.id === prepared.channel?.id
+          ? { ...channel, memory: mergeChannelMemoryProjection(channel.memory, projection) }
+          : channel),
+      }
     }
     try {
       await this.persist()
@@ -2345,6 +2361,16 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
     return operation
   }
 
+  private async withChannelMemoryLock<T>(channelId: string, task: () => Promise<T>): Promise<T> {
+    const previous = this.channelMemoryTails.get(channelId) ?? Promise.resolve()
+    const operation = previous.catch(() => undefined).then(task)
+    this.channelMemoryTails.set(channelId, operation)
+    void operation.finally(() => {
+      if (this.channelMemoryTails.get(channelId) === operation) this.channelMemoryTails.delete(channelId)
+    }).catch(() => undefined)
+    return operation
+  }
+
   private rememberAgentSession(agentId: string, sessionName: string, sessionId: string): void {
     if (!isNativeSessionId(sessionId)) throw new Error('agent returned an invalid session id')
     const current = this.state.agentSessions[agentId] ?? {}
@@ -2385,29 +2411,58 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
     return inferredChannelMemory(projection, compacted, now())
   }
 
+  private reconcileInferredChannelMemory(
+    channelId: string,
+    memoryBeforeInference: CommonspaceChannelMemory,
+    projectionBeforeInference: CommonspaceChannelMemory,
+    inferred: CommonspaceChannelMemory,
+  ): CommonspaceChannelMemory | undefined {
+    const currentChannel = this.state.channels.find(channel => channel.id === channelId)
+    if (currentChannel === undefined) return undefined
+    const latestProjection = projectChannelMemory(this.state, channelId, this.state.defaults.memoryThreads)
+
+    // A human edit made while inference was running remains authoritative.
+    if (currentChannel.memory !== memoryBeforeInference && currentChannel.memory.origin === 'user') {
+      return mergeChannelMemoryProjection(currentChannel.memory, latestProjection)
+    }
+
+    const sourceChanged = projectionBeforeInference.compactedThroughMessageId !== latestProjection.compactedThroughMessageId ||
+      projectionBeforeInference.sourceMessageCount !== latestProjection.sourceMessageCount
+    return sourceChanged ? mergeChannelMemoryProjection(inferred, latestProjection) : inferred
+  }
+
   private async updateChannelMemory(channelId: string): Promise<void> {
-    const channel = this.state.channels.find(candidate => candidate.id === channelId)
-    if (channel === undefined) return
-    const projection = projectChannelMemory(this.state, channelId, this.state.defaults.memoryThreads)
-    let memory = mergeChannelMemoryProjection(
-      channel.memory,
-      projection,
-    )
-    if ((projection.estimatedTokens ?? 0) >= SHARED_CONTEXT_PRESSURE_TOKENS &&
-      (memory.origin === 'automatic' || memory.status === 'stale')) {
-      try {
-        memory = await this.inferChannelMemory(channelId, projection)
-      } catch (error) {
-        this.environment.logger?.warn(`Commonspace context compaction failed: ${error instanceof Error ? error.message : String(error)}`)
+    await this.withChannelMemoryLock(channelId, async () => {
+      const channel = this.state.channels.find(candidate => candidate.id === channelId)
+      if (channel === undefined) return
+      const projection = projectChannelMemory(this.state, channelId, this.state.defaults.memoryThreads)
+      let memory = mergeChannelMemoryProjection(channel.memory, projection)
+      if ((projection.estimatedTokens ?? 0) >= SHARED_CONTEXT_PRESSURE_TOKENS && memory.origin !== 'user' &&
+        (memory.origin === 'automatic' || memory.status === 'stale')) {
+        try {
+          const inferred = await this.inferChannelMemory(channelId, projection)
+          const reconciled = this.reconcileInferredChannelMemory(channelId, channel.memory, projection, inferred)
+          if (reconciled === undefined) return
+          memory = reconciled
+        } catch (error) {
+          this.environment.logger?.warn(`Commonspace context compaction failed: ${error instanceof Error ? error.message : String(error)}`)
+          const currentChannel = this.state.channels.find(candidate => candidate.id === channelId)
+          if (currentChannel === undefined) return
+          memory = mergeChannelMemoryProjection(
+            currentChannel.memory,
+            projectChannelMemory(this.state, channelId, this.state.defaults.memoryThreads),
+          )
+        }
       }
-    }
-    this.state = {
-      ...this.state,
-      revision: this.state.revision + 1,
-      channels: this.state.channels.map(channel => channel.id === channelId ? { ...channel, memory } : channel),
-    }
-    await this.persist()
-    this.broadcastRevision()
+      if (!this.state.channels.some(candidate => candidate.id === channelId)) return
+      this.state = {
+        ...this.state,
+        revision: this.state.revision + 1,
+        channels: this.state.channels.map(channel => channel.id === channelId ? { ...channel, memory } : channel),
+      }
+      await this.persist()
+      this.broadcastRevision()
+    })
   }
 
 

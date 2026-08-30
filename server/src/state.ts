@@ -263,6 +263,7 @@ export function applyMutation(
         messages: Object.fromEntries(Object.entries(state.messages).map(([key, messages]) => [
           key,
           messages.map((message) => {
+            const previousProjectIds = referencedProjectIds(message)
             const projectIds = referencedProjectIds(message).filter(projectId => projectId !== mutation.projectId)
             const updated = { ...message }
             if (projectIds.length === 0) {
@@ -271,6 +272,13 @@ export function applyMutation(
             } else {
               updated.projectIds = projectIds
               updated.projectId = projectIds[0]!
+            }
+            if (updated.runAttribution !== undefined) {
+              const roots = previousProjectIds.length === 1 && previousProjectIds[0] === mutation.projectId
+                ? []
+                : updated.runAttribution.roots.filter(root => root.projectId !== mutation.projectId)
+              if (roots.length === 0) delete updated.runAttribution
+              else updated.runAttribution = { ...updated.runAttribution, roots }
             }
             return updated
           }),

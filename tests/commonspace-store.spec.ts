@@ -173,7 +173,7 @@ describe('Commonspace client revision ordering', () => {
     expect(store.getSnapshot().bootstrap?.discoveredAgents).toEqual(discovered.discoveredAgents)
   })
 
-  it('includes the selected agent when sending a direct channel reply', async () => {
+  it('includes the selected agent and inherits thread Projects when sending a direct channel reply', async () => {
     const initial = bootstrap(1, 'Initial')
     initial.state.channels = [{
       id: 'general',
@@ -211,7 +211,6 @@ describe('Commonspace client revision ordering', () => {
       body: JSON.stringify({
         conversation: { kind: 'channel', id: 'general' },
         text: 'Check that boundary again.',
-        projectId: initial.state.projects[0]!.id,
         threadId: 'thread-1',
         targetAgentId: 'frontend',
       }),
