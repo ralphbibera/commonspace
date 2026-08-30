@@ -105,6 +105,14 @@ describe('multi-project conversation context', () => {
       projectIds: [first.id],
       text: 'Silently change the context.',
     })).rejects.toThrow('thread projects cannot be changed')
+
+    await expect(service.send({
+      conversation: { kind: 'channel', id: channel.id },
+      threadId: root.thread!.id,
+      targetAgentId: 'codex-review-bot',
+      projectIds: [],
+      text: 'Explicitly remove every Project.',
+    })).rejects.toThrow('thread projects cannot be changed')
   })
 
   it('removes only the deleted Project from multi-project references', async () => {
