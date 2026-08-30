@@ -29,6 +29,7 @@ All notable changes to Commonspace are recorded here.
 
 - Multi-Project thread replies now inherit only when Project fields are omitted, conflicting compatibility fields are rejected, and Project removal or startup path loss cleans stale run-attribution roots.
 - New Channel threads include structurally selected Projects in inference routing context.
+- Queued and in-flight replies cannot execute or persist against stale Project authority after Project configuration changes.
 - Channel context refresh/compaction is race-safe and preserves human-authored context, while concurrent harness inference runs use isolated native sessions.
 - Hermes profiles are auto-discovered as candidates but join the Commonspace roster only after an explicit user choice; new Channels also start with no agents preselected.
 - Local state migrates from versions 1–15 to version 16 for multi-Project references and durable Channel-context metadata, and automatically recovers an invalid primary from the previous valid rollback backup.

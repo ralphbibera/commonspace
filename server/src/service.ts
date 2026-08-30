@@ -2163,7 +2163,10 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
         abortController: new AbortController(),
       }
       this.activeAgentRuns.set(activeRun.id, activeRun)
-      const executionIsCurrent = () => !activeRun.abortController.signal.aborted && !this.closing && this.agentAuthorityIsCurrent(agent, authority) && this.conversationIsCurrent(prepared, thread)
+      const projectsAreCurrent = () => prepared.projects.every(project =>
+        this.state.projects.find(candidate => candidate.id === project.id) === project)
+      const executionIsCurrent = () => !activeRun.abortController.signal.aborted && !this.closing &&
+        this.agentAuthorityIsCurrent(agent, authority) && projectsAreCurrent() && this.conversationIsCurrent(prepared, thread)
       const sessionId = this.state.agentSessions[agent.id]?.[sessionName]
       const agentModel = effectiveModel ?? (agent.adapter === 'hermes' || agent.nativeProfile !== undefined ? undefined : agent.model ?? undefined)
       let agentResponse: AgentRunResult | null
