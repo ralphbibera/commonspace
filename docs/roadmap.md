@@ -25,10 +25,10 @@ Commonspace is a private preview focused on durable human-agent conversation and
 
 ## Next: product behavior
 
-- Split routed messages into inspectable agent-specific sub-requests.
+- Split routed messages into inspectable agent-specific sub-requests and remove the hidden two-Agent inference cap.
 - Add Project-reference inference and visible correction when a message has no explicit reference.
 - Add rerouting and compacted routing feedback so corrections improve later decisions.
-- Add thread-specific context snapshots, pins, and general human/agent file attachments.
+- Add thread-specific context snapshots, prospective Thread Project-reference changes, pins, and general human/agent file attachments.
 - Add message edit branches and visible deletion markers without rewriting delivered native-session history.
 - Normalize native permission requests and add clearer runtime/authentication diagnostics.
 - Add export/import and retention controls for non-secret Commonspace data.
@@ -45,7 +45,7 @@ Commonspace is a private preview focused on durable human-agent conversation and
 
 - A durable relational message store once transcript scale justifies migration from the current versioned state file.
 
-See [Implementation gap audit](implementation-gap-audit.md) for the evidence-based status of the complete product model.
+See [Product specification](product-spec.md) for the complete behavior and acceptance contract and [Implementation gap audit](implementation-gap-audit.md) for evidence-based implementation status.
 
 ## Release readiness
 
