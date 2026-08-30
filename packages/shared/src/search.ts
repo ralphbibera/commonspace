@@ -21,6 +21,8 @@ export interface CommonspaceSearchResult {
   title: string
   detail: string
   receipt: string
+  projectIds?: string[]
+  /** @deprecated Compatibility mirror of the first projectIds entry. */
   projectId?: string
   occurredAt?: string
   highlights: CommonspaceSearchHighlight[]

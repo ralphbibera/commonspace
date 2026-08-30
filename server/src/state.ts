@@ -1,5 +1,6 @@
 import type { AgentAdapterKind, CommonspaceAgentDefinition, CommonspaceAgentProfile, CommonspaceMutation, CommonspaceState } from '@commonspace/shared'
-import { agentTagName, COMMONSPACE_STATE_VERSION, projectTagName, uniqueAgentDisplayName } from '@commonspace/shared'
+import { agentTagName, COMMONSPACE_STATE_VERSION, projectTagName, referencedProjectIds, uniqueAgentDisplayName } from '@commonspace/shared'
+import { projectChannelMemory } from './memory.js'
 
 export const DM_SESSION_BOUNDARY_AUTHOR_ID = 'dm-session-boundary'
 
@@ -41,7 +42,27 @@ function boundedInteger(value: unknown, current: number, minimum: number, maximu
 }
 
 export function emptyChannelMemory() {
-  return { summary: '', decisions: [], openQuestions: [], threadIds: [], updatedAt: null }
+  return {
+    summary: '',
+    decisions: [],
+    openQuestions: [],
+    threadIds: [],
+    updatedAt: null,
+    origin: 'automatic' as const,
+    status: 'empty' as const,
+    sourceMessageCount: 0,
+    estimatedTokens: 0,
+    compactedThroughMessageId: null,
+  }
+}
+
+function normalizedContextEntries(value: unknown, label: string): string[] {
+  if (value === undefined) return []
+  if (!Array.isArray(value)) throw new Error(`${label} must be an array`)
+  return [...new Set(value.map((entry) => {
+    if (typeof entry !== 'string') throw new Error(`${label} must contain only strings`)
+    return entry.normalize('NFKC').trim().replace(/\s+/g, ' ').slice(0, 2_000)
+  }).filter(Boolean))].slice(0, 50)
 }
 
 export function defaultRunSettings() {
@@ -235,15 +256,22 @@ export function applyMutation(
         ...state,
         revision: nextRevision(state),
         projects: state.projects.filter(project => project.id !== mutation.projectId),
-        threads: state.threads.map(thread => thread.projectId === mutation.projectId
-          ? { ...thread, projectId: null }
-          : thread),
+        threads: state.threads.map((thread) => {
+          const projectIds = referencedProjectIds(thread).filter(projectId => projectId !== mutation.projectId)
+          return { ...thread, projectIds, projectId: projectIds[0] ?? null }
+        }),
         messages: Object.fromEntries(Object.entries(state.messages).map(([key, messages]) => [
           key,
           messages.map((message) => {
-            if (message.projectId !== mutation.projectId) return message
+            const projectIds = referencedProjectIds(message).filter(projectId => projectId !== mutation.projectId)
             const updated = { ...message }
-            delete updated.projectId
+            if (projectIds.length === 0) {
+              delete updated.projectIds
+              delete updated.projectId
+            } else {
+              updated.projectIds = projectIds
+              updated.projectId = projectIds[0]!
+            }
             return updated
           }),
         ])),
@@ -283,6 +311,35 @@ export function applyMutation(
         if (channel.id !== mutation.channelId) return channel
         matched = true
         return { ...channel, instructions }
+      })
+      if (!matched) throw new Error('unknown channel')
+      return { ...state, revision: nextRevision(state), channels }
+    }
+    case 'set-channel-memory': {
+      if (typeof mutation.summary !== 'string') throw new Error('channel context summary is required')
+      const summary = mutation.summary.normalize('NFKC').trim().slice(0, 16_000)
+      const decisions = normalizedContextEntries(mutation.decisions, 'channel context decisions')
+      const openQuestions = normalizedContextEntries(mutation.openQuestions, 'channel context open questions')
+      const projection = projectChannelMemory(state, mutation.channelId, state.defaults.memoryThreads)
+      let matched = false
+      const channels = state.channels.map(channel => {
+        if (channel.id !== mutation.channelId) return channel
+        matched = true
+        return {
+          ...channel,
+          memory: {
+            summary,
+            decisions,
+            openQuestions,
+            threadIds: projection.threadIds,
+            updatedAt: dependencies.now(),
+            origin: 'user' as const,
+            status: 'current' as const,
+            sourceMessageCount: projection.sourceMessageCount ?? 0,
+            estimatedTokens: projection.estimatedTokens ?? 0,
+            compactedThroughMessageId: projection.compactedThroughMessageId ?? null,
+          },
+        }
       })
       if (!matched) throw new Error('unknown channel')
       return { ...state, revision: nextRevision(state), channels }

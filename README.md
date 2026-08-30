@@ -8,8 +8,8 @@ Commonspace is a local-first workspace for durable conversations with coding age
 
 ## What Commonspace manages
 
-- **Projects** bind conversations to one or more local directories.
-- **Channels** give a project a shared conversation with an explicit agent roster.
+- **Projects** bind conversations to one or more local directories. Messages and threads may reference zero, one, or many Projects.
+- **Channels** provide shared, optionally projectless conversations with explicit agent rosters and editable compacted context.
 - **Direct Messages** preserve one-to-one continuity with a chosen agent.
 - **Inbox** collects actual agent replies from Channels and Direct Messages, with unread filtering and exact thread navigation.
 - **Agents** are explicitly chosen from discovered Hermes profiles or created as Codex agents. Workspace names and appearance stay local and never rename native profiles.
@@ -106,6 +106,7 @@ The Project Files browser refuses to preview known credential-bearing files such
 - [Operations](docs/operations.md)
 - [Design system](docs/design-system.md)
 - [Roadmap](docs/roadmap.md)
+- [Implementation gap audit](docs/implementation-gap-audit.md)
 
 ## License
 

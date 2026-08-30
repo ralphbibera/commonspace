@@ -801,14 +801,14 @@ describe('Commonspace host authority', () => {
       .rejects.toThrow('unsupported routing provider')
   })
 
-  it('can use a configured agent harness as the stateless routing model', async () => {
+  it('can use a configured agent harness as the shared Commonspace inference layer', async () => {
     const root = await mkdtemp(join(tmpdir(), 'commonspace-harness-router-'))
     roots.push(root)
     const agents = [
       { id: 'backend', displayName: 'Backend', adapter: 'hermes' as const, model: 'test', status: 'stopped' as const, description: 'Owns APIs.' },
       { id: 'frontend', displayName: 'Frontend', adapter: 'hermes' as const, model: 'test', status: 'stopped' as const, description: 'Owns UI and CSS.' },
     ]
-    const runAgent = vi.fn(async (input: AgentRunInput) => input.sessionName === 'Commonspace Router'
+    const runAgent = vi.fn(async (input: AgentRunInput) => input.sessionName === 'Commonspace Inference'
       ? '{"agentIds":["frontend"],"confidence":0.93,"reason":"CSS work"}'
       : 'Handled.')
     const service = new CommonspaceHostService({} as never, { root }, { discoverAgents: async () => agents, runAgent })
@@ -822,7 +822,7 @@ describe('Commonspace host authority', () => {
 
     expect(runAgent.mock.calls[0]?.[0]).toMatchObject({
       agent: expect.objectContaining({ id: 'backend' }),
-      sessionName: 'Commonspace Router',
+      sessionName: 'Commonspace Inference',
       reasoning: 'minimal',
     })
     expect(runAgent.mock.calls[0]?.[0].model).toBeUndefined()
@@ -1277,6 +1277,6 @@ describe('Commonspace host authority', () => {
     await service.send({ conversation: { kind: 'dm', id: 'codex-review-bot' }, projectId: project.id, text: 'Continue the DM.' })
     await vi.waitFor(() => { expect(runAgent).toHaveBeenCalledTimes(4) })
     expect(runAgent.mock.calls[3]?.[0]).toMatchObject({ sessionName: 'Bot Chat', sessionId })
+    await service.whenIdle()
   })
-
 })

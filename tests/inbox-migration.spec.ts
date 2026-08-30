@@ -82,7 +82,11 @@ describe('Commonspace Inbox state migration', () => {
         name: 'engineering',
         agentIds: ['backend'],
         instructions: 'Keep the room history.',
-        memory: { summary: '', decisions: [], openQuestions: [], threadIds: [], updatedAt: null },
+        memory: {
+          summary: '', decisions: [], openQuestions: [], threadIds: [], updatedAt: null,
+          origin: 'automatic', status: 'empty', sourceMessageCount: 0, estimatedTokens: 0,
+          compactedThroughMessageId: null,
+        },
         settings: { model: null, reasoning: null },
         createdAt: '2026-08-27T09:00:00.000Z',
       }])

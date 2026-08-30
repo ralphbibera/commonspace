@@ -25,6 +25,11 @@ function extracts(messages: CommonspaceMessage[], pattern: RegExp): string[] {
   return values
 }
 
+function estimatedTokens(messages: readonly CommonspaceMessage[]): number {
+  const characters = messages.reduce((total, message) => total + message.authorName.length + message.text.length + 2, 0)
+  return Math.ceil(characters / 4)
+}
+
 export function projectChannelMemory(
   state: CommonspaceState,
   channelId: string,
@@ -58,5 +63,27 @@ export function projectChannelMemory(
     openQuestions: unique([...explicitQuestions, ...sentenceQuestions], 20),
     threadIds: threads.map(thread => thread.id),
     updatedAt: sourceMessages.at(-1)?.createdAt ?? null,
+    origin: 'automatic',
+    status: sourceMessages.length === 0 ? 'empty' : 'current',
+    sourceMessageCount: sourceMessages.length,
+    estimatedTokens: estimatedTokens(sourceMessages),
+    compactedThroughMessageId: sourceMessages.at(-1)?.id ?? null,
+  }
+}
+
+/** Preserve a user/inference compacted representation while exposing when new source context makes it stale. */
+export function mergeChannelMemoryProjection(
+  current: CommonspaceChannelMemory,
+  projection: CommonspaceChannelMemory,
+): CommonspaceChannelMemory {
+  if (current.origin === undefined || current.origin === 'automatic') return projection
+  const currentThrough = current.compactedThroughMessageId ?? null
+  const projectedThrough = projection.compactedThroughMessageId ?? null
+  return {
+    ...current,
+    threadIds: projection.threadIds,
+    sourceMessageCount: projection.sourceMessageCount ?? 0,
+    estimatedTokens: projection.estimatedTokens ?? 0,
+    status: currentThrough === projectedThrough ? current.status ?? 'current' : 'stale',
   }
 }

@@ -1,6 +1,6 @@
 import type { IncomingMessage } from 'node:http'
 import express, { type ErrorRequestHandler, type Express, type NextFunction, type Request, type Response } from 'express'
-import { COMMONSPACE_SEARCH_KINDS, type CommonspaceLiveAgentActivity, type CommonspaceMutation, type CommonspaceSearchKind, type DiscoverAgentsRequest, type RemoveFollowupRequest, type ReorderFollowupRequest, type SelectDirectoryResponse, type SendMessageRequest, type StopAgentRunsRequest, type UpdateAgentConfigurationRequest, type UpdateRoutingConfigurationRequest } from '@commonspace/shared'
+import { COMMONSPACE_SEARCH_KINDS, type CommonspaceLiveAgentActivity, type CommonspaceMutation, type CommonspaceSearchKind, type DiscoverAgentsRequest, type RemoveFollowupRequest, type ReorderFollowupRequest, type SelectDirectoryResponse, type SendMessageRequest, type StopAgentRunsRequest, type UpdateAgentConfigurationRequest, type UpdateChannelContextRequest, type UpdateRoutingConfigurationRequest } from '@commonspace/shared'
 import type { CommonspaceHostService } from './service.js'
 import type { CommonspaceMcpGateway } from './commonspace-mcp.js'
 import { selectLocalDirectory } from './directory-picker.js'
@@ -186,6 +186,36 @@ export function createCommonspaceApp({ service, mcpGateway, directoryPicker }: C
       res.json(await service.updateRoutingConfiguration(recordBody(req.body) as unknown as UpdateRoutingConfigurationRequest))
     } catch (error) {
       res.status(400).json({ code: 'routing_configuration_failed', error: error instanceof Error ? error.message : String(error) })
+    }
+  })
+
+  app.get('/api/channels/:channelId/context', requireSameOrigin, (req, res) => {
+    try {
+      const channelId = req.params.channelId
+      if (typeof channelId !== 'string' || channelId === '') throw new Error('channel id is required')
+      res.json(service.channelContext(channelId))
+    } catch (error) {
+      res.status(404).json({ code: 'channel_context_not_found', error: error instanceof Error ? error.message : String(error) })
+    }
+  })
+
+  app.put('/api/channels/:channelId/context', requireSameOrigin, async (req, res) => {
+    try {
+      const channelId = req.params.channelId
+      if (typeof channelId !== 'string' || channelId === '') throw new Error('channel id is required')
+      res.json(await service.updateChannelContext(channelId, recordBody(req.body) as unknown as UpdateChannelContextRequest))
+    } catch (error) {
+      res.status(400).json({ code: 'channel_context_update_failed', error: error instanceof Error ? error.message : String(error) })
+    }
+  })
+
+  app.post('/api/channels/:channelId/context/compact', requireSameOrigin, async (req, res) => {
+    try {
+      const channelId = req.params.channelId
+      if (typeof channelId !== 'string' || channelId === '') throw new Error('channel id is required')
+      res.json(await service.compactChannelContext(channelId))
+    } catch (error) {
+      res.status(400).json({ code: 'channel_context_compaction_failed', error: error instanceof Error ? error.message : String(error) })
     }
   })
 
