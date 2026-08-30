@@ -174,9 +174,11 @@ for await (const line of lines) {
       .filter(part => part.type === 'text')
       .map(part => part.text)
       .join('')
-    const text = process.env.FAKE_ACP_LARGE_CHUNK === undefined
-      ? promptText
-      : 'x'.repeat(Number(process.env.FAKE_ACP_LARGE_CHUNK))
+    const text = process.env.FAKE_ACP_INFERENCE_RESPONSE !== undefined && promptText.includes('bounded routing classifier')
+      ? process.env.FAKE_ACP_INFERENCE_RESPONSE
+      : process.env.FAKE_ACP_LARGE_CHUNK === undefined
+        ? promptText
+        : 'x'.repeat(Number(process.env.FAKE_ACP_LARGE_CHUNK))
     let contextPrefix = ''
     if (process.env.FAKE_ACP_USE_MCP === '1') {
       const mcpServers = process.env.FAKE_ACP_PROCESS_MCP === '1'

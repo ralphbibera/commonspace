@@ -1053,6 +1053,14 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
           sanitized.projectIds = references
           sanitized.projectId = references[0]!
         }
+        if (sanitized.runAttribution !== undefined) {
+          const referenced = new Set(references)
+          const roots = references.length === 0
+            ? []
+            : sanitized.runAttribution.roots.filter(root => root.projectId === undefined || referenced.has(root.projectId))
+          if (roots.length === 0) delete sanitized.runAttribution
+          else sanitized.runAttribution = { ...sanitized.runAttribution, roots }
+        }
         return sanitized
       }),
     ]))
@@ -1798,15 +1806,27 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
       return project === undefined ? [] : [project]
     })
     if (request.projectIds !== undefined && !Array.isArray(request.projectIds)) throw new Error('project ids must be an array')
+    const explicitProjectIds = request.projectIds?.map((projectId) => {
+      if (typeof projectId !== 'string' || projectId.trim() === '') throw new Error('project id must be a non-empty string')
+      return projectId.trim()
+    })
+    const compatibilityProjectId = request.projectId === undefined
+      ? undefined
+      : (() => {
+          if (typeof request.projectId !== 'string' || request.projectId.trim() === '') {
+            throw new Error('project id must be a non-empty string')
+          }
+          return request.projectId.trim()
+        })()
+    if (explicitProjectIds !== undefined && compatibilityProjectId !== undefined && explicitProjectIds[0] !== compatibilityProjectId) {
+      throw new Error('project id must match the first project ids entry')
+    }
     const legacyThreadProjectSelection = request.threadId !== undefined && request.projectIds === undefined &&
-      request.projectId !== undefined && taggedProjects.length === 0
+      compatibilityProjectId !== undefined && taggedProjects.length === 0
     const requestedProjectIds = [...new Set([
       ...taggedProjects.map(project => project.id),
-      ...(request.projectIds ?? []).map((projectId) => {
-        if (typeof projectId !== 'string' || projectId.trim() === '') throw new Error('project id must be a non-empty string')
-        return projectId.trim()
-      }),
-      ...(request.projectId === undefined ? [] : [request.projectId]),
+      ...(explicitProjectIds ?? []),
+      ...(explicitProjectIds !== undefined || compatibilityProjectId === undefined ? [] : [compatibilityProjectId]),
     ])]
     if (requestedProjectIds.length > 32) throw new Error('a message can reference at most 32 projects')
     let agents = this.configuredAgents()
@@ -2645,7 +2665,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
         agent,
         cwd: this.defaultCwd,
         additionalCwds: [],
-        sessionName: 'Commonspace Inference',
+        sessionName: `Commonspace Inference: ${crypto.randomUUID()}`,
         message: `${system}\n\n${prompt}`,
         reasoning: 'minimal',
         signal: AbortSignal.timeout(30_000),

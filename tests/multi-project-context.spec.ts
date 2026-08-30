@@ -15,11 +15,12 @@ afterEach(async () => {
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'commonspace-multi-project-'))
   roots.push(root)
+  const stateRoot = join(root, 'state')
   const firstRoot = join(root, 'first')
   const secondRoot = join(root, 'second')
   await Promise.all([mkdir(firstRoot), mkdir(secondRoot)])
   const runAgent = vi.fn(async (): Promise<{ text: string }> => ({ text: 'Done.' }))
-  const service = new CommonspaceHostService({} as never, { root: join(root, 'state') }, {
+  const service = new CommonspaceHostService({} as never, { root: stateRoot }, {
     discoverAgents: async () => [],
     runAgent,
   })
@@ -28,7 +29,7 @@ async function fixture() {
   await service.mutate({ action: 'add-agent', displayName: 'Review Bot', adapter: 'codex' })
   const first = (await service.mutate({ action: 'create-project', name: 'First App', paths: [firstRoot] })).projects[0]!
   const second = (await service.mutate({ action: 'create-project', name: 'Second API', paths: [secondRoot] })).projects[1]!
-  return { service, runAgent, first, second, firstRoot: await realpath(firstRoot), secondRoot: await realpath(secondRoot) }
+  return { service, runAgent, first, second, firstRoot: await realpath(firstRoot), secondRoot: await realpath(secondRoot), stateRoot }
 }
 
 describe('multi-project conversation context', () => {
@@ -49,6 +50,18 @@ describe('multi-project conversation context', () => {
       additionalCwds: [secondRoot],
       commonspaceScope: { projectIds: [first.id, second.id] },
     })
+  })
+
+  it('rejects a deprecated singular Project that conflicts with authoritative Project refs', async () => {
+    const { service, runAgent, first, second } = await fixture()
+
+    await expect(service.send({
+      conversation: { kind: 'dm', id: 'codex-review-bot' },
+      projectIds: [first.id],
+      projectId: second.id,
+      text: 'Do not expand the selected Project set.',
+    })).rejects.toThrow('project id must match the first project ids entry')
+    expect(runAgent).not.toHaveBeenCalled()
   })
 
   it('binds a Channel thread to an exact set of Project references', async () => {
@@ -114,5 +127,30 @@ describe('multi-project conversation context', () => {
     expect(messages.filter(message => message.projectIds !== undefined).every(message => message.projectId === second.id)).toBe(true)
     const afterRemoval = messages.find(message => message.authorType === 'agent')
     expect(afterRemoval?.runAttribution?.roots.map(root => root.projectId)).toEqual([second.id])
+  })
+
+  it('removes attribution roots for Projects whose paths disappear before startup', async () => {
+    const { service, first, second, firstRoot, stateRoot } = await fixture()
+    await service.send({
+      conversation: { kind: 'dm', id: 'codex-review-bot' },
+      projectIds: [first.id, second.id],
+      text: 'Review both before restart.',
+    })
+    await service.whenIdle()
+    await service.close()
+    await rm(firstRoot, { recursive: true, force: true })
+
+    const restarted = new CommonspaceHostService({} as never, { root: stateRoot }, {
+      discoverAgents: async () => [],
+      runAgent: async () => ({ text: 'Done.' }),
+    })
+    services.push(restarted)
+    await restarted.initialize()
+
+    expect(restarted.snapshot().projects.map(project => project.id)).toEqual([second.id])
+    const reply = restarted.snapshot().messages['dm:codex-review-bot']
+      ?.find(message => message.authorType === 'agent')
+    expect(reply?.projectIds).toEqual([second.id])
+    expect(reply?.runAttribution?.roots.map(root => root.projectId)).toEqual([second.id])
   })
 })

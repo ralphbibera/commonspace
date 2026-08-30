@@ -300,6 +300,40 @@ describe('Commonspace ACP host path', () => {
     expect(frames.find(frame => frame.method === 'session/set_model')?.params.modelId).toBe('openai:hermes-test')
   })
 
+  it('isolates concurrent harness inference across Channels', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-acp-inference-concurrency-'))
+    roots.push(root)
+    vi.stubEnv('FAKE_ACP_PROMPT_DELAY_MS', '250')
+    const service = new CommonspaceHostService({}, acpConfig(root), { discoverAgents: async () => [] })
+    try {
+      await service.initialize()
+      const harness = (await service.mutate({ action: 'add-agent', displayName: 'Router', adapter: 'codex' })).agents.at(-1)!
+      const worker = (await service.mutate({ action: 'add-agent', displayName: 'Worker', adapter: 'codex' })).agents.at(-1)!
+      const firstChannel = (await service.mutate({ action: 'create-channel', name: 'first', agentIds: [worker.id] })).channels.at(-1)!
+      const secondChannel = (await service.mutate({ action: 'create-channel', name: 'second', agentIds: [worker.id] })).channels.at(-1)!
+      await service.updateRoutingConfiguration({ provider: 'harness', harnessAgentId: harness.id })
+      vi.stubEnv('FAKE_ACP_INFERENCE_RESPONSE', JSON.stringify({
+        agentIds: [worker.id],
+        confidence: 0.95,
+        reason: 'Route to the Channel worker.',
+      }))
+
+      const accepted = await Promise.all([
+        service.send({ conversation: { kind: 'channel', id: firstChannel.id }, text: 'Handle the first request.' }),
+        service.send({ conversation: { kind: 'channel', id: secondChannel.id }, text: 'Handle the second request.' }),
+      ])
+      await service.whenIdle()
+
+      for (const response of accepted) {
+        const messages = service.snapshot().messages[`channel:${response.accepted.conversation.id}`] ?? []
+        expect(messages.find(message => message.id === response.accepted.id)?.routing?.status).toBe('resolved')
+        expect(messages.some(message => message.authorType === 'agent' && message.sourceMessageId === response.accepted.id)).toBe(true)
+      }
+    } finally {
+      await service.close()
+    }
+  })
+
   it('cancels the active native ACP turn when a DM crosses a hard reset boundary', async () => {
     const root = await mkdtemp(join(tmpdir(), 'commonspace-acp-reset-cancel-'))
     roots.push(root)
