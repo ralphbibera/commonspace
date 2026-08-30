@@ -100,6 +100,7 @@ The Project Files browser refuses to preview known credential-bearing files such
 
 ## Documentation
 
+- [Product specification](docs/product-spec.md)
 - [Product model](docs/product.md)
 - [Architecture](docs/architecture.md)
 - [Development](docs/development.md)

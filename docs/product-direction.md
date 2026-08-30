@@ -1,6 +1,6 @@
 # Commonspace product direction
 
-This document records the current product direction and should override speculative comparator research when the two conflict.
+This document records the current product boundary and should override speculative comparator research when the two conflict. [Product specification](product-spec.md) is the canonical implementation-ready behavior contract.
 
 ## Positioning
 
