@@ -27,7 +27,8 @@ All notable changes to Commonspace are recorded here.
 
 ### Changed
 
-- Multi-Project thread replies now inherit the full Thread scope from legacy UI selections, Project removal cleans stale run-attribution roots, and Channel context refresh/compaction is race-safe and preserves human-authored context.
+- Multi-Project thread replies now inherit the full Thread scope from legacy UI selections, conflicting compatibility fields are rejected, and Project removal or startup path loss cleans stale run-attribution roots.
+- Channel context refresh/compaction is race-safe and preserves human-authored context, while concurrent harness inference runs use isolated native sessions.
 - Hermes profiles are auto-discovered as candidates but join the Commonspace roster only after an explicit user choice; new Channels also start with no agents preselected.
 - Local state migrates from versions 1–15 to version 16 for multi-Project references and durable Channel-context metadata, and automatically recovers an invalid primary from the previous valid rollback backup.
 - Independent agents can run concurrently; only the same native agent session is serialized.
