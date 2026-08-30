@@ -66,6 +66,16 @@ describe('multi-project conversation context', () => {
     await service.whenIdle()
 
     expect(root.thread?.projectIds).toEqual([first.id, second.id])
+    const compatibilityReply = await service.send({
+      conversation: { kind: 'channel', id: channel.id },
+      threadId: root.thread!.id,
+      targetAgentId: 'codex-review-bot',
+      projectId: first.id,
+      text: 'Continue from the current UI Project selection.',
+    })
+    await service.whenIdle()
+    expect(compatibilityReply.accepted.projectIds).toEqual([first.id, second.id])
+
     const reply = await service.send({
       conversation: { kind: 'channel', id: channel.id },
       threadId: root.thread!.id,
@@ -94,10 +104,15 @@ describe('multi-project conversation context', () => {
     await service.whenIdle()
     expect(service.snapshot().messages['dm:codex-review-bot']?.some(message =>
       message.projectIds?.includes(first.id) === true && message.projectIds.includes(second.id))).toBe(true)
+    const beforeRemoval = service.snapshot().messages['dm:codex-review-bot']
+      ?.find(message => message.authorType === 'agent')
+    expect(beforeRemoval?.runAttribution?.roots.map(root => root.projectId)).toEqual([first.id, second.id])
 
     const state = await service.mutate({ action: 'remove-project', projectId: first.id })
     const messages = state.messages['dm:codex-review-bot'] ?? []
     expect(messages.every(message => message.projectIds?.includes(first.id) !== true)).toBe(true)
     expect(messages.filter(message => message.projectIds !== undefined).every(message => message.projectId === second.id)).toBe(true)
+    const afterRemoval = messages.find(message => message.authorType === 'agent')
+    expect(afterRemoval?.runAttribution?.roots.map(root => root.projectId)).toEqual([second.id])
   })
 })

@@ -54,6 +54,10 @@ export function projectChannelMemory(
       .join(' | ')
     summaryLines.push(`- ${root.text.replace(/\s+/g, ' ').slice(0, 260)}${replySummary === '' ? '' : ` → ${replySummary}`}`)
   }
+  const transcriptOrder = new Map(messages.map((message, index) => [message.id, index]))
+  sourceMessages.sort((left, right) =>
+    left.createdAt.localeCompare(right.createdAt) ||
+    (transcriptOrder.get(left.id) ?? 0) - (transcriptOrder.get(right.id) ?? 0))
   const decisions = unique(extracts(sourceMessages, /\b(?:decision|decided)\s*:\s*([^\n]+)/gim), 20)
   const explicitQuestions = extracts(sourceMessages, /\b(?:open question|question)\s*:\s*([^?\n]*\?)/gim)
   const sentenceQuestions = sourceMessages.flatMap(message => message.text.split(/(?<=[.!?])\s+/).filter(sentence => sentence.trim().endsWith('?')))
