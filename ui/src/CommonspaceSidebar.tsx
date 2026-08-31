@@ -607,7 +607,7 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, inboxActive = f
             {agents.map(agent => (
               <button key={agent.id} type="button" aria-label={`Use ${agent.displayName} agent for routing`} aria-pressed={routingProvider === 'harness' && routingHarnessAgentId === agent.id} onClick={() => { setRoutingProvider('harness'); setRoutingHarnessAgentId(agent.id) }}>
                 <AgentAvatar agent={agent} />
-                <span><strong>{agent.displayName}</strong><small>{runtimeLabel(agent.adapter)} · {agent.model ?? 'profile model'}</small></span>
+                <span><strong>{agent.displayName}</strong><small>{runtimeLabel(agent.adapter)} · {agent.model ?? 'harness default'}</small></span>
               </button>
             ))}
             <button type="button" aria-label="Use OpenAI-compatible inference for routing" aria-pressed={routingProvider === 'openai-compatible'} onClick={() => { setRoutingProvider('openai-compatible'); setRoutingHarnessAgentId('') }}>
@@ -623,7 +623,7 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, inboxActive = f
           </>}
           <fieldset className="csp-run-defaults">
             <legend>Agent run defaults</legend>
-            <label>Model override<input aria-label="Default model" list="commonspace-models" placeholder="Use each agent profile model" value={defaultModel} onChange={event => { setDefaultModel(event.target.value) }} /></label>
+            <label>Model override<input aria-label="Default model" list="commonspace-models" placeholder="Use each harness default" value={defaultModel} onChange={event => { setDefaultModel(event.target.value) }} /></label>
             <datalist id="commonspace-models">{models.map(model => <option key={model} value={model} />)}</datalist>
             <label>Reasoning<select aria-label="Default reasoning" value={defaultReasoning} onChange={event => { setDefaultReasoning(event.target.value as CommonspaceReasoning) }}>
               {['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].map(value => <option key={value} value={value}>{value}</option>)}
@@ -782,9 +782,9 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, inboxActive = f
               </select></label>
               {agentAdapter !== null && (
                 <div className="csp-browser-form csp-discovered-agents">
-                  <strong>{runtimeLabel(agentAdapter)} profiles</strong>
-                  {snapshot.loading && <span>Discovering {runtimeLabel(agentAdapter)} profiles…</span>}
-                  {!snapshot.loading && availableDiscoveredAgents.length === 0 && <span>No {runtimeLabel(agentAdapter)} profiles found.</span>}
+                  <strong>{runtimeLabel(agentAdapter)} harness</strong>
+                  {snapshot.loading && <span>Checking for installed {runtimeLabel(agentAdapter)}…</span>}
+                  {!snapshot.loading && availableDiscoveredAgents.length === 0 && <span>{runtimeLabel(agentAdapter)} is not available or is already added.</span>}
                   {availableDiscoveredAgents.map(agent => (
                     <button key={agent.id} type="button" className="csp-dm-picker-agent" aria-label={`Add discovered agent ${agent.displayName}`} onClick={() => {
                         void store.mutate({ action: 'add-discovered-agent', agentId: agent.id })
@@ -812,7 +812,7 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, inboxActive = f
                   <label>Workspace name<input aria-label="Workspace name" value={agentProfileName} onChange={event => { setAgentProfileName(event.target.value) }} autoFocus /></label>
                   <label>Avatar emoji<input aria-label="Avatar emoji" value={agentAvatarEmoji} onChange={event => { setAgentAvatarEmoji(event.target.value) }} placeholder={(agentProfileName || editingAgent.displayName).slice(0, 1).toLocaleUpperCase()} maxLength={16} /></label>
                   <label>Accent color<input aria-label="Accent color" type="color" value={agentAccentColor} onChange={event => { setAgentAccentColor(event.target.value) }} /></label>
-                  <p className="csp-agent-profile-note">The native {runtimeLabel(editingAgent.adapter)} profile, routing, and sessions stay unchanged.</p>
+                  <p className="csp-agent-profile-note">The installed {runtimeLabel(editingAgent.adapter)} harness, routing, and sessions stay unchanged.</p>
                   <div><button type="submit">Save appearance</button></div>
                 </form>
               </SidebarDialog>
