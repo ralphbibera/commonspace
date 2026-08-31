@@ -118,21 +118,23 @@ describe('Commonspace client revision ordering', () => {
   })
 
   it('replaces the agent roster directly from a mutation response', async () => {
-    const managed = {
+    const discovered = {
       id: 'codex-review-bot',
       displayName: 'Review Bot',
       adapter: 'codex' as const,
+      nativeProfile: 'Review Bot',
       model: 'gpt-5.4',
       status: 'unknown' as const,
     }
     const initial = bootstrap(1, 'Initial')
     const updated = bootstrap(2, 'Initial')
-    updated.agents = [managed]
+    updated.agents = [discovered]
     updated.state.agents = [{
-      id: managed.id,
-      displayName: managed.displayName,
-      adapter: managed.adapter,
-      model: managed.model,
+      id: discovered.id,
+      displayName: discovered.displayName,
+      adapter: discovered.adapter,
+      nativeProfile: discovered.nativeProfile,
+      model: discovered.model,
       createdAt: '2026-08-25T00:00:00.000Z',
     }]
     const fetch = vi.fn()
@@ -142,9 +144,9 @@ describe('Commonspace client revision ordering', () => {
 
     const store = new CommonspaceClientStore()
     await store.refresh()
-    await store.mutate({ action: 'add-agent', displayName: 'Review Bot', adapter: 'codex', model: 'gpt-5.4' })
+    await store.mutate({ action: 'add-discovered-agent', agentId: discovered.id })
 
-    expect(store.getSnapshot().bootstrap?.agents).toEqual([managed])
+    expect(store.getSnapshot().bootstrap?.agents).toEqual([discovered])
   })
 
   it('requests discovery for the selected harness and merges its candidates', async () => {

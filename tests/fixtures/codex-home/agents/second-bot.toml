@@ -1,0 +1,3 @@
+name = "second-bot"
+description = "Second test Agent."
+developer_instructions = "Follow the current test request exactly."

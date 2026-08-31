@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { afterEach, describe, expect, it } from 'vitest'
 import { CommonspaceHostService } from '../server/src/service.ts'
+import { addTestCodexAgents } from './test-codex-agents.ts'
 
 const execFileAsync = promisify(execFile)
 const roots: string[] = []
@@ -40,7 +41,7 @@ describe('host run attribution', () => {
       },
     })
     await service.initialize()
-    await service.mutate({ action: 'add-agent', displayName: 'Writer', adapter: 'codex' })
+    await addTestCodexAgents(service, 'codex-writer')
     const project = (await service.mutate({ action: 'create-project', name: 'App', paths: [workspace] })).projects[0]!
 
     await service.send({ conversation: { kind: 'dm', id: 'codex-writer' }, projectId: project.id, text: 'Implement it.' })

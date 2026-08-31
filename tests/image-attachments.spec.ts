@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { COMMONSPACE_STATE_VERSION } from '@commonspace/shared'
 import { startCommonspaceServer, type RunningCommonspaceServer } from '../server/src/index.ts'
 import { CommonspaceHostService } from '../server/src/service.ts'
+import { addTestCodexAgents } from './test-codex-agents.ts'
 
 const roots: string[] = []
 const servers: RunningCommonspaceServer[] = []
@@ -83,7 +84,7 @@ describe('managed chat image attachments', () => {
       logger: { warn: () => undefined, info: () => undefined },
     })
     servers.push(running)
-    await post(running, '/api/mutate', { action: 'add-agent', displayName: 'Review Bot', adapter: 'codex' })
+    await addTestCodexAgents(running.service, 'codex-review-bot')
 
     const sendResponse = await post(running, '/api/send', {
       conversation: { kind: 'dm', id: 'codex-review-bot' },
@@ -135,7 +136,7 @@ describe('managed chat image attachments', () => {
       logger: { warn: () => undefined, info: () => undefined },
     })
     servers.push(running)
-    await post(running, '/api/mutate', { action: 'add-agent', displayName: 'Review Bot', adapter: 'codex' })
+    await addTestCodexAgents(running.service, 'codex-review-bot')
 
     const response = await post(running, '/api/send', {
       conversation: { kind: 'dm', id: 'codex-review-bot' },

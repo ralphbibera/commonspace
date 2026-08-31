@@ -1,14 +1,16 @@
 import { mkdir, mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { startCommonspaceServer, type RunningCommonspaceServer } from '../server/src/index.ts'
+import { addTestCodexAgents } from './test-codex-agents.ts'
 
 const live = process.env.COMMONSPACE_LIVE_ACP_MCP === '1'
 const roots: string[] = []
 const servers: RunningCommonspaceServer[] = []
 
 afterEach(async () => {
+  vi.unstubAllEnvs()
   await Promise.all(servers.splice(0).map(server => server.close()))
   await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))
 })
@@ -27,7 +29,8 @@ describe.skipIf(!live).sequential('installed ACP bridge with Commonspace MCP', (
       logger: { info: () => undefined, warn: () => undefined },
     })
     servers.push(running)
-    await running.service.mutate({ action: 'add-agent', displayName: 'Live MCP', adapter: 'codex' })
+    await addTestCodexAgents(running.service, 'codex-live-mcp')
+    vi.stubEnv('CODEX_HOME', join(homedir(), '.codex'))
     const project = (await running.service.mutate({
       action: 'create-project',
       name: 'Live MCP Workspace',

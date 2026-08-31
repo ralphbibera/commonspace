@@ -94,16 +94,21 @@ describe('Commonspace agent selection', () => {
     await restarted.close()
   })
 
-  it('does not discover Hermes while adding a Codex agent', async () => {
+  it('rejects managed Codex Agent creation outside discovery', async () => {
     const root = await mkdtemp(join(tmpdir(), 'commonspace-codex-selection-'))
     roots.push(root)
     const discoverAgents = vi.fn(async () => [])
     const service = new CommonspaceHostService({}, { root }, { discoverAgents })
     await service.initialize()
 
-    await service.mutate({ action: 'add-agent', displayName: 'Review Bot', adapter: 'codex' })
+    await expect(service.mutate({
+      action: 'add-agent',
+      displayName: 'Review Bot',
+      adapter: 'codex',
+    } as never)).rejects.toThrow('unknown mutation')
 
     expect(discoverAgents).not.toHaveBeenCalled()
+    expect((await service.bootstrap()).agents).toEqual([])
     expect((await service.bootstrap()).discoveredAgents).toEqual([])
     await service.close()
   })

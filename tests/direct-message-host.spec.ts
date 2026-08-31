@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import type { CommonspaceTraceEntry } from '@commonspace/shared'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CommonspaceHostService, type AgentRunInput } from '../server/src/service.ts'
+import { addTestCodexAgents } from './test-codex-agents.ts'
 
 const roots: string[] = []
 
@@ -25,7 +26,7 @@ describe('Commonspace direct-message host sessions', () => {
     const runAgent = vi.fn(async () => result.promise)
     const service = new CommonspaceHostService({} as never, { root }, { discoverAgents: async () => [], runAgent })
     await service.initialize()
-    await service.mutate({ action: 'add-agent', displayName: 'Review Bot', adapter: 'codex' })
+    await addTestCodexAgents(service, 'codex-review-bot')
 
     const accepted = await service.send({ conversation: { kind: 'dm', id: 'codex-review-bot' }, text: 'Review this' })
     expect(accepted.accepted.replyStatus).toBe('queued')
@@ -47,7 +48,7 @@ describe('Commonspace direct-message host sessions', () => {
       : ({ text: `Reply to ${input.message}`, sessionId: '123e4567-e89b-42d3-a456-426614174000' }))
     const service = new CommonspaceHostService({} as never, { root }, { discoverAgents: async () => [], runAgent })
     await service.initialize()
-    await service.mutate({ action: 'add-agent', displayName: 'Review Bot', adapter: 'codex' })
+    await addTestCodexAgents(service, 'codex-review-bot')
 
     await service.send({ conversation: { kind: 'dm', id: 'codex-review-bot' }, text: 'First' })
     await vi.waitFor(() => { expect(runAgent).toHaveBeenCalledOnce() })
@@ -87,7 +88,7 @@ describe('Commonspace direct-message host sessions', () => {
     })
     const service = new CommonspaceHostService({} as never, { root }, { discoverAgents: async () => [], runAgent })
     await service.initialize()
-    await service.mutate({ action: 'add-agent', displayName: 'Review Bot', adapter: 'codex' })
+    await addTestCodexAgents(service, 'codex-review-bot')
 
     const first = await service.send({ conversation: { kind: 'dm', id: 'codex-review-bot' }, text: 'Old direction' })
     await vi.waitFor(() => { expect(runAgent).toHaveBeenCalledOnce() })
@@ -120,7 +121,7 @@ describe('Commonspace direct-message host sessions', () => {
     })
     const service = new CommonspaceHostService({} as never, { root }, { discoverAgents: async () => [], runAgent })
     await service.initialize()
-    await service.mutate({ action: 'add-agent', displayName: 'Review Bot', adapter: 'codex' })
+    await addTestCodexAgents(service, 'codex-review-bot')
 
     await service.send({ conversation: { kind: 'dm', id: 'codex-review-bot' }, text: 'Review this' })
     await vi.waitFor(async () => {
@@ -152,7 +153,7 @@ describe('Commonspace direct-message host sessions', () => {
       runAgent: async () => ({ text, sessionId: '123e4567-e89b-42d3-a456-426614174000' }),
     })
     await service.initialize()
-    await service.mutate({ action: 'add-agent', displayName: 'Review Bot', adapter: 'codex' })
+    await addTestCodexAgents(service, 'codex-review-bot')
 
     await service.send({ conversation: { kind: 'dm', id: 'codex-review-bot' }, text: 'Continue' })
     await service.whenIdle()
@@ -168,7 +169,7 @@ describe('Commonspace direct-message host sessions', () => {
     }))
     const service = new CommonspaceHostService({} as never, { root }, { discoverAgents: async () => [], runAgent })
     await service.initialize()
-    await service.mutate({ action: 'add-agent', displayName: 'Review Bot', adapter: 'codex' })
+    await addTestCodexAgents(service, 'codex-review-bot')
 
     const sent = await service.send({ conversation: { kind: 'dm', id: 'codex-review-bot' }, text: 'Wrong agent request' })
     await vi.waitFor(() => { expect(runAgent).toHaveBeenCalledOnce() })
@@ -193,8 +194,7 @@ describe('Commonspace direct-message host sessions', () => {
     }))
     const service = new CommonspaceHostService({} as never, { root }, { discoverAgents: async () => [], runAgent })
     await service.initialize()
-    await service.mutate({ action: 'add-agent', displayName: 'Frontend', adapter: 'codex' })
-    await service.mutate({ action: 'add-agent', displayName: 'Backend', adapter: 'codex' })
+    await addTestCodexAgents(service, 'codex-frontend', 'codex-backend')
     const state = await service.mutate({
       action: 'create-channel',
       name: 'general',
@@ -227,7 +227,7 @@ describe('Commonspace direct-message host sessions', () => {
     }))
     const service = new CommonspaceHostService({} as never, { root }, { discoverAgents: async () => [], runAgent })
     await service.initialize()
-    await service.mutate({ action: 'add-agent', displayName: 'Review Bot', adapter: 'codex' })
+    await addTestCodexAgents(service, 'codex-review-bot')
 
     await service.send({ conversation: { kind: 'dm', id: 'codex-review-bot' }, text: 'First' })
     await service.whenIdle()
@@ -268,7 +268,7 @@ describe('Commonspace direct-message host sessions', () => {
     const runAgent = vi.fn(async () => result.promise)
     const service = new CommonspaceHostService({} as never, { root }, { discoverAgents: async () => [], runAgent })
     await service.initialize()
-    await service.mutate({ action: 'add-agent', displayName: 'Review Bot', adapter: 'codex' })
+    await addTestCodexAgents(service, 'codex-review-bot')
 
     await service.send({ conversation: { kind: 'dm', id: 'codex-review-bot' }, text: 'Old request' })
     await vi.waitFor(() => { expect(runAgent).toHaveBeenCalledOnce() })
@@ -298,7 +298,7 @@ describe('Commonspace direct-message host sessions', () => {
       beforeAcceptSend,
     })
     await service.initialize()
-    await service.mutate({ action: 'add-agent', displayName: 'Review Bot', adapter: 'codex' })
+    await addTestCodexAgents(service, 'codex-review-bot')
 
     const sending = service.send({ conversation: { kind: 'dm', id: 'codex-review-bot' }, text: 'Old generation' })
     await vi.waitFor(() => { expect(beforeAcceptSend).toHaveBeenCalledOnce() })

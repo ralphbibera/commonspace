@@ -2,7 +2,7 @@ import { readdir, readFile, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { extname, join, resolve } from 'node:path'
 import type { CommonspaceAgentProfile } from '@commonspace/shared'
-import { managedAgentId } from './state.js'
+import { codexAgentId } from './state.js'
 
 const MAX_PROFILE_BYTES = 256 * 1024
 
@@ -91,7 +91,7 @@ export async function readCodexAgentProfile(profilePath: string): Promise<CodexA
 
 function profileFromConfig(config: CodexAgentProfileConfig): CommonspaceAgentProfile {
   return {
-    id: managedAgentId('codex', config.name),
+    id: codexAgentId(config.name),
     displayName: config.name,
     adapter: 'codex',
     nativeProfile: config.name,

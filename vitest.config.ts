@@ -11,5 +11,8 @@ export default defineConfig({
     environment: 'jsdom',
     clearMocks: true,
     restoreMocks: true,
+    env: {
+      CODEX_HOME: fileURLToPath(new URL('./tests/fixtures/codex-home', import.meta.url)),
+    },
   },
 })

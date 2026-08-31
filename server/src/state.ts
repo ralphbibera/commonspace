@@ -1,4 +1,4 @@
-import type { AgentAdapterKind, CommonspaceAgentDefinition, CommonspaceAgentProfile, CommonspaceMutation, CommonspaceState } from '@commonspace/shared'
+import type { CommonspaceAgentDefinition, CommonspaceAgentProfile, CommonspaceMutation, CommonspaceState } from '@commonspace/shared'
 import { agentTagName, COMMONSPACE_STATE_VERSION, projectTagName, referencedProjectIds, uniqueAgentDisplayName } from '@commonspace/shared'
 import { projectChannelMemory } from './memory.js'
 
@@ -103,8 +103,8 @@ function normalizedChannel(value: string): string {
   return name
 }
 
-export function managedAgentId(adapter: Exclude<AgentAdapterKind, 'hermes'>, displayName: string): string {
-  return `${adapter}-${normalizedChannel(normalizedName(displayName, 'agent'))}`
+export function codexAgentId(nativeProfile: string): string {
+  return `codex-${normalizedChannel(normalizedName(nativeProfile, 'agent'))}`
 }
 
 function nextRevision(state: CommonspaceState): number {
@@ -149,7 +149,7 @@ export function addDiscoveredAgent(
     agent.adapter,
     state.agents,
   )
-  const id = agent.adapter === 'hermes' ? agent.id : managedAgentId('codex', nativeProfile!)
+  const id = agent.adapter === 'hermes' ? agent.id : codexAgentId(nativeProfile!)
   if (state.agents.some(candidate => candidate.id === id)) throw new Error(`agent ${displayName} already exists`)
   return {
     ...state,
@@ -382,24 +382,6 @@ export function applyMutation(
           maxAgentsPerTurn: boundedInteger(mutation.maxAgentsPerTurn, state.defaults.maxAgentsPerTurn, 1, 8, 'max agents per turn'),
           memoryThreads: boundedInteger(mutation.memoryThreads, state.defaults.memoryThreads, 1, 50, 'memory thread window'),
         },
-      }
-    }
-    case 'add-agent': {
-      if (mutation.adapter !== 'codex') throw new Error('unsupported agent adapter')
-      const requestedName = normalizedName(mutation.displayName, 'agent')
-      const id = managedAgentId(mutation.adapter, requestedName)
-      if (state.agents.some(agent => agent.id === id)) throw new Error(`agent ${requestedName} already exists`)
-      const displayName = uniqueAgentDisplayName(requestedName, mutation.adapter, state.agents)
-      return {
-        ...state,
-        revision: nextRevision(state),
-        agents: [...state.agents, {
-          id,
-          displayName,
-          adapter: mutation.adapter,
-          model: optionalModel(mutation.model, null),
-          createdAt: dependencies.now(),
-        }],
       }
     }
     case 'add-discovered-agent': {

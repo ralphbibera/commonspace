@@ -41,7 +41,7 @@ import type { McpServer as AcpMcpServer } from '@agentclientprotocol/sdk'
 import { COMMONSPACE_STATE_VERSION, conversationKey, projectTagName, referencedProjectIds, uniqueAgentDisplayName } from '@commonspace/shared'
 import { mergeChannelMemoryProjection, projectChannelMemory } from './memory.js'
 import { mentionedAgents, mentionedChannelAgents, parseHermesProfileDescription, parseHermesProfileList, parseTags, rankChannelAgents } from './relay.js'
-import { addDiscoveredAgent, applyMutation, createInitialState, defaultCommonspaceDefaults, defaultRunSettings, DM_SESSION_BOUNDARY_AUTHOR_ID, emptyChannelMemory, isCommonspaceReasoning, managedAgentId } from './state.js'
+import { addDiscoveredAgent, applyMutation, codexAgentId, createInitialState, defaultCommonspaceDefaults, defaultRunSettings, DM_SESSION_BOUNDARY_AUTHOR_ID, emptyChannelMemory, isCommonspaceReasoning } from './state.js'
 import { AcpAgentProcess, AcpSessionLoadError, AcpSessionRunError } from './acp-runtime.js'
 import { codexProfileRuntimeConfig, discoverCodexAgents, findCodexAgentProfile, type CodexAgentProfileConfig } from './codex-agents.js'
 import type { CommonspaceMcpGateway, CommonspaceMcpProvider, CommonspaceMcpScope } from './commonspace-mcp.js'
@@ -376,7 +376,7 @@ function sanitizeAgents(value: unknown): CommonspaceState['agents'] {
     if (typeof agent.createdAt !== 'string') continue
     const nativeDisplayName = agent.displayName.normalize('NFKC').trim().slice(0, 80)
     try {
-      if (adapter !== 'hermes' && managedAgentId(adapter, typeof nativeProfile === 'string' ? nativeProfile : nativeDisplayName) !== agent.id) continue
+      if (adapter !== 'hermes' && codexAgentId(typeof nativeProfile === 'string' ? nativeProfile : nativeDisplayName) !== agent.id) continue
     } catch {
       continue
     }
@@ -1355,7 +1355,11 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 
   async discoverAgents(adapter: AgentAdapterKind): Promise<CommonspaceBootstrap> {
     if (adapter !== 'hermes' && adapter !== 'codex') throw new Error('unsupported agent adapter')
-    this.discoveredAgentCandidates = await this.discoverAgentCandidates(adapter)
+    const discovered = await this.discoverAgentCandidates(adapter)
+    this.discoveredAgentCandidates = [
+      ...this.discoveredAgentCandidates.filter(agent => agent.adapter !== adapter),
+      ...discovered,
+    ]
     return this.bootstrap()
   }
 
@@ -2498,11 +2502,6 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
     }
     if (mutation.action === 'add-project-path') {
       return { ...mutation, path: await this.validDirectory(mutation.path) }
-    }
-    if (mutation.action === 'add-agent') {
-      const id = managedAgentId(mutation.adapter, mutation.displayName)
-      const conflict = this.discoveredAgentCandidates.some(agent => agent.id === id)
-      if (conflict) throw new Error(`agent ${mutation.displayName.trim()} conflicts with a Hermes profile`)
     }
     if (mutation.action === 'reset-dm') {
       if (typeof mutation.agentId !== 'string' || !this.configuredAgents().some(agent => agent.id === mutation.agentId)) {

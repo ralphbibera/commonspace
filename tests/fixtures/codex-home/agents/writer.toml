@@ -1,0 +1,3 @@
+name = "writer"
+description = "Writer test Agent."
+developer_instructions = "Follow the current writing test request exactly."

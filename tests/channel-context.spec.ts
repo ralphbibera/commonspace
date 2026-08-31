@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CommonspaceHostService } from '../server/src/service.ts'
+import { addTestCodexAgents } from './test-codex-agents.ts'
 
 const roots: string[] = []
 const services: CommonspaceHostService[] = []
@@ -35,7 +36,7 @@ async function fixture() {
   })
   services.push(service)
   await service.initialize()
-  await service.mutate({ action: 'add-agent', displayName: 'Review Bot', adapter: 'codex' })
+  await addTestCodexAgents(service, 'codex-review-bot')
   const channel = (await service.mutate({
     action: 'create-channel',
     name: 'engineering',
@@ -145,7 +146,7 @@ describe('editable shared Channel context', () => {
     })
     services.push(service)
     await service.initialize()
-    await service.mutate({ action: 'add-agent', displayName: 'Review Bot', adapter: 'codex' })
+    await addTestCodexAgents(service, 'codex-review-bot')
     const channel = (await service.mutate({ action: 'create-channel', name: 'routing', agentIds: ['codex-review-bot'] })).channels[0]!
     await service.send({ conversation: { kind: 'channel', id: channel.id }, text: '@review-bot establish context.' })
     await service.whenIdle()
@@ -177,7 +178,7 @@ describe('editable shared Channel context', () => {
     })
     services.push(service)
     await service.initialize()
-    await service.mutate({ action: 'add-agent', displayName: 'Review Bot', adapter: 'codex' })
+    await addTestCodexAgents(service, 'codex-review-bot')
     const channel = (await service.mutate({ action: 'create-channel', name: 'user-pressure', agentIds: ['codex-review-bot'] })).channels[0]!
     await service.send({ conversation: { kind: 'channel', id: channel.id }, text: '@review-bot establish context.' })
     await service.whenIdle()
@@ -213,7 +214,7 @@ describe('editable shared Channel context', () => {
     })
     services.push(service)
     await service.initialize()
-    await service.mutate({ action: 'add-agent', displayName: 'Review Bot', adapter: 'codex' })
+    await addTestCodexAgents(service, 'codex-review-bot')
     const channel = (await service.mutate({ action: 'create-channel', name: 'race', agentIds: ['codex-review-bot'] })).channels[0]!
 
     await service.send({ conversation: { kind: 'channel', id: channel.id }, text: `@review-bot establish pressure ${'s'.repeat(49_000)}` })
@@ -259,7 +260,7 @@ describe('editable shared Channel context', () => {
     })
     services.push(service)
     await service.initialize()
-    await service.mutate({ action: 'add-agent', displayName: 'Review Bot', adapter: 'codex' })
+    await addTestCodexAgents(service, 'codex-review-bot')
     const channel = (await service.mutate({
       action: 'create-channel',
       name: 'large-context',
