@@ -189,7 +189,7 @@ describe('Commonspace ACP host path', () => {
             type: 'tool',
             id: 'call-1',
             status: 'completed',
-            input: expect.stringMatching(/^\{\n  "path": "\[host path\](?:\/workspace)?\/package\.json"\n\}$/u),
+            input: expect.stringMatching(/^\{\n {2}"path": "\[host path\](?:\/workspace)?\/package\.json"\n\}$/u),
           }),
         ]),
       },
