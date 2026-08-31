@@ -792,7 +792,7 @@ function sanitizeMessages(
     if (kind === 'dm' && !agentIds.has(conversationId)) continue
     const seen = new Set<string>()
     const sanitized: CommonspaceMessage[] = []
-    for (const candidate of rawMessages.slice(-500)) {
+    for (const candidate of rawMessages) {
       const message = plainRecord(candidate)
       const conversation = plainRecord(message?.conversation)
       const id = loadedId(message?.id)
@@ -2080,7 +2080,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
         : this.state.channels.map(existing => existing.id === prepared.channel?.id
             ? { ...existing, agentIds: prepared.channel.agentIds }
             : existing),
-      messages: { ...this.state.messages, [key]: [...currentMessages, accepted].slice(-500) },
+      messages: { ...this.state.messages, [key]: [...currentMessages, accepted] },
       threads: prepared.thread === undefined && thread !== undefined
         ? [...this.state.threads, thread]
         : this.state.threads.map(existing => {
@@ -2518,7 +2518,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
     this.state = {
       ...this.state,
       revision: this.state.revision + 1,
-      messages: { ...this.state.messages, [key]: [...current, message].slice(-500) },
+      messages: { ...this.state.messages, [key]: [...current, message] },
     }
   }
 
