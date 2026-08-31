@@ -70,6 +70,7 @@ describe('routing state migration', () => {
 
     const message = service.snapshot().messages['channel:general']?.[0]
     expect(service.snapshot().version).toBe(COMMONSPACE_STATE_VERSION)
+    expect(service.snapshot().pins).toEqual([])
     expect(service.snapshot().channels[0]?.routingMemory).toEqual({
       summary: '',
       status: 'empty',

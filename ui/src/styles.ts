@@ -742,6 +742,19 @@ export const commonspaceStyles = String.raw`
   margin: 4px 0;
 }
 
+.csp-channel-context-editor,
+.csp-channel-pins { display: grid; gap: 6px; padding: 7px; border: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.1)); border-radius: 7px; background: var(--dsw-alias-bg-subtle, rgba(0, 0, 0, 0.018)); }
+.csp-channel-context-editor > header,
+.csp-channel-pins > header { display: flex; align-items: center; justify-content: space-between; color: var(--dsw-alias-label-secondary, #666b74); font-size: 10px; }
+.csp-channel-context-editor > header span { color: var(--dsw-alias-label-tertiary, #8a8f98); font-size: 8px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; }
+.csp-channel-context-editor > header span[data-status='stale'],
+.csp-channel-context-editor > header span[data-status='failed'] { color: var(--dsw-alias-warning, #9a6700); }
+.csp-channel-context-editor > button { justify-self: start; }
+.csp-channel-pins > div { display: flex; align-items: center; gap: 5px; }
+.csp-channel-pins > div p { min-width: 0; flex: 1; margin: 0; overflow: hidden; color: var(--dsw-alias-label-primary, #202124); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.csp-channel-pins > div input { min-width: 0; flex: 1; }
+.csp-channel-pins > div button { flex: none; }
+
 .csp-browser-form fieldset {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -939,6 +952,34 @@ export const commonspaceStyles = String.raw`
   cursor: pointer;
 }
 .csp-message-direct-reply + .csp-message-speech { margin-left: 0; }
+.csp-message-pin {
+  margin-left: auto;
+  padding: 2px 5px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary, #8a8f98);
+  font: inherit;
+  font-size: 9px;
+  cursor: pointer;
+}
+.csp-message-pin:hover { background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.06)); color: var(--dsw-alias-interactive-brand, #4d6bfe); }
+.csp-message-version-action { padding: 2px 4px; border: 0; border-radius: 4px; background: transparent; color: var(--dsw-alias-label-tertiary, #8a8f98); font: inherit; font-size: 9px; cursor: pointer; }
+.csp-message-version-action:hover { background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.06)); color: var(--dsw-alias-interactive-brand, #4d6bfe); }
+.csp-message-version-action--delete:hover { color: var(--dsw-alias-negative, #b52f3a); }
+.csp-message-version-link { display: flex; align-items: center; gap: 6px; margin-top: 3px; color: var(--dsw-alias-interactive-brand, #4d6bfe); font-size: 9px; font-weight: 700; }
+.csp-message-version-link button { padding: 0; border: 0; background: transparent; color: var(--dsw-alias-label-tertiary, #8a8f98); font: inherit; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.csp-message-version-link button:hover { color: var(--dsw-alias-interactive-brand, #4d6bfe); }
+.csp-message-deleted { margin: 4px 0 0; padding: 6px 8px; border-left: 2px dashed var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.16)); color: var(--dsw-alias-label-tertiary, #8a8f98); font-size: 10px; font-style: italic; }
+.csp-message-edit-form { display: grid; gap: 7px; margin-top: 7px; padding: 9px; border: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.12)); border-radius: 7px; background: var(--dsw-alias-bg-subtle, rgba(0, 0, 0, 0.018)); }
+.csp-message-edit-form > label { display: grid; gap: 3px; color: var(--dsw-alias-label-secondary, #666b74); font-size: 10px; font-weight: 700; }
+.csp-message-edit-form textarea { min-height: 64px; padding: 6px; border: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.14)); border-radius: 5px; background: var(--dsw-alias-bg-base, #fff); color: var(--dsw-alias-label-primary, #202124); font: inherit; resize: vertical; }
+.csp-message-edit-form fieldset { display: flex; flex-wrap: wrap; gap: 5px 10px; margin: 0; padding: 0; border: 0; }
+.csp-message-edit-form legend { margin-bottom: 3px; color: var(--dsw-alias-label-secondary, #666b74); font-size: 10px; font-weight: 700; }
+.csp-message-edit-form fieldset label { display: inline-flex; align-items: center; gap: 4px; color: var(--dsw-alias-label-primary, #202124); font-size: 10px; }
+.csp-message-edit-form > div { display: flex; gap: 6px; }
+.csp-message-edit-form button { min-height: 28px; padding: 3px 8px; border: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.14)); border-radius: 5px; background: var(--dsw-alias-bg-base, #fff); color: var(--dsw-alias-label-primary, #202124); font: inherit; cursor: pointer; }
+.csp-message-edit-form button[type='submit'] { border-color: var(--dsw-alias-interactive-brand, #4d6bfe); background: var(--dsw-alias-interactive-brand, #4d6bfe); color: #fff; }
 .csp-message-speech:hover,
 .csp-message-speech[aria-pressed='true'] { background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.06)); color: var(--dsw-alias-label-primary, #202124); }
 .csp-message-speech[aria-pressed='true'] { color: var(--dsw-alias-interactive-brand, #4d6bfe); }
@@ -1001,6 +1042,8 @@ export const commonspaceStyles = String.raw`
 .csp-routing-reroute-form > div button[type='submit'] { border-color: var(--dsw-alias-interactive-brand, #4d6bfe); background: var(--dsw-alias-interactive-brand, #4d6bfe); color: #fff; }
 .csp-routing-reroute-form > div button:disabled { cursor: default; opacity: 0.55; }
 .csp-message-attachments { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 7px; }
+.csp-message-attachments figure { position: relative; margin: 0; }
+.csp-message-attachments figure button { position: absolute; right: 5px; bottom: 5px; padding: 3px 6px; border: 1px solid rgba(255, 255, 255, 0.55); border-radius: 5px; background: rgba(20, 22, 28, 0.72); color: #fff; font: inherit; font-size: 9px; cursor: pointer; }
 .csp-message-attachments img {
   display: block;
   width: auto;
@@ -1573,6 +1616,17 @@ button.csp-live-activity-trigger:focus-visible { outline: 2px solid var(--dsw-al
 .csp-thread-projects legend { padding: 0 3px; color: var(--dsw-alias-label-secondary, #666b74); font-weight: 700; }
 .csp-thread-projects p { flex-basis: 100%; margin: 0; color: var(--dsw-alias-label-tertiary, #8a8f98); }
 .csp-thread-projects label { display: inline-flex; align-items: center; gap: 4px; color: var(--dsw-alias-label-primary, #202124); font-weight: 500; }
+.csp-thread-pins { display: grid; gap: 6px; margin-top: 12px; }
+.csp-thread-pins > header { display: flex; align-items: center; justify-content: space-between; color: var(--dsw-alias-label-secondary, #666b74); }
+.csp-thread-pins > header span { min-width: 20px; padding: 1px 5px; border-radius: 999px; background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.06)); text-align: center; }
+.csp-thread-pins > div { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 7px; padding: 6px 7px; border-left: 2px solid var(--dsw-alias-interactive-brand, #4d6bfe); background: var(--dsw-alias-bg-base, #fff); }
+.csp-thread-pins > div > span { color: var(--dsw-alias-label-tertiary, #8a8f98); font-size: 8px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.csp-thread-pins > div p { min-width: 0; margin: 0; overflow: hidden; color: var(--dsw-alias-label-primary, #202124); text-overflow: ellipsis; white-space: nowrap; }
+.csp-thread-pins > div button { padding: 2px 4px; border: 0; background: transparent; color: var(--dsw-alias-label-tertiary, #8a8f98); font: inherit; font-size: 9px; cursor: pointer; }
+.csp-thread-pins > div button:hover { color: var(--dsw-alias-negative, #b52f3a); }
+.csp-thread-pins > form { display: flex; gap: 6px; margin: 0; }
+.csp-thread-pins > form input { min-width: 0; flex: 1; padding: 6px; border: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.14)); border-radius: 5px; background: var(--dsw-alias-bg-base, #fff); color: var(--dsw-alias-label-primary, #202124); font: inherit; }
+.csp-thread-pins > form button { min-height: 28px; padding: 3px 8px; border: 1px solid var(--dsw-alias-interactive-brand, #4d6bfe); border-radius: 5px; background: var(--dsw-alias-interactive-brand, #4d6bfe); color: #fff; font: inherit; cursor: pointer; }
 
 .csp-thread-messages {
   flex: 1;
