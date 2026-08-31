@@ -88,6 +88,8 @@ export function mergeChannelMemoryProjection(
     threadIds: projection.threadIds,
     sourceMessageCount: projection.sourceMessageCount ?? 0,
     estimatedTokens: projection.estimatedTokens ?? 0,
-    status: currentThrough === projectedThrough ? current.status ?? 'current' : 'stale',
+    status: current.status === 'failed'
+      ? 'failed'
+      : currentThrough === projectedThrough ? current.status ?? 'current' : 'stale',
   }
 }

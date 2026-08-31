@@ -18,6 +18,7 @@ import type {
   RerouteAssignmentResponse,
   StopAgentRunsResponse,
   UpdateRoutingConfigurationRequest,
+  UpdateThreadContextRequest,
 } from '@commonspace/shared'
 import { conversationKey } from '@commonspace/shared'
 
@@ -226,12 +227,12 @@ export class CommonspaceClientStore {
     return this.snapshot.bootstrap?.state.messages[conversationKey(conversation)] ?? []
   }
 
-  async send(text: string, threadId?: string, attachments: readonly SendImageAttachment[] = [], delivery?: SendMessageRequest['delivery']): Promise<void> {
-    return this.sendMessage(text, threadId, undefined, attachments, delivery)
+  async send(text: string, threadId?: string, attachments: readonly SendImageAttachment[] = [], delivery?: SendMessageRequest['delivery'], projectIds?: readonly string[]): Promise<void> {
+    return this.sendMessage(text, threadId, undefined, attachments, delivery, projectIds)
   }
 
-  async sendDirectReply(text: string, threadId: string, targetAgentId: string, attachments: readonly SendImageAttachment[] = []): Promise<void> {
-    return this.sendMessage(text, threadId, targetAgentId, attachments)
+  async sendDirectReply(text: string, threadId: string, targetAgentId: string, attachments: readonly SendImageAttachment[] = [], projectIds?: readonly string[]): Promise<void> {
+    return this.sendMessage(text, threadId, targetAgentId, attachments, undefined, projectIds)
   }
 
   async rerouteAssignment(request: RerouteAssignmentRequest): Promise<void> {
@@ -252,6 +253,29 @@ export class CommonspaceClientStore {
         activeProjectId: this.resolveActiveProject(merged),
         error: null,
       })
+    } catch (error) {
+      this.set({ ...this.snapshot, error: error instanceof Error ? error.message : String(error) })
+      throw error
+    }
+  }
+
+  async updateThreadContext(threadId: string, request: UpdateThreadContextRequest): Promise<void> {
+    try {
+      await requestJson(`/api/threads/${encodeURIComponent(threadId)}/context`, {
+        method: 'PUT',
+        body: JSON.stringify(request),
+      })
+      await this.refresh()
+    } catch (error) {
+      this.set({ ...this.snapshot, error: error instanceof Error ? error.message : String(error) })
+      throw error
+    }
+  }
+
+  async compactThreadContext(threadId: string): Promise<void> {
+    try {
+      await requestJson(`/api/threads/${encodeURIComponent(threadId)}/context/compact`, { method: 'POST' })
+      await this.refresh()
     } catch (error) {
       this.set({ ...this.snapshot, error: error instanceof Error ? error.message : String(error) })
       throw error
@@ -295,15 +319,16 @@ export class CommonspaceClientStore {
     }
   }
 
-  private async sendMessage(text: string, threadId?: string, targetAgentId?: string, attachments: readonly SendImageAttachment[] = [], delivery?: SendMessageRequest['delivery']): Promise<void> {
+  private async sendMessage(text: string, threadId?: string, targetAgentId?: string, attachments: readonly SendImageAttachment[] = [], delivery?: SendMessageRequest['delivery'], projectIds?: readonly string[]): Promise<void> {
     const conversation = this.snapshot.activeConversation
     if (conversation === null || this.snapshot.sending) return
     // A thread already owns its complete Project scope. The singular selection is
     // only a compatibility input for new roots and DMs, not a thread mutation.
-    const projectId = threadId === undefined ? this.snapshot.activeProjectId ?? undefined : undefined
+    const projectId = threadId === undefined && projectIds === undefined ? this.snapshot.activeProjectId ?? undefined : undefined
     const request: SendMessageRequest = {
       conversation,
       text,
+      ...(projectIds === undefined ? {} : { projectIds: [...projectIds] }),
       ...(projectId === undefined ? {} : { projectId }),
       ...(threadId === undefined ? {} : { threadId }),
       ...(targetAgentId === undefined ? {} : { targetAgentId }),

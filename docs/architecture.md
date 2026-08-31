@@ -23,6 +23,8 @@ Endpoints:
 - `GET|PUT /api/routing`
 - `GET|PUT /api/channels/:channelId/context`
 - `POST /api/channels/:channelId/context/compact`
+- `GET|PUT /api/threads/:threadId/context`
+- `POST /api/threads/:threadId/context/compact`
 - `GET /api/projects/:projectId/files|file|changes|diff`
 - `POST /api/discover-agents`
 - `POST /api/reroute`
@@ -47,6 +49,7 @@ Server-sent revision events prompt the UI store to refresh persisted state. Sepa
 - linked single-assignment rerouting that retains prior attempts and dispatches only the corrected assignment;
 - zero-to-many Project references on messages and threads, with a compatibility mirror for older clients;
 - editable Channel context plus manual and token-pressure compaction through the configured inference provider;
+- immutable Thread snapshots, independently editable/compactable Thread context, and prospective per-reply Project defaults;
 - native session mapping and stale-session recovery;
 - one long-lived provider-neutral ACP stdio process per Hermes or Codex agent;
 - delta-only ACP delivery and exact opaque-session `session/load` resumption;
@@ -80,7 +83,7 @@ Hermes launches its installed harness through `hermes acp`; Codex uses its bundl
 
 ## Persistence
 
-State v18 persists the roster, local appearance, opaque native-session references, sanitized activity traces, Inbox read state, image metadata, routing decisions, linked correction attempts, per-Channel routing memory, zero-to-many Project references, editable Channel context, and current Channel/DM execution state. Versions 1–17 migrate on load through structural sanitization; legacy resolved routing decisions receive deterministic assignment IDs, empty correction history, and empty routing memory while retaining their original message/Project scope. Accepted conversation messages and routing attempts are retained without an implicit count window; bounds apply to derived context and activity rather than the canonical record. Writes use a `0600` temporary file and atomic rename while retaining the previous valid state as `state.backup.json`. If the primary is invalid and the backup is valid, startup preserves the primary as `state.corrupt.json` and recovers the backup. Trace payloads are bounded and host details are redacted before persistence; MCP capabilities remain in memory and native session references are removed from browser snapshots.
+State v19 persists the roster, local appearance, opaque native-session references, sanitized activity traces, Inbox read state, image metadata, routing decisions, linked correction attempts, per-Channel routing memory, zero-to-many Project references, editable Channel context, immutable Thread snapshots, independent Thread context, and current Channel/DM execution state. Versions 1–18 migrate on load through structural sanitization; legacy resolved routing decisions receive deterministic assignment IDs, while legacy Threads receive an honest empty inherited snapshot and transcript-derived current Thread memory. Accepted conversation messages and routing attempts are retained without an implicit count window; bounds apply to derived context and activity rather than the canonical record. Writes use a `0600` temporary file and atomic rename while retaining the previous valid state as `state.backup.json`. If the primary is invalid and the backup is valid, startup preserves the primary as `state.corrupt.json` and recovers the backup. Trace payloads are bounded and host details are redacted before persistence; MCP capabilities remain in memory and native session references are removed from browser snapshots.
 
 ## Routing inference
 

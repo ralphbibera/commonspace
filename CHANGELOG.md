@@ -24,6 +24,9 @@ All notable changes to Commonspace are recorded here.
 - Visible Project-reference inference for unreferenced new Channel roots, with inferred union persisted on the source message and Thread.
 - Single-assignment rerouting with durable linked correction attempts, assignment-bound replies, scoped Agent/Project changes, and an inline correction UI.
 - Per-Channel routing memory compacted from explicit corrections through the configured inference layer and supplied to later routing decisions.
+- Immutable per-Thread Channel-context snapshots plus independently projected, editable, manually compactable, and pressure-compacted Thread context.
+- Prospective Thread Project references: each reply can add/remove Projects for that turn and future defaults without rewriting prior deliveries or invalidating active MCP scopes.
+- Inline Thread context inspection/editing, manual compaction, and multi-Project/projectless controls for the next reply.
 - Project Files, Git Changes/diffs, speech playback, live activity, and stop controls.
 - Zero-to-many Project references on messages and threads, with multi-root agent execution, Project-aware search, correct run attribution, and backward-compatible singular fields for the current UI.
 - Editable Channel context APIs with user-owned context preservation, manual inference compaction, automatic token-pressure compaction, and visible current/stale metadata.
@@ -37,7 +40,8 @@ All notable changes to Commonspace are recorded here.
 - Queued and in-flight replies cannot execute or persist against stale Project authority after Project configuration changes.
 - Channel context refresh/compaction is race-safe and preserves human-authored context, while concurrent harness inference runs use isolated native sessions.
 - Installed Hermes and Codex harnesses are discovered only during an explicit Add Agent flow; new Channels start with no agents preselected.
-- Local state migrates from versions 1–17 to version 18 for linked routing corrections and per-Channel routing memory, including deterministic conversion of legacy routing decisions, and automatically recovers an invalid primary from the previous valid rollback backup.
+- Local state migrates from versions 1–18 to version 19 for Thread context snapshots and independent memory, including transcript-derived memory for legacy Threads, and automatically recovers an invalid primary from the previous valid rollback backup.
+- Channel and Thread context compaction now persists visible `compacting` and `failed` states while retaining the last valid representation.
 - Inferred routing uses the visible max-agents setting instead of a hidden two-Agent cap.
 - Independent agents can run concurrently; only the same native agent session is serialized.
 - Hermes and Codex use ACP for every agent turn.

@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, realpath, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { CommonspaceHostService } from '../server/src/service.ts'
+import { CommonspaceHostService, type AgentRunInput } from '../server/src/service.ts'
 import { addTestHarness, discoverTestHarnesses } from './test-harnesses.ts'
 
 const roots: string[] = []
@@ -71,8 +71,8 @@ describe('multi-project conversation context', () => {
     expect(runAgent).not.toHaveBeenCalled()
   })
 
-  it('binds a Channel thread to an exact set of Project references', async () => {
-    const { service, first, second } = await fixture()
+  it('changes Thread Project references only for the new turn and future defaults', async () => {
+    const { service, runAgent, first, second, firstRoot } = await fixture()
     const channel = (await service.mutate({
       action: 'create-channel',
       name: 'engineering',
@@ -96,30 +96,83 @@ describe('multi-project conversation context', () => {
     await service.whenIdle()
     expect(compatibilityReply.accepted.projectIds).toEqual([first.id, second.id])
 
-    const reply = await service.send({
-      conversation: { kind: 'channel', id: channel.id },
-      threadId: root.thread!.id,
-      targetAgentId: 'codex',
-      text: 'Continue with both.',
-    })
-    await service.whenIdle()
-    expect(reply.accepted.projectIds).toEqual([first.id, second.id])
-
-    await expect(service.send({
+    const changed = await service.send({
       conversation: { kind: 'channel', id: channel.id },
       threadId: root.thread!.id,
       targetAgentId: 'codex',
       projectIds: [first.id],
-      text: 'Silently change the context.',
-    })).rejects.toThrow('thread projects cannot be changed')
+      text: 'Continue with only First App.',
+    })
+    await service.whenIdle()
+    expect(changed.accepted.projectIds).toEqual([first.id])
+    expect(service.snapshot().threads.find(thread => thread.id === root.thread?.id)?.projectIds).toEqual([first.id])
+    expect(runAgent.mock.calls.at(-1)?.[0]).toMatchObject({
+      cwd: firstRoot,
+      additionalCwds: [],
+      commonspaceScope: { projectIds: [first.id] },
+    })
+    expect(service.snapshot().messages[`channel:${channel.id}`]
+      ?.find(message => message.id === root.accepted.id)?.projectIds).toEqual([first.id, second.id])
 
-    await expect(service.send({
+    const inherited = await service.send({
+      conversation: { kind: 'channel', id: channel.id },
+      threadId: root.thread!.id,
+      targetAgentId: 'codex',
+      text: 'Continue with the new default.',
+    })
+    await service.whenIdle()
+    expect(inherited.accepted.projectIds).toEqual([first.id])
+
+    const projectless = await service.send({
       conversation: { kind: 'channel', id: channel.id },
       threadId: root.thread!.id,
       targetAgentId: 'codex',
       projectIds: [],
       text: 'Explicitly remove every Project.',
-    })).rejects.toThrow('thread projects cannot be changed')
+    })
+    await service.whenIdle()
+    expect(projectless.accepted.projectIds).toBeUndefined()
+    expect(service.snapshot().threads.find(thread => thread.id === root.thread?.id)?.projectIds).toEqual([])
+    expect(runAgent.mock.calls.at(-1)?.[0]).toMatchObject({
+      additionalCwds: [],
+      commonspaceScope: { projectIds: [] },
+    })
+  })
+
+  it('keeps an active turn scoped to Projects delivered before future Thread defaults change', async () => {
+    const { service, runAgent, first, second } = await fixture()
+    const firstRun = deferred<{ text: string }>()
+    let firstScope: AgentRunInput['commonspaceScope']
+    runAgent.mockImplementationOnce(async (input: AgentRunInput) => {
+      firstScope = input.commonspaceScope
+      return firstRun.promise
+    }).mockResolvedValue({ text: 'Later work completed.' })
+    const channel = (await service.mutate({
+      action: 'create-channel',
+      name: 'scope-evolution',
+      agentIds: ['codex'],
+    })).channels[0]!
+    const root = await service.send({
+      conversation: { kind: 'channel', id: channel.id },
+      projectIds: [first.id, second.id],
+      text: '@review-bot inspect both Projects.',
+    })
+    await vi.waitFor(() => { expect(firstScope).toBeDefined() })
+
+    await service.send({
+      conversation: { kind: 'channel', id: channel.id },
+      threadId: root.thread!.id,
+      targetAgentId: 'codex',
+      projectIds: [first.id],
+      text: 'Use only First App next.',
+    })
+
+    const reading = service.readContext(firstScope!)
+    firstRun.resolve({ text: 'Initial work completed.' })
+    await service.whenIdle()
+    await expect(reading).resolves.toMatchObject({
+      projects: [{ id: first.id }, { id: second.id }],
+    })
   })
 
   it('removes only the deleted Project from multi-project references', async () => {

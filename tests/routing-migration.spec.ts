@@ -77,6 +77,25 @@ describe('routing state migration', () => {
       compactedThroughCorrectionId: null,
       updatedAt: null,
     })
+    expect(service.snapshot().threads[0]?.context.channelSnapshot).toEqual({
+      summary: '',
+      decisions: [],
+      openQuestions: [],
+      updatedAt: null,
+      origin: 'automatic',
+      status: 'empty',
+      sourceMessageCount: 0,
+      estimatedTokens: 0,
+      compactedThroughMessageId: null,
+      capturedAt: 'now',
+    })
+    expect(service.snapshot().threads[0]?.context.memory).toMatchObject({
+      summary: 'Ralph: Fix the API.',
+      origin: 'automatic',
+      status: 'current',
+      sourceMessageCount: 1,
+      compactedThroughMessageId: 'root-1',
+    })
     expect(message?.routing?.assignments).toEqual([{
       id: 'legacy:root-1:frontend',
       agentId: 'frontend',
@@ -168,6 +187,61 @@ describe('routing state migration', () => {
       toAssignmentId: 'assignment-9',
       createdAt: '2026-08-30T00:01:00.000Z',
     }])
+    await service.close()
+  })
+
+  it('marks interrupted persisted context compactions failed on restart', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-context-interrupted-'))
+    roots.push(root)
+    const memory = {
+      summary: 'Last valid context.',
+      decisions: [],
+      openQuestions: [],
+      updatedAt: '2026-08-30T00:00:00.000Z',
+      origin: 'user',
+      status: 'compacting',
+      sourceMessageCount: 1,
+      estimatedTokens: 10,
+      compactedThroughMessageId: 'root-1',
+    }
+    await writeFile(join(root, 'state.json'), JSON.stringify({
+      version: COMMONSPACE_STATE_VERSION,
+      revision: 2,
+      defaults: { model: null, reasoning: 'max', maxAgentsPerTurn: 4, memoryThreads: 12 },
+      agents: [],
+      dmSessions: {},
+      agentSessions: {},
+      projects: [],
+      channels: [{
+        id: 'general',
+        name: 'general',
+        agentIds: [],
+        instructions: '',
+        memory: { ...memory, threadIds: ['thread-1'] },
+        settings: { model: null, reasoning: null },
+        createdAt: '2026-08-30T00:00:00.000Z',
+      }],
+      threads: [{
+        id: 'thread-1',
+        channelId: 'general',
+        projectIds: [],
+        projectId: null,
+        rootMessageId: 'root-1',
+        agentIds: [],
+        context: {
+          channelSnapshot: { ...memory, status: 'current', capturedAt: '2026-08-30T00:00:00.000Z' },
+          memory,
+        },
+        createdAt: '2026-08-30T00:00:00.000Z',
+      }],
+      messages: {},
+    }))
+    const service = new CommonspaceHostService({}, { root }, { discoverAgents: async () => [] })
+
+    await service.initialize()
+
+    expect(service.snapshot().channels[0]?.memory).toMatchObject({ summary: 'Last valid context.', status: 'failed' })
+    expect(service.snapshot().threads[0]?.context.memory).toMatchObject({ summary: 'Last valid context.', status: 'failed' })
     await service.close()
   })
 })
