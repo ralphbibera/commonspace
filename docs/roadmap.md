@@ -27,7 +27,6 @@ Commonspace is a private preview focused on durable human-agent conversation and
 ## Immediate direction-alignment work
 
 - Remove Commonspace-defined Codex personas and managed identities that do not come from explicit harness discovery.
-- Remove direct Hermes configuration/profile mutation and expose only capabilities and controls advertised through ACP.
 
 ## Next: product behavior
 

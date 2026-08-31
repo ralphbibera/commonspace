@@ -330,60 +330,6 @@ export interface DiscoverAgentsRequest {
   adapter: AgentAdapterKind
 }
 
-export type CommonspaceCapabilityState = 'enabled' | 'configured' | 'available' | 'blocked'
-
-export interface CommonspaceCapabilityItem {
-  id: string
-  label: string
-  state: CommonspaceCapabilityState
-  detail?: string
-}
-
-export interface CommonspaceAgentRunSummary {
-  messageId: string
-  conversation: ConversationRef
-  startedAt: string
-  completedAt: string
-  status: 'complete' | 'failed' | 'running'
-  usedTokens?: number
-  costAmount?: number
-  costCurrency?: string
-}
-
-export interface CommonspaceAgentConfiguration {
-  agentId: string
-  adapter: AgentAdapterKind
-  model: string | null
-  reasoning: CommonspaceReasoning | null
-  /** Provider priority/fast processing when the native harness supports it. */
-  fastMode: boolean | null
-  editable: boolean
-  editBlockedReason?: string
-  instructions: string | null
-  memoryPolicy: { enabled: boolean | null; userProfileEnabled: boolean | null; writeApproval: string | null }
-  permissions: { approvalMode: string | null; secretRedaction: boolean | null }
-  sessionHealth: { status: 'healthy' | 'idle' | 'unavailable'; activeSessions: number; knownSessions: number; lastRunAt: string | null }
-  lastRuns: CommonspaceAgentRunSummary[]
-  cost: { amount: number; currency: string | null }
-  capabilities: {
-    tools: CommonspaceCapabilityItem[]
-    mcp: CommonspaceCapabilityItem[]
-    skills: CommonspaceCapabilityItem[]
-    services: CommonspaceCapabilityItem[]
-  }
-  refreshedAt: string
-}
-
-export interface UpdateAgentConfigurationRequest {
-  model: string
-  reasoning: CommonspaceReasoning
-  fastMode: boolean
-  instructions?: string
-  memoryPolicy?: { enabled: boolean; userProfileEnabled: boolean; writeApproval: string }
-  permissions?: { approvalMode: string; secretRedaction: boolean }
-  toolStates?: Record<string, boolean>
-}
-
 export type CommonspaceMutation =
   | { action: 'mark-inbox-read' }
   | { action: 'mark-inbox-item-read'; messageId: string }

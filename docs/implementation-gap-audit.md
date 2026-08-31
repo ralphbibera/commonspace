@@ -22,7 +22,7 @@ This audit compares the intended behavior in [Product specification](product-spe
 | Local-first standalone workspace | Working | Loopback Express API, separate Vite UI, atomic local state, origin guards, and live browser verification exist. |
 | Durable conversation history | Working | Message acceptance, reply append, and startup sanitization preserve the complete conversation transcript. Regression coverage crosses the former 500-message boundary through both restart and new request/reply append. |
 | BYOA Agent identity | Direction conflict | Codex discovery includes Commonspace-defined `default`, `worker`, and `explorer` personas, and the persisted `add-agent` path creates managed Codex identities. The product specification permits only explicit selection of identities discovered from supported harnesses. |
-| ACP capability/configuration authority | Direction conflict | Hermes capabilities and configuration are read through runtime-specific CLI output, while model, instructions, tools, memory, and permissions can be mutated directly, including `SOUL.md`. `AGT-04` and `AGT-05` require native configuration to remain harness-owned and capabilities to come through ACP. |
+| ACP capability/configuration authority | Working | Runtime-specific configuration endpoints, Hermes CLI/profile mutation, shared native-configuration DTOs, and the native-configuration dashboard are removed. Commonspace limits customization to workspace-local appearance; future capability-dependent controls must originate in ACP. |
 | Projects with multiple local roots | Working | Projects persist canonical filesystem roots and expose files, Git changes, diffs, and agent working directories. |
 | Zero/one/many Project references | Backend-ready | Messages, threads, search, MCP context, run attribution, and multi-root launches now support multiple references. The UI still uses the first reference as its compatibility selection, and a Thread's set cannot yet evolve prospectively. |
 | Prospective Thread Project-reference changes | Missing | A Thread currently rejects a Project-set change instead of applying it only to the new turn and future defaults. |
@@ -56,7 +56,7 @@ This audit compares the intended behavior in [Product specification](product-spe
 
 ## Recommended feature order
 
-1. Restore the remaining product invariant: enforce the explicit BYOA/ACP identity, capability, and configuration boundary.
+1. Restore the remaining product invariant: remove Commonspace-defined Agent personas and managed identities so every workspace Agent comes from explicit harness discovery.
 2. Complete the inference layer: agent-specific sub-requests, Project-reference inference, reroute/correction, compacted routing feedback, and removal of the hidden two-Agent cap.
 3. Complete durable conversation semantics: thread context snapshots, prospective Thread Project-reference changes, message edit branches, deletion markers, and pins.
 4. Generalize collaboration artifacts: human/agent files and normalized native permission requests.
@@ -69,4 +69,4 @@ This audit compares the intended behavior in [Product specification](product-spe
 - Work/result binding moved from `Next` to `Working now` because run attribution, changes, traces, and validation evidence already implement it.
 - Multi-Project references and Channel-context controls are marked backend-ready instead of being implied as either wholly absent or fully surfaced.
 - The roadmap now separates feature behavior, later UI/UX, and scale-dependent storage work.
-- Transcript truncation is fixed; runtime-specific Agent identity and configuration management remain recorded as direction conflicts.
+- Transcript truncation and runtime-specific configuration management are fixed; synthetic Agent identity remains the direction conflict.

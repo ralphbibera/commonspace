@@ -68,4 +68,4 @@ Cross-process shapes have one writer: `packages/shared`. When changing persisted
 
 Hermes and Codex ACP lifecycle code lives in the server. Activity traces must remain provider-neutral, bounded, and derived only from ACP updates the native runtime emits. Real runtime smoke tests are opt-in because they use local credentials and model access.
 
-Native Hermes configuration writes must be treated as a transaction: capture original values, apply the requested model/reasoning/tier settings, verify through readback, and restore every original value on failure. Tests must inject a fake runner; they must never mutate the developer's live Hermes profile.
+Commonspace must not inspect or mutate runtime-specific Agent configuration through provider CLIs or profile files. Agent capabilities and controls belong in shared contracts only after the connected harness advertises them through ACP.

@@ -20,7 +20,6 @@ Endpoints:
 
 - `GET /api/health`
 - `GET /api/bootstrap`
-- `GET|PUT /api/agents/:agentId/configuration`
 - `GET|PUT /api/routing`
 - `GET|PUT /api/channels/:channelId/context`
 - `POST /api/channels/:channelId/context/compact`

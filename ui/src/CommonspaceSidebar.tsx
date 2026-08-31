@@ -3,7 +3,6 @@ import { createPortal } from 'react-dom'
 import {
   deriveCommonspaceInboxItems,
   type AgentAdapterKind,
-  type CommonspaceAgentConfiguration,
   type CommonspaceAgentProfile,
   type CommonspaceChannel,
   type CommonspaceMessage,
@@ -13,7 +12,6 @@ import {
   type CommonspaceSearchResult,
 } from '@commonspace/shared'
 import type { CommonspaceClientStore } from './commonspace-store.ts'
-import { fetchAgentConfiguration, saveAgentConfiguration } from './agent-configuration-api.ts'
 import { CommonspaceSearchDialog } from './CommonspaceSearch.tsx'
 import { folderName } from './project-files-api.ts'
 
@@ -35,8 +33,6 @@ const MODAL_FOCUSABLE_SELECTOR = [
   'textarea:not([disabled])',
   '[tabindex]:not([tabindex="-1"])',
 ].join(',')
-
-const REASONING_OPTIONS: readonly CommonspaceReasoning[] = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
 
 function modalFocusableElements(dialog: HTMLElement): HTMLElement[] {
   return Array.from(dialog.querySelectorAll<HTMLElement>(MODAL_FOCUSABLE_SELECTOR))
@@ -409,20 +405,6 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, inboxActive = f
   const [agentProfileName, setAgentProfileName] = useState('')
   const [agentAvatarEmoji, setAgentAvatarEmoji] = useState('')
   const [agentAccentColor, setAgentAccentColor] = useState('#6d5dfc')
-  const [agentConfiguration, setAgentConfiguration] = useState<CommonspaceAgentConfiguration | null>(null)
-  const [agentConfigurationLoading, setAgentConfigurationLoading] = useState(false)
-  const [agentConfigurationSaving, setAgentConfigurationSaving] = useState(false)
-  const [agentConfigurationError, setAgentConfigurationError] = useState<string | null>(null)
-  const [nativeModel, setNativeModel] = useState('')
-  const [nativeReasoning, setNativeReasoning] = useState<CommonspaceReasoning>('max')
-  const [nativeFastMode, setNativeFastMode] = useState(false)
-  const [nativeInstructions, setNativeInstructions] = useState('')
-  const [nativeMemoryEnabled, setNativeMemoryEnabled] = useState(false)
-  const [nativeUserProfileEnabled, setNativeUserProfileEnabled] = useState(false)
-  const [nativeWriteApproval, setNativeWriteApproval] = useState('')
-  const [nativeApprovalMode, setNativeApprovalMode] = useState('smart')
-  const [nativeSecretRedaction, setNativeSecretRedaction] = useState(true)
-  const [nativeToolStates, setNativeToolStates] = useState<Record<string, boolean>>({})
   const [editingChannelId, setEditingChannelId] = useState<string | null>(null)
   const [channelAgentIds, setChannelAgentIds] = useState<string[]>([])
   const [channelInstructions, setChannelInstructions] = useState('')
@@ -442,35 +424,6 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, inboxActive = f
   const [searchOpen, setSearchOpen] = useState(false)
 
   useEffect(() => { void store.refresh() }, [store])
-  useEffect(() => {
-    if (editingAgentId === null) {
-      setAgentConfiguration(null)
-      setAgentConfigurationError(null)
-      return
-    }
-    let current = true
-    setAgentConfigurationLoading(true)
-    setAgentConfigurationError(null)
-    void fetchAgentConfiguration(editingAgentId).then((configuration) => {
-      if (!current) return
-      setAgentConfiguration(configuration)
-      setNativeModel(configuration.model ?? '')
-      setNativeReasoning(configuration.reasoning ?? 'max')
-      setNativeFastMode(configuration.fastMode ?? false)
-      setNativeInstructions(configuration.instructions ?? '')
-      setNativeMemoryEnabled(configuration.memoryPolicy.enabled ?? false)
-      setNativeUserProfileEnabled(configuration.memoryPolicy.userProfileEnabled ?? false)
-      setNativeWriteApproval(configuration.memoryPolicy.writeApproval ?? '')
-      setNativeApprovalMode(configuration.permissions.approvalMode ?? 'smart')
-      setNativeSecretRedaction(configuration.permissions.secretRedaction ?? true)
-      setNativeToolStates(Object.fromEntries(configuration.capabilities.tools.map(item => [item.id, item.state === 'enabled'])))
-    }).catch((error: unknown) => {
-      if (current) setAgentConfigurationError(error instanceof Error ? error.message : String(error))
-    }).finally(() => {
-      if (current) setAgentConfigurationLoading(false)
-    })
-    return () => { current = false }
-  }, [editingAgentId])
   useEffect(() => {
     const openSearch = (event: KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey) || event.key.toLocaleLowerCase() !== 'k') return
@@ -597,28 +550,6 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, inboxActive = f
       accentColor: agentAccentColor,
     })
     setEditingAgentId(null)
-  }
-
-  const saveNativeConfiguration = async (agentId: string) => {
-    setAgentConfigurationSaving(true)
-    setAgentConfigurationError(null)
-    try {
-      const configuration = await saveAgentConfiguration(agentId, {
-        model: nativeModel,
-        reasoning: nativeReasoning,
-        fastMode: nativeFastMode,
-        instructions: nativeInstructions,
-        memoryPolicy: { enabled: nativeMemoryEnabled, userProfileEnabled: nativeUserProfileEnabled, writeApproval: nativeWriteApproval },
-        permissions: { approvalMode: nativeApprovalMode, secretRedaction: nativeSecretRedaction },
-        toolStates: nativeToolStates,
-      })
-      setAgentConfiguration(configuration)
-      await store.refresh()
-    } catch (error) {
-      setAgentConfigurationError(error instanceof Error ? error.message : String(error))
-    } finally {
-      setAgentConfigurationSaving(false)
-    }
   }
 
   const startDirectMessage = (agentId: string) => {
@@ -884,61 +815,6 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, inboxActive = f
                   <p className="csp-agent-profile-note">The native {runtimeLabel(editingAgent.adapter)} profile, routing, and sessions stay unchanged.</p>
                   <div><button type="submit">Save appearance</button></div>
                 </form>
-                <section className="csp-agent-native-config" aria-label={`${editingAgent.displayName} native configuration`}>
-                  <header><strong>Native {runtimeLabel(editingAgent.adapter)} configuration</strong><small>Read directly from the provider harness</small></header>
-                  {agentConfigurationLoading && <p>Loading provider capabilities…</p>}
-                  {agentConfigurationError !== null && <p className="csp-conversation-error">{agentConfigurationError}</p>}
-                  {agentConfiguration !== null && (
-                    <>
-                      {agentConfiguration.editable
-                        ? <div className="csp-browser-form">
-                            <label>Model<input aria-label="Native model" value={nativeModel} onChange={event => { setNativeModel(event.target.value) }} /></label>
-                            <label>Reasoning<select aria-label="Native reasoning" value={nativeReasoning} onChange={event => { setNativeReasoning(event.target.value as CommonspaceReasoning) }}>
-                              {REASONING_OPTIONS.map(reasoning => <option key={reasoning} value={reasoning}>{reasoning}</option>)}
-                            </select></label>
-                            {agentConfiguration.fastMode !== null && (
-                              <label><input aria-label="Native fast mode" type="checkbox" checked={nativeFastMode} onChange={event => { setNativeFastMode(event.target.checked) }} /> Fast mode<small>Uses priority processing when the current model and provider support it.</small></label>
-                            )}
-                            <label>Unified instructions<textarea aria-label="Unified instructions" value={nativeInstructions} onChange={event => { setNativeInstructions(event.target.value) }} rows={8} /></label>
-                            <fieldset><legend>Memory policy</legend>
-                              <label><input aria-label="Native memory" type="checkbox" checked={nativeMemoryEnabled} onChange={event => { setNativeMemoryEnabled(event.target.checked) }} /> Persistent memory</label>
-                              <label><input aria-label="Native user profile" type="checkbox" checked={nativeUserProfileEnabled} onChange={event => { setNativeUserProfileEnabled(event.target.checked) }} /> User profile</label>
-                              <label>Write approval<input aria-label="Memory write approval" value={nativeWriteApproval} onChange={event => { setNativeWriteApproval(event.target.value) }} /></label>
-                            </fieldset>
-                            <fieldset><legend>Permissions</legend>
-                              <label>Command approvals<select aria-label="Command approvals" value={nativeApprovalMode} onChange={event => { setNativeApprovalMode(event.target.value) }}><option value="smart">Smart</option><option value="manual">Manual</option><option value="off">Off</option></select></label>
-                              <label><input aria-label="Secret redaction" type="checkbox" checked={nativeSecretRedaction} onChange={event => { setNativeSecretRedaction(event.target.checked) }} /> Secret redaction</label>
-                            </fieldset>
-                            <button type="button" disabled={agentConfigurationSaving} onClick={() => { void saveNativeConfiguration(editingAgent.id) }}>{agentConfigurationSaving ? 'Saving and verifying…' : 'Save native configuration'}</button>
-                          </div>
-                        : <p className="csp-agent-profile-note">{agentConfiguration.editBlockedReason}</p>}
-                      {([
-                        ['Tools', agentConfiguration.capabilities.tools],
-                        ['MCP integrations', agentConfiguration.capabilities.mcp],
-                        ['Skills', agentConfiguration.capabilities.skills],
-                        ['Connected services', agentConfiguration.capabilities.services],
-                      ] as const).map(([label, items]) => (
-                        <details key={label} className="csp-agent-capability-group">
-                          <summary>{label} <span>{items.length}</span></summary>
-                          <ul>{items.map(item => <li key={item.id}><strong>{item.label}</strong>{label === 'Tools' && agentConfiguration.editable
-                            ? <label><input aria-label={`Enable tool ${item.label}`} type="checkbox" checked={nativeToolStates[item.id] ?? false} onChange={event => { setNativeToolStates(current => ({ ...current, [item.id]: event.target.checked })) }} /> {nativeToolStates[item.id] === true ? 'enabled' : 'blocked'}</label>
-                            : <span data-state={item.state}>{item.state}</span>}{item.detail === undefined ? null : <small>{item.detail}</small>}</li>)}</ul>
-                        </details>
-                      ))}
-                      <details className="csp-agent-capability-group" open>
-                        <summary>Session health <span>{agentConfiguration.sessionHealth.status}</span></summary>
-                        <ul><li><strong>{agentConfiguration.sessionHealth.activeSessions} active · {agentConfiguration.sessionHealth.knownSessions} known</strong><small>{agentConfiguration.sessionHealth.lastRunAt === null ? 'No Commonspace run recorded' : `Last run ${new Date(agentConfiguration.sessionHealth.lastRunAt).toLocaleString()}`}</small></li></ul>
-                      </details>
-                      <details className="csp-agent-capability-group">
-                        <summary>Last runs <span>{agentConfiguration.lastRuns.length}</span></summary>
-                        <ul>{agentConfiguration.lastRuns.length === 0 ? <li><small>No Commonspace runs recorded.</small></li> : agentConfiguration.lastRuns.map(run => <li key={`${run.messageId}-${run.startedAt}`}><strong>{run.status} · {run.conversation.kind}</strong><span>{run.usedTokens === undefined ? '' : `${String(run.usedTokens)} tokens`}</span><small>{new Date(run.completedAt).toLocaleString()}</small></li>)}</ul>
-                      </details>
-                      <p className="csp-agent-profile-note">Recorded cost: {agentConfiguration.cost.currency === null ? agentConfiguration.cost.amount.toFixed(4) : `${agentConfiguration.cost.currency} ${agentConfiguration.cost.amount.toFixed(4)}`}</p>
-                      <p className="csp-agent-profile-note">Read back {new Date(agentConfiguration.refreshedAt).toLocaleString()}.</p>
-                    </>
-                  )}
-                  <button type="button" onClick={() => { setEditingAgentId(null) }}>Close</button>
-                </section>
               </SidebarDialog>
             )
           })()}

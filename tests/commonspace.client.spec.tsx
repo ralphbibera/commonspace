@@ -361,7 +361,7 @@ describe('Commonspace interface', () => {
     expect(mutate).not.toHaveBeenCalledWith({ action: 'add-discovered-agent', agentId: 'backend' })
   })
 
-  it('edits an agent workspace name and appearance without exposing its native profile as editable', async () => {
+  it('limits agent customization to workspace appearance', async () => {
     const agent = { id: 'frontend', displayName: 'Frontend', adapter: 'hermes' as const, model: 'gpt-test', status: 'running' as const }
     const { store, mutate } = sidebarStore({
       agents: [agent],
@@ -372,6 +372,8 @@ describe('Commonspace interface', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Customize agent Frontend' }))
     const dialog = screen.getByRole('dialog', { name: 'Customize Frontend' })
     expect(within(dialog).queryByLabelText(/native profile/i)).toBeNull()
+    expect(within(dialog).queryByText(/native hermes configuration/i)).toBeNull()
+    expect(within(dialog).queryByRole('button', { name: 'Save native configuration' })).toBeNull()
     fireEvent.change(within(dialog).getByLabelText('Workspace name'), { target: { value: 'Atlas' } })
     fireEvent.change(within(dialog).getByLabelText('Avatar emoji'), { target: { value: '🧭' } })
     fireEvent.change(within(dialog).getByLabelText('Accent color'), { target: { value: '#7c3aed' } })
@@ -385,53 +387,6 @@ describe('Commonspace interface', () => {
         avatarEmoji: '🧭',
         accentColor: '#7c3aed',
       })
-    })
-  })
-
-  it('edits fast mode when the native harness exposes it', async () => {
-    const agent = { id: 'frontend', displayName: 'Frontend', adapter: 'hermes' as const, model: 'gpt-test', status: 'running' as const }
-    const configuration = {
-      agentId: agent.id,
-      adapter: agent.adapter,
-      model: 'gpt-test',
-      reasoning: 'max' as const,
-      fastMode: false,
-      editable: true,
-      instructions: 'Native instructions',
-      memoryPolicy: { enabled: true, userProfileEnabled: true, writeApproval: 'ask' },
-      permissions: { approvalMode: 'smart', secretRedaction: true },
-      sessionHealth: { status: 'healthy' as const, activeSessions: 0, knownSessions: 1, lastRunAt: null },
-      lastRuns: [],
-      cost: { amount: 0, currency: null },
-      capabilities: { tools: [], mcp: [], skills: [], services: [] },
-      refreshedAt: '2026-08-28T00:00:00.000Z',
-    }
-    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => ({
-      ok: true,
-      json: async () => init?.method === 'PUT' ? { ...configuration, fastMode: true } : configuration,
-    }))
-    vi.stubGlobal('fetch', fetchMock)
-    const { store } = sidebarStore({
-      agents: [agent],
-      state: state({ agents: [{ ...agent, createdAt: '2026-08-25T00:00:00.000Z' }] }),
-    })
-    render(<CommonspaceSidebar wide expandSidebar={() => undefined} store={store as never} />)
-
-    fireEvent.click(screen.getByRole('button', { name: 'Customize agent Frontend' }))
-    const fastMode = await screen.findByLabelText('Native fast mode')
-    expect((fastMode as HTMLInputElement).checked).toBe(false)
-    fireEvent.click(fastMode)
-    fireEvent.click(screen.getByRole('button', { name: 'Save native configuration' }))
-
-    await waitFor(() => { expect(fetchMock).toHaveBeenCalledTimes(2) })
-    expect(JSON.parse(fetchMock.mock.calls[1]?.[1]?.body as string)).toEqual({
-      model: 'gpt-test',
-      reasoning: 'max',
-      fastMode: true,
-      instructions: 'Native instructions',
-      memoryPolicy: { enabled: true, userProfileEnabled: true, writeApproval: 'ask' },
-      permissions: { approvalMode: 'smart', secretRedaction: true },
-      toolStates: {},
     })
   })
 
