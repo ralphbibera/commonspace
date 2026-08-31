@@ -11,7 +11,7 @@ afterEach(async () => {
 })
 
 describe('Codex agent discovery', () => {
-  it('discovers built-in and custom native agent profiles', async () => {
+  it('discovers only custom native agent profiles', async () => {
     const root = await mkdtemp(join(tmpdir(), 'commonspace-codex-agent-discovery-'))
     roots.push(root)
     const project = join(root, 'project')
@@ -32,12 +32,7 @@ describe('Codex agent discovery', () => {
 
     const candidates = await discoverCodexAgents({ cwd: project, codexHome })
 
-    expect(candidates.map(candidate => candidate.profile.id)).toEqual(expect.arrayContaining([
-      'codex-default',
-      'codex-worker',
-      'codex-explorer',
-      'codex-reviewer',
-    ]))
+    expect(candidates.map(candidate => candidate.profile.id)).toEqual(['codex-reviewer'])
     expect(candidates.find(candidate => candidate.profile.id === 'codex-reviewer')).toMatchObject({
       profile: {
         id: 'codex-reviewer',
@@ -48,5 +43,14 @@ describe('Codex agent discovery', () => {
       },
       profilePath,
     })
+  })
+
+  it('returns no candidates when no native profiles exist', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-codex-agent-empty-'))
+    roots.push(root)
+
+    const candidates = await discoverCodexAgents({ cwd: root, codexHome: join(root, 'codex-home') })
+
+    expect(candidates).toEqual([])
   })
 })

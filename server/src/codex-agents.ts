@@ -21,27 +21,6 @@ export interface CodexAgentCandidate {
   profilePath?: string
 }
 
-const BUILTIN_PROFILES: readonly CodexAgentProfileConfig[] = [
-  {
-    name: 'default',
-    description: 'General-purpose fallback agent.',
-    developerInstructions: 'Act as Codex default: solve the requested task directly and report the result.',
-    model: null,
-  },
-  {
-    name: 'worker',
-    description: 'Execution-focused agent for implementation and fixes.',
-    developerInstructions: 'Act as Codex worker: execute the requested implementation or fix, then report evidence.',
-    model: null,
-  },
-  {
-    name: 'explorer',
-    description: 'Read-heavy codebase exploration agent.',
-    developerInstructions: 'Act as Codex explorer: inspect the codebase, trace behavior, and report evidence without editing.',
-    model: null,
-  },
-]
-
 function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
@@ -154,10 +133,6 @@ export async function discoverCodexAgents(options: { cwd: string; projectPaths?:
       const profile = profileFromConfig(config)
       if (!candidates.has(profile.id)) candidates.set(profile.id, { profile, config, profilePath })
     }
-  }
-  for (const config of BUILTIN_PROFILES) {
-    const profile = profileFromConfig(config)
-    if (!candidates.has(profile.id)) candidates.set(profile.id, { profile, config })
   }
   return [...candidates.values()]
 }
