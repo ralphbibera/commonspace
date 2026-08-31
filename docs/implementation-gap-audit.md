@@ -11,6 +11,7 @@ This audit compares the intended behavior in [Product specification](product-spe
 | Working | Implemented end to end in the current application. |
 | Backend-ready | Contracts, persistence, service behavior, API, and tests exist; the current UI exposes only compatibility behavior or no control yet. |
 | Partial | A useful subset exists, but an important product promise is absent. |
+| Direction conflict | Current behavior contradicts the canonical product boundary and must be removed or replaced. |
 | Missing | No durable implementation was found. |
 | Deferred | Explicitly outside the current product direction or dependent on demonstrated scale. |
 
@@ -19,6 +20,9 @@ This audit compares the intended behavior in [Product specification](product-spe
 | Product capability | Status | Current evidence and remaining gap |
 | --- | --- | --- |
 | Local-first standalone workspace | Working | Loopback Express API, separate Vite UI, atomic local state, origin guards, and live browser verification exist. |
+| Durable conversation history | Direction conflict | Message acceptance, reply append, and startup sanitization retain only the newest 500 messages per conversation. Earlier accepted messages disappear without an explicit retention action, contradicting `DAT-05` and the conversation-as-work-record invariant. |
+| BYOA Agent identity | Direction conflict | Codex discovery includes Commonspace-defined `default`, `worker`, and `explorer` personas, and the persisted `add-agent` path creates managed Codex identities. The product specification permits only explicit selection of identities discovered from supported harnesses. |
+| ACP capability/configuration authority | Direction conflict | Hermes capabilities and configuration are read through runtime-specific CLI output, while model, instructions, tools, memory, and permissions can be mutated directly, including `SOUL.md`. `AGT-04` and `AGT-05` require native configuration to remain harness-owned and capabilities to come through ACP. |
 | Projects with multiple local roots | Working | Projects persist canonical filesystem roots and expose files, Git changes, diffs, and agent working directories. |
 | Zero/one/many Project references | Backend-ready | Messages, threads, search, MCP context, run attribution, and multi-root launches now support multiple references. The UI still uses the first reference as its compatibility selection, and a Thread's set cannot yet evolve prospectively. |
 | Prospective Thread Project-reference changes | Missing | A Thread currently rejects a Project-set change instead of applying it only to the new turn and future defaults. |
@@ -47,16 +51,17 @@ This audit compares the intended behavior in [Product specification](product-spe
 | Installed background service | Partial | The server can run independently, but installation, startup registration, health control, and updating are not packaged. |
 | Export, import, and retention | Missing | No non-secret archive format, import validation, or retention controls exist. |
 | Extensible Project resources | Missing | The product model permits resource kinds beyond directories, but persistence and APIs are filesystem-specific. |
-| Relational transcript store | Deferred | Versioned JSON state is still adequate; migration should follow measured transcript-scale pressure. |
+| Relational transcript store | Deferred | Storage technology remains scale-dependent, but removing silent transcript truncation and honoring explicit retention semantics cannot wait for a relational migration. |
 | Plugin lifecycle | Deferred | It was intentionally removed from the local-first core and is not required for the current product model. |
 
 ## Recommended feature order
 
-1. Complete the inference layer: agent-specific sub-requests, Project-reference inference, reroute/correction, compacted routing feedback, and removal of the hidden two-Agent cap.
-2. Complete durable conversation semantics: thread context snapshots, prospective Thread Project-reference changes, message edit branches, deletion markers, and pins.
-3. Generalize collaboration artifacts: human/agent files and normalized native permission requests.
-4. Complete operability: runtime/auth diagnostics, export/import/retention, installed background service, and OS notifications.
-5. Add UI/UX for the backend-ready capabilities and the features above after their behavior and contracts are stable.
+1. Restore product invariants: preserve every accepted message and enforce the explicit BYOA/ACP identity, capability, and configuration boundary.
+2. Complete the inference layer: agent-specific sub-requests, Project-reference inference, reroute/correction, compacted routing feedback, and removal of the hidden two-Agent cap.
+3. Complete durable conversation semantics: thread context snapshots, prospective Thread Project-reference changes, message edit branches, deletion markers, and pins.
+4. Generalize collaboration artifacts: human/agent files and normalized native permission requests.
+5. Complete operability: runtime/auth diagnostics, export/import/retention, installed background service, and OS notifications.
+6. Add UI/UX for the backend-ready capabilities and the features above after their behavior and contracts are stable.
 
 ## Documentation corrections made with this audit
 
@@ -64,3 +69,4 @@ This audit compares the intended behavior in [Product specification](product-spe
 - Work/result binding moved from `Next` to `Working now` because run attribution, changes, traces, and validation evidence already implement it.
 - Multi-Project references and Channel-context controls are marked backend-ready instead of being implied as either wholly absent or fully surfaced.
 - The roadmap now separates feature behavior, later UI/UX, and scale-dependent storage work.
+- Transcript truncation and runtime-specific Agent management are recorded as direction conflicts rather than accepted implementation details.
