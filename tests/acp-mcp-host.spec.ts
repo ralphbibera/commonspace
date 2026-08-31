@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { startCommonspaceServer, type RunningCommonspaceServer } from '../server/src/index.ts'
+import { addTestCodexAgents } from './test-codex-agents.ts'
 
 const roots: string[] = []
 const runningServers: RunningCommonspaceServer[] = []
@@ -34,7 +35,7 @@ describe('Commonspace ACP session context', () => {
     runningServers.push(running)
     const workspace = join(root, 'private-workspace')
     await mkdir(workspace)
-    await running.service.mutate({ action: 'add-agent', displayName: 'Review Bot', adapter: 'codex' })
+    await addTestCodexAgents(running.service, 'codex-review-bot')
     const project = (await running.service.mutate({ action: 'create-project', name: 'App', paths: [workspace] }))
       .projects.find(project => project.name === 'App')!
     const state = await running.service.mutate({
@@ -109,7 +110,7 @@ describe('Commonspace ACP session context', () => {
       logger: { info: () => undefined, warn: () => undefined },
     })
     runningServers.push(running)
-    await running.service.mutate({ action: 'add-agent', displayName: 'Review Bot', adapter: 'codex' })
+    await addTestCodexAgents(running.service, 'codex-review-bot')
     await running.service.send({ conversation: { kind: 'dm', id: 'codex-review-bot' }, text: 'Start generation.' })
     await running.service.whenIdle()
     const frames = (await readFile(logPath, 'utf8')).trim().split('\n').map(line => JSON.parse(line))

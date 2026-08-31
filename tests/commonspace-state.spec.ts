@@ -74,19 +74,21 @@ describe('Commonspace local state', () => {
       .toThrow('unsupported reasoning')
   })
 
-  it('adds and removes Codex agents with their channel and session state', () => {
-    let state = createInitialState()
-    state = applyMutation(state, {
-      action: 'add-agent',
+  it('adds and removes discovered Codex agents with their channel and session state', () => {
+    const state = addDiscoveredAgent(createInitialState(), {
+      id: 'codex-review-bot',
       displayName: 'Review Bot',
       adapter: 'codex',
-      model: '  gpt-5.4  ',
+      nativeProfile: 'review-bot',
+      model: 'gpt-5.4',
+      status: 'unknown',
     }, { ids: () => 'unused', now: () => '2026-08-25T01:00:00.000Z' })
 
     expect(state.agents).toEqual([{
       id: 'codex-review-bot',
       displayName: 'Review Bot',
       adapter: 'codex',
+      nativeProfile: 'review-bot',
       model: 'gpt-5.4',
       createdAt: '2026-08-25T01:00:00.000Z',
     }])

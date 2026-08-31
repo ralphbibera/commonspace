@@ -44,7 +44,7 @@ Run `pnpm dev` from the workspace root. Confirm the server is on port `3100` and
 
 ### No Hermes agents
 
-Run `hermes profile list` in the same environment. Commonspace shows discovered profiles in the Agents add panel; discovery alone does not add them to the roster. Codex agents remain usable if discovery fails.
+Run `hermes profile list` in the same environment. Commonspace shows discovered profiles in the Agents add panel; discovery alone does not add them to the roster. Previously selected profiles remain visible through transient discovery failures, but every new Hermes or Codex Agent requires successful native-profile discovery.
 
 ### Project path rejected
 

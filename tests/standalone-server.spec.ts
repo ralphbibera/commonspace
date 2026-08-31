@@ -71,6 +71,17 @@ describe('standalone Commonspace server', () => {
       await expect(configurationResponse.json()).resolves.toEqual({ code: 'not_found', error: 'API route not found' })
     }
 
+    const managedAgentResponse = await fetch(`${running.url}/api/mutate`, {
+      method: 'POST',
+      headers: { origin: running.url, 'content-type': 'application/json' },
+      body: JSON.stringify({ action: 'add-agent', displayName: 'Invented Agent', adapter: 'codex' }),
+    })
+    expect(managedAgentResponse.status).toBe(400)
+    await expect(managedAgentResponse.json()).resolves.toMatchObject({
+      code: 'invalid_mutation',
+      error: expect.stringContaining('unknown mutation'),
+    })
+
     const routingResponse = await fetch(`${running.url}/api/routing`, {
       method: 'PUT',
       headers: { origin: running.url, 'content-type': 'application/json' },

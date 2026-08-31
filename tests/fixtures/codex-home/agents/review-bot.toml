@@ -1,0 +1,4 @@
+name = "review-bot"
+description = "Test review Agent."
+model = "gpt-5.4"
+developer_instructions = "Follow the current test request exactly."

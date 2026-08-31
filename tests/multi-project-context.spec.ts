@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CommonspaceHostService } from '../server/src/service.ts'
+import { addTestCodexAgents } from './test-codex-agents.ts'
 
 const roots: string[] = []
 const services: CommonspaceHostService[] = []
@@ -32,7 +33,7 @@ async function fixture() {
   })
   services.push(service)
   await service.initialize()
-  await service.mutate({ action: 'add-agent', displayName: 'Review Bot', adapter: 'codex' })
+  await addTestCodexAgents(service, 'codex-review-bot')
   const first = (await service.mutate({ action: 'create-project', name: 'First App', paths: [firstRoot] })).projects[0]!
   const second = (await service.mutate({ action: 'create-project', name: 'Second API', paths: [secondRoot] })).projects[1]!
   return { service, runAgent, first, second, firstRoot: await realpath(firstRoot), secondRoot: await realpath(secondRoot), stateRoot }

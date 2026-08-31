@@ -43,6 +43,7 @@ All notable changes to Commonspace are recorded here.
 
 ### Removed
 
+- Managed Codex Agent creation through the generic mutation contract; every new Agent now enters the workspace through explicit native-profile discovery.
 - Commonspace-defined Codex `default`, `worker`, and `explorer` personas; Codex discovery now returns only native local profiles.
 - Runtime-specific Hermes configuration inspection/mutation and the native-configuration dashboard; Commonspace now limits Agent customization to workspace-local appearance until capabilities are advertised through ACP.
 - Synthesized room/DM delivery envelopes, replayed Channel memory, duplicated recent transcripts, and execution-contract boilerplate from agent messages.

@@ -5,6 +5,7 @@ import { COMMONSPACE_STATE_VERSION } from '@commonspace/shared'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { requestIsLoopback, requestIsSameOrigin } from '../server/src/app.ts'
 import { CommonspaceHostService, unsafeModeForAdapter, type AgentRunInput } from '../server/src/service.ts'
+import { addTestCodexAgents } from './test-codex-agents.ts'
 
 const roots: string[] = []
 
@@ -165,7 +166,7 @@ describe('Commonspace host authority', () => {
       runAgent,
     })
     await service.initialize()
-    await service.mutate({ action: 'add-agent', displayName: 'Review Bot', adapter: 'codex' })
+    await addTestCodexAgents(service, 'codex-review-bot')
 
     await service.send({ conversation: { kind: 'dm', id: 'codex-review-bot' }, text: 'Run.' })
     await service.whenIdle()
@@ -183,7 +184,7 @@ describe('Commonspace host authority', () => {
     const runAgent = vi.fn(async (input: AgentRunInput) => { void input; return { text: 'Done.' } })
     const service = new CommonspaceHostService({} as never, { root, defaultCwd: fallback }, { discoverAgents: async () => [], runAgent })
     await service.initialize()
-    await service.mutate({ action: 'add-agent', displayName: 'Review Bot', adapter: 'codex' })
+    await addTestCodexAgents(service, 'codex-review-bot')
     const project = (await service.mutate({ action: 'create-project', name: 'Tagged Workspace', paths: [workspace] })).projects[0]!
 
     const sent = await service.send({ conversation: { kind: 'dm', id: 'codex-review-bot' }, text: 'Review @@tagged-workspace.' })
@@ -204,7 +205,7 @@ describe('Commonspace host authority', () => {
       runAgent: async () => { throw new Error(`provider failed inside ${canonicalWorkspace}/secret.txt`) },
     })
     await service.initialize()
-    await service.mutate({ action: 'add-agent', displayName: 'Review Bot', adapter: 'codex' })
+    await addTestCodexAgents(service, 'codex-review-bot')
     const project = (await service.mutate({ action: 'create-project', name: 'Private', paths: [workspace] })).projects[0]!
     await service.send({ conversation: { kind: 'dm', id: 'codex-review-bot' }, projectId: project.id, text: 'Run.' })
     await service.whenIdle()
@@ -440,8 +441,7 @@ describe('Commonspace host authority', () => {
       : secondResult.promise)
     const service = new CommonspaceHostService({} as never, { root }, { discoverAgents: async () => [], runAgent })
     await service.initialize()
-    await service.mutate({ action: 'add-agent', displayName: 'Review Bot', adapter: 'codex' })
-    await service.mutate({ action: 'add-agent', displayName: 'Second Bot', adapter: 'codex' })
+    await addTestCodexAgents(service, 'codex-review-bot', 'codex-second-bot')
     await service.send({ conversation: { kind: 'dm', id: 'codex-review-bot' }, text: 'Keep working through reload.' })
     await vi.waitFor(() => { expect(runAgent).toHaveBeenCalledOnce() })
 
@@ -485,12 +485,12 @@ describe('Commonspace host authority', () => {
     const runAgent = vi.fn(async () => result.promise)
     const service = new CommonspaceHostService({} as never, { root }, { discoverAgents: async () => [], runAgent })
     await service.initialize()
-    await service.mutate({ action: 'add-agent', displayName: 'Review Bot', adapter: 'codex' })
+    await addTestCodexAgents(service, 'codex-review-bot')
     await service.send({ conversation: { kind: 'dm', id: 'codex-review-bot' }, text: 'Review this.' })
     await vi.waitFor(() => { expect(runAgent).toHaveBeenCalledOnce() })
 
     await service.mutate({ action: 'remove-agent', agentId: 'codex-review-bot' })
-    await service.mutate({ action: 'add-agent', displayName: 'Review Bot', adapter: 'codex' })
+    await addTestCodexAgents(service, 'codex-review-bot')
     result.resolve({ text: 'Stale response.', sessionId: '123e4567-e89b-42d3-a456-426614174000' })
     await service.whenIdle()
 
@@ -508,7 +508,7 @@ describe('Commonspace host authority', () => {
     const runAgent = vi.fn(async () => result.promise)
     const service = new CommonspaceHostService({} as never, { root }, { discoverAgents: async () => [], runAgent })
     await service.initialize()
-    await service.mutate({ action: 'add-agent', displayName: 'Review Bot', adapter: 'codex' })
+    await addTestCodexAgents(service, 'codex-review-bot')
     const project = (await service.mutate({ action: 'create-project', name: 'App', paths: [workspace] })).projects[0]!
     const channel = (await service.mutate({ action: 'create-channel', name: 'review', projectId: project.id, agentIds: ['codex-review-bot'] })).channels[0]!
     await service.send({ conversation: { kind: 'channel', id: channel.id }, text: 'Review.' })
@@ -1128,7 +1128,7 @@ describe('Commonspace host authority', () => {
     expect(messages.some(message => message.authorType === 'agent' && message.authorId === 'frontend')).toBe(true)
   })
 
-  it('rejects managed agent IDs that collide with discovered Hermes profiles', async () => {
+  it('rejects a native Codex profile ID that collides with a selected Hermes profile', async () => {
     const root = await mkdtemp(join(tmpdir(), 'commonspace-agent-collision-'))
     roots.push(root)
     const service = new CommonspaceHostService({} as never, { root }, {
@@ -1136,9 +1136,11 @@ describe('Commonspace host authority', () => {
     })
     await service.initialize()
     await service.discoverAgents('hermes')
+    await service.mutate({ action: 'add-discovered-agent', agentId: 'codex-review-bot' })
+    await service.discoverAgents('codex')
 
-    await expect(service.mutate({ action: 'add-agent', displayName: 'Review Bot', adapter: 'codex' }))
-      .rejects.toThrow('conflicts with a Hermes profile')
+    await expect(service.mutate({ action: 'add-discovered-agent', agentId: 'codex-review-bot' }))
+      .rejects.toThrow('already exists')
   })
 
   it('rejects unknown conversations and attaches project context to channel threads', async () => {
@@ -1236,11 +1238,19 @@ describe('Commonspace host authority', () => {
     })
     await service.initialize()
     await addDiscoveredAgents(service, 'frontend')
-    await service.mutate({ action: 'add-agent', displayName: 'Review Bot', adapter: 'codex', model: 'gpt-5.4' })
+    await addTestCodexAgents(service, 'codex-review-bot')
 
     expect((await service.bootstrap()).agents).toEqual([
       { id: 'frontend', displayName: 'Frontend', adapter: 'hermes', model: 'test', status: 'stopped' },
-      { id: 'codex-review-bot', displayName: 'Review Bot', adapter: 'codex', model: 'gpt-5.4', status: 'unknown' },
+      {
+        id: 'codex-review-bot',
+        displayName: 'Review Bot',
+        adapter: 'codex',
+        nativeProfile: 'review-bot',
+        model: 'gpt-5.4',
+        status: 'unknown',
+        description: 'Test review Agent.',
+      },
     ])
 
     const project = (await service.mutate({ action: 'create-project', name: 'App', paths: [workspace, sibling] })).projects[0]!
@@ -1261,7 +1271,6 @@ describe('Commonspace host authority', () => {
       cwd: resolvedWorkspace,
       additionalCwds: [resolvedSibling],
       sessionName,
-      model: 'gpt-5.4',
     })
     expect(service.snapshot().agentSessions['codex-review-bot']?.[sessionName]).toBe(sessionId)
     expect((await service.bootstrap()).state.agentSessions).toEqual({})

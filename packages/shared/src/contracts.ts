@@ -345,7 +345,6 @@ export type CommonspaceMutation =
   | { action: 'set-channel-memory'; channelId: string; summary: string; decisions?: string[]; openQuestions?: string[] }
   | { action: 'set-channel-settings'; channelId: string; model?: string | null; reasoning?: CommonspaceReasoning | null }
   | { action: 'set-defaults'; model?: string | null; reasoning?: CommonspaceReasoning; maxAgentsPerTurn?: number; memoryThreads?: number }
-  | { action: 'add-agent'; displayName: string; adapter: Exclude<AgentAdapterKind, 'hermes'>; model?: string | null }
   | { action: 'add-discovered-agent'; agentId: string }
   | { action: 'update-agent-profile'; agentId: string; displayName: string; avatarEmoji?: string; accentColor?: string }
   | { action: 'remove-agent'; agentId: string }

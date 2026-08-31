@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CommonspaceHostService, type CommonspaceHostConfig } from '../server/src/service.ts'
+import { addTestCodexAgents } from './test-codex-agents.ts'
 
 const roots: string[] = []
 const fixturePath = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'fake-acp-agent.mjs')
@@ -31,7 +32,7 @@ describe('Commonspace ACP host path', () => {
 
     const service = new CommonspaceHostService({}, acpConfig(root), { discoverAgents: async () => [] })
     await service.initialize()
-    await service.mutate({ action: 'add-agent', displayName: 'Review Bot', adapter: 'codex' })
+    await addTestCodexAgents(service, 'codex-review-bot')
     await service.send({ conversation: { kind: 'dm', id: 'codex-review-bot' }, text: 'Only the first delta.' })
     await service.whenIdle()
 
@@ -130,7 +131,7 @@ describe('Commonspace ACP host path', () => {
 
     await service.initialize()
     if (adapter === 'hermes') await service.mutate({ action: 'add-discovered-agent', agentId })
-    else await service.mutate({ action: 'add-agent', displayName: 'Review Bot', adapter: 'codex' })
+    else await addTestCodexAgents(service, 'codex-review-bot')
     await service.send({ conversation: { kind: 'dm', id: agentId }, text: 'Keep an audit trail.' })
     await service.whenIdle()
 
@@ -218,7 +219,7 @@ describe('Commonspace ACP host path', () => {
     vi.stubEnv('FAKE_ACP_SESSION_ID', 'codex:thread/opaque-session-01')
     const service = new CommonspaceHostService({}, acpConfig(root), { discoverAgents: async () => [] })
     await service.initialize()
-    await service.mutate({ action: 'add-agent', displayName: 'Review Bot', adapter: 'codex' })
+    await addTestCodexAgents(service, 'codex-review-bot')
     await service.send({ conversation: { kind: 'dm', id: 'codex-review-bot' }, text: 'Start opaque.' })
     await service.whenIdle()
     expect(service.snapshot().agentSessions['codex-review-bot']?.['Bot Chat']).toBe('codex:thread/opaque-session-01')
@@ -234,27 +235,28 @@ describe('Commonspace ACP host path', () => {
     expect(frames.find(frame => frame.method === 'session/load')?.params.sessionId).toBe('codex:thread/opaque-session-01')
   })
 
-  it('maps Commonspace model, reasoning, and safety settings onto ACP session configuration', async () => {
+  it('keeps native Codex profile configuration authoritative', async () => {
     const root = await mkdtemp(join(tmpdir(), 'commonspace-acp-host-settings-'))
     roots.push(root)
     const logPath = join(root, 'frames.ndjson')
     vi.stubEnv('FAKE_ACP_LOG', logPath)
     vi.stubEnv('FAKE_ACP_SETTINGS', '1')
+    vi.stubEnv('FAKE_ACP_CAPTURE_ENV', '1')
     const service = new CommonspaceHostService({}, acpConfig(root), { discoverAgents: async () => [] })
     await service.initialize()
-    await service.mutate({ action: 'add-agent', displayName: 'Review Bot', adapter: 'codex', model: 'gpt-test' })
-    await service.mutate({ action: 'set-defaults', reasoning: 'high' })
+    await addTestCodexAgents(service, 'codex-review-bot')
+    await service.mutate({ action: 'set-defaults', model: 'gpt-test', reasoning: 'high' })
     await service.send({ conversation: { kind: 'dm', id: 'codex-review-bot' }, text: 'Use my settings.' })
     await service.whenIdle()
     await service.close()
 
     const frames = (await readFile(logPath, 'utf8')).trim().split('\n').map(line => JSON.parse(line))
     expect(frames.find(frame => frame.method === 'session/set_mode')?.params.modeId).toBe('agent')
-    expect(frames.filter(frame => frame.method === 'session/set_config_option').map(frame => frame.params))
-      .toEqual(expect.arrayContaining([
-        expect.objectContaining({ configId: 'model', value: 'gpt-test' }),
-        expect.objectContaining({ configId: 'reasoning_effort', value: 'high' }),
-      ]))
+    expect(frames.filter(frame => frame.method === 'session/set_config_option')).toEqual([])
+    expect(frames.find(frame => frame.event === 'environment')?.codexConfig).toMatchObject({
+      model: 'gpt-5.4',
+      developer_instructions: 'Follow the current test request exactly.',
+    })
   })
 
   it('maps Hermes Channel model and workspace edit approval onto native ACP controls', async () => {
@@ -307,8 +309,7 @@ describe('Commonspace ACP host path', () => {
     const service = new CommonspaceHostService({}, acpConfig(root), { discoverAgents: async () => [] })
     try {
       await service.initialize()
-      const harness = (await service.mutate({ action: 'add-agent', displayName: 'Router', adapter: 'codex' })).agents.at(-1)!
-      const worker = (await service.mutate({ action: 'add-agent', displayName: 'Worker', adapter: 'codex' })).agents.at(-1)!
+      const [harness, worker] = await addTestCodexAgents(service, 'codex-router', 'codex-worker')
       const firstChannel = (await service.mutate({ action: 'create-channel', name: 'first', agentIds: [worker.id] })).channels.at(-1)!
       const secondChannel = (await service.mutate({ action: 'create-channel', name: 'second', agentIds: [worker.id] })).channels.at(-1)!
       await service.updateRoutingConfiguration({ provider: 'harness', harnessAgentId: harness.id })
@@ -344,7 +345,7 @@ describe('Commonspace ACP host path', () => {
     const service = new CommonspaceHostService({}, acpConfig(root), { discoverAgents: async () => [] })
     try {
       await service.initialize()
-      await service.mutate({ action: 'add-agent', displayName: 'Review Bot', adapter: 'codex' })
+      await addTestCodexAgents(service, 'codex-review-bot')
       await service.send({ conversation: { kind: 'dm', id: 'codex-review-bot' }, text: 'Long turn.' })
       await vi.waitFor(async () => {
         expect((await readFile(logPath, 'utf8')).includes('session/prompt')).toBe(true)
@@ -370,7 +371,7 @@ describe('Commonspace ACP host path', () => {
     vi.stubEnv('FAKE_ACP_HANG_PROMPT', '1')
     const service = new CommonspaceHostService({}, acpConfig(root), { discoverAgents: async () => [] })
     await service.initialize()
-    await service.mutate({ action: 'add-agent', displayName: 'Review Bot', adapter: 'codex' })
+    await addTestCodexAgents(service, 'codex-review-bot')
     await service.send({ conversation: { kind: 'dm', id: 'codex-review-bot' }, text: 'Long turn.' })
     await vi.waitFor(async () => {
       expect((await readFile(logPath, 'utf8')).includes('session/prompt')).toBe(true)
@@ -397,7 +398,7 @@ describe('Commonspace ACP host path', () => {
     vi.stubEnv('FAKE_ACP_PROMPT_DELAY_MS', '150')
     const service = new CommonspaceHostService({}, acpConfig(root), { discoverAgents: async () => [] })
     await service.initialize()
-    await service.mutate({ action: 'add-agent', displayName: 'Review Bot', adapter: 'codex' })
+    await addTestCodexAgents(service, 'codex-review-bot')
     await service.send({ conversation: { kind: 'dm', id: 'codex-review-bot' }, text: 'Finish across the reload request.' })
     await vi.waitFor(async () => {
       expect((await readFile(logPath, 'utf8')).includes('session/prompt')).toBe(true)
@@ -423,7 +424,7 @@ describe('Commonspace ACP host path', () => {
     vi.stubEnv('FAKE_ACP_LOG', logPath)
     const initial = new CommonspaceHostService({}, acpConfig(root), { discoverAgents: async () => [] })
     await initial.initialize()
-    await initial.mutate({ action: 'add-agent', displayName: 'Review Bot', adapter: 'codex' })
+    await addTestCodexAgents(initial, 'codex-review-bot')
     await initial.send({ conversation: { kind: 'dm', id: 'codex-review-bot' }, text: 'Create native state.' })
     await initial.whenIdle()
     await initial.close()
@@ -452,7 +453,7 @@ describe('Commonspace ACP host path', () => {
     vi.stubEnv('FAKE_ACP_LOG', logPath)
     const initial = new CommonspaceHostService({}, acpConfig(root), { discoverAgents: async () => [] })
     await initial.initialize()
-    await initial.mutate({ action: 'add-agent', displayName: 'Review Bot', adapter: 'codex' })
+    await addTestCodexAgents(initial, 'codex-review-bot')
     await initial.send({ conversation: { kind: 'dm', id: 'codex-review-bot' }, text: 'Create native state.' })
     await initial.whenIdle()
     await initial.close()

@@ -24,10 +24,6 @@ Commonspace is a private preview focused on durable human-agent conversation and
 - Slash commands and agent/project/channel references.
 - Versioned atomic state, loopback API guards, bounded execution, and live browser verification.
 
-## Immediate direction-alignment work
-
-- Remove legacy managed Codex identity creation and preserve or migrate existing identity/history safely.
-
 ## Next: product behavior
 
 - Split routed messages into inspectable agent-specific sub-requests and remove the hidden two-Agent inference cap.

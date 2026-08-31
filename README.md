@@ -12,7 +12,7 @@ Commonspace is a local-first workspace for durable conversations with coding age
 - **Channels** provide shared, optionally projectless conversations with explicit agent rosters and editable compacted context.
 - **Direct Messages** preserve one-to-one continuity with a chosen agent.
 - **Inbox** collects actual agent replies from Channels and Direct Messages, with unread filtering and exact thread navigation.
-- **Agents** are explicitly chosen from discovered Hermes profiles or created as Codex agents. Workspace names and appearance stay local and never rename native profiles.
+- **Agents** are explicitly chosen from discovered Hermes or Codex native profiles. Workspace names and appearance stay local and never rename native profiles.
 - **Messages and threads** are the work record. Native agent session references keep every continuation attached to the correct context.
 
 Commonspace is conversation-first. Hermes and Codex receive only the newly delivered message over ACP, resume their exact provider-native session, and can read bounded shared-room context or post progress through a session-scoped Commonspace MCP server. Each reply can expose a durable, expandable audit of the reasoning summaries, plans, tool calls, results, and usage emitted by its native harness. Raw session mechanics remain host-private.
