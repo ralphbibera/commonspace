@@ -1,6 +1,6 @@
 # Implementation gap audit
 
-Snapshot: 2026-08-31, audited against the current state-v23 implementation on `main`.
+Snapshot: 2026-08-31, audited against the current state-v24 implementation on `main`.
 
 This audit compares the intended behavior in [Product specification](product-spec.md), [Product direction](product-direction.md), and [Product model](product.md) with executable contracts, server behavior, persistence, API routes, UI use, and tests. It deliberately separates product behavior from later UI/UX work.
 
@@ -47,7 +47,7 @@ This audit compares the intended behavior in [Product specification](product-spe
 | Native permission requests | Working | ACP permission requests persist with only harness-advertised choices, block only the affected native session, appear in the conversation and durable Inbox/session attention, return the exact selected option, and become interrupted on shutdown/restart rather than hanging or pretending completion. |
 | Inbox, unread state, search, and navigation | Working | Reply-focused Inbox, exact thread navigation, read cursors, and unified transcript search exist. Search filtering now recognizes every referenced Project. |
 | Runtime and authentication diagnostics | Working | On-demand diagnostics report service storage/projectless readiness, installed versus rostered supported harnesses, observed run readiness, recovery guidance, and local/remote inference data categories without returning credentials, host paths, or native IDs. |
-| Notifications | Partial | In-app attention state exists; OS notifications and settings do not. |
+| Notifications | Working | Opt-in native OS notifications cover replies/input requests, owner mentions, exact ACP permission requests, failures, and timeouts. Independent persisted category/sound controls never mute or remove the durable Inbox. New-item baselining prevents restart/import replay, session mutes suppress native delivery, and every alert opens a validated loopback deep link to the exact conversation, Thread, and message. |
 | Installed background service | Working | The macOS service manager provides one-command SSH installation from `main`, an owner LaunchAgent, same-origin built UI/API delivery, start/stop/restart/status controls, staged updates, activation health checks, automatic failed-update restoration, and explicit one-release rollback without repository knowledge. |
 | Export, import, and retention | Working | Version-1 JSON archives contain sanitized workspace data and exact attachment bytes while omitting paths, native sessions, capabilities, and credentials. Import is clean-workspace-only, validates all attachment data, and requires explicit local root mappings. Revision-bound retention previews scope destructive cleanup to one inactive Channel or DM. The format and semantics are documented in [Workspace archive format](workspace-archive-format.md). |
 | Extensible Project resources | Missing | The product model permits resource kinds beyond directories, but persistence and APIs are filesystem-specific. |
@@ -56,15 +56,15 @@ This audit compares the intended behavior in [Product specification](product-spe
 
 ## Recommended feature order
 
-1. Complete operability: configurable OS notifications.
-2. Finish user-facing controls and acceptance coverage for remaining backend-ready and release-readiness capabilities.
+1. Finish user-facing controls and acceptance coverage for remaining backend-ready and release-readiness capabilities.
 
 ## Documentation corrections made with this audit
 
-- State documentation now identifies v23 and migrations from versions 1–22.
+- State documentation now identifies v24 and migrations from versions 1–23.
 - Work/result binding moved from `Next` to `Working now` because run attribution, changes, traces, and validation evidence already implement it.
 - Multi-Project references and Channel-context controls are marked backend-ready instead of being implied as either wholly absent or fully surfaced.
 - The roadmap now separates feature behavior, later UI/UX, and scale-dependent storage work.
 - Transcript truncation, runtime-specific configuration management, synthetic Codex discovery, and managed Agent creation are fixed.
 - Export/import and retention now have documented, tested service, API, and UI paths.
 - The macOS background-service lifecycle now has packaged install/update/control/recovery paths and same-origin installed UI delivery.
+- Configurable native notifications now derive from durable Inbox events and deep-link to exact conversation state without changing Inbox retention/read semantics.

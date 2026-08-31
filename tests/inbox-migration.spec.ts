@@ -139,4 +139,14 @@ describe('Commonspace Inbox state migration', () => {
     expect(state.followedSessionIds).toEqual(['reply-1:backend'])
     expect(state.mutedSessionIds).toEqual(['other:backend'])
   })
+
+  it('migrates v23 to opt-in notification defaults and preserves valid category choices', async () => {
+    const migrated = await loadState(23)
+    const configured = await loadState(COMMONSPACE_STATE_VERSION, null, [], [], {
+      notifications: { enabled: true, replies: false, mentions: true, permissions: false, failures: true, sound: true },
+    })
+
+    expect(migrated.notifications).toEqual({ enabled: false, replies: true, mentions: true, permissions: true, failures: true, sound: false })
+    expect(configured.notifications).toEqual({ enabled: true, replies: false, mentions: true, permissions: false, failures: true, sound: true })
+  })
 })

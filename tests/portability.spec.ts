@@ -24,6 +24,10 @@ describe('workspace portability', () => {
     })
     await source.initialize()
     await addTestHarness(source, 'codex', 'Review Bot')
+    await source.mutate({
+      action: 'set-notifications',
+      notifications: { enabled: true, replies: true, mentions: true, permissions: true, failures: true, sound: false },
+    })
     const project = (await source.mutate({ action: 'create-project', name: 'Portable App', paths: [projectRoot, sharedRoot] })).projects[0]!
     await source.send({
       conversation: { kind: 'dm', id: 'codex' },
@@ -54,11 +58,14 @@ describe('workspace portability', () => {
     roots.push(targetRoot)
     const mappedProject = join(targetRoot, 'mapped-project')
     await mkdir(mappedProject)
+    let importedNotificationCount = 0
     const target = new CommonspaceHostService({}, { root: join(targetRoot, 'state') }, {
       discoverAgents: discoverTestHarnesses,
       runAgent: async () => ({ text: 'No run expected.' }),
+      notify: async () => { importedNotificationCount += 1 },
     })
     await target.initialize()
+    target.attachClientUrl('http://127.0.0.1:3100')
     const importWorkspace = (target as unknown as {
       importWorkspace(archive: unknown, projectMappings: Record<string, string[]>): Promise<unknown>
     }).importWorkspace
@@ -70,6 +77,7 @@ describe('workspace portability', () => {
 
     await importWorkspace.call(target, archive, mappings)
 
+    expect(importedNotificationCount).toBe(0)
     expect(target.snapshot().projects[0]).toMatchObject({ id: project.id, paths: [await realpath(mappedProject), await realpath(targetRoot)] })
     expect(target.snapshot().messages['dm:codex']?.map(message => message.text)).toEqual(['Keep portable history.', 'Portable reply.'])
     expect(target.snapshot().agentSessions).toEqual({})

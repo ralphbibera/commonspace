@@ -256,6 +256,7 @@ function RoutingAssignments({
 
 function MessageRow({
   message,
+  elementId,
   bootstrap,
   compact = false,
   onReplyToAgent,
@@ -267,6 +268,7 @@ function MessageRow({
   speech,
 }: {
   message: CommonspaceMessage
+  elementId?: string
   bootstrap?: CommonspaceBootstrap | null
   compact?: boolean
   onReplyToAgent?: (message: CommonspaceMessage) => void
@@ -295,7 +297,7 @@ function MessageRow({
     }
   }
   return (
-    <article className={`csp-message csp-message--${message.authorType}${compact ? ' csp-message--compact' : ''}`} data-author={message.authorType}>
+    <article id={elementId} className={`csp-message csp-message--${message.authorType}${compact ? ' csp-message--compact' : ''}`} data-author={message.authorType}>
       <div className="csp-message-avatar" aria-hidden="true">{message.authorName.slice(0, 1).toUpperCase()}</div>
       <div className="csp-message-main">
         <header>
@@ -702,6 +704,7 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
   const threadMessages = useRef<HTMLDivElement>(null)
   const composer = useRef<HTMLTextAreaElement>(null)
   const threadComposer = useRef<HTMLTextAreaElement>(null)
+  const suppressThreadAutoScroll = useRef(false)
   const bootstrap = snapshot.bootstrap
   const messages = store.messages()
   const unreadMessageIds = new Set(bootstrap === null
@@ -779,9 +782,10 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
     setFocusedRootMessageId(targetMessageId)
     const target = document.getElementById(`csp-message-${targetMessageId}`)
     if (target === null) return
+    suppressThreadAutoScroll.current = true
     target.scrollIntoView({ block: 'center', behavior: 'smooth' })
     onTargetMessageHandled?.()
-  }, [messages.length, onTargetMessageHandled, targetMessageId])
+  }, [messages.length, onTargetMessageHandled, snapshot.activeThreadId, targetMessageId])
   useEffect(() => {
     composer.current?.focus()
     setCommandFeedback(null)
@@ -811,6 +815,10 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
   }, [activeThread?.id, activeThread?.projectId, activeThread?.projectIds])
   useEffect(() => {
     if (snapshot.activeThreadId === null) return
+    if (suppressThreadAutoScroll.current) {
+      suppressThreadAutoScroll.current = false
+      return
+    }
     scrollThreadToBottom()
   }, [replies.length, snapshot.activeThreadId])
   useEffect(() => {
@@ -1210,7 +1218,7 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
                       </article>
                     )
                   })
-                : roots.map(message => <MessageRow key={message.id} message={message} bootstrap={bootstrap} onReroute={request => store.rerouteAssignment(request)} onEdit={editDeliveredMessage} onDelete={deleteDeliveredMessage} onOpenVersion={openMessageVersion} speech={speech} />)}
+                : roots.map(message => <MessageRow key={message.id} elementId={`csp-message-${message.id}`} message={message} bootstrap={bootstrap} onReroute={request => store.rerouteAssignment(request)} onEdit={editDeliveredMessage} onDelete={deleteDeliveredMessage} onOpenVersion={openMessageVersion} speech={speech} />)}
               {directMessagePhase !== null && <LiveAgentActivity
                 activities={directMessageActivities}
                 fallbackAgents={directMessageAgents}
@@ -1427,7 +1435,7 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
                 {activeRoot !== undefined && <MessageRow message={activeRoot} bootstrap={bootstrap} onReroute={request => store.rerouteAssignment(request)} onPin={pinThreadMessage} onEdit={editDeliveredMessage} onDelete={deleteDeliveredMessage} onOpenVersion={openMessageVersion} speech={speech} />}
                 <div className="csp-thread-divider">Replies</div>
                 {replies.map(reply => (
-                  <MessageRow key={reply.id} message={reply} bootstrap={bootstrap} compact onReplyToAgent={replyDirectlyToAgent} onPin={pinThreadMessage} onEdit={editDeliveredMessage} onDelete={deleteDeliveredMessage} onOpenVersion={openMessageVersion} speech={speech} />
+                  <MessageRow key={reply.id} elementId={`csp-message-${reply.id}`} message={reply} bootstrap={bootstrap} compact onReplyToAgent={replyDirectlyToAgent} onPin={pinThreadMessage} onEdit={editDeliveredMessage} onDelete={deleteDeliveredMessage} onOpenVersion={openMessageVersion} speech={speech} />
                 ))}
                 {activeThreadActivities.length > 0 && (
                   <LiveAgentActivity

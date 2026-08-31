@@ -75,7 +75,13 @@ pnpm verify:acp:codex
 pnpm verify:acp:mcp
 ```
 
-The health response is `{"status":"ok"}`. The live verifier builds the workspace, starts an isolated API server and Vite preview on OS-assigned loopback ports, opens the UI in Chromium, and verifies the application, navigation, conversation surface, and API. ACP verifiers are opt-in because they use locally authenticated provider runtimes; each starts a native session and resumes the exact returned opaque ID.
+The health response is `{"status":"ok"}`. The live verifier builds the workspace, exercises the separate API/Vite path and the installed same-origin server path on OS-assigned loopback ports, and mounts both clients in Chromium. ACP verifiers are opt-in because they use locally authenticated provider runtimes; each starts a native session and resumes the exact returned opaque ID.
+
+## OS notifications
+
+OS notifications are off by default. In Commonspace settings, enable them and independently choose replies/input requests, mentions, permission requests, failures/timeouts, and sound. Saving notification preferences does not depend on inference configuration and never changes durable Inbox items.
+
+The service delivers only Inbox events created after the current service baseline; restart and archive import do not replay historical alerts. Session mute suppresses the matching native alert without deleting its Inbox record. Clicking an alert opens `http://127.0.0.1:3100` at the validated exact conversation, Thread, and message. Native delivery errors remain in service logs and do not change the Agent result.
 
 ## Common failures
 
@@ -135,4 +141,4 @@ Before changing state versions:
 cp ~/.commonspace/state.json ~/.commonspace/state.backup.json
 ```
 
-State version 23 migrates versions 1–22 on startup. Each write automatically keeps the previous valid primary as `state.backup.json`. When `state.json` is invalid and the backup is valid, startup moves the invalid primary to `state.corrupt.json`, restores the backup, and writes a fresh primary. If both files are invalid, startup stops without replacing either one. Restore a backup compatible with the target release before rolling back to an older build.
+State version 24 migrates versions 1–23 on startup. Each write automatically keeps the previous valid primary as `state.backup.json`. When `state.json` is invalid and the backup is valid, startup moves the invalid primary to `state.corrupt.json`, restores the backup, and writes a fresh primary. If both files are invalid, startup stops without replacing either one. Restore a backup compatible with the target release before rolling back to an older build.

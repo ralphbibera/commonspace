@@ -2,12 +2,14 @@ import { useDeferredValue, useEffect, useId, useLayoutEffect, useMemo, useRef, u
 import { createPortal } from 'react-dom'
 import {
   deriveCommonspaceInboxItems,
+  DEFAULT_COMMONSPACE_NOTIFICATION_SETTINGS,
   type AgentAdapterKind,
   type CommonspaceAgentProfile,
   type CommonspaceChannel,
   type CommonspaceDiagnostics,
   type CommonspaceMessage,
   type CommonspaceMutation,
+  type CommonspaceNotificationSettings,
   type CommonspaceReasoning,
   type CommonspaceRetentionPreview,
   type CommonspaceRoutingProvider,
@@ -437,6 +439,8 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, inboxActive = f
   const [importingWorkspace, setImportingWorkspace] = useState(false)
   const [retentionConversation, setRetentionConversation] = useState('')
   const [retentionPreview, setRetentionPreview] = useState<CommonspaceRetentionPreview | null>(null)
+  const [notificationSettings, setNotificationSettings] = useState<CommonspaceNotificationSettings>({ ...DEFAULT_COMMONSPACE_NOTIFICATION_SETTINGS })
+  const [savingNotifications, setSavingNotifications] = useState(false)
 
   useEffect(() => { void store.refresh() }, [store])
   useEffect(() => {
@@ -577,6 +581,16 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, inboxActive = f
     await store.updateRoutingConfiguration(routingUpdate)
     await store.mutate({ action: 'set-defaults', model: defaultModel || null, reasoning: defaultReasoning, maxAgentsPerTurn: defaultMaxAgents, memoryThreads: defaultMemoryThreads })
     setSettingsOpen(false)
+  }
+
+  const saveNotifications = async () => {
+    if (savingNotifications) return
+    setSavingNotifications(true)
+    try {
+      await store.mutate({ action: 'set-notifications', notifications: notificationSettings })
+    } finally {
+      setSavingNotifications(false)
+    }
   }
 
   const runDiagnostics = async () => {
@@ -743,6 +757,17 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, inboxActive = f
             </select></label>
             <label>Max agents per turn<input aria-label="Default max agents" type="number" min="1" max="8" value={defaultMaxAgents} onChange={event => { setDefaultMaxAgents(Number(event.target.value)) }} /></label>
             <label>Memory thread window<input aria-label="Default memory threads" type="number" min="1" max="50" value={defaultMemoryThreads} onChange={event => { setDefaultMemoryThreads(Number(event.target.value)) }} /></label>
+          </fieldset>
+          <fieldset className="csp-notification-settings">
+            <legend>OS notifications</legend>
+            <p>Native alerts are optional. Turning them off never removes items from the durable Inbox.</p>
+            <label><input aria-label="Enable OS notifications" type="checkbox" checked={notificationSettings.enabled} onChange={event => { setNotificationSettings(current => ({ ...current, enabled: event.target.checked })) }} /> Enable notifications</label>
+            <label><input aria-label="Reply notifications" type="checkbox" disabled={!notificationSettings.enabled} checked={notificationSettings.replies} onChange={event => { setNotificationSettings(current => ({ ...current, replies: event.target.checked })) }} /> Replies and input requests</label>
+            <label><input aria-label="Mention notifications" type="checkbox" disabled={!notificationSettings.enabled} checked={notificationSettings.mentions} onChange={event => { setNotificationSettings(current => ({ ...current, mentions: event.target.checked })) }} /> Mentions</label>
+            <label><input aria-label="Permission notifications" type="checkbox" disabled={!notificationSettings.enabled} checked={notificationSettings.permissions} onChange={event => { setNotificationSettings(current => ({ ...current, permissions: event.target.checked })) }} /> Permission requests</label>
+            <label><input aria-label="Failure notifications" type="checkbox" disabled={!notificationSettings.enabled} checked={notificationSettings.failures} onChange={event => { setNotificationSettings(current => ({ ...current, failures: event.target.checked })) }} /> Failures and timeouts</label>
+            <label><input aria-label="Notification sound" type="checkbox" disabled={!notificationSettings.enabled} checked={notificationSettings.sound} onChange={event => { setNotificationSettings(current => ({ ...current, sound: event.target.checked })) }} /> Sound</label>
+            <button type="button" aria-label="Save notification settings" disabled={savingNotifications} onClick={() => { void saveNotifications() }}>{savingNotifications ? 'Saving…' : 'Save notifications'}</button>
           </fieldset>
           <section className="csp-runtime-diagnostics" role="region" aria-label="Runtime diagnostics">
             <header><strong>Runtime diagnostics</strong><button type="button" aria-label="Run runtime diagnostics" disabled={diagnosticsLoading} onClick={() => { void runDiagnostics() }}>{diagnosticsLoading ? 'Checking…' : 'Run diagnostics'}</button></header>
@@ -1048,6 +1073,7 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, inboxActive = f
             setRoutingBaseUrl(routing?.baseUrl ?? 'https://api.openai.com/v1')
             setRoutingApiKey('')
             setClearRoutingApiKey(false)
+            setNotificationSettings({ ...(state?.notifications ?? DEFAULT_COMMONSPACE_NOTIFICATION_SETTINGS) })
             setSettingsOpen(value => !value)
           }}>⚙</button>
           <button type="button" className="csp-browser-refresh" aria-label="Refresh Commonspace" onClick={() => { void store.refresh() }}>↻</button>
