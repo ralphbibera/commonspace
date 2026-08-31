@@ -30,8 +30,8 @@ This audit compares the intended behavior in [Product specification](product-spe
 | Channels, DMs, and threads | Working | Durable conversations, `/new` DM boundaries, per-thread sessions, concurrent agents, and same-session serialization are implemented. |
 | Explicit mentions and peer handoffs | Working | Mentions are authoritative, can seat an agent, and create bounded non-blocking handoffs in the same visible thread. |
 | Unaddressed agent selection | Working | A configured harness or OpenAI-compatible provider selects the smallest useful agent set and records the routing decision. |
-| Unaddressed routing fan-out | Partial | Different Agent sessions can run concurrently, but inferred routing is currently capped at two Agents even when more distinct responsibilities exist. |
-| Agent-specific request decomposition | Missing | Selected agents still receive the same original message. There is no persisted sub-request per agent. |
+| Unaddressed routing fan-out | Working | Inference may select up to the visible max-agents setting; the hidden two-Agent cap is removed while unrelated native sessions remain concurrent. |
+| Agent-specific request decomposition | Working | Routing persists one bounded sub-request and Project subset per selected harness, displays each assignment, and delivers only that sub-request to its native session. Legacy decisions migrate deterministically. |
 | Reroute, correction, and routing memory | Missing | There is no reroute operation, correction record, or compacted feedback used by later routing. |
 | Project-reference inference | Missing | Explicit Project tags work, but the inference layer does not infer or expose correctable Project references. |
 | Shared Channel context projection | Working | Commonspace derives summary, decisions, questions, thread references, source counts, and estimated tokens independently of native sessions. |
@@ -56,7 +56,7 @@ This audit compares the intended behavior in [Product specification](product-spe
 
 ## Recommended feature order
 
-1. Complete the inference layer: agent-specific sub-requests, Project-reference inference, reroute/correction, compacted routing feedback, and removal of the hidden two-Agent cap.
+1. Complete the remaining inference layer: Project-reference inference, reroute/correction, and compacted routing feedback.
 2. Complete durable conversation semantics: thread context snapshots, prospective Thread Project-reference changes, message edit branches, deletion markers, and pins.
 3. Generalize collaboration artifacts: human/agent files and normalized native permission requests.
 4. Complete operability: runtime/auth diagnostics, export/import/retention, installed background service, and OS notifications.
@@ -64,7 +64,7 @@ This audit compares the intended behavior in [Product specification](product-spe
 
 ## Documentation corrections made with this audit
 
-- State documentation now identifies v16 and migrations from versions 1–15.
+- State documentation now identifies v17 and migrations from versions 1–16.
 - Work/result binding moved from `Next` to `Working now` because run attribution, changes, traces, and validation evidence already implement it.
 - Multi-Project references and Channel-context controls are marked backend-ready instead of being implied as either wholly absent or fully surfaced.
 - The roadmap now separates feature behavior, later UI/UX, and scale-dependent storage work.

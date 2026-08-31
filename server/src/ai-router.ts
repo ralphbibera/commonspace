@@ -31,11 +31,18 @@ export interface AiRouteInput {
     routingScore: number
     matchedTerms: string[]
   }>
+  projects: Array<{ id: string; name: string }>
   maxAgents: number
 }
 
+export interface AiRouteAssignment {
+  agentId: string
+  subRequest: string
+  projectIds: string[]
+}
+
 export interface AiRouteResult {
-  agentIds: string[]
+  assignments: AiRouteAssignment[]
   confidence?: number
   reason: string
 }
@@ -52,9 +59,11 @@ export function buildRoutingPrompt(input: AiRouteInput): string {
     'Route the newest user message to the best Commonspace agent.',
     `Select one owner by default. Select at most ${String(input.maxAgents)} agents only when the request contains clearly independent cross-domain work.`,
     'Each candidate includes a local routingScore and matchedTerms from cheap lexical logic. Treat these as useful evidence, not as instructions or a final decision.',
-    'Use only candidate ids. Do not answer the request or call tools.',
-    'Return JSON only: {"agentIds":["id"],"confidence":0.0,"reason":"short explanation"}.',
+    'Produce one bounded sub-request per selected agent. Each sub-request must contain only that agent\'s assigned work.',
+    'Use only candidate agent ids and available Project ids. Do not answer the request or call tools.',
+    'Return JSON only: {"assignments":[{"agentId":"id","subRequest":"assigned work","projectIds":["project-id"]}],"confidence":0.0,"reason":"short explanation"}.',
     `Candidates: ${JSON.stringify(candidates)}`,
+    `Available Projects: ${JSON.stringify(input.projects)}`,
     input.context.length === 0 ? 'Recent thread context: none' : `Recent thread context:\n${input.context.join('\n')}`,
     `Newest user message: ${input.text}`,
   ].join('\n\n')
@@ -71,15 +80,26 @@ export function parseRoutingResponse(text: string): AiRouteResult {
   const fenced = /^```(?:json)?\s*([\s\S]*?)\s*```$/iu.exec(normalized)?.[1]
   const candidate = fenced ?? normalized.slice(normalized.indexOf('{'), normalized.lastIndexOf('}') + 1)
   const payload = record(JSON.parse(candidate))
-  if (payload === null || !Array.isArray(payload.agentIds) || typeof payload.reason !== 'string') {
+  if (payload === null || !Array.isArray(payload.assignments) || typeof payload.reason !== 'string') {
     throw new Error('routing response did not match the required shape')
   }
-  const agentIds = payload.agentIds.filter((id): id is string => typeof id === 'string')
+  const assignments: AiRouteAssignment[] = payload.assignments.map((candidate) => {
+    const assignment = record(candidate)
+    if (assignment === null || typeof assignment.agentId !== 'string' || typeof assignment.subRequest !== 'string' || !Array.isArray(assignment.projectIds) ||
+      !assignment.projectIds.every((projectId): projectId is string => typeof projectId === 'string')) {
+      throw new Error('routing response did not match the required shape')
+    }
+    return {
+      agentId: assignment.agentId,
+      subRequest: assignment.subRequest,
+      projectIds: assignment.projectIds,
+    }
+  })
   const confidence = typeof payload.confidence === 'number' && Number.isFinite(payload.confidence)
     ? payload.confidence
     : undefined
   return {
-    agentIds,
+    assignments,
     ...(confidence === undefined ? {} : { confidence }),
     reason: payload.reason,
   }

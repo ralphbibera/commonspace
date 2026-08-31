@@ -944,6 +944,10 @@ export const commonspaceStyles = String.raw`
 .csp-message-speech[aria-pressed='true'] { color: var(--dsw-alias-interactive-brand, #4d6bfe); }
 .csp-message-plain-text { margin: 3px 0 0; white-space: pre-wrap; font-size: 13px; line-height: 1.55; }
 .csp-message-routing { margin-top: 5px; color: var(--dsw-alias-label-tertiary, #8a8f98); font-size: 10px; line-height: 1.4; }
+.csp-routing-assignments { display: grid; gap: 4px; margin: 5px 0 0; padding: 0; list-style: none; }
+.csp-routing-assignments li { padding-left: 7px; border-left: 2px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.12)); }
+.csp-routing-assignments strong { color: var(--dsw-alias-label-secondary, #666b74); font-size: 10px; }
+.csp-routing-assignments p { margin: 1px 0 0; color: var(--dsw-alias-label-primary, #202124); font-size: 11px; white-space: pre-wrap; }
 .csp-message-attachments { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 7px; }
 .csp-message-attachments img {
   display: block;
