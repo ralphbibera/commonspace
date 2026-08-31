@@ -17,6 +17,7 @@ interface CommonspaceLogger {
 
 export interface StartCommonspaceServerOptions extends CommonspaceHostConfig {
   port?: number
+  uiRoot?: string
   directoryPicker?: () => Promise<string | null>
   dependencies?: Partial<CommonspaceHostDependencies>
   logger?: CommonspaceLogger
@@ -58,6 +59,7 @@ export async function startCommonspaceServer(options: StartCommonspaceServerOpti
       service,
       mcpGateway,
       ...(options.directoryPicker === undefined ? {} : { directoryPicker: options.directoryPicker }),
+      ...(options.uiRoot === undefined ? {} : { uiRoot: options.uiRoot }),
     })
     server = createServer(app)
     const port = options.port ?? 3100
@@ -130,6 +132,7 @@ async function runCli(): Promise<void> {
     ...(process.env.COMMONSPACE_CODEX_PATH === undefined ? {} : { codexPath: process.env.COMMONSPACE_CODEX_PATH }),
     ...(process.env.COMMONSPACE_HERMES_ACP_PATH === undefined ? {} : { hermesAcpCommand: process.env.COMMONSPACE_HERMES_ACP_PATH }),
     ...(process.env.COMMONSPACE_CODEX_ACP_PATH === undefined ? {} : { codexAcpCommand: process.env.COMMONSPACE_CODEX_ACP_PATH }),
+    ...(process.env.COMMONSPACE_UI_ROOT === undefined ? {} : { uiRoot: process.env.COMMONSPACE_UI_ROOT }),
   })
   console.info(`Commonspace is running at ${running.url}`)
   let finalized = false

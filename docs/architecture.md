@@ -14,7 +14,7 @@ The structure borrows mature separation patterns without importing another produ
 
 ## Request path
 
-The Vite development and preview servers proxy `/api` to the Commonspace API at `127.0.0.1:3100`. A production build places browser assets in `ui/dist`; Vite serves those assets separately while Express serves the API only.
+The Vite development and preview servers proxy `/api` to the Commonspace API at `127.0.0.1:3100`. A production build places browser assets in `ui/dist`. Source/development operation keeps Vite and Express separate; the installed macOS service supplies that directory to Express so the built client and API share one loopback origin.
 
 Endpoints:
 
@@ -75,9 +75,11 @@ Server-sent revision events prompt the UI store to refresh persisted state. Sepa
 - native turn cancellation on reset, Channel removal, agent removal, timeout, and shutdown;
 - revision subscriptions.
 
-`server/src/app.ts` owns HTTP concerns: JSON limits, loopback and same-origin guards, SSE framing, API status codes, health checks, and security headers.
+`server/src/app.ts` owns HTTP concerns: JSON limits, loopback and same-origin guards, SSE framing, API status codes, health checks, security headers, and optional installed-build static delivery.
 
 `server/src/acp-runtime.ts` owns the provider-neutral ACP client and subprocess lifecycle. `server/src/commonspace-mcp.ts` owns the stateless loopback MCP transport, ephemeral capabilities, and scoped tools. `server/src/index.ts` owns process startup, configuration, signal handling, and graceful shutdown.
+
+`scripts/commonspace-service.mjs` is the standalone macOS lifecycle boundary. It invokes Git, Corepack, pnpm, `plutil`, and `launchctl` with argument arrays; builds an owner-only staging release; preserves one rollback release; writes the LaunchAgent atomically; health-gates activation; and exposes install, update, start, stop, restart, status, and rollback commands. Workspace state remains outside release directories, so swapping code never replaces user data.
 
 In development, `server/src/dev-supervisor.ts` is the stable watcher process. It requests an idle-gated generation swap over child-process IPC instead of signaling the server directly. The serving generation keeps its ACP children and MCP endpoint alive until every accepted turn completes; edit bursts collapse into one replacement. Explicit process signals retain forced-shutdown semantics.
 

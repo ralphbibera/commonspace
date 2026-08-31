@@ -43,6 +43,7 @@ export interface CreateCommonspaceAppOptions {
   service: CommonspaceHostService
   mcpGateway?: CommonspaceMcpGateway
   directoryPicker?: () => Promise<string | null>
+  uiRoot?: string
 }
 
 export function requestIsSameOrigin(req: IncomingMessage): boolean {
@@ -108,7 +109,7 @@ function sendProjectError(res: Response, error: unknown): void {
   res.status(500).json({ code: 'project_read_failed', error: 'Unable to read project files' })
 }
 
-export function createCommonspaceApp({ service, mcpGateway, directoryPicker }: CreateCommonspaceAppOptions): Express {
+export function createCommonspaceApp({ service, mcpGateway, directoryPicker, uiRoot }: CreateCommonspaceAppOptions): Express {
   const app = express()
   const pickDirectory = directoryPicker ?? selectLocalDirectory
   app.disable('x-powered-by')
@@ -518,6 +519,17 @@ export function createCommonspaceApp({ service, mcpGateway, directoryPicker }: C
   app.use('/api', (_req, res) => {
     res.status(404).json({ code: 'not_found', error: 'API route not found' })
   })
+
+  if (uiRoot !== undefined) {
+    app.use((_req, res, next) => {
+      res.setHeader('x-content-type-options', 'nosniff')
+      next()
+    })
+    app.use(express.static(uiRoot, { index: false }))
+    app.get(/^(?!\/api(?:\/|$)).*/u, (_req, res, next) => {
+      res.sendFile('index.html', { root: uiRoot }, error => { if (error !== undefined) next(error) })
+    })
+  }
 
   app.get('/', (_req, res) => {
     res.json({ status: 'ok' })

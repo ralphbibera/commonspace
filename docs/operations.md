@@ -9,7 +9,38 @@ pnpm start
 pnpm --filter @commonspace/ui preview
 ```
 
-The API server binds to `127.0.0.1:3100` by default and serves `/api` plus the root health check. It never serves UI assets. Run `pnpm --filter @commonspace/ui preview` separately for the built UI. Override the API port with `COMMONSPACE_PORT`. Hermes uses its installed profile-native ACP server; Codex uses its bundled ACP bridge.
+The API server binds to `127.0.0.1:3100` by default and serves `/api` plus the root health check. In the source/runtime default it does not serve UI assets; run `pnpm --filter @commonspace/ui preview` separately for the built UI. Override the API port with `COMMONSPACE_PORT`. Hermes uses its installed profile-native ACP server; Codex uses its bundled ACP bridge.
+
+That two-process shape is the source/development path. The installed macOS service sets `COMMONSPACE_UI_ROOT` and serves the built browser client and API from `http://127.0.0.1:3100` without changing package ownership or API boundaries.
+
+## Installed macOS service
+
+Prerequisites are macOS, Node.js 22+, Corepack, Git with SSH access to GitHub, and at least one authenticated supported harness. Install from `main` with one command:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ralphbibera/commonspace/main/scripts/commonspace-service.mjs | node --input-type=module - install
+```
+
+The installer builds a staging clone before touching the running service, validates the LaunchAgent property list, atomically swaps the release, starts it, and requires `/api/health` to pass. State remains in `~/.commonspace` across updates. One previous release remains available for recovery.
+
+```bash
+~/.local/bin/commonspace status
+~/.local/bin/commonspace stop
+~/.local/bin/commonspace start
+~/.local/bin/commonspace restart
+~/.local/bin/commonspace update
+~/.local/bin/commonspace rollback
+```
+
+Managed lifecycle paths:
+
+- Current release: `~/Library/Application Support/Commonspace/current`
+- Rollback release: `~/Library/Application Support/Commonspace/previous`
+- LaunchAgent: `~/Library/LaunchAgents/dev.commonspace.service.plist`
+- CLI: `~/.local/bin/commonspace`
+- Logs: `~/Library/Logs/Commonspace/service.log` and `service.error.log`
+
+`update` clones `git@github.com:ralphbibera/commonspace.git` through SSH and builds the new `main` release while the old process continues running. A failed build never swaps releases. A failed health check restores and restarts the previous release. `rollback` explicitly swaps the current and previous releases, so recovery does not require repository knowledge.
 
 ## Local data
 
@@ -93,6 +124,8 @@ Commonspace records only activity the native ACP runtime emits. Confirm the inst
 `SIGINT` and `SIGTERM` stop accepting sends, cancel/close ACP process groups, wait for background relay work and atomic state writes, revoke MCP capabilities, and then close HTTP connections.
 
 During `pnpm dev`, watched backend changes use a separate graceful-restart path. The supervisor leaves the current server and its per-CLI ACP/MCP connections alive until all accepted turns finish, coalesces further edits, and then starts one replacement generation. A crash or explicit terminal shutdown still follows the forced-shutdown behavior above.
+
+Closing the browser does not stop the installed LaunchAgent or its active turns. `commonspace stop`, logout, or machine shutdown sends the service a normal process termination signal; interrupted work is persisted with explicit interruption state on the next start.
 
 ## Backup and rollback
 

@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { COMMONSPACE_STATE_VERSION } from '@commonspace/shared'
@@ -16,6 +16,36 @@ afterEach(async () => {
 })
 
 describe('standalone Commonspace server', () => {
+  it('serves an installed UI build on the same loopback origin when configured', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-installed-ui-'))
+    roots.push(root)
+    const workspace = join(root, 'workspace')
+    const uiRoot = join(root, 'ui')
+    await mkdir(workspace)
+    await mkdir(join(uiRoot, 'assets'), { recursive: true })
+    await writeFile(join(uiRoot, 'index.html'), '<!doctype html><main id="root">Installed Commonspace</main>')
+    await writeFile(join(uiRoot, 'assets', 'app.js'), 'globalThis.commonspaceInstalled = true')
+
+    const running = await startCommonspaceServer({
+      root,
+      defaultCwd: workspace,
+      uiRoot,
+      port: 0,
+      logger: { warn: () => undefined, info: () => undefined },
+    })
+    servers.push(running)
+
+    const documentResponse = await fetch(running.url)
+    expect(documentResponse.headers.get('content-type')).toContain('text/html')
+    expect(await documentResponse.text()).toContain('Installed Commonspace')
+    await expect(fetch(`${running.url}/assets/app.js`).then(response => response.text()))
+      .resolves.toContain('commonspaceInstalled')
+    await expect(fetch(`${running.url}/project/anything`).then(response => response.text()))
+      .resolves.toContain('Installed Commonspace')
+    await expect(fetch(`${running.url}/api/missing`, { headers: { origin: running.url } }).then(response => response.json()))
+      .resolves.toEqual({ code: 'not_found', error: 'API route not found' })
+  })
+
   it('serves the API without serving a UI build', async () => {
     const root = await mkdtemp(join(tmpdir(), 'commonspace-standalone-'))
     roots.push(root)

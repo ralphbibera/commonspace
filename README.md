@@ -27,6 +27,24 @@ Requirements:
 - pnpm 10.34.5
 - Hermes and/or Codex installed and authenticated
 
+On macOS, install the private preview as an owner LaunchAgent directly from `main`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ralphbibera/commonspace/main/scripts/commonspace-service.mjs | node --input-type=module - install
+```
+
+The installer clones through SSH, builds in an owner-only managed release, starts the service at `http://127.0.0.1:3100`, and installs `~/.local/bin/commonspace`. Lifecycle commands need no repository checkout:
+
+```bash
+~/.local/bin/commonspace status
+~/.local/bin/commonspace stop
+~/.local/bin/commonspace start
+~/.local/bin/commonspace update
+~/.local/bin/commonspace rollback
+```
+
+For source development:
+
 ```bash
 pnpm install --frozen-lockfile
 pnpm dev
@@ -45,7 +63,7 @@ pnpm start
 pnpm --filter @commonspace/ui preview
 ```
 
-The API server runs at `http://127.0.0.1:3100`; Vite preview serves the built UI separately.
+The API server runs at `http://127.0.0.1:3100`; Vite preview serves the built UI separately. The installed LaunchAgent instead serves the built UI and API from one loopback origin.
 
 ## Repository structure
 
@@ -69,6 +87,8 @@ pnpm typecheck              # workspace TypeScript checks
 pnpm build                  # all production builds
 pnpm check                  # complete local gate
 pnpm verify:live            # build, boot API + UI preview, and exercise the browser path
+pnpm service:install        # install current committed main checkout as a macOS LaunchAgent
+pnpm service:status         # inspect installed service and health
 pnpm verify:acp             # opt-in real Hermes and Codex ACP start/resume tests
 pnpm verify:acp:hermes      # real Hermes profile start/resume test
 pnpm verify:acp:codex       # real Codex start/resume test

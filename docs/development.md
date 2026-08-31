@@ -53,6 +53,8 @@ pnpm verify:live
 
 `pnpm check` combines lint, typecheck, tests, and build. `verify:live` additionally starts the built server and exercises the application through a real browser.
 
+The macOS lifecycle manager can install the current committed `main` checkout through `pnpm service:install`. Use `pnpm service:status`, `service:stop`, `service:start`, `service:update`, and `service:rollback` to exercise the packaged path. It writes only the managed paths documented in [Operations](operations.md); normal development does not register a background service.
+
 ## Contract changes
 
 Cross-process shapes have one writer: `packages/shared`. When changing persisted state:
