@@ -11,7 +11,10 @@ import type {
   CommonspaceMutation,
   CommonspacePin,
   CommonspacePermissionRequest,
+  CommonspaceRetentionPreview,
   CommonspaceRoutingConfiguration,
+  CommonspaceState,
+  CommonspaceWorkspaceArchive,
   ConversationRef,
   EditMessageRequest,
   SelectDirectoryResponse,
@@ -371,6 +374,56 @@ export class CommonspaceClientStore {
       const diagnostics = await requestJson<CommonspaceDiagnostics>('/api/diagnostics')
       this.set({ ...this.snapshot, error: null })
       return diagnostics
+    } catch (error) {
+      this.set({ ...this.snapshot, error: error instanceof Error ? error.message : String(error) })
+      throw error
+    }
+  }
+
+  async exportWorkspace(): Promise<CommonspaceWorkspaceArchive> {
+    return requestJson<CommonspaceWorkspaceArchive>('/api/export')
+  }
+
+  async importWorkspace(archive: CommonspaceWorkspaceArchive, projectMappings: Record<string, string[]>): Promise<void> {
+    try {
+      const state = await requestJson<CommonspaceState>('/api/import', {
+        method: 'POST',
+        body: JSON.stringify({ archive, projectMappings }),
+      })
+      const bootstrap = this.snapshot.bootstrap
+      if (bootstrap === null) {
+        await this.refresh()
+        return
+      }
+      const merged = this.mergeBootstrap({ ...bootstrap, state })
+      this.set({
+        ...this.snapshot,
+        bootstrap: merged,
+        activeProjectId: this.resolveActiveProject(merged),
+        activeConversation: null,
+        activeThreadId: null,
+        error: null,
+      })
+    } catch (error) {
+      this.set({ ...this.snapshot, error: error instanceof Error ? error.message : String(error) })
+      throw error
+    }
+  }
+
+  async previewRetention(conversation: ConversationRef): Promise<CommonspaceRetentionPreview> {
+    return requestJson<CommonspaceRetentionPreview>('/api/retention/preview', {
+      method: 'POST',
+      body: JSON.stringify({ conversation }),
+    })
+  }
+
+  async applyRetention(preview: CommonspaceRetentionPreview): Promise<void> {
+    try {
+      await requestJson<CommonspaceRetentionPreview>('/api/retention/apply', {
+        method: 'POST',
+        body: JSON.stringify({ conversation: preview.conversation, expectedRevision: preview.revision }),
+      })
+      await this.refresh()
     } catch (error) {
       this.set({ ...this.snapshot, error: error instanceof Error ? error.message : String(error) })
       throw error

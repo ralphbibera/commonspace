@@ -602,4 +602,66 @@ describe('Commonspace client revision ordering', () => {
     await expect((store as unknown as { diagnostics(): Promise<unknown> }).diagnostics()).resolves.toEqual(diagnostics)
     expect(fetch).toHaveBeenNthCalledWith(2, '/api/diagnostics', expect.any(Object))
   })
+
+  it('exports and imports a mapped workspace archive', async () => {
+    const initial = bootstrap(1, 'Initial')
+    const imported = bootstrap(2, 'Imported')
+    const archive = {
+      format: 'commonspace-workspace' as const,
+      version: 1 as const,
+      exportedAt: '2026-08-31T00:00:00.000Z',
+      workspace: { projects: [{ id: 'project-1', name: 'Imported', rootCount: 1 }] },
+      attachments: [],
+    }
+    const mappings = { 'project-1': ['/mapped/project'] }
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(response(initial))
+      .mockResolvedValueOnce(response(archive))
+      .mockResolvedValueOnce(response(imported.state))
+    vi.stubGlobal('fetch', fetch)
+    const store = new CommonspaceClientStore()
+    await store.refresh()
+    const portableStore = store as unknown as {
+      exportWorkspace(): Promise<typeof archive>
+      importWorkspace(value: typeof archive, projectMappings: typeof mappings): Promise<void>
+    }
+
+    await expect(portableStore.exportWorkspace()).resolves.toEqual(archive)
+    await portableStore.importWorkspace(archive, mappings)
+
+    expect(fetch).toHaveBeenNthCalledWith(2, '/api/export', expect.any(Object))
+    expect(fetch).toHaveBeenNthCalledWith(3, '/api/import', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ archive, projectMappings: mappings }),
+    }))
+    expect(store.getSnapshot().bootstrap?.state.revision).toBe(2)
+  })
+
+  it('previews and applies explicit conversation retention', async () => {
+    const initial = bootstrap(1, 'Initial')
+    const updated = bootstrap(2, 'Initial')
+    const conversation = { kind: 'channel' as const, id: 'general' }
+    const preview = { revision: 1, conversation, messages: 4, threads: 2, attachments: 1, pins: 1, permissions: 0 }
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(response(initial))
+      .mockResolvedValueOnce(response(preview))
+      .mockResolvedValueOnce(response(preview))
+      .mockResolvedValueOnce(response(updated))
+    vi.stubGlobal('fetch', fetch)
+    const store = new CommonspaceClientStore()
+    await store.refresh()
+    const retentionStore = store as unknown as {
+      previewRetention(value: typeof conversation): Promise<typeof preview>
+      applyRetention(value: typeof preview): Promise<void>
+    }
+
+    await expect(retentionStore.previewRetention(conversation)).resolves.toEqual(preview)
+    await retentionStore.applyRetention(preview)
+
+    expect(fetch).toHaveBeenNthCalledWith(2, '/api/retention/preview', expect.objectContaining({ body: JSON.stringify({ conversation }) }))
+    expect(fetch).toHaveBeenNthCalledWith(3, '/api/retention/apply', expect.objectContaining({
+      body: JSON.stringify({ conversation, expectedRevision: 1 }),
+    }))
+    expect(store.getSnapshot().bootstrap?.state.revision).toBe(2)
+  })
 })

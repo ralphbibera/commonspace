@@ -1,6 +1,6 @@
 import type { IncomingMessage } from 'node:http'
 import express, { type ErrorRequestHandler, type Express, type NextFunction, type Request, type Response } from 'express'
-import { COMMONSPACE_SEARCH_KINDS, type AddPinRequest, type CommonspaceLiveAgentActivity, type CommonspaceMutation, type CommonspaceSearchKind, type DiscoverAgentsRequest, type EditMessageRequest, type RemoveFollowupRequest, type ReorderFollowupRequest, type RerouteAssignmentRequest, type SelectDirectoryResponse, type SendMessageRequest, type StopAgentRunsRequest, type UpdateChannelContextRequest, type UpdateRoutingConfigurationRequest, type UpdateThreadContextRequest } from '@commonspace/shared'
+import { COMMONSPACE_SEARCH_KINDS, type AddPinRequest, type ApplyRetentionRequest, type CommonspaceLiveAgentActivity, type CommonspaceMutation, type CommonspaceSearchKind, type ConversationRef, type DiscoverAgentsRequest, type EditMessageRequest, type RemoveFollowupRequest, type ReorderFollowupRequest, type RerouteAssignmentRequest, type SelectDirectoryResponse, type SendMessageRequest, type StopAgentRunsRequest, type UpdateChannelContextRequest, type UpdateRoutingConfigurationRequest, type UpdateThreadContextRequest } from '@commonspace/shared'
 import type { CommonspaceHostService } from './service.js'
 import type { CommonspaceMcpGateway } from './commonspace-mcp.js'
 import { selectLocalDirectory } from './directory-picker.js'
@@ -17,6 +17,7 @@ import { searchCommonspace } from './search.js'
 
 const MAX_BODY_BYTES = 128 * 1024
 const MAX_SEND_BODY_BYTES = 24 * 1024 * 1024
+const MAX_IMPORT_BODY_BYTES = 64 * 1024 * 1024
 
 function firstHeaderValue(value: string | string[] | undefined): string | undefined {
   const first = Array.isArray(value) ? value[0] : value
@@ -121,6 +122,7 @@ export function createCommonspaceApp({ service, mcpGateway, directoryPicker }: C
     next()
   })
   app.use('/api/send', express.json({ limit: MAX_SEND_BODY_BYTES }))
+  app.use('/api/import', express.json({ limit: MAX_IMPORT_BODY_BYTES }))
   app.use('/api', express.json({ limit: MAX_BODY_BYTES }))
 
   app.get('/api/health', (_req, res) => {
@@ -142,6 +144,42 @@ export function createCommonspaceApp({ service, mcpGateway, directoryPicker }: C
       res.json(await service.diagnostics())
     } catch (error) {
       res.status(500).json({ code: 'diagnostics_failed', error: error instanceof Error ? error.message : String(error) })
+    }
+  })
+
+  app.get('/api/export', requireSameOrigin, async (_req, res) => {
+    try {
+      res.setHeader('content-disposition', 'attachment; filename="commonspace-export.json"')
+      res.json(await service.exportWorkspace())
+    } catch (error) {
+      res.status(500).json({ code: 'workspace_export_failed', error: error instanceof Error ? error.message : String(error) })
+    }
+  })
+
+  app.post('/api/import', requireSameOrigin, async (req, res) => {
+    try {
+      const body = recordBody(req.body)
+      const mappings = recordBody(body.projectMappings) as Record<string, string[]>
+      res.json(await service.importWorkspace(body.archive, mappings))
+    } catch (error) {
+      res.status(400).json({ code: 'workspace_import_failed', error: error instanceof Error ? error.message : String(error) })
+    }
+  })
+
+  app.post('/api/retention/preview', requireSameOrigin, (req, res) => {
+    try {
+      const body = recordBody(req.body)
+      res.json(service.previewRetention(body.conversation as ConversationRef))
+    } catch (error) {
+      res.status(400).json({ code: 'retention_preview_failed', error: error instanceof Error ? error.message : String(error) })
+    }
+  })
+
+  app.post('/api/retention/apply', requireSameOrigin, async (req, res) => {
+    try {
+      res.json(await service.applyRetention(recordBody(req.body) as unknown as ApplyRetentionRequest))
+    } catch (error) {
+      res.status(400).json({ code: 'retention_apply_failed', error: error instanceof Error ? error.message : String(error) })
     }
   })
 

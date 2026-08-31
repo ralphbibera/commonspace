@@ -9,8 +9,10 @@ import {
   type CommonspaceMessage,
   type CommonspaceMutation,
   type CommonspaceReasoning,
+  type CommonspaceRetentionPreview,
   type CommonspaceRoutingProvider,
   type CommonspaceSearchResult,
+  type CommonspaceWorkspaceArchive,
 } from '@commonspace/shared'
 import type { CommonspaceClientStore } from './commonspace-store.ts'
 import { CommonspaceSearchDialog } from './CommonspaceSearch.tsx'
@@ -430,6 +432,11 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, inboxActive = f
   const [searchOpen, setSearchOpen] = useState(false)
   const [diagnostics, setDiagnostics] = useState<CommonspaceDiagnostics | null>(null)
   const [diagnosticsLoading, setDiagnosticsLoading] = useState(false)
+  const [importArchive, setImportArchive] = useState<CommonspaceWorkspaceArchive | null>(null)
+  const [importMappings, setImportMappings] = useState<Record<string, string[]>>({})
+  const [importingWorkspace, setImportingWorkspace] = useState(false)
+  const [retentionConversation, setRetentionConversation] = useState('')
+  const [retentionPreview, setRetentionPreview] = useState<CommonspaceRetentionPreview | null>(null)
 
   useEffect(() => { void store.refresh() }, [store])
   useEffect(() => {
@@ -582,6 +589,70 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, inboxActive = f
     }
   }
 
+  const exportWorkspace = async () => {
+    const archive = await store.exportWorkspace()
+    const url = URL.createObjectURL(new Blob([JSON.stringify(archive, null, 2)], { type: 'application/json' }))
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = 'commonspace-export.json'
+    anchor.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const selectImportArchive = (file: File | undefined) => {
+    if (file === undefined) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      try {
+        const archive = JSON.parse(String(reader.result)) as CommonspaceWorkspaceArchive
+        if (archive.format !== 'commonspace-workspace' || archive.version !== 1 || !Array.isArray(archive.workspace.projects)) throw new Error('invalid archive')
+        if (archive.workspace.projects.some(project => !Number.isSafeInteger(project.rootCount) || project.rootCount < 1 || project.rootCount > 32)) throw new Error('invalid archive Project roots')
+        setImportArchive(archive)
+        setImportMappings(Object.fromEntries(archive.workspace.projects.map(project => [project.id, Array.from({ length: project.rootCount }, () => '')])))
+      } catch {
+        setImportArchive(null)
+        setImportMappings({})
+      }
+    }
+    reader.readAsText(file)
+  }
+
+  const chooseImportRoot = async (projectId: string, rootIndex: number) => {
+    const path = await store.selectDirectory()
+    if (path === null) return
+    setImportMappings(current => ({
+      ...current,
+      [projectId]: (current[projectId] ?? []).map((value, index) => index === rootIndex ? path : value),
+    }))
+  }
+
+  const importWorkspace = async () => {
+    if (importArchive === null || importingWorkspace) return
+    setImportingWorkspace(true)
+    try {
+      await store.importWorkspace(importArchive, importMappings)
+      setImportArchive(null)
+      setImportMappings({})
+      setSettingsOpen(false)
+    } finally {
+      setImportingWorkspace(false)
+    }
+  }
+
+  const previewRetention = async () => {
+    const separator = retentionConversation.indexOf(':')
+    const kind = retentionConversation.slice(0, separator)
+    const id = separator < 1 ? '' : retentionConversation.slice(separator + 1)
+    if ((kind !== 'channel' && kind !== 'dm') || id === '') return
+    setRetentionPreview(await store.previewRetention({ kind, id }))
+  }
+
+  const applyRetention = async () => {
+    if (retentionPreview === null || !window.confirm('Permanently remove the previewed conversation history and attachment bytes?')) return
+    await store.applyRetention(retentionPreview)
+    setRetentionPreview(null)
+  }
+
   const saveAgentProfile = async (event: FormEvent, agentId: string) => {
     event.preventDefault()
     await store.mutate({
@@ -682,6 +753,44 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, inboxActive = f
                   <p>Inference sends: {diagnostics.inference.sends.join(' · ')}</p>
                   <ul>{diagnostics.harnesses.map(harness => <li key={harness.adapter}><strong>{runtimeLabel(harness.adapter)}</strong> · {harness.installed ? 'installed' : 'not installed'} · {harness.rostered ? 'added' : 'not added'} · {harness.runReadiness}<small>{harness.recovery}</small></li>)}</ul>
                 </>}
+          </section>
+          <section className="csp-data-management" aria-label="Workspace data management">
+            <header><strong>Workspace data</strong><button type="button" aria-label="Export workspace data" onClick={() => { void exportWorkspace() }}>Export</button></header>
+            <label>Import archive<input type="file" accept="application/json,.json" aria-label="Import workspace archive" onChange={event => {
+              selectImportArchive(event.target.files?.[0])
+              event.target.value = ''
+            }} /></label>
+            {importArchive !== null && (
+              <section role="region" aria-label="Import Project mappings">
+                <p>Map every exported Project root to a local folder. Import works only in an empty workspace.</p>
+                {importArchive.workspace.projects.map(project => (
+                  <fieldset key={project.id}><legend>{project.name}</legend>{Array.from({ length: project.rootCount }, (_, rootIndex) => (
+                    <div key={rootIndex}><span>{importMappings[project.id]?.[rootIndex] || `Root ${String(rootIndex + 1)} not mapped`}</span><button type="button" aria-label={`Choose root ${String(rootIndex + 1)} for ${project.name}`} onClick={() => { void chooseImportRoot(project.id, rootIndex) }}>Choose</button></div>
+                  ))}</fieldset>
+                ))}
+                <button type="button" aria-label="Import workspace data" disabled={importingWorkspace || Object.values(importMappings).some(paths => paths.some(path => path === ''))} onClick={() => { void importWorkspace() }}>{importingWorkspace ? 'Importing…' : 'Import workspace'}</button>
+              </section>
+            )}
+            <section className="csp-retention" aria-label="Conversation retention">
+              <strong>Remove conversation history</strong>
+              <p>Preview the exact impact before permanently removing one Channel or Direct Message.</p>
+              <select aria-label="Retention conversation" value={retentionConversation} onChange={event => {
+                setRetentionConversation(event.target.value)
+                setRetentionPreview(null)
+              }}>
+                <option value="">Choose a conversation</option>
+                {channels.map(channel => <option key={`channel:${channel.id}`} value={`channel:${channel.id}`}>#{channel.name}</option>)}
+                {agents.map(agent => <option key={`dm:${agent.id}`} value={`dm:${agent.id}`}>DM · {agent.displayName}</option>)}
+              </select>
+              <button type="button" aria-label="Preview retention" disabled={retentionConversation === ''} onClick={() => { void previewRetention() }}>Preview retention</button>
+              {retentionPreview !== null && (
+                <section role="region" aria-label="Retention impact">
+                  <p>{retentionPreview.messages} messages · {retentionPreview.threads} threads · {retentionPreview.attachments} attachments · {retentionPreview.pins} pin{retentionPreview.pins === 1 ? '' : 's'}</p>
+                  {retentionPreview.permissions > 0 && <p>{retentionPreview.permissions} permission request{retentionPreview.permissions === 1 ? '' : 's'} will also be removed.</p>}
+                  <button type="button" aria-label="Apply retention" onClick={() => { void applyRetention() }}>Apply retention</button>
+                </section>
+              )}
+            </section>
           </section>
           <div><button type="submit">Save defaults</button><button type="button" onClick={() => { setSettingsOpen(false) }}>Cancel</button></div>
         </form>

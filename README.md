@@ -105,6 +105,7 @@ The Project Files browser refuses to preview known credential-bearing files such
 - [Architecture](docs/architecture.md)
 - [Development](docs/development.md)
 - [Operations](docs/operations.md)
+- [Workspace archive format](docs/workspace-archive-format.md)
 - [Design system](docs/design-system.md)
 - [Roadmap](docs/roadmap.md)
 - [Implementation gap audit](docs/implementation-gap-audit.md)
