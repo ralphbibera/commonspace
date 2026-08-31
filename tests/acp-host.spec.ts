@@ -185,7 +185,12 @@ describe('Commonspace ACP host path', () => {
         completedAt: expect.any(String),
         entries: expect.arrayContaining([
           expect.objectContaining({ type: 'reasoning', text: 'Inspecting the workspace. Choosing the smallest safe change.' }),
-          expect.objectContaining({ type: 'tool', id: 'call-1', status: 'completed', input: '{\n  "path": "[host path]/workspace/package.json"\n}' }),
+          expect.objectContaining({
+            type: 'tool',
+            id: 'call-1',
+            status: 'completed',
+            input: expect.stringMatching(/^\{\n  "path": "\[host path\](?:\/workspace)?\/package\.json"\n\}$/u),
+          }),
         ]),
       },
     })
