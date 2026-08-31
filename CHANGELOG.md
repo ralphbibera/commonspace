@@ -27,6 +27,7 @@ All notable changes to Commonspace are recorded here.
 
 ### Changed
 
+- Accepted conversation messages are retained across append and restart instead of silently keeping only the newest 500 messages.
 - Multi-Project thread replies now inherit only when Project fields are omitted, conflicting compatibility fields are rejected, and Project removal or startup path loss cleans stale run-attribution roots.
 - New Channel threads include structurally selected Projects in inference routing context.
 - Queued and in-flight replies cannot execute or persist against stale Project authority after Project configuration changes.
