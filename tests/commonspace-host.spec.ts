@@ -15,10 +15,17 @@ beforeEach(() => {
     const prompt = body.messages.find(message => message.role === 'user')?.content ?? ''
     const candidatesJson = /Candidates: (\[[^\n]+\])/u.exec(prompt)?.[1] ?? '[]'
     const candidates = JSON.parse(candidatesJson) as Array<{ id: string; routingScore: number }>
+    const projectsJson = /Available Projects: (\[[^\n]+\])/u.exec(prompt)?.[1] ?? '[]'
+    const projects = JSON.parse(projectsJson) as Array<{ id: string }>
+    const subRequest = /Newest user message: ([\s\S]*)$/u.exec(prompt)?.[1]?.trim() ?? ''
     const selected = candidates.toSorted((left, right) => right.routingScore - left.routingScore)[0]
     return new Response(JSON.stringify({
       choices: [{ message: { content: JSON.stringify({
-        agentIds: selected === undefined ? [] : [selected.id],
+        assignments: selected === undefined ? [] : [{
+          agentId: selected.id,
+          subRequest,
+          projectIds: projects.map(project => project.id),
+        }],
         confidence: 0.9,
         reason: 'Test inference selected the strongest candidate.',
       }) } }],
@@ -674,10 +681,15 @@ describe('Commonspace host authority', () => {
     const agents = [
       { id: 'backend', displayName: 'Backend', adapter: 'hermes' as const, model: 'test', status: 'stopped' as const, description: 'Owns APIs and persistence.' },
       { id: 'frontend', displayName: 'Frontend', adapter: 'hermes' as const, model: 'test', status: 'stopped' as const, description: 'Owns browser UI, React, and CSS.' },
+      { id: 'security', displayName: 'Security', adapter: 'hermes' as const, model: 'test', status: 'stopped' as const, description: 'Owns threat modeling and security review.' },
     ]
     const runAgent = vi.fn(async (input: AgentRunInput) => `${input.agent.displayName} handled it.`)
-    const routeAgents = vi.fn(async () => ({
-      agentIds: ['frontend'],
+    const routeAgents = vi.fn(async (input: { projects: Array<{ id: string }> }) => ({
+      assignments: [{
+        agentId: 'frontend',
+        subRequest: 'Fix only the login screen CSS.',
+        projectIds: input.projects.map(project => project.id),
+      }],
       confidence: 0.97,
       reason: 'The request is browser UI work.',
     }))
@@ -687,7 +699,7 @@ describe('Commonspace host authority', () => {
       routeAgents,
     })
     await service.initialize()
-    await addDiscoveredAgents(service, 'backend', 'frontend')
+    await addDiscoveredAgents(service, 'backend', 'frontend', 'security')
     const projectRoot = join(root, 'billing-api')
     await mkdir(projectRoot)
     const project = (await service.mutate({ action: 'create-project', name: 'Billing API', paths: [projectRoot] })).projects[0]!
@@ -713,19 +725,62 @@ describe('Commonspace host authority', () => {
       candidates: [
         expect.objectContaining({ id: 'frontend', routingScore: 1, matchedTerms: ['css'] }),
         expect.objectContaining({ id: 'backend', routingScore: 0, matchedTerms: [] }),
+        expect.objectContaining({ id: 'security', routingScore: 0, matchedTerms: [] }),
       ],
       context: expect.arrayContaining(['Referenced Project: Billing API']),
-      maxAgents: 2,
+      projects: [{ id: project.id, name: 'Billing API' }],
+      maxAgents: 3,
     }))
     expect(runAgent.mock.calls.map(call => call[0].agent.id)).toEqual(['frontend'])
+    expect(runAgent.mock.calls[0]?.[0]?.message).toBe('Fix only the login screen CSS.')
     expect((await service.bootstrap()).state.messages[`channel:${channel.id}`]
-      ?.find(message => message.id === sent.accepted.id)?.routing).toEqual({
+      ?.find(message => message.id === sent.accepted.id)?.routing).toMatchObject({
       source: 'ai',
       status: 'resolved',
       agentIds: ['frontend'],
+      assignments: [{
+        id: expect.any(String),
+        agentId: 'frontend',
+        subRequest: 'Fix only the login screen CSS.',
+        projectIds: [project.id],
+      }],
       confidence: 0.97,
       reason: 'The request is browser UI work.',
     })
+  })
+
+  it('uses the visible workspace fan-out limit without a hidden host cap', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-routing-fanout-'))
+    roots.push(root)
+    const agents = Array.from({ length: 7 }, (_, index) => ({
+      id: `harness-${String(index + 1)}`,
+      displayName: `Harness ${String(index + 1)}`,
+      adapter: 'hermes' as const,
+      model: null,
+      status: 'stopped' as const,
+    }))
+    const routeAgents = vi.fn(async (input: { candidates: Array<{ id: string }> }) => ({
+      assignments: [{ agentId: input.candidates[0]!.id, subRequest: 'Handle it.', projectIds: [] }],
+      reason: 'One harness is sufficient.',
+    }))
+    const service = new CommonspaceHostService({}, { root }, {
+      discoverAgents: async () => agents,
+      runAgent: async () => 'Done.',
+      routeAgents,
+    })
+    await service.initialize()
+    await addDiscoveredAgents(service, ...agents.map(agent => agent.id))
+    await service.mutate({ action: 'set-defaults', maxAgentsPerTurn: 8 })
+    const channel = (await service.mutate({
+      action: 'create-channel',
+      name: 'fanout',
+      agentIds: agents.map(agent => agent.id),
+    })).channels[0]!
+
+    await service.send({ conversation: { kind: 'channel', id: channel.id }, text: 'Handle this.' })
+    await service.whenIdle()
+
+    expect(routeAgents).toHaveBeenCalledWith(expect.objectContaining({ maxAgents: 7 }))
   })
 
   it('persists the global OpenAI-compatible router without exposing its API key', async () => {
@@ -815,7 +870,7 @@ describe('Commonspace host authority', () => {
       { id: 'frontend', displayName: 'Frontend', adapter: 'hermes' as const, model: 'test', status: 'stopped' as const, description: 'Owns UI and CSS.' },
     ]
     const runAgent = vi.fn(async (input: AgentRunInput) => input.sessionName.startsWith('Commonspace Inference: ')
-      ? '{"agentIds":["frontend"],"confidence":0.93,"reason":"CSS work"}'
+      ? '{"assignments":[{"agentId":"frontend","subRequest":"Fix the CSS layout.","projectIds":[]}],"confidence":0.93,"reason":"CSS work"}'
       : 'Handled.')
     const service = new CommonspaceHostService({} as never, { root }, { discoverAgents: async () => agents, runAgent })
     await service.initialize()
@@ -862,6 +917,7 @@ describe('Commonspace host authority', () => {
       source: 'ai',
       status: 'failed',
       agentIds: [],
+      assignments: [],
       reason: 'inference routing failed',
     })
   })
@@ -896,15 +952,22 @@ describe('Commonspace host authority', () => {
       source: 'ai',
       status: 'pending',
       agentIds: [],
+      assignments: [],
       reason: 'Routing with inference.',
     })
     expect(immediate.response.state.messages[`channel:${channel.id}`]?.at(-1)?.text).toBe('Fix the API.')
     await service.whenIdle()
     expect((await service.bootstrap()).state.messages[`channel:${channel.id}`]
-      ?.find(message => message.id === immediate.response.accepted.id)?.routing).toEqual({
+      ?.find(message => message.id === immediate.response.accepted.id)?.routing).toMatchObject({
       source: 'ai',
       status: 'resolved',
       agentIds: ['backend'],
+      assignments: [{
+        id: expect.any(String),
+        agentId: 'backend',
+        subRequest: 'Fix the API.',
+        projectIds: [],
+      }],
       confidence: 0.95,
       reason: 'API work belongs to Backend.',
     })

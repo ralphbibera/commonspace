@@ -18,6 +18,7 @@ Commonspace is a private preview focused on durable human-agent conversation and
 - Live run supervision with steering, queued follow-ups, reorder/remove controls, and stop-and-send.
 - Explicit completed, needs-input, failed, silent, cancelled, and timeout outcomes with needs-attention surfacing.
 - Inference-only unaddressed Channel routing through a harness or OpenAI-compatible model.
+- Inspectable per-harness routing assignments with bounded sub-requests, scoped Projects, and visible user-controlled fan-out.
 - Project Files, Git Changes/diffs, image attachments, and reply speech playback.
 - Work/result binding through per-reply run attribution, changed-file surfaces, activity traces, and validation evidence emitted by the harness.
 - Hard-boundary cancellation, stale-session recovery that distinguishes missing from transient failures, and graceful bridge shutdown.
@@ -26,7 +27,6 @@ Commonspace is a private preview focused on durable human-agent conversation and
 
 ## Next: product behavior
 
-- Split routed messages into inspectable agent-specific sub-requests and remove the hidden two-Agent inference cap.
 - Add Project-reference inference and visible correction when a message has no explicit reference.
 - Add rerouting and compacted routing feedback so corrections improve later decisions.
 - Add thread-specific context snapshots, prospective Thread Project-reference changes, pins, and general human/agent file attachments.
@@ -39,7 +39,7 @@ Commonspace is a private preview focused on durable human-agent conversation and
 
 - Multi-Project reference controls and inferred-reference correction.
 - Channel/Thread context inspection, editing, pinning, and manual-compaction controls.
-- Sub-request, reroute, message-version, file, permission, and notification surfaces.
+- Reroute, message-version, file, permission, and notification surfaces.
 - Keyboard and narrow-screen acceptance coverage across every flow.
 
 ## Scale-dependent work

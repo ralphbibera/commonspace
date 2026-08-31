@@ -158,10 +158,27 @@ function MessageRow({
             : message.routing.status === 'failed'
               ? <div className="csp-message-routing" role="alert">Routing failed · {message.routing.reason}</div>
               : <div className="csp-message-routing" title={message.routing.reason}>
-                  {message.routing.source === 'ai' ? 'AI routed' : 'Local routing'} to {message.routing.agentIds.map((agentId) => {
+                  <span>{message.routing.source === 'ai' ? 'AI routed' : 'Local routing'} to {message.routing.agentIds.map((agentId) => {
                     const agent = bootstrap?.agents.find(candidate => candidate.id === agentId)
                     return `@${agent?.displayName ?? agentId}`
-                  }).join(', ')} · {message.routing.reason}
+                  }).join(', ')} · {message.routing.reason}</span>
+                  {message.routing.assignments.length > 0 && (
+                    <ul className="csp-routing-assignments" aria-label="Routing assignments">
+                      {message.routing.assignments.map((assignment) => {
+                        const agent = bootstrap?.agents.find(candidate => candidate.id === assignment.agentId)
+                        const projects = assignment.projectIds.flatMap(projectId => {
+                          const project = bootstrap?.state.projects.find(candidate => candidate.id === projectId)
+                          return project === undefined ? [] : [project.name]
+                        })
+                        return (
+                          <li key={assignment.id}>
+                            <strong>@{agent?.displayName ?? assignment.agentId}{projects.length === 0 ? '' : ` · ${projects.join(', ')}`}</strong>
+                            <p>{assignment.subRequest}</p>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  )}
                 </div>
         )}
         {message.attachments !== undefined && message.attachments.length > 0 && (

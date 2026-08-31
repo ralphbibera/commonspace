@@ -17,7 +17,7 @@ Commonspace is a local-first workspace for durable conversations with coding age
 
 Commonspace is conversation-first. Hermes and Codex receive only the newly delivered message over ACP, resume their exact provider-native session, and can read bounded shared-room context or post progress through a session-scoped Commonspace MCP server. Each reply can expose a durable, expandable audit of the reasoning summaries, plans, tool calls, results, and usage emitted by its native harness. Raw session mechanics remain host-private.
 
-Unaddressed Channel messages always use configured inference—either an agent harness or a BYO OpenAI-compatible model—to select the right seated agents. Explicit mentions remain authoritative; there is no deterministic/no-inference routing mode.
+Unaddressed Channel messages always use configured inference—either an agent harness or a BYO OpenAI-compatible model—to select the smallest useful harness set and create an inspectable sub-request for each selection. Each harness receives only its assigned sub-request and scoped Projects. Explicit mentions remain authoritative; there is no deterministic/no-inference routing mode.
 
 ## Quick start
 

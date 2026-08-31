@@ -10,6 +10,7 @@ function renderChannelThread(
   includeBackendActivity = false,
   threadOpen = true,
   routingPending = false,
+  routingResolved = false,
 ) {
   const listeners = new Set<() => void>()
   const initialThreadId: string | null = threadOpen ? 'thread-1' : null
@@ -105,7 +106,24 @@ function renderChannelThread(
               text: 'Start the investigation',
               createdAt: '2026-08-26T00:00:00.000Z',
               threadId: 'thread-1',
-              ...(routingPending ? { routing: { source: 'ai' as const, status: 'pending' as const, agentIds: [], reason: 'Routing with inference.' } } : {}),
+              ...(routingPending
+                ? { routing: { source: 'ai' as const, status: 'pending' as const, agentIds: [], assignments: [], reason: 'Routing with inference.' } }
+                : routingResolved
+                  ? {
+                      routing: {
+                        source: 'ai' as const,
+                        status: 'resolved' as const,
+                        agentIds: ['frontend'],
+                        assignments: [{
+                          id: 'assignment-1',
+                          agentId: 'frontend',
+                          subRequest: 'Fix the UI boundary only.',
+                          projectIds: ['project-1'],
+                        }],
+                        reason: 'Frontend owns this boundary.',
+                      },
+                    }
+                  : {}),
             },
             {
               id: 'reply-1',
@@ -180,6 +198,13 @@ describe('Commonspace reply-thread composer', () => {
 
     expect(screen.getAllByRole('status', { name: 'Routing message' }).map(element => element.textContent)).toEqual(['Routing…', 'Routing…'])
     expect(screen.getAllByText('Start the investigation')).toHaveLength(2)
+  })
+
+  it('shows inspectable routing assignments with scoped Projects', () => {
+    renderChannelThread('complete', false, true, false, true)
+
+    expect(screen.getAllByText('Fix the UI boundary only.')).toHaveLength(2)
+    expect(screen.getAllByText('@Frontend · Commonspace')).toHaveLength(2)
   })
 
   it('opens at an equal split and lets the thread be widened by dragging', () => {

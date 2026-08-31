@@ -1,4 +1,4 @@
-export const COMMONSPACE_STATE_VERSION = 16 as const
+export const COMMONSPACE_STATE_VERSION = 17 as const
 
 export type AgentAdapterKind = 'hermes' | 'codex'
 
@@ -36,10 +36,18 @@ export type UpdateRoutingConfigurationRequest =
       apiKey?: string | null
     }
 
+export interface CommonspaceRoutingAssignment {
+  id: string
+  agentId: string
+  subRequest: string
+  projectIds: string[]
+}
+
 export interface CommonspaceRoutingDecision {
   source: 'explicit' | 'ai' | 'local'
   status?: 'pending' | 'resolved' | 'failed'
   agentIds: string[]
+  assignments: CommonspaceRoutingAssignment[]
   confidence?: number
   reason: string
 }

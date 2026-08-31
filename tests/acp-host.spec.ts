@@ -277,7 +277,7 @@ describe('Commonspace ACP host path', () => {
       const secondChannel = (await service.mutate({ action: 'create-channel', name: 'second', agentIds: [worker.id] })).channels.at(-1)!
       await service.updateRoutingConfiguration({ provider: 'harness', harnessAgentId: harness.id })
       vi.stubEnv('FAKE_ACP_INFERENCE_RESPONSE', JSON.stringify({
-        agentIds: [worker.id],
+        assignments: [{ agentId: worker.id, subRequest: 'Handle this Channel request.', projectIds: [] }],
         confidence: 0.95,
         reason: 'Route to the Channel worker.',
       }))

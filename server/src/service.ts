@@ -17,6 +17,7 @@ import type {
   CommonspaceMessage,
   CommonspaceMutation,
   CommonspaceRoutingConfiguration,
+  CommonspaceRoutingAssignment,
   CommonspaceRoutingDecision,
   CommonspaceRunAttribution,
   CommonspaceRunFileChange,
@@ -100,7 +101,6 @@ export interface CommonspaceHostConfig {
   defaultCwd?: string
   hermesPath?: string
   codexPath?: string
-  maxAgentsPerTurn?: number
   hermesYolo?: boolean
   externalAgentYolo?: boolean
   runBudgetSeconds?: number
@@ -165,11 +165,14 @@ export interface CommonspaceRouteInput {
     routingScore: number
     matchedTerms: string[]
   }>
+  projects: Array<{ id: string; name: string }>
   maxAgents: number
 }
 
 export interface CommonspaceRouteResult {
-  agentIds: string[]
+  assignments?: Array<Omit<CommonspaceRoutingAssignment, 'id'>>
+  /** @deprecated Test-override compatibility while callers migrate to assignments. */
+  agentIds?: string[]
   confidence?: number
   reason: string
 }
@@ -205,6 +208,7 @@ interface AgentDelivery {
   authorId: string
   authorName: string
   text: string
+  projectIds?: readonly string[]
   images?: readonly AgentImageInput[]
 
 }
@@ -691,7 +695,14 @@ function sanitizeImageAttachments(value: unknown): CommonspaceImageAttachment[] 
 }
 
 
-function sanitizeRoutingDecision(value: unknown, agentIds: ReadonlySet<string>): CommonspaceRoutingDecision | undefined {
+function sanitizeRoutingDecision(
+  value: unknown,
+  agentIds: ReadonlySet<string>,
+  projectIds: ReadonlySet<string>,
+  messageId: string,
+  messageText: string,
+  fallbackProjectIds: readonly string[],
+): CommonspaceRoutingDecision | undefined {
   const routing = plainRecord(value)
   if (routing === null || (routing.source !== 'explicit' && routing.source !== 'ai' && routing.source !== 'local' && routing.source !== 'fallback')) return undefined
   if (!Array.isArray(routing.agentIds) || typeof routing.reason !== 'string') return undefined
@@ -704,7 +715,38 @@ function sanitizeRoutingDecision(value: unknown, agentIds: ReadonlySet<string>):
   const confidence = typeof routing.confidence === 'number' && Number.isFinite(routing.confidence)
     ? Math.max(0, Math.min(1, routing.confidence))
     : undefined
-  return { source: routing.source === 'fallback' ? 'local' : routing.source, ...(status === undefined ? {} : { status }), agentIds: routedAgentIds, ...(confidence === undefined ? {} : { confidence }), reason }
+  const assignments: CommonspaceRoutingAssignment[] = []
+  const assignedAgents = new Set<string>()
+  if (Array.isArray(routing.assignments)) {
+    for (const candidate of routing.assignments.slice(0, 8)) {
+      const assignment = plainRecord(candidate)
+      const id = loadedId(assignment?.id)
+      const agentId = loadedId(assignment?.agentId)
+      const subRequest = loadedString(assignment?.subRequest, MAX_MESSAGE_CHARS).normalize('NFKC').trim()
+      const assignmentProjectIds = loadedStringArray(assignment?.projectIds, 32, 200)
+        .filter(projectId => projectIds.has(projectId))
+      if (assignment === null || id === null || agentId === null || !routedAgentIds.includes(agentId) || assignedAgents.has(agentId) || subRequest === '') continue
+      assignedAgents.add(agentId)
+      assignments.push({ id, agentId, subRequest, projectIds: assignmentProjectIds })
+    }
+  }
+  for (const agentId of routedAgentIds) {
+    if (assignedAgents.has(agentId)) continue
+    assignments.push({
+      id: `legacy:${messageId}:${agentId}`,
+      agentId,
+      subRequest: messageText.slice(0, MAX_MESSAGE_CHARS),
+      projectIds: [...fallbackProjectIds],
+    })
+  }
+  return {
+    source: routing.source === 'fallback' ? 'local' : routing.source,
+    ...(status === undefined ? {} : { status }),
+    agentIds: routedAgentIds,
+    assignments,
+    ...(confidence === undefined ? {} : { confidence }),
+    reason,
+  }
 }
 
 function isRunFileStatus(value: unknown): value is CommonspaceRunFileChange['status'] {
@@ -809,8 +851,8 @@ function sanitizeMessages(
       const runAttribution = message.authorType === 'agent' ? sanitizeRunAttribution(message.runAttribution) : undefined
       const attachments = sanitizeImageAttachments(message.attachments)
 
-      const routing = sanitizeRoutingDecision(message.routing, agentIds)
       const referencedProjects = loadedProjectIds(message, projectIds)
+      const routing = sanitizeRoutingDecision(message.routing, agentIds, projectIds, id, message.text, referencedProjects)
       seen.add(id)
       sanitized.push({
         id,
@@ -925,7 +967,6 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
   private readonly mcpCredentials = new Map<string, { fingerprint: string; scope: CommonspaceMcpScope; token: string }>()
   private readonly hermesPath: string
   private readonly codexPath: string
-  private readonly maxAgentsPerTurn: number
   private readonly hermesYolo: boolean
   private readonly externalAgentYolo: boolean
   private readonly runBudgetSeconds: number | undefined
@@ -955,7 +996,6 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
     this.defaultCwd = config.defaultCwd ?? process.cwd()
     this.hermesPath = config.hermesPath ?? 'hermes'
     this.codexPath = config.codexPath ?? 'codex'
-    this.maxAgentsPerTurn = Math.max(1, Math.min(8, config.maxAgentsPerTurn ?? 6))
     this.hermesYolo = unsafeModeForAdapter(config, 'hermes')
     this.externalAgentYolo = unsafeModeForAdapter(config, 'codex')
     this.runBudgetSeconds = config.runBudgetSeconds === undefined
@@ -1832,7 +1872,17 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
           throw new Error('direct reply target is not a channel member')
         }
         agentIds = [request.targetAgentId]
-        routing = { source: 'explicit', agentIds, reason: 'Direct reply target selected.' }
+        routing = {
+          source: 'explicit',
+          agentIds,
+          assignments: agentIds.map(agentId => ({
+            id: crypto.randomUUID(),
+            agentId,
+            subRequest: text,
+            projectIds: projects.map(project => project.id),
+          })),
+          reason: 'Direct reply target selected.',
+        }
       } else {
         const explicitlyMentionedAgentIds = mentionedAgents(text, agents)
         channel = {
@@ -1849,10 +1899,20 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
         const explicitlyAddressed = mentionedChannelAgents(routedMemberIds, text, agents)
         if (explicitlyAddressed.length > 0) {
           agentIds = explicitlyAddressed
-          routing = { source: 'explicit', agentIds, reason: parseTags(text).agents.includes('all') ? '@all addressed every channel agent.' : 'Agent mention selected.' }
+          routing = {
+            source: 'explicit',
+            agentIds,
+            assignments: agentIds.map(agentId => ({
+              id: crypto.randomUUID(),
+              agentId,
+              subRequest: text,
+              projectIds: projects.map(project => project.id),
+            })),
+            reason: parseTags(text).agents.includes('all') ? '@all addressed every channel agent.' : 'Agent mention selected.',
+          }
         } else {
           agentIds = []
-          routing = { source: 'ai', status: 'pending', agentIds, reason: 'Routing with inference.' }
+          routing = { source: 'ai', status: 'pending', agentIds, assignments: [], reason: 'Routing with inference.' }
         }
       }
     } else {
@@ -1892,6 +1952,10 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
       }]
     })
     if (candidates.length === 0) throw new Error('inference routing failed: no eligible agents')
+    const projects = referencedProjectIds(thread ?? {}).flatMap((projectId) => {
+      const project = this.state.projects.find(candidate => candidate.id === projectId)
+      return project === undefined ? [] : [{ id: project.id, name: project.name }]
+    })
     const context = thread === undefined
       ? []
       : [
@@ -1908,22 +1972,40 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
       text,
       context,
       candidates,
-      maxAgents: Math.min(2, candidates.length),
+      projects,
+      maxAgents: Math.min(this.state.defaults.maxAgentsPerTurn, candidates.length),
     }
     try {
       const result = this.overrides.routeAgents === undefined
         ? await this.routeAgents(input)
         : await this.overrides.routeAgents(input)
       const allowed = new Set(candidates.map(candidate => candidate.id))
-      const agentIds = [...new Set(result.agentIds)]
-        .filter(agentId => allowed.has(agentId))
-        .slice(0, input.maxAgents)
+      const allowedProjects = new Set(projects.map(project => project.id))
+      const rawAssignments = result.assignments ?? (result.agentIds ?? []).map(agentId => ({
+        agentId,
+        subRequest: text,
+        projectIds: projects.map(project => project.id),
+      }))
+      const assignments: Array<Omit<CommonspaceRoutingAssignment, 'id'>> = []
+      const assignedAgents = new Set<string>()
+      for (const assignment of rawAssignments) {
+        if (!allowed.has(assignment.agentId) || assignedAgents.has(assignment.agentId)) continue
+        const subRequest = assignment.subRequest.normalize('NFKC').trim().slice(0, MAX_MESSAGE_CHARS)
+        const projectIds = [...new Set(assignment.projectIds)]
+        if (subRequest === '' || projectIds.some(projectId => !allowedProjects.has(projectId))) {
+          throw new Error('inference routing returned an invalid assignment')
+        }
+        assignedAgents.add(assignment.agentId)
+        assignments.push({ agentId: assignment.agentId, subRequest, projectIds })
+        if (assignments.length >= input.maxAgents) break
+      }
+      const agentIds = assignments.map(assignment => assignment.agentId)
       const reason = result.reason.normalize('NFKC').trim().slice(0, 500)
       if (agentIds.length === 0 || reason === '') throw new Error('inference routing returned no valid decision')
       const confidence = typeof result.confidence === 'number' && Number.isFinite(result.confidence)
         ? Math.max(0, Math.min(1, result.confidence))
         : undefined
-      return { agentIds, ...(confidence === undefined ? {} : { confidence }), reason }
+      return { assignments, agentIds, ...(confidence === undefined ? {} : { confidence }), reason }
     } catch (error) {
       this.environment.logger?.warn(error)
       throw new Error('inference routing failed', { cause: error })
@@ -2065,13 +2147,11 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
     prepared = routed.prepared
     response = routed.response
     const thread = response.thread
-    const projectRoots = preparedProjectRoots(prepared.projects)
-    const cwd = projectRoots[0]?.path ?? this.defaultCwd
     const explicitlyTargetsAll = prepared.request.conversation.kind === 'channel'
       && parseTags(prepared.text).agents.includes('all')
     const effectiveLimit = explicitlyTargetsAll
       ? prepared.agentIds.length
-      : Math.min(this.maxAgentsPerTurn, this.state.defaults.maxAgentsPerTurn)
+      : this.state.defaults.maxAgentsPerTurn
     const effectiveModel = prepared.channel?.settings.model ?? this.state.defaults.model ?? undefined
     const effectiveReasoning = prepared.channel?.settings.reasoning ?? this.state.defaults.reasoning
     const memberIds = prepared.channel?.agentIds ?? thread?.agentIds ?? prepared.agentIds
@@ -2082,6 +2162,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
       authorId: response.accepted.authorId,
       authorName: response.accepted.authorName,
       text: response.accepted.text,
+      projectIds: prepared.projects.map(project => project.id),
 
       ...(prepared.attachments.length === 0
         ? {}
@@ -2097,6 +2178,11 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
       delivered.add(agentId)
       const agent = prepared.agents.find(candidate => candidate.id === agentId)
       if (agent === undefined) return
+      const projectById = new Map(prepared.projects.map(project => [project.id, project]))
+      const deliveryProjects = (delivery.projectIds ?? prepared.projects.map(project => project.id))
+        .flatMap(projectId => projectById.get(projectId) ?? [])
+      const projectRoots = preparedProjectRoots(deliveryProjects)
+      const cwd = projectRoots[0]?.path ?? this.defaultCwd
       const authority = this.agentAuthority(agent)
       if (authority === undefined) return
       const sessionName = prepared.request.conversation.kind === 'dm'
@@ -2110,7 +2196,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
         abortController: new AbortController(),
       }
       this.activeAgentRuns.set(activeRun.id, activeRun)
-      const projectsAreCurrent = () => prepared.projects.every(project =>
+      const projectsAreCurrent = () => deliveryProjects.every(project =>
         this.state.projects.find(candidate => candidate.id === project.id) === project)
       const executionIsCurrent = () => !activeRun.abortController.signal.aborted && !this.closing &&
         this.agentAuthorityIsCurrent(agent, authority) && projectsAreCurrent() && this.conversationIsCurrent(prepared, thread)
@@ -2146,9 +2232,9 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
                 conversation: prepared.request.conversation,
                 sessionName,
                 ...(thread === undefined ? {} : { threadId: thread.id }),
-                ...(prepared.projects.length === 0
+                ...(deliveryProjects.length === 0
                   ? {}
-                  : { projectIds: prepared.projects.map(project => project.id), projectId: prepared.projects[0]!.id }),
+                  : { projectIds: deliveryProjects.map(project => project.id), projectId: deliveryProjects[0]!.id }),
               },
               ...(sessionId === undefined ? {} : { sessionId }),
               ...(agentModel === undefined ? {} : { model: agentModel }),
@@ -2179,7 +2265,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
           authorName: 'Commonspace',
           text: `@${agent.id} run failed: ${message}`,
           createdAt: now(),
-          ...projectReferenceFields(prepared.projects),
+          ...projectReferenceFields(deliveryProjects),
           ...(thread === undefined ? {} : { threadId: thread.id, parentMessageId: thread.rootMessageId }),
         })
         await this.persist()
@@ -2203,7 +2289,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
         ? undefined
         : this.publicAgentTrace(agentResponse.trace, agent.adapter)
       const completedAt = now()
-      const runAttribution: CommonspaceRunAttribution | undefined = prepared.projects.length === 0
+      const runAttribution: CommonspaceRunAttribution | undefined = deliveryProjects.length === 0
         ? undefined
         : {
             startedAt: runStartedAt,
@@ -2223,7 +2309,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
         authorName: agent.displayName,
         text: agentResponse.text,
         createdAt: completedAt,
-        ...projectReferenceFields(prepared.projects),
+        ...projectReferenceFields(deliveryProjects),
         ...(trace === undefined ? {} : { trace }),
         ...(runAttribution === undefined ? {} : { runAttribution }),
         ...(thread === undefined ? {} : { threadId: thread.id, parentMessageId: thread.rootMessageId }),
@@ -2239,11 +2325,23 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
           authorId: agent.id,
           authorName: agent.displayName,
           text: reply.text,
+          ...(delivery.projectIds === undefined ? {} : { projectIds: delivery.projectIds }),
         })))
       }
     }
 
-    await Promise.all(prepared.agentIds.slice(0, effectiveLimit).map(agentId => deliver(agentId, rootDelivery)))
+    const routingAssignments = prepared.routing?.assignments ?? []
+    const rootDeliveries = routingAssignments.length === 0
+      ? prepared.agentIds.map(agentId => ({ agentId, delivery: rootDelivery }))
+      : routingAssignments.map(assignment => ({
+          agentId: assignment.agentId,
+          delivery: {
+            ...rootDelivery,
+            text: assignment.subRequest,
+            projectIds: assignment.projectIds,
+          },
+        }))
+    await Promise.all(rootDeliveries.slice(0, effectiveLimit).map(({ agentId, delivery }) => deliver(agentId, delivery)))
     if (!this.closing && thread !== undefined && this.conversationIsCurrent(prepared, thread)) {
       await this.updateChannelMemory(thread.channelId)
     }
@@ -2260,8 +2358,19 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
       const routingThread = prepared.thread ?? response.thread
       const memberIds = prepared.thread?.agentIds ?? prepared.channel?.agentIds ?? []
       const decision = await this.routeChannelMessage(prepared.text, prepared.request, routingThread, memberIds, prepared.agents)
-      const routing: CommonspaceRoutingDecision = { source: 'ai', status: 'resolved', ...decision }
-      const thread = response.thread === undefined ? undefined : { ...response.thread, agentIds: decision.agentIds }
+      const assignments: CommonspaceRoutingAssignment[] = (decision.assignments ?? []).map(assignment => ({
+        id: crypto.randomUUID(),
+        ...assignment,
+      }))
+      const routing: CommonspaceRoutingDecision = {
+        source: 'ai',
+        status: 'resolved',
+        agentIds: decision.agentIds ?? assignments.map(assignment => assignment.agentId),
+        assignments,
+        ...(decision.confidence === undefined ? {} : { confidence: decision.confidence }),
+        reason: decision.reason,
+      }
+      const thread = response.thread === undefined ? undefined : { ...response.thread, agentIds: routing.agentIds }
       const accepted: CommonspaceMessage = { ...response.accepted, routing }
       const key = conversationKey(prepared.request.conversation)
       this.state = {
@@ -2278,7 +2387,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
       await this.persist()
       this.broadcastRevision()
       return {
-        prepared: { ...prepared, agentIds: decision.agentIds, routing, ...(thread === undefined ? {} : { thread }) },
+        prepared: { ...prepared, agentIds: routing.agentIds, routing, ...(thread === undefined ? {} : { thread }) },
         response: { ...response, accepted, ...(thread === undefined ? {} : { thread }), state: this.publicSnapshot() },
       }
     } catch (error) {
@@ -2286,6 +2395,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
         source: 'ai',
         status: 'failed',
         agentIds: [],
+        assignments: [],
         reason: error instanceof Error ? error.message : 'Inference routing failed.',
       }
       const key = conversationKey(prepared.request.conversation)
