@@ -32,6 +32,7 @@ Commonspace is a private preview focused on durable human-agent conversation and
 - Runtime readiness diagnostics, recovery guidance, and local/remote inference data-flow disclosure.
 - Versioned non-secret workspace export, clean-workspace import with explicit Project-root mapping, and exact attachment restoration.
 - Explicit revision-guarded Channel/DM retention with impact preview and attachment-byte cleanup; no automatic expiry.
+- One-command macOS installation, owner LaunchAgent startup, same-origin built UI/API service, staged updates, health control, and one-release rollback.
 - Project Files, Git Changes/diffs, image attachments, and reply speech playback.
 - Work/result binding through per-reply run attribution, changed-file surfaces, activity traces, and validation evidence emitted by the harness.
 - Hard-boundary cancellation, stale-session recovery that distinguishes missing from transient failures, and graceful bridge shutdown.
@@ -40,7 +41,7 @@ Commonspace is a private preview focused on durable human-agent conversation and
 
 ## Next: product behavior
 
-- Package an installed background service and optional OS notifications.
+- Add optional OS notifications and independent notification settings.
 
 ## Later UI/UX work
 
@@ -60,5 +61,5 @@ See [Product specification](product-spec.md) for the complete behavior and accep
 - Exercise Hermes and Codex ACP login/start/resume paths on a clean machine.
 - Verify light, dark, desktop, and narrow layouts.
 - Exercise state migration, automatic backup recovery, and rollback guarantees on release fixtures.
-- Package a one-command local installation and update path.
+- Exercise the installed service update and rollback path on a clean supported macOS user account.
 - Complete keyboard-only and destructive-action reviews.

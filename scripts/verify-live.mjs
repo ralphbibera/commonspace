@@ -8,6 +8,7 @@ import { findStartupUrl } from './startup-output.mjs'
 
 const repoRoot = process.cwd()
 const stateRoot = await mkdtemp(join(tmpdir(), 'commonspace-live-'))
+const installedStateRoot = await mkdtemp(join(tmpdir(), 'commonspace-installed-live-'))
 const server = spawn(process.execPath, [join(repoRoot, 'server/dist/index.js')], {
   cwd: repoRoot,
   env: {
@@ -20,6 +21,7 @@ const server = spawn(process.execPath, [join(repoRoot, 'server/dist/index.js')],
 })
 
 let uiServer
+let installedServer
 let browser
 
 function waitForUrl(child, pattern, label) {
@@ -91,16 +93,41 @@ try {
   await page.getByLabel('Commonspace conversation').waitFor({ state: 'visible' })
   if (pageErrors.length > 0) throw new Error(`browser errors: ${pageErrors.join(' | ')}`)
 
+  installedServer = spawn(process.execPath, [join(repoRoot, 'server/dist/index.js')], {
+    cwd: repoRoot,
+    env: {
+      ...process.env,
+      COMMONSPACE_HOME: installedStateRoot,
+      COMMONSPACE_PORT: '0',
+      COMMONSPACE_UI_ROOT: join(repoRoot, 'ui/dist'),
+      NODE_ENV: 'production',
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  const installedUrl = await waitForUrl(installedServer, /Commonspace is running at (http:\/\/127\.0\.0\.1:\d+)/, 'Installed Commonspace server')
+  const installedPage = await browser.newPage({ viewport: { width: 1180, height: 820 } })
+  const installedPageErrors = []
+  installedPage.on('pageerror', error => { installedPageErrors.push(error.message) })
+  await installedPage.goto(installedUrl, { waitUntil: 'domcontentloaded' })
+  await installedPage.getByLabel('Commonspace application').waitFor({ state: 'visible' })
+  await installedPage.getByLabel('Commonspace browser').waitFor({ state: 'visible' })
+  await installedPage.getByLabel('Commonspace conversation').waitFor({ state: 'visible' })
+  if (installedPageErrors.length > 0) throw new Error(`installed browser errors: ${installedPageErrors.join(' | ')}`)
+
   console.log(JSON.stringify({
     apiUrl: url,
     uiUrl,
+    installedUrl,
     health: healthBody,
     apiServer: true,
     browserMounted: true,
+    installedBrowserMounted: true,
   }))
 } finally {
   await browser?.close()
+  await stopProcess(installedServer)
   await stopProcess(uiServer)
   await stopProcess(server)
   await rm(stateRoot, { recursive: true, force: true })
+  await rm(installedStateRoot, { recursive: true, force: true })
 }

@@ -48,7 +48,7 @@ This audit compares the intended behavior in [Product specification](product-spe
 | Inbox, unread state, search, and navigation | Working | Reply-focused Inbox, exact thread navigation, read cursors, and unified transcript search exist. Search filtering now recognizes every referenced Project. |
 | Runtime and authentication diagnostics | Working | On-demand diagnostics report service storage/projectless readiness, installed versus rostered supported harnesses, observed run readiness, recovery guidance, and local/remote inference data categories without returning credentials, host paths, or native IDs. |
 | Notifications | Partial | In-app attention state exists; OS notifications and settings do not. |
-| Installed background service | Partial | The server can run independently, but installation, startup registration, health control, and updating are not packaged. |
+| Installed background service | Working | The macOS service manager provides one-command SSH installation from `main`, an owner LaunchAgent, same-origin built UI/API delivery, start/stop/restart/status controls, staged updates, activation health checks, automatic failed-update restoration, and explicit one-release rollback without repository knowledge. |
 | Export, import, and retention | Working | Version-1 JSON archives contain sanitized workspace data and exact attachment bytes while omitting paths, native sessions, capabilities, and credentials. Import is clean-workspace-only, validates all attachment data, and requires explicit local root mappings. Revision-bound retention previews scope destructive cleanup to one inactive Channel or DM. The format and semantics are documented in [Workspace archive format](workspace-archive-format.md). |
 | Extensible Project resources | Missing | The product model permits resource kinds beyond directories, but persistence and APIs are filesystem-specific. |
 | Relational transcript store | Deferred | Storage technology remains scale-dependent, but removing silent transcript truncation and honoring explicit retention semantics cannot wait for a relational migration. |
@@ -56,7 +56,7 @@ This audit compares the intended behavior in [Product specification](product-spe
 
 ## Recommended feature order
 
-1. Complete operability: installed background service and OS notifications.
+1. Complete operability: configurable OS notifications.
 2. Finish user-facing controls and acceptance coverage for remaining backend-ready and release-readiness capabilities.
 
 ## Documentation corrections made with this audit
@@ -67,3 +67,4 @@ This audit compares the intended behavior in [Product specification](product-spe
 - The roadmap now separates feature behavior, later UI/UX, and scale-dependent storage work.
 - Transcript truncation, runtime-specific configuration management, synthetic Codex discovery, and managed Agent creation are fixed.
 - Export/import and retention now have documented, tested service, API, and UI paths.
+- The macOS background-service lifecycle now has packaged install/update/control/recovery paths and same-origin installed UI delivery.
