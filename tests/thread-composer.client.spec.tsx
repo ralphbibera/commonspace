@@ -120,6 +120,7 @@ function renderChannelThread(
                           subRequest: 'Fix the UI boundary only.',
                           projectIds: ['project-1'],
                         }],
+                        inferredProjectIds: ['project-1'],
                         reason: 'Frontend owns this boundary.',
                       },
                     }
@@ -204,7 +205,7 @@ describe('Commonspace reply-thread composer', () => {
     renderChannelThread('complete', false, true, false, true)
 
     expect(screen.getAllByText('Fix the UI boundary only.')).toHaveLength(2)
-    expect(screen.getAllByText('@Frontend · Commonspace')).toHaveLength(2)
+    expect(screen.getAllByText('@Frontend · Commonspace · inferred')).toHaveLength(2)
   })
 
   it('opens at an equal split and lets the thread be widened by dragging', () => {

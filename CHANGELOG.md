@@ -21,6 +21,7 @@ All notable changes to Commonspace are recorded here.
 - Real standalone health, API, browser-mount, build, and live smoke verification.
 - Inference-only Channel routing through either an agent harness or an OpenAI-compatible model, with inspectable routing decisions.
 - Persisted, inspectable per-harness routing assignments with bounded sub-requests and scoped Project references.
+- Visible Project-reference inference for unreferenced new Channel roots, with inferred union persisted on the source message and Thread.
 - Project Files, Git Changes/diffs, speech playback, live activity, and stop controls.
 - Zero-to-many Project references on messages and threads, with multi-root agent execution, Project-aware search, correct run attribution, and backward-compatible singular fields for the current UI.
 - Editable Channel context APIs with user-owned context preservation, manual inference compaction, automatic token-pressure compaction, and visible current/stale metadata.

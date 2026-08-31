@@ -729,6 +729,7 @@ describe('Commonspace host authority', () => {
       ],
       context: expect.arrayContaining(['Referenced Project: Billing API']),
       projects: [{ id: project.id, name: 'Billing API' }],
+      inferProjects: false,
       maxAgents: 3,
     }))
     expect(runAgent.mock.calls.map(call => call[0].agent.id)).toEqual(['frontend'])
@@ -781,6 +782,63 @@ describe('Commonspace host authority', () => {
     await service.whenIdle()
 
     expect(routeAgents).toHaveBeenCalledWith(expect.objectContaining({ maxAgents: 7 }))
+  })
+
+  it('infers Project references for an unreferenced new Channel thread', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-routing-project-inference-'))
+    roots.push(root)
+    const firstRoot = join(root, 'first')
+    const secondRoot = join(root, 'second')
+    await Promise.all([mkdir(firstRoot), mkdir(secondRoot)])
+    const agent = { id: 'backend', displayName: 'Backend', adapter: 'hermes' as const, model: null, status: 'stopped' as const }
+    const runAgent = vi.fn(async () => 'Done.')
+    const routeAgents = vi.fn(async (input: { projects: Array<{ id: string; name: string }> }) => {
+      const project = input.projects.find(candidate => candidate.name === 'Second')!
+      return {
+        assignments: [{ agentId: agent.id, subRequest: 'Work only in Second.', projectIds: [project.id] }],
+        confidence: 0.88,
+        reason: 'The request concerns Second.',
+      }
+    })
+    const service = new CommonspaceHostService({}, { root }, {
+      discoverAgents: async () => [agent],
+      runAgent,
+      routeAgents,
+    })
+    await service.initialize()
+    await addDiscoveredAgents(service, agent.id)
+    await service.mutate({ action: 'create-project', name: 'First', paths: [firstRoot] })
+    const second = (await service.mutate({ action: 'create-project', name: 'Second', paths: [secondRoot] })).projects.at(-1)!
+    const channel = (await service.mutate({ action: 'create-channel', name: 'routing', agentIds: [agent.id] })).channels[0]!
+
+    const sent = await service.send({ conversation: { kind: 'channel', id: channel.id }, text: 'Handle the second workspace.' })
+    await service.whenIdle()
+
+    expect(routeAgents).toHaveBeenCalledWith(expect.objectContaining({
+      inferProjects: true,
+      projects: expect.arrayContaining([
+        expect.objectContaining({ name: 'First' }),
+        expect.objectContaining({ id: second.id, name: 'Second' }),
+      ]),
+    }))
+    expect(runAgent.mock.calls[0]?.[0]).toMatchObject({
+      message: 'Work only in Second.',
+      cwd: await realpath(secondRoot),
+      additionalCwds: [],
+    })
+    const state = service.snapshot()
+    expect(state.messages[`channel:${channel.id}`]?.find(message => message.id === sent.accepted.id)).toMatchObject({
+      projectIds: [second.id],
+      projectId: second.id,
+      routing: {
+        inferredProjectIds: [second.id],
+        assignments: [{ projectIds: [second.id] }],
+      },
+    })
+    expect(state.threads.find(thread => thread.id === sent.thread?.id)).toMatchObject({
+      projectIds: [second.id],
+      projectId: second.id,
+    })
   })
 
   it('persists the global OpenAI-compatible router without exposing its API key', async () => {
@@ -918,6 +976,7 @@ describe('Commonspace host authority', () => {
       status: 'failed',
       agentIds: [],
       assignments: [],
+      inferredProjectIds: [],
       reason: 'inference routing failed',
     })
   })
@@ -953,6 +1012,7 @@ describe('Commonspace host authority', () => {
       status: 'pending',
       agentIds: [],
       assignments: [],
+      inferredProjectIds: [],
       reason: 'Routing with inference.',
     })
     expect(immediate.response.state.messages[`channel:${channel.id}`]?.at(-1)?.text).toBe('Fix the API.')

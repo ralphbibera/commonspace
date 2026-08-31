@@ -32,6 +32,7 @@ export interface AiRouteInput {
     matchedTerms: string[]
   }>
   projects: Array<{ id: string; name: string }>
+  inferProjects: boolean
   maxAgents: number
 }
 
@@ -64,6 +65,9 @@ export function buildRoutingPrompt(input: AiRouteInput): string {
     'Return JSON only: {"assignments":[{"agentId":"id","subRequest":"assigned work","projectIds":["project-id"]}],"confidence":0.0,"reason":"short explanation"}.',
     `Candidates: ${JSON.stringify(candidates)}`,
     `Available Projects: ${JSON.stringify(input.projects)}`,
+    input.inferProjects
+      ? 'Project selection: infer the relevant Project subset for each assignment; empty means genuinely projectless.'
+      : 'Project selection: explicit references are authoritative; each assignment may use only the relevant subset.',
     input.context.length === 0 ? 'Recent thread context: none' : `Recent thread context:\n${input.context.join('\n')}`,
     `Newest user message: ${input.text}`,
   ].join('\n\n')

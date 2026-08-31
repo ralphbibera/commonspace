@@ -9,6 +9,7 @@ const input = {
     { id: 'backend', displayName: 'Backend', description: 'Owns APIs and persistence.', routingScore: 0, matchedTerms: [] },
   ],
   projects: [{ id: 'web', name: 'Web App' }],
+  inferProjects: false,
   maxAgents: 2,
 }
 

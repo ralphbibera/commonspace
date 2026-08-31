@@ -48,6 +48,7 @@ export interface CommonspaceRoutingDecision {
   status?: 'pending' | 'resolved' | 'failed'
   agentIds: string[]
   assignments: CommonspaceRoutingAssignment[]
+  inferredProjectIds: string[]
   confidence?: number
   reason: string
 }

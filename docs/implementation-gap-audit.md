@@ -33,7 +33,7 @@ This audit compares the intended behavior in [Product specification](product-spe
 | Unaddressed routing fan-out | Working | Inference may select up to the visible max-agents setting; the hidden two-Agent cap is removed while unrelated native sessions remain concurrent. |
 | Agent-specific request decomposition | Working | Routing persists one bounded sub-request and Project subset per selected harness, displays each assignment, and delivers only that sub-request to its native session. Legacy decisions migrate deterministically. |
 | Reroute, correction, and routing memory | Missing | There is no reroute operation, correction record, or compacted feedback used by later routing. |
-| Project-reference inference | Missing | Explicit Project tags work, but the inference layer does not infer or expose correctable Project references. |
+| Project-reference inference | Working | New unreferenced Channel roots offer all Projects to inference, persist the inferred union on the message/Thread, scope each assignment independently, and visibly mark inferred Projects. Explicit references and explicit projectless scope remain authoritative. Reroute-based correction remains the next capability. |
 | Shared Channel context projection | Working | Commonspace derives summary, decisions, questions, thread references, source counts, and estimated tokens independently of native sessions. |
 | Editable and compactable Channel context | Partial | Read/update/manual-compact APIs, preserved user edits, stale/current state, and automatic token-pressure compaction now exist. Durable compacting/failed states and the inspector/editor/compact controls remain missing. |
 | Thread-specific context snapshots | Missing | Threads reference shared context but do not persist an inherited snapshot plus independently compacted thread context. |
@@ -56,7 +56,7 @@ This audit compares the intended behavior in [Product specification](product-spe
 
 ## Recommended feature order
 
-1. Complete the remaining inference layer: Project-reference inference, reroute/correction, and compacted routing feedback.
+1. Complete the remaining inference layer: reroute/correction and compacted routing feedback.
 2. Complete durable conversation semantics: thread context snapshots, prospective Thread Project-reference changes, message edit branches, deletion markers, and pins.
 3. Generalize collaboration artifacts: human/agent files and normalized native permission requests.
 4. Complete operability: runtime/auth diagnostics, export/import/retention, installed background service, and OS notifications.
