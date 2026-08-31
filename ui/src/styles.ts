@@ -946,8 +946,60 @@ export const commonspaceStyles = String.raw`
 .csp-message-routing { margin-top: 5px; color: var(--dsw-alias-label-tertiary, #8a8f98); font-size: 10px; line-height: 1.4; }
 .csp-routing-assignments { display: grid; gap: 4px; margin: 5px 0 0; padding: 0; list-style: none; }
 .csp-routing-assignments li { padding-left: 7px; border-left: 2px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.12)); }
+.csp-routing-assignments li[data-status='superseded'] { border-left-style: dashed; opacity: 0.62; }
 .csp-routing-assignments strong { color: var(--dsw-alias-label-secondary, #666b74); font-size: 10px; }
 .csp-routing-assignments p { margin: 1px 0 0; color: var(--dsw-alias-label-primary, #202124); font-size: 11px; white-space: pre-wrap; }
+.csp-routing-attempt-status {
+  display: inline-block;
+  margin-left: 6px;
+  color: var(--dsw-alias-interactive-brand, #4d6bfe);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.csp-routing-reroute {
+  margin: 2px 0 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--dsw-alias-interactive-brand, #4d6bfe);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.csp-routing-reroute:hover { text-decoration: underline; }
+.csp-routing-reroute:focus-visible { outline: 2px solid var(--dsw-alias-interactive-brand, #4d6bfe); outline-offset: 2px; }
+.csp-routing-reroute-form {
+  display: grid;
+  gap: 7px;
+  margin: 7px 0 3px;
+  padding: 9px;
+  border: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.12));
+  border-radius: 7px;
+  background: var(--dsw-alias-bg-raised, rgba(255, 255, 255, 0.72));
+  opacity: 1;
+}
+.csp-routing-reroute-form > label { display: grid; gap: 3px; color: var(--dsw-alias-label-secondary, #666b74); font-weight: 700; }
+.csp-routing-reroute-form select,
+.csp-routing-reroute-form textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.14));
+  border-radius: 5px;
+  background: var(--dsw-alias-bg-base, #fff);
+  color: var(--dsw-alias-label-primary, #202124);
+  font: inherit;
+}
+.csp-routing-reroute-form textarea { min-height: 54px; padding: 6px; resize: vertical; }
+.csp-routing-reroute-form select { min-height: 30px; padding: 4px 6px; }
+.csp-routing-reroute-form fieldset { display: flex; flex-wrap: wrap; gap: 5px 10px; margin: 0; padding: 0; border: 0; }
+.csp-routing-reroute-form legend { margin-bottom: 3px; color: var(--dsw-alias-label-secondary, #666b74); font-weight: 700; }
+.csp-routing-reroute-form fieldset label { display: inline-flex; align-items: center; gap: 4px; color: var(--dsw-alias-label-primary, #202124); }
+.csp-routing-reroute-form > div { display: flex; gap: 6px; }
+.csp-routing-reroute-form > div button { min-height: 28px; padding: 3px 8px; border: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.14)); border-radius: 5px; background: var(--dsw-alias-bg-base, #fff); color: var(--dsw-alias-label-primary, #202124); font: inherit; cursor: pointer; }
+.csp-routing-reroute-form > div button[type='submit'] { border-color: var(--dsw-alias-interactive-brand, #4d6bfe); background: var(--dsw-alias-interactive-brand, #4d6bfe); color: #fff; }
+.csp-routing-reroute-form > div button:disabled { cursor: default; opacity: 0.55; }
 .csp-message-attachments { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 7px; }
 .csp-message-attachments img {
   display: block;

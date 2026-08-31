@@ -11,11 +11,13 @@ function renderChannelThread(
   threadOpen = true,
   routingPending = false,
   routingResolved = false,
+  routingCorrected = false,
 ) {
   const listeners = new Set<() => void>()
   const initialThreadId: string | null = threadOpen ? 'thread-1' : null
   const send = vi.fn(async () => undefined)
   const sendDirectReply = vi.fn(async () => undefined)
+  const rerouteAssignment = vi.fn(async () => undefined)
   const mutate = vi.fn(async () => undefined)
   const selectThread = vi.fn((threadId: string | null) => {
     snapshot = { ...snapshot, activeThreadId: threadId }
@@ -113,13 +115,24 @@ function renderChannelThread(
                       routing: {
                         source: 'ai' as const,
                         status: 'resolved' as const,
-                        agentIds: ['frontend'],
+                        agentIds: routingCorrected ? ['frontend', 'reviewer'] : ['frontend'],
                         assignments: [{
                           id: 'assignment-1',
                           agentId: 'frontend',
                           subRequest: 'Fix the UI boundary only.',
                           projectIds: ['project-1'],
-                        }],
+                        }, ...(routingCorrected ? [{
+                          id: 'assignment-2',
+                          agentId: 'reviewer',
+                          subRequest: 'Review only the UI boundary.',
+                          projectIds: ['project-1'],
+                        }] : [])],
+                        corrections: routingCorrected ? [{
+                          id: 'correction-1',
+                          fromAssignmentId: 'assignment-1',
+                          toAssignmentId: 'assignment-2',
+                          createdAt: '2026-08-26T00:00:30.000Z',
+                        }] : [],
                         inferredProjectIds: ['project-1'],
                         reason: 'Frontend owns this boundary.',
                       },
@@ -179,11 +192,12 @@ function renderChannelThread(
     messages: () => snapshot.bootstrap.state.messages['channel:general'],
     send,
     sendDirectReply,
+    rerouteAssignment,
     mutate,
     selectThread,
   }
   render(<CommonspaceConversation store={store as never} />)
-  return { mutate, selectThread, send, sendDirectReply }
+  return { mutate, selectThread, send, sendDirectReply, rerouteAssignment }
 }
 
 afterEach(cleanup)
@@ -206,6 +220,35 @@ describe('Commonspace reply-thread composer', () => {
 
     expect(screen.getAllByText('Fix the UI boundary only.')).toHaveLength(2)
     expect(screen.getAllByText('@Frontend · Commonspace · inferred')).toHaveLength(2)
+  })
+
+  it('reroutes one assignment with corrected Agent, wording, and Projects', async () => {
+    const { rerouteAssignment } = renderChannelThread('complete', false, true, false, true)
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Reroute assignment for Frontend' })[0]!)
+    const form = screen.getByRole('form', { name: 'Reroute assignment' })
+    fireEvent.change(within(form).getByLabelText('Reroute agent'), { target: { value: 'reviewer' } })
+    fireEvent.change(within(form).getByLabelText('Corrected sub-request'), { target: { value: 'Review only the UI boundary.' } })
+    fireEvent.submit(form)
+
+    await waitFor(() => {
+      expect(rerouteAssignment).toHaveBeenCalledWith({
+        sourceMessageId: 'root-1',
+        assignmentId: 'assignment-1',
+        agentId: 'reviewer',
+        subRequest: 'Review only the UI boundary.',
+        projectIds: ['project-1'],
+      })
+    })
+  })
+
+  it('keeps superseded routing attempts visible and reroutes only the current attempt', () => {
+    renderChannelThread('complete', false, true, false, true, true)
+
+    expect(screen.getAllByText('Superseded')).toHaveLength(2)
+    expect(screen.getAllByText('Correction')).toHaveLength(2)
+    expect(screen.queryByRole('button', { name: 'Reroute assignment for Frontend' })).toBeNull()
+    expect(screen.getAllByRole('button', { name: 'Reroute assignment for Reviewer' })).toHaveLength(2)
   })
 
   it('opens at an equal split and lets the thread be widened by dragging', () => {

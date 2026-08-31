@@ -56,6 +56,16 @@ export function emptyChannelMemory() {
   }
 }
 
+export function emptyRoutingMemory() {
+  return {
+    summary: '',
+    status: 'empty' as const,
+    correctionCount: 0,
+    compactedThroughCorrectionId: null,
+    updatedAt: null,
+  }
+}
+
 function normalizedContextEntries(value: unknown, label: string): string[] {
   if (value === undefined) return []
   if (!Array.isArray(value)) throw new Error(`${label} must be an array`)
@@ -300,6 +310,7 @@ export function applyMutation(
           agentIds: [...new Set(mutation.agentIds.filter(Boolean))],
           instructions: '',
           memory: emptyChannelMemory(),
+          routingMemory: emptyRoutingMemory(),
           settings: defaultRunSettings(),
           createdAt: dependencies.now(),
         }],

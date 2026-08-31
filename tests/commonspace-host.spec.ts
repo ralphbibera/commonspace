@@ -976,6 +976,7 @@ describe('Commonspace host authority', () => {
       status: 'failed',
       agentIds: [],
       assignments: [],
+      corrections: [],
       inferredProjectIds: [],
       reason: 'inference routing failed',
     })
@@ -1012,6 +1013,7 @@ describe('Commonspace host authority', () => {
       status: 'pending',
       agentIds: [],
       assignments: [],
+      corrections: [],
       inferredProjectIds: [],
       reason: 'Routing with inference.',
     })

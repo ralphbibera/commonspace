@@ -1,6 +1,6 @@
 # Implementation gap audit
 
-Snapshot: 2026-08-30, audited against `main` at `22eade0a1a6eff315fb086b6783ec1ed1f6f070a` plus the feature work on this branch.
+Snapshot: 2026-08-31, audited against the current state-v18 implementation on `main`.
 
 This audit compares the intended behavior in [Product specification](product-spec.md), [Product direction](product-direction.md), and [Product model](product.md) with executable contracts, server behavior, persistence, API routes, UI use, and tests. It deliberately separates product behavior from later UI/UX work.
 
@@ -32,8 +32,8 @@ This audit compares the intended behavior in [Product specification](product-spe
 | Unaddressed agent selection | Working | A configured harness or OpenAI-compatible provider selects the smallest useful agent set and records the routing decision. |
 | Unaddressed routing fan-out | Working | Inference may select up to the visible max-agents setting; the hidden two-Agent cap is removed while unrelated native sessions remain concurrent. |
 | Agent-specific request decomposition | Working | Routing persists one bounded sub-request and Project subset per selected harness, displays each assignment, and delivers only that sub-request to its native session. Legacy decisions migrate deterministically. |
-| Reroute, correction, and routing memory | Missing | There is no reroute operation, correction record, or compacted feedback used by later routing. |
-| Project-reference inference | Working | New unreferenced Channel roots offer all Projects to inference, persist the inferred union on the message/Thread, scope each assignment independently, and visibly mark inferred Projects. Explicit references and explicit projectless scope remain authoritative. Reroute-based correction remains the next capability. |
+| Reroute, correction, and routing memory | Working | A user can change one current assignment's Agent, bounded sub-request, and Project subset without restarting unrelated Agents. Linked attempts and assignment-bound replies persist without a history cap; the UI marks superseded/corrected attempts. Explicit corrections compact through the configured inference layer into bounded per-Channel routing knowledge used by later decisions. |
+| Project-reference inference | Working | New unreferenced Channel roots offer all Projects to inference, persist the inferred union on the message/Thread, scope each assignment independently, and visibly mark inferred Projects. Explicit references and explicit projectless scope remain authoritative; reroute controls can correct one inferred assignment after dispatch. |
 | Shared Channel context projection | Working | Commonspace derives summary, decisions, questions, thread references, source counts, and estimated tokens independently of native sessions. |
 | Editable and compactable Channel context | Partial | Read/update/manual-compact APIs, preserved user edits, stale/current state, and automatic token-pressure compaction now exist. Durable compacting/failed states and the inspector/editor/compact controls remain missing. |
 | Thread-specific context snapshots | Missing | Threads reference shared context but do not persist an inherited snapshot plus independently compacted thread context. |
@@ -56,15 +56,14 @@ This audit compares the intended behavior in [Product specification](product-spe
 
 ## Recommended feature order
 
-1. Complete the remaining inference layer: reroute/correction and compacted routing feedback.
-2. Complete durable conversation semantics: thread context snapshots, prospective Thread Project-reference changes, message edit branches, deletion markers, and pins.
-3. Generalize collaboration artifacts: human/agent files and normalized native permission requests.
-4. Complete operability: runtime/auth diagnostics, export/import/retention, installed background service, and OS notifications.
-5. Add UI/UX for the backend-ready capabilities and the features above after their behavior and contracts are stable.
+1. Complete durable conversation semantics: thread context snapshots, prospective Thread Project-reference changes, message edit branches, deletion markers, and pins.
+2. Generalize collaboration artifacts: human/agent files and normalized native permission requests.
+3. Complete operability: runtime/auth diagnostics, export/import/retention, installed background service, and OS notifications.
+4. Add UI/UX for the backend-ready capabilities and the features above after their behavior and contracts are stable.
 
 ## Documentation corrections made with this audit
 
-- State documentation now identifies v17 and migrations from versions 1–16.
+- State documentation now identifies v18 and migrations from versions 1–17.
 - Work/result binding moved from `Next` to `Working now` because run attribution, changes, traces, and validation evidence already implement it.
 - Multi-Project references and Channel-context controls are marked backend-ready instead of being implied as either wholly absent or fully surfaced.
 - The roadmap now separates feature behavior, later UI/UX, and scale-dependent storage work.

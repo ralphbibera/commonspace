@@ -1,4 +1,4 @@
-export const COMMONSPACE_STATE_VERSION = 17 as const
+export const COMMONSPACE_STATE_VERSION = 18 as const
 
 export type AgentAdapterKind = 'hermes' | 'codex'
 
@@ -43,11 +43,19 @@ export interface CommonspaceRoutingAssignment {
   projectIds: string[]
 }
 
+export interface CommonspaceRoutingCorrection {
+  id: string
+  fromAssignmentId: string
+  toAssignmentId: string
+  createdAt: string
+}
+
 export interface CommonspaceRoutingDecision {
   source: 'explicit' | 'ai' | 'local'
   status?: 'pending' | 'resolved' | 'failed'
   agentIds: string[]
   assignments: CommonspaceRoutingAssignment[]
+  corrections: CommonspaceRoutingCorrection[]
   inferredProjectIds: string[]
   confidence?: number
   reason: string
@@ -203,6 +211,14 @@ export interface CommonspaceChannelMemory {
   compactedThroughMessageId?: string | null
 }
 
+export interface CommonspaceRoutingMemory {
+  summary: string
+  status: 'empty' | 'current' | 'stale' | 'failed'
+  correctionCount: number
+  compactedThroughCorrectionId: string | null
+  updatedAt: string | null
+}
+
 export interface UpdateChannelContextRequest {
   summary: string
   decisions?: string[]
@@ -215,6 +231,7 @@ export interface CommonspaceChannel {
   agentIds: string[]
   instructions: string
   memory: CommonspaceChannelMemory
+  routingMemory: CommonspaceRoutingMemory
   settings: CommonspaceRunSettings
   createdAt: string
 }
@@ -272,6 +289,8 @@ export interface CommonspaceMessage {
   parentMessageId?: string
   /** User message that initiated the agent run represented by this message. */
   sourceMessageId?: string
+  /** Routing assignment that initiated this reply or failure. */
+  routingAssignmentId?: string
   /** Lifecycle of the agent reply requested by a direct-message user turn. */
   replyStatus?: CommonspaceReplyStatus
   replyError?: string
@@ -402,6 +421,21 @@ export interface FollowupQueueResponse {
 export interface SendMessageResponse {
   accepted: CommonspaceMessage
   thread?: CommonspaceThread
+  state: CommonspaceState
+}
+
+export interface RerouteAssignmentRequest {
+  sourceMessageId: string
+  assignmentId: string
+  agentId: string
+  subRequest: string
+  projectIds: string[]
+}
+
+export interface RerouteAssignmentResponse {
+  sourceMessageId: string
+  assignment: CommonspaceRoutingAssignment
+  correction: CommonspaceRoutingCorrection
   state: CommonspaceState
 }
 

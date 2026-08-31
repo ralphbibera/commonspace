@@ -20,6 +20,7 @@ Commonspace is a private preview focused on durable human-agent conversation and
 - Inference-only unaddressed Channel routing through a harness or OpenAI-compatible model.
 - Inspectable per-harness routing assignments with bounded sub-requests, scoped Projects, and visible user-controlled fan-out.
 - Visible Project-reference inference for unreferenced new Channel roots, with explicit and projectless selections remaining authoritative.
+- Single-assignment rerouting with visible retained attempts, assignment-bound replies, corrected Agent/Project scope, and compacted per-Channel routing knowledge used by later inference.
 - Project Files, Git Changes/diffs, image attachments, and reply speech playback.
 - Work/result binding through per-reply run attribution, changed-file surfaces, activity traces, and validation evidence emitted by the harness.
 - Hard-boundary cancellation, stale-session recovery that distinguishes missing from transient failures, and graceful bridge shutdown.
@@ -28,7 +29,6 @@ Commonspace is a private preview focused on durable human-agent conversation and
 
 ## Next: product behavior
 
-- Add rerouting and compacted routing feedback so corrections improve later decisions.
 - Add thread-specific context snapshots, prospective Thread Project-reference changes, pins, and general human/agent file attachments.
 - Add message edit branches and visible deletion markers without rewriting delivered native-session history.
 - Normalize native permission requests and add clearer runtime/authentication diagnostics.
@@ -39,7 +39,7 @@ Commonspace is a private preview focused on durable human-agent conversation and
 
 - Multi-Project reference controls and inferred-reference correction.
 - Channel/Thread context inspection, editing, pinning, and manual-compaction controls.
-- Reroute, message-version, file, permission, and notification surfaces.
+- Message-version, file, permission, and notification surfaces.
 - Keyboard and narrow-screen acceptance coverage across every flow.
 
 ## Scale-dependent work

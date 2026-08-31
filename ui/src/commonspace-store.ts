@@ -14,6 +14,8 @@ import type {
   SendMessageRequest,
   SendMessageResponse,
   FollowupQueueResponse,
+  RerouteAssignmentRequest,
+  RerouteAssignmentResponse,
   StopAgentRunsResponse,
   UpdateRoutingConfigurationRequest,
 } from '@commonspace/shared'
@@ -230,6 +232,30 @@ export class CommonspaceClientStore {
 
   async sendDirectReply(text: string, threadId: string, targetAgentId: string, attachments: readonly SendImageAttachment[] = []): Promise<void> {
     return this.sendMessage(text, threadId, targetAgentId, attachments)
+  }
+
+  async rerouteAssignment(request: RerouteAssignmentRequest): Promise<void> {
+    try {
+      const result = await requestJson<RerouteAssignmentResponse>('/api/reroute', {
+        method: 'POST',
+        body: JSON.stringify(request),
+      })
+      const bootstrap = this.snapshot.bootstrap
+      if (bootstrap === null) {
+        await this.refresh()
+        return
+      }
+      const merged = this.mergeBootstrap({ ...bootstrap, state: result.state })
+      this.set({
+        ...this.snapshot,
+        bootstrap: merged,
+        activeProjectId: this.resolveActiveProject(merged),
+        error: null,
+      })
+    } catch (error) {
+      this.set({ ...this.snapshot, error: error instanceof Error ? error.message : String(error) })
+      throw error
+    }
   }
 
   async stopAgentRuns(messageId: string, agentId?: string): Promise<string[]> {
