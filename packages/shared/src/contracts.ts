@@ -1,4 +1,5 @@
 export const COMMONSPACE_STATE_VERSION = 23 as const
+export const COMMONSPACE_EXPORT_VERSION = 1 as const
 
 export type AgentAdapterKind = 'hermes' | 'codex'
 
@@ -46,6 +47,52 @@ export interface CommonspaceDiagnostics {
     runReadiness: 'ready' | 'unknown' | 'attention'
     recovery: string
   }>
+}
+
+export interface CommonspacePortableProject {
+  id: string
+  name: string
+  rootCount: number
+  createdAt: string
+}
+
+export type CommonspacePortableWorkspace = Omit<
+  CommonspaceState,
+  'version' | 'revision' | 'dmSessions' | 'agentSessions' | 'projects'
+> & {
+  projects: CommonspacePortableProject[]
+}
+
+export interface CommonspaceArchiveAttachment {
+  kind: 'image' | 'file'
+  id: string
+  name: string
+  mimeType: string
+  size: number
+  data: string
+}
+
+export interface CommonspaceWorkspaceArchive {
+  format: 'commonspace-workspace'
+  version: typeof COMMONSPACE_EXPORT_VERSION
+  exportedAt: string
+  workspace: CommonspacePortableWorkspace
+  attachments: CommonspaceArchiveAttachment[]
+}
+
+export interface CommonspaceRetentionPreview {
+  revision: number
+  conversation: ConversationRef
+  messages: number
+  threads: number
+  attachments: number
+  pins: number
+  permissions: number
+}
+
+export interface ApplyRetentionRequest {
+  conversation: ConversationRef
+  expectedRevision: number
 }
 
 export type UpdateRoutingConfigurationRequest =

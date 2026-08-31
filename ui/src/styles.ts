@@ -827,6 +827,14 @@ export const commonspaceStyles = String.raw`
 .csp-runtime-diagnostics ul { display: grid; gap: 5px; margin: 0; padding: 0; list-style: none; }
 .csp-runtime-diagnostics li { display: grid; gap: 2px; padding-top: 5px; border-top: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.08)); color: var(--dsw-alias-label-secondary, #666b74); font-size: 10px; }
 .csp-runtime-diagnostics li small { color: var(--dsw-alias-label-tertiary, #8a8f98); line-height: 1.4; }
+.csp-data-management { display: grid; gap: 7px; padding: 8px; border: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.12)); border-radius: 7px; background: var(--dsw-alias-bg-subtle, rgba(0, 0, 0, 0.018)); }
+.csp-data-management > header { display: flex; align-items: center; justify-content: space-between; }
+.csp-data-management > label { display: grid; gap: 3px; color: var(--dsw-alias-label-secondary, #666b74); font-size: 10px; font-weight: 700; }
+.csp-data-management > section { display: grid; gap: 7px; padding-top: 7px; border-top: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.1)); }
+.csp-data-management > section p { margin: 0; color: var(--dsw-alias-label-tertiary, #8a8f98); font-size: 9px; line-height: 1.4; }
+.csp-data-management fieldset { display: grid !important; grid-template-columns: 1fr !important; gap: 4px; }
+.csp-data-management fieldset > div { display: flex; align-items: center; gap: 5px; }
+.csp-data-management fieldset > div span { min-width: 0; flex: 1; overflow: hidden; color: var(--dsw-alias-label-secondary, #666b74); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 .csp-routing-options button {
   display: flex;
   align-items: center;

@@ -26,6 +26,14 @@ ACP runs over child-process stdio. The Commonspace MCP endpoint is authenticated
 Set `COMMONSPACE_HOME` to isolate state for development or verification.
 Commonspace enforces `0700` on this directory at startup and replaces `state.json` atomically with `0600` permissions.
 
+## Export, import, and retention
+
+Open Commonspace settings and use **Workspace data** to export `commonspace-export.json`. Commonspace-managed fields exclude provider credentials, native-session references, capabilities, and known absolute host paths. Attachment bytes remain exact and may contain sensitive author-supplied content. The archive is unencrypted private data. The versioned contract is documented in [Workspace archive format](workspace-archive-format.md).
+
+Import works only in a new empty workspace. Choose the archive, map every exported Project root to an existing local directory, then import. Commonspace validates the entire archive and attachment set before activating it; native harness sessions are not transferred.
+
+Retention is manual and conversation-scoped. Select one Channel or Direct Message, preview its message/Thread/attachment/pin impact, then confirm. If workspace state changes after preview, preview again. Active work must finish or be stopped first. Commonspace never expires conversation data in the background.
+
 ## Health checks
 
 ```bash

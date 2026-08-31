@@ -4,13 +4,15 @@ import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
 import { basename, isAbsolute, join, relative } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { promisify } from 'node:util'
+import { isDeepStrictEqual, promisify } from 'node:util'
 import type {
   AddPinRequest,
+  ApplyRetentionRequest,
   AgentAdapterKind,
   CommonspaceAgentTrace,
   CommonspaceAgentDefinition,
   CommonspaceBootstrap,
+  CommonspaceArchiveAttachment,
   CommonspaceDiagnostics,
   CommonspaceChannelMemory,
   CommonspaceAgentProfile,
@@ -27,6 +29,7 @@ import type {
   CommonspaceRoutingAssignment,
   CommonspaceRoutingCorrection,
   CommonspaceRoutingDecision,
+  CommonspaceRetentionPreview,
   CommonspaceRunAttribution,
   CommonspaceRunFileChange,
   CommonspaceRunRootAttribution,
@@ -37,6 +40,7 @@ import type {
   CommonspaceTracePlanStep,
   CommonspaceThread,
   CommonspaceThreadContext,
+  CommonspaceWorkspaceArchive,
   EditMessageRequest,
   SendMessageRequest,
   SendMessageResponse,
@@ -52,7 +56,7 @@ import type {
   UpdateRoutingConfigurationRequest,
 } from '@commonspace/shared'
 import type { McpServer as AcpMcpServer } from '@agentclientprotocol/sdk'
-import { COMMONSPACE_STATE_VERSION, conversationKey, projectTagName, referencedProjectIds, uniqueAgentDisplayName } from '@commonspace/shared'
+import { COMMONSPACE_EXPORT_VERSION, COMMONSPACE_STATE_VERSION, conversationKey, projectTagName, referencedProjectIds, uniqueAgentDisplayName } from '@commonspace/shared'
 import { mergeChannelMemoryProjection, projectChannelMemory } from './memory.js'
 import { mentionedAgents, mentionedChannelAgents, parseTags, rankChannelAgents } from './relay.js'
 import { addDiscoveredAgent, applyMutation, codexAgentId, createInitialState, defaultCommonspaceDefaults, defaultRunSettings, DM_SESSION_BOUNDARY_AUTHOR_ID, emptyChannelMemory, emptyRoutingMemory, isCommonspaceReasoning } from './state.js'
@@ -539,6 +543,21 @@ function plainRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
     ? value as Record<string, unknown>
     : null
+}
+
+function redactPortableValue<T>(value: T, privateValues: readonly string[]): T {
+  if (typeof value === 'string') {
+    let redacted: string = value
+    for (const privateValue of privateValues) {
+      if (privateValue !== '') redacted = redacted.replaceAll(privateValue, '[local path]')
+    }
+    return redacted as T
+  }
+  if (Array.isArray(value)) return value.map(item => redactPortableValue(item, privateValues)) as T
+  if (typeof value === 'object' && value !== null) {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, redactPortableValue(item, privateValues)])) as T
+  }
+  return value
 }
 
 function loadedId(value: unknown): string | null {
@@ -1768,6 +1787,272 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
           : 'Run hermes --version, authenticate with Hermes, verify hermes acp starts, then retry from Commonspace.',
       })),
     }
+  }
+
+  async exportWorkspace(): Promise<CommonspaceWorkspaceArchive> {
+    const exportedAt = now()
+    const state = this.publicSnapshot()
+    const attachments: CommonspaceArchiveAttachment[] = []
+    const seen = new Set<string>()
+    for (const message of Object.values(state.messages).flat()) {
+      for (const attachment of message.attachments ?? []) {
+        if (seen.has(attachment.id)) continue
+        const { data } = await this.readImageAttachment(attachment.id)
+        seen.add(attachment.id)
+        attachments.push({ kind: 'image', ...attachment, data: data.toString('base64') })
+      }
+      for (const file of message.files ?? []) {
+        if (seen.has(file.id)) continue
+        const { data } = await this.readFileAttachment(file.id)
+        seen.add(file.id)
+        attachments.push({ kind: 'file', ...file, data: data.toString('base64') })
+      }
+    }
+    const workspace: CommonspaceWorkspaceArchive['workspace'] = {
+      inboxReadAt: state.inboxReadAt,
+      inboxReadMessageIds: state.inboxReadMessageIds,
+      inboxSavedItemIds: state.inboxSavedItemIds,
+      followedSessionIds: state.followedSessionIds,
+      mutedSessionIds: state.mutedSessionIds,
+      defaults: state.defaults,
+      agents: state.agents.map(agent => ({
+        id: agent.id,
+        displayName: agent.displayName,
+        ...(agent.avatarEmoji === undefined ? {} : { avatarEmoji: agent.avatarEmoji }),
+        ...(agent.accentColor === undefined ? {} : { accentColor: agent.accentColor }),
+        adapter: agent.adapter,
+        model: agent.model,
+        createdAt: agent.createdAt,
+      })),
+      projects: state.projects.map(project => ({ id: project.id, name: project.name, rootCount: project.paths.length, createdAt: project.createdAt })),
+      channels: state.channels,
+      threads: state.threads,
+      pins: state.pins,
+      permissions: state.permissions.map(permission => permission.status === 'pending'
+        ? { ...permission, status: 'interrupted', resolvedAt: exportedAt }
+        : permission),
+      messages: state.messages,
+    }
+    const privateValues = [
+      this.root,
+      this.defaultCwd,
+      ...this.state.projects.flatMap(project => project.paths),
+      ...Object.values(this.state.dmSessions),
+      ...Object.values(this.state.agentSessions).flatMap(sessions => Object.values(sessions)),
+    ]
+    return {
+      format: 'commonspace-workspace',
+      version: COMMONSPACE_EXPORT_VERSION,
+      exportedAt,
+      workspace: redactPortableValue(workspace, privateValues),
+      attachments,
+    }
+  }
+
+  async importWorkspace(archiveValue: unknown, projectMappings: Record<string, string[]>): Promise<CommonspaceState> {
+    return this.withAdmission(async () => {
+      if (this.state.revision !== 0 || this.state.agents.length > 0 || this.state.projects.length > 0 ||
+        this.state.channels.length > 0 || this.state.threads.length > 0 || Object.values(this.state.messages).some(messages => messages.length > 0)) {
+        throw new Error('workspace import requires an empty workspace')
+      }
+      const archive = plainRecord(archiveValue)
+      const workspace = plainRecord(archive?.workspace)
+      if (archive === null || workspace === null || archive.format !== 'commonspace-workspace' || archive.version !== COMMONSPACE_EXPORT_VERSION) {
+        throw new Error('unsupported Commonspace workspace archive')
+      }
+      if (!Array.isArray(workspace.projects) || !Array.isArray(archive.attachments) || plainRecord(projectMappings) === null) {
+        throw new Error('workspace archive is invalid')
+      }
+      const projects: CommonspaceState['projects'] = []
+      const mappedIds = new Set(Object.keys(projectMappings))
+      for (const candidate of workspace.projects) {
+        const project = plainRecord(candidate)
+        const id = loadedId(project?.id)
+        const name = loadedString(project?.name, 80).normalize('NFKC').trim()
+        const rootCount = project?.rootCount
+        if (project === null || id === null || name === '' || typeof rootCount !== 'number' || !Number.isSafeInteger(rootCount) || rootCount < 1 || rootCount > 32) {
+          throw new Error('workspace archive contains an invalid Project')
+        }
+        const mapping = projectMappings[id]
+        if (!Array.isArray(mapping) || mapping.length !== rootCount) throw new Error(`Project ${name} requires ${String(rootCount)} mapped local roots`)
+        const paths = await Promise.all(mapping.map(path => this.validDirectory(path)))
+        if (new Set(paths).size !== paths.length) throw new Error(`Project ${name} mappings must be unique`)
+        mappedIds.delete(id)
+        projects.push({ id, name, paths, createdAt: loadedString(project.createdAt, 100) })
+      }
+      if (mappedIds.size > 0) throw new Error('Project mappings contain unknown archive Projects')
+      const imported = sanitizeLoadedState({
+        ...workspace,
+        version: COMMONSPACE_STATE_VERSION,
+        revision: 1,
+        projects,
+        dmSessions: {},
+        agentSessions: {},
+      })
+      if (imported.projects.length !== projects.length) throw new Error('workspace archive Project validation failed')
+      const canonicalWorkspace: CommonspaceWorkspaceArchive['workspace'] = {
+        inboxReadAt: imported.inboxReadAt,
+        inboxReadMessageIds: imported.inboxReadMessageIds,
+        inboxSavedItemIds: imported.inboxSavedItemIds,
+        followedSessionIds: imported.followedSessionIds,
+        mutedSessionIds: imported.mutedSessionIds,
+        defaults: imported.defaults,
+        agents: imported.agents,
+        projects: imported.projects.map(project => ({
+          id: project.id,
+          name: project.name,
+          rootCount: project.paths.length,
+          createdAt: project.createdAt,
+        })),
+        channels: imported.channels,
+        threads: imported.threads,
+        pins: imported.pins,
+        permissions: imported.permissions,
+        messages: imported.messages,
+      }
+      if (!isDeepStrictEqual(canonicalWorkspace, workspace)) throw new Error('workspace archive failed structural validation')
+      const expected = new Map<string, { kind: 'image' | 'file'; metadata: CommonspaceImageAttachment | CommonspaceFileAttachment }>()
+      for (const message of Object.values(imported.messages).flat()) {
+        for (const attachment of message.attachments ?? []) expected.set(attachment.id, { kind: 'image', metadata: attachment })
+        for (const file of message.files ?? []) expected.set(file.id, { kind: 'file', metadata: file })
+      }
+      const images: PreparedImageAttachment[] = []
+      const files: PreparedFileAttachment[] = []
+      const importedIds = new Set<string>()
+      for (const candidate of archive.attachments) {
+        const attachment = plainRecord(candidate)
+        const id = loadedId(attachment?.id)
+        const expectation = id === null ? undefined : expected.get(id)
+        if (attachment === null || id === null || importedIds.has(id) || expectation === undefined || attachment.kind !== expectation.kind ||
+          attachment.name !== expectation.metadata.name || attachment.mimeType !== expectation.metadata.mimeType || attachment.size !== expectation.metadata.size ||
+          typeof attachment.data !== 'string' || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(attachment.data)) {
+          throw new Error('workspace archive attachment validation failed')
+        }
+        const data = Buffer.from(attachment.data, 'base64')
+        if (data.length !== expectation.metadata.size || data.toString('base64') !== attachment.data) throw new Error('workspace archive attachment data is invalid')
+        importedIds.add(id)
+        if (expectation.kind === 'image') images.push({ metadata: expectation.metadata as CommonspaceImageAttachment, data })
+        else files.push({ metadata: expectation.metadata as CommonspaceFileAttachment, data })
+      }
+      if (importedIds.size !== expected.size) throw new Error('workspace archive is missing attachment data')
+      const previousState = this.state
+      await this.persistImageAttachments(images)
+      try {
+        await this.persistFileAttachments(files)
+      } catch (error) {
+        await this.removeImageAttachments(images.map(image => image.metadata.id))
+        throw error
+      }
+      this.state = imported
+      try {
+        await this.persist()
+      } catch (error) {
+        this.state = previousState
+        await this.removeImageAttachments(images.map(image => image.metadata.id))
+        await this.removeFileAttachments(files.map(file => file.metadata.id))
+        throw error
+      }
+      this.revokeInvalidMcpCredentials()
+      this.broadcastRevision()
+      return this.publicSnapshot()
+    })
+  }
+
+  previewRetention(conversation: SendMessageRequest['conversation']): CommonspaceRetentionPreview {
+    const target = plainRecord(conversation)
+    if (target === null || (target.kind !== 'channel' && target.kind !== 'dm') ||
+      typeof target.id !== 'string' || loadedId(target.id) !== target.id) {
+      throw new Error('invalid retention conversation')
+    }
+    if (conversation.kind === 'channel') {
+      if (!this.state.channels.some(channel => channel.id === conversation.id)) throw new Error('unknown retention conversation')
+    } else if (!this.state.agents.some(agent => agent.id === conversation.id)) throw new Error('unknown retention conversation')
+    const messages = this.state.messages[conversationKey(conversation)] ?? []
+    const threadIds = new Set(conversation.kind === 'channel'
+      ? this.state.threads.filter(thread => thread.channelId === conversation.id).map(thread => thread.id)
+      : [])
+    return {
+      revision: this.state.revision,
+      conversation,
+      messages: messages.length,
+      threads: threadIds.size,
+      attachments: messages.reduce((count, message) => count + (message.attachments?.length ?? 0) + (message.files?.length ?? 0), 0),
+      pins: this.state.pins.filter(pin =>
+        (pin.scope.kind === 'channel' && conversation.kind === 'channel' && pin.scope.id === conversation.id) ||
+        (pin.scope.kind === 'thread' && threadIds.has(pin.scope.id)) ||
+        (pin.messageId !== undefined && messages.some(message => message.id === pin.messageId))).length,
+      permissions: this.state.permissions.filter(permission =>
+        permission.conversation.kind === conversation.kind && permission.conversation.id === conversation.id).length,
+    }
+  }
+
+  async applyRetention(request: ApplyRetentionRequest): Promise<CommonspaceRetentionPreview> {
+    return this.withAdmission(async () => {
+      const preview = this.previewRetention(request.conversation)
+      if (!Number.isSafeInteger(request.expectedRevision) || request.expectedRevision !== preview.revision) throw new Error('retention preview is stale')
+      if ([...this.liveActivitiesById.values()].some(activity =>
+        activity.conversation.kind === request.conversation.kind && activity.conversation.id === request.conversation.id)) {
+        throw new Error('conversation has active work')
+      }
+      const key = conversationKey(request.conversation)
+      const removedMessages = this.state.messages[key] ?? []
+      const removedMessageIds = new Set(removedMessages.map(message => message.id))
+      const imageIds = removedMessages.flatMap(message => message.attachments?.map(attachment => attachment.id) ?? [])
+      const fileIds = removedMessages.flatMap(message => message.files?.map(file => file.id) ?? [])
+      const removedThreads = request.conversation.kind === 'channel'
+        ? this.state.threads.filter(thread => thread.channelId === request.conversation.id)
+        : []
+      const removedThreadIds = new Set(removedThreads.map(thread => thread.id))
+      const removedSessionNames = new Set(removedThreads.map(thread => `Commonspace Thread: ${thread.id}`))
+      if (request.conversation.kind === 'dm') {
+        removedSessionNames.add('Bot Chat')
+        for (const name of Object.keys(this.state.agentSessions[request.conversation.id] ?? {})) {
+          if (name.startsWith('Commonspace DM: ')) removedSessionNames.add(name)
+        }
+      }
+      const agentSessions = Object.fromEntries(Object.entries(this.state.agentSessions).flatMap(([agentId, sessions]) => {
+        if (request.conversation.kind === 'dm' && agentId !== request.conversation.id) return [[agentId, sessions]]
+        const remaining = Object.fromEntries(Object.entries(sessions).filter(([name]) => !removedSessionNames.has(name)))
+        return Object.keys(remaining).length === 0 ? [] : [[agentId, remaining]]
+      })) as CommonspaceState['agentSessions']
+      const messages = { ...this.state.messages }
+      delete messages[key]
+      const dmSessions = { ...this.state.dmSessions }
+      if (request.conversation.kind === 'dm') delete dmSessions[request.conversation.id]
+      const previousState = this.state
+      this.state = {
+        ...this.state,
+        revision: this.state.revision + 1,
+        inboxReadMessageIds: this.state.inboxReadMessageIds.filter(id => !removedMessageIds.has(id)),
+        inboxSavedItemIds: this.state.inboxSavedItemIds.filter(id => !removedMessageIds.has(id)),
+        dmSessions,
+        agentSessions,
+        channels: request.conversation.kind === 'channel'
+          ? this.state.channels.map(channel => channel.id === request.conversation.id
+              ? { ...channel, memory: emptyChannelMemory(), routingMemory: emptyRoutingMemory() }
+              : channel)
+          : this.state.channels,
+        threads: this.state.threads.filter(thread => !removedThreadIds.has(thread.id)),
+        pins: this.state.pins.filter(pin => !(
+          (pin.scope.kind === 'channel' && request.conversation.kind === 'channel' && pin.scope.id === request.conversation.id) ||
+          (pin.scope.kind === 'thread' && removedThreadIds.has(pin.scope.id)) ||
+          (pin.messageId !== undefined && removedMessageIds.has(pin.messageId)))),
+        permissions: this.state.permissions.filter(permission => !(
+          permission.conversation.kind === request.conversation.kind && permission.conversation.id === request.conversation.id)),
+        messages,
+      }
+      try {
+        await this.persist()
+      } catch (error) {
+        this.state = previousState
+        throw error
+      }
+      await this.removeImageAttachments(imageIds)
+      await this.removeFileAttachments(fileIds)
+      this.revokeInvalidMcpCredentials()
+      this.broadcastRevision()
+      return preview
+    })
   }
 
   routing(): CommonspaceRoutingConfiguration {

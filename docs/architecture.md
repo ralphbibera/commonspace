@@ -21,6 +21,9 @@ Endpoints:
 - `GET /api/health`
 - `GET /api/bootstrap`
 - `GET /api/diagnostics`
+- `GET /api/export`
+- `POST /api/import`
+- `POST /api/retention/preview|apply`
 - `GET|PUT /api/routing`
 - `GET|PUT /api/channels/:channelId/context`
 - `POST /api/channels/:channelId/context/compact`
@@ -57,6 +60,7 @@ Server-sent revision events prompt the UI store to refresh persisted state. Sepa
 - bounded general-file persistence, credential-name rejection, ACP resource links, and permitted-root Agent artifact imports;
 - durable normalized ACP permission requests with exact option responses and per-session blocking;
 - path-safe harness/service readiness diagnostics and inference data-flow disclosure;
+- sanitized versioned archive export, clean-workspace import with explicit local-root mapping, and revision-guarded scoped retention;
 - zero-to-many Project references on messages and threads, with a compatibility mirror for older clients;
 - editable Channel context plus manual and token-pressure compaction through the configured inference provider;
 - immutable Thread snapshots, independently editable/compactable Thread context, and prospective per-reply Project defaults;
@@ -94,6 +98,8 @@ Hermes launches its installed harness through `hermes acp`; Codex uses its bundl
 ## Persistence
 
 State v23 persists the roster, local appearance, opaque native-session references, sanitized activity traces, Inbox read state, image/general-file metadata, routing decisions/corrections, Channel routing memory, zero-to-many Project references, Channel/Thread context, scoped pin history, message-version branches, deletion markers, normalized permission requests, and current Channel/DM execution state. Versions 1–22 migrate on load through structural sanitization; legacy routing receives deterministic assignments, legacy Threads receive honest empty inherited snapshots plus transcript-derived current memory, and older workspaces receive empty pin/permission history. Loaded pending permissions become interrupted because no native request survives process restart. Accepted messages, branches, routing attempts, pin tombstones, and permission outcomes are retained without an implicit count window; bounds apply to derived context and activity rather than the canonical record. Deleting delivered content redacts its body, routing wording, attachment metadata/bytes, traces, and automatic projections while preserving delivery and branch metadata. Attachment bytes and the managed projectless workspace use owner-only local storage. Writes use a `0600` temporary file and atomic rename while retaining the previous valid state as `state.backup.json`. If the primary is invalid and the backup is valid, startup preserves the primary as `state.corrupt.json` and recovers the backup. Trace payloads are bounded and host details are redacted before persistence; MCP capabilities, source file URIs, and native session references are removed from browser snapshots.
+
+Portable archive version 1 is independent of the internal state version. Export embeds sanitized public workspace records and exact attachment bytes while replacing Project roots with counts and omitting native-session maps. Import accepts only a clean workspace, requires explicit existing local roots, validates all records and bytes, and starts with empty native continuity. Retention is owner-triggered only: a revision-bound preview reports impact before one inactive Channel or DM is purged. See [Workspace archive format](workspace-archive-format.md).
 
 ## Routing inference
 

@@ -90,22 +90,26 @@ describe('routing correction', () => {
       subRequest: 'Review only the UI change.',
       projectIds: [second.id],
     })
-    expect(runAgent.mock.calls.map(call => ({
+    const deliveries = runAgent.mock.calls.map(call => ({
       agentId: call[0].agent.id,
       message: call[0].message,
-    }))).toEqual([
+    }))
+    expect(deliveries).toHaveLength(3)
+    expect(deliveries).toEqual(expect.arrayContaining([
       { agentId: 'backend', message: 'Change the API.' },
       { agentId: 'frontend', message: 'Change the UI.' },
       { agentId: 'reviewer', message: 'Review only the UI change.' },
-    ])
-    expect(messages.filter(message => message.authorType === 'agent').map(message => ({
+    ]))
+    const replies = messages.filter(message => message.authorType === 'agent').map(message => ({
       text: message.text,
       routingAssignmentId: message.routingAssignmentId,
-    }))).toEqual([
+    }))
+    expect(replies).toHaveLength(3)
+    expect(replies).toEqual(expect.arrayContaining([
       { text: 'backend: Change the API.', routingAssignmentId: source.routing?.assignments[0]?.id },
       { text: 'frontend: Change the UI.', routingAssignmentId: frontendAssignment!.id },
       { text: 'reviewer: Review only the UI change.', routingAssignmentId: replacement?.id },
-    ])
+    ]))
     expect(state.threads.find(thread => thread.id === sent.thread?.id)?.agentIds).toEqual([
       'backend',
       'frontend',

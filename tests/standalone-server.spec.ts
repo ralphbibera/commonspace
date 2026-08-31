@@ -228,5 +228,26 @@ describe('standalone Commonspace server', () => {
       ]),
     })
     expect(discoveryCalls).toBe(4)
+
+    const exportResponse = await fetch(`${running.url}/api/export`, { headers: { origin: running.url } })
+    expect(exportResponse.status).toBe(200)
+    expect(exportResponse.headers.get('content-disposition')).toContain('commonspace-export.json')
+    await expect(exportResponse.json()).resolves.toMatchObject({ format: 'commonspace-workspace', version: 1 })
+
+    const invalidImportResponse = await fetch(`${running.url}/api/import`, {
+      method: 'POST',
+      headers: { origin: running.url, 'content-type': 'application/json' },
+      body: JSON.stringify({ archive: {}, projectMappings: {} }),
+    })
+    expect(invalidImportResponse.status).toBe(400)
+    await expect(invalidImportResponse.json()).resolves.toMatchObject({ code: 'workspace_import_failed' })
+
+    const invalidRetentionResponse = await fetch(`${running.url}/api/retention/preview`, {
+      method: 'POST',
+      headers: { origin: running.url, 'content-type': 'application/json' },
+      body: JSON.stringify({ conversation: { kind: 'channel', id: 'missing' } }),
+    })
+    expect(invalidRetentionResponse.status).toBe(400)
+    await expect(invalidRetentionResponse.json()).resolves.toEqual({ code: 'retention_preview_failed', error: 'unknown retention conversation' })
   })
 })

@@ -64,6 +64,79 @@ function sidebarStore(
 }
 
 describe('Commonspace interface', () => {
+  it('previews and confirms scoped retention without hidden deletion', async () => {
+    const channel = {
+      id: 'general',
+      name: 'general',
+      agentIds: [],
+      instructions: '',
+      memory: { summary: '', decisions: [], openQuestions: [], threadIds: [], updatedAt: null },
+      routingMemory: { summary: '', status: 'empty' as const, correctionCount: 0, compactedThroughCorrectionId: null, updatedAt: null },
+      settings: { model: null, reasoning: null },
+      createdAt: '',
+    }
+    const preview = {
+      revision: 7,
+      conversation: { kind: 'channel' as const, id: 'general' },
+      messages: 12,
+      threads: 3,
+      attachments: 2,
+      pins: 1,
+      permissions: 0,
+    }
+    const previewRetention = vi.fn(async () => preview)
+    const applyRetention = vi.fn(async () => undefined)
+    const { store } = sidebarStore({ state: state({ revision: 7, channels: [channel] }) }, { previewRetention, applyRetention })
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<CommonspaceSidebar wide expandSidebar={() => undefined} store={store as never} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Commonspace settings' }))
+
+    fireEvent.change(screen.getByLabelText('Retention conversation'), { target: { value: 'channel:general' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Preview retention' }))
+    const impact = await screen.findByRole('region', { name: 'Retention impact' })
+    expect(within(impact).getByText('12 messages · 3 threads · 2 attachments · 1 pin')).toBeTruthy()
+    fireEvent.click(within(impact).getByRole('button', { name: 'Apply retention' }))
+
+    await waitFor(() => { expect(applyRetention).toHaveBeenCalledWith(preview) })
+  })
+
+  it('exports data and requires explicit local-root mappings before import', async () => {
+    const archive = {
+      format: 'commonspace-workspace' as const,
+      version: 1 as const,
+      exportedAt: '2026-08-31T00:00:00.000Z',
+      workspace: { projects: [{ id: 'imported-project', name: 'Imported App', rootCount: 2, createdAt: '' }] },
+      attachments: [],
+    }
+    const exportWorkspace = vi.fn(async () => archive)
+    const importWorkspace = vi.fn(async () => undefined)
+    const selectDirectory = vi.fn()
+      .mockResolvedValueOnce('/mapped/primary')
+      .mockResolvedValueOnce('/mapped/context')
+    vi.stubGlobal('URL', { ...URL, createObjectURL: vi.fn(() => 'blob:export'), revokeObjectURL: vi.fn() })
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
+    const { store } = sidebarStore({}, { exportWorkspace, importWorkspace, selectDirectory })
+    render(<CommonspaceSidebar wide expandSidebar={() => undefined} store={store as never} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Commonspace settings' }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Export workspace data' }))
+    await waitFor(() => { expect(exportWorkspace).toHaveBeenCalledOnce() })
+
+    const file = new File([JSON.stringify(archive)], 'commonspace-export.json', { type: 'application/json' })
+    fireEvent.change(screen.getByLabelText('Import workspace archive'), { target: { files: [file] } })
+    const mappings = await screen.findByRole('region', { name: 'Import Project mappings' })
+    fireEvent.click(within(mappings).getByRole('button', { name: 'Choose root 1 for Imported App' }))
+    fireEvent.click(within(mappings).getByRole('button', { name: 'Choose root 2 for Imported App' }))
+    await waitFor(() => { expect(within(mappings).getByText('/mapped/context')).toBeTruthy() })
+    fireEvent.click(within(mappings).getByRole('button', { name: 'Import workspace data' }))
+
+    await waitFor(() => {
+      expect(importWorkspace).toHaveBeenCalledWith(archive, {
+        'imported-project': ['/mapped/primary', '/mapped/context'],
+      })
+    })
+  })
+
   it('shows runtime readiness, inference disclosure, and recovery guidance', async () => {
     const diagnostics = vi.fn(async () => ({
       service: { status: 'ready', stateVersion: 23, storage: 'ready', projectlessWorkspace: 'ready' },
