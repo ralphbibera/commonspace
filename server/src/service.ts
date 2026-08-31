@@ -8,7 +8,6 @@ import type {
   AgentAdapterKind,
   CommonspaceAgentTrace,
   CommonspaceAgentDefinition,
-  CommonspaceAgentConfiguration,
   CommonspaceBootstrap,
   CommonspaceChannelMemory,
   CommonspaceAgentProfile,
@@ -35,7 +34,6 @@ import type {
   FollowupQueueResponse,
   StopAgentRunsRequest,
   StopAgentRunsResponse,
-  UpdateAgentConfigurationRequest,
   UpdateChannelContextRequest,
   UpdateRoutingConfigurationRequest,
 } from '@commonspace/shared'
@@ -46,7 +44,6 @@ import { mentionedAgents, mentionedChannelAgents, parseHermesProfileDescription,
 import { addDiscoveredAgent, applyMutation, createInitialState, defaultCommonspaceDefaults, defaultRunSettings, DM_SESSION_BOUNDARY_AUTHOR_ID, emptyChannelMemory, isCommonspaceReasoning, managedAgentId } from './state.js'
 import { AcpAgentProcess, AcpSessionLoadError, AcpSessionRunError } from './acp-runtime.js'
 import { codexProfileRuntimeConfig, discoverCodexAgents, findCodexAgentProfile, type CodexAgentProfileConfig } from './codex-agents.js'
-import { inspectAgentConfiguration, updateAgentConfiguration as updateNativeAgentConfiguration } from './agent-configuration.js'
 import type { CommonspaceMcpGateway, CommonspaceMcpProvider, CommonspaceMcpScope } from './commonspace-mcp.js'
 import { buildRoutingPrompt, completeWithOpenAICompatible, parseRoutingResponse } from './ai-router.js'
 import { buildChannelContextCompactionPrompt, inferredChannelMemory, parseChannelContextCompaction } from './context.js'
@@ -1360,59 +1357,6 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
     if (adapter !== 'hermes' && adapter !== 'codex') throw new Error('unsupported agent adapter')
     this.discoveredAgentCandidates = await this.discoverAgentCandidates(adapter)
     return this.bootstrap()
-  }
-
-  async agentConfiguration(agentId: string): Promise<CommonspaceAgentConfiguration> {
-    const agent = this.configuredAgents().find(candidate => candidate.id === agentId)
-    if (agent === undefined) throw new Error('unknown agent')
-    return this.withAgentRuntime(agent, await inspectAgentConfiguration(this.hermesPath, agent))
-  }
-
-  async updateAgentConfiguration(agentId: string, update: UpdateAgentConfigurationRequest): Promise<CommonspaceAgentConfiguration> {
-    const agent = this.configuredAgents().find(candidate => candidate.id === agentId)
-    if (agent === undefined) throw new Error('unknown agent')
-    const configuration = await updateNativeAgentConfiguration(this.hermesPath, agent, update)
-    this.discoveredAgentCandidates = await this.discoverAgentCandidates(agent.adapter)
-    return this.withAgentRuntime(agent, configuration)
-  }
-
-  private withAgentRuntime(agent: CommonspaceAgentProfile, configuration: CommonspaceAgentConfiguration): CommonspaceAgentConfiguration {
-    const completed = Object.values(this.state.messages).flatMap(messages => messages)
-      .filter(message => message.authorType === 'agent' && message.authorId === agent.id && message.trace !== undefined)
-      .map(message => {
-        const usage = message.trace!.entries.find(entry => entry.type === 'usage')
-        return {
-          messageId: message.id,
-          conversation: message.conversation,
-          startedAt: message.trace!.startedAt,
-          completedAt: message.trace!.completedAt,
-          status: 'complete' as const,
-          ...(usage?.type !== 'usage' || usage.usedTokens === 0 ? {} : { usedTokens: usage.usedTokens }),
-          ...(usage?.type !== 'usage' || usage.costAmount === undefined ? {} : { costAmount: usage.costAmount }),
-          ...(usage?.type !== 'usage' || usage.costCurrency === undefined ? {} : { costCurrency: usage.costCurrency }),
-        }
-      })
-      .sort((left, right) => right.completedAt.localeCompare(left.completedAt))
-    const active = [...this.liveActivitiesById.values()].filter(activity => activity.agentId === agent.id)
-    const lastRuns = [
-      ...active.map(activity => ({ messageId: activity.sourceMessageId, conversation: activity.conversation, startedAt: activity.startedAt, completedAt: activity.startedAt, status: 'running' as const })),
-      ...completed,
-    ].slice(0, 10)
-    const usages = completed.filter(run => run.costAmount !== undefined)
-    const currencies = [...new Set(usages.map(run => run.costCurrency).filter((currency): currency is string => currency !== undefined))]
-    const knownSessions = Object.keys(this.state.agentSessions[agent.id] ?? {}).length
-    const lastRunAt = lastRuns[0]?.completedAt ?? null
-    return {
-      ...configuration,
-      sessionHealth: {
-        status: active.length > 0 || knownSessions > 0 || lastRunAt !== null ? 'healthy' : 'idle',
-        activeSessions: active.length,
-        knownSessions,
-        lastRunAt,
-      },
-      lastRuns,
-      cost: { amount: usages.reduce((sum, run) => sum + (run.costAmount ?? 0), 0), currency: currencies.length === 1 ? currencies[0]! : null },
-    }
   }
 
   private resolveMcpScope(scope: CommonspaceMcpScope): {

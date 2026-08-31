@@ -1,6 +1,6 @@
 import type { IncomingMessage } from 'node:http'
 import express, { type ErrorRequestHandler, type Express, type NextFunction, type Request, type Response } from 'express'
-import { COMMONSPACE_SEARCH_KINDS, type CommonspaceLiveAgentActivity, type CommonspaceMutation, type CommonspaceSearchKind, type DiscoverAgentsRequest, type RemoveFollowupRequest, type ReorderFollowupRequest, type SelectDirectoryResponse, type SendMessageRequest, type StopAgentRunsRequest, type UpdateAgentConfigurationRequest, type UpdateChannelContextRequest, type UpdateRoutingConfigurationRequest } from '@commonspace/shared'
+import { COMMONSPACE_SEARCH_KINDS, type CommonspaceLiveAgentActivity, type CommonspaceMutation, type CommonspaceSearchKind, type DiscoverAgentsRequest, type RemoveFollowupRequest, type ReorderFollowupRequest, type SelectDirectoryResponse, type SendMessageRequest, type StopAgentRunsRequest, type UpdateChannelContextRequest, type UpdateRoutingConfigurationRequest } from '@commonspace/shared'
 import type { CommonspaceHostService } from './service.js'
 import type { CommonspaceMcpGateway } from './commonspace-mcp.js'
 import { selectLocalDirectory } from './directory-picker.js'
@@ -154,26 +154,6 @@ export function createCommonspaceApp({ service, mcpGateway, directoryPicker }: C
       }))
     } catch (error) {
       res.status(400).json({ code: 'search_failed', error: error instanceof Error ? error.message : String(error) })
-    }
-  })
-
-  app.get('/api/agents/:agentId/configuration', requireSameOrigin, async (req, res) => {
-    try {
-      const agentId = req.params.agentId
-      if (typeof agentId !== 'string' || agentId === '') throw new Error('agent id is required')
-      res.json(await service.agentConfiguration(agentId))
-    } catch (error) {
-      res.status(400).json({ code: 'agent_configuration_failed', error: error instanceof Error ? error.message : String(error) })
-    }
-  })
-
-  app.put('/api/agents/:agentId/configuration', requireSameOrigin, async (req, res) => {
-    try {
-      const agentId = req.params.agentId
-      if (typeof agentId !== 'string' || agentId === '') throw new Error('agent id is required')
-      res.json(await service.updateAgentConfiguration(agentId, recordBody(req.body) as unknown as UpdateAgentConfigurationRequest))
-    } catch (error) {
-      res.status(400).json({ code: 'agent_configuration_update_failed', error: error instanceof Error ? error.message : String(error) })
     }
   })
 

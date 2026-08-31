@@ -58,6 +58,16 @@ describe('standalone Commonspace server', () => {
     })
     expect(discoveryCalls).toBe(0)
 
+    for (const method of ['GET', 'PUT']) {
+      const configurationResponse = await fetch(`${running.url}/api/agents/missing/configuration`, {
+        method,
+        headers: { origin: running.url, 'content-type': 'application/json' },
+        ...(method === 'PUT' ? { body: '{}' } : {}),
+      })
+      expect(configurationResponse.status).toBe(404)
+      await expect(configurationResponse.json()).resolves.toEqual({ code: 'not_found', error: 'API route not found' })
+    }
+
     const routingResponse = await fetch(`${running.url}/api/routing`, {
       method: 'PUT',
       headers: { origin: running.url, 'content-type': 'application/json' },

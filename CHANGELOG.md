@@ -20,7 +20,7 @@ All notable changes to Commonspace are recorded here.
 - pnpm workspace boundaries for shared contracts, server behavior, and UI behavior.
 - Real standalone health, API, browser-mount, build, and live smoke verification.
 - Inference-only Channel routing through either an agent harness or an OpenAI-compatible model, with inspectable routing decisions.
-- Project Files, Git Changes/diffs, speech playback, live activity, stop controls, and native agent configuration inspection.
+- Project Files, Git Changes/diffs, speech playback, live activity, and stop controls.
 - Zero-to-many Project references on messages and threads, with multi-root agent execution, Project-aware search, correct run attribution, and backward-compatible singular fields for the current UI.
 - Editable Channel context APIs with user-owned context preservation, manual inference compaction, automatic token-pressure compaction, and visible current/stale metadata.
 - ANSI-safe live-preview URL detection so CI can verify Vite startup reliably.
@@ -43,5 +43,6 @@ All notable changes to Commonspace are recorded here.
 
 ### Removed
 
+- Runtime-specific Hermes configuration inspection/mutation and the native-configuration dashboard; Commonspace now limits Agent customization to workspace-local appearance until capabilities are advertised through ACP.
 - Synthesized room/DM delivery envelopes, replayed Channel memory, duplicated recent transcripts, and execution-contract boilerplate from agent messages.
 - Plugin lifecycle, slot mounting, bundle manifests, and framework-specific build dependencies.
