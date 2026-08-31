@@ -22,6 +22,7 @@ function state(overrides: Partial<CommonspaceState> = {}): CommonspaceState {
     projects: [],
     channels: [],
     threads: [],
+    pins: [],
     messages: {},
     ...overrides,
   }
@@ -63,6 +64,70 @@ function sidebarStore(
 }
 
 describe('Commonspace interface', () => {
+  it('edits, compacts, and pins canonical Channel context', async () => {
+    const compactChannelContext = vi.fn(async () => undefined)
+    const addPin = vi.fn(async () => undefined)
+    const removePin = vi.fn(async () => undefined)
+    const channel = {
+      id: 'general',
+      name: 'general',
+      agentIds: [],
+      instructions: 'Keep work scoped.',
+      memory: {
+        summary: 'Existing Channel summary.',
+        decisions: ['Existing decision.'],
+        openQuestions: ['Existing question?'],
+        threadIds: [],
+        updatedAt: '2026-08-30T00:00:00.000Z',
+        origin: 'user' as const,
+        status: 'current' as const,
+        sourceMessageCount: 1,
+        estimatedTokens: 10,
+        compactedThroughMessageId: 'message-1',
+      },
+      routingMemory: { summary: '', status: 'empty' as const, correctionCount: 0, compactedThroughCorrectionId: null, updatedAt: null },
+      settings: { model: null, reasoning: null },
+      createdAt: '2026-08-30T00:00:00.000Z',
+    }
+    const { store, mutate } = sidebarStore({
+      state: state({
+        channels: [channel],
+        pins: [{
+          id: 'channel-pin-1',
+          scope: { kind: 'channel', id: channel.id },
+          kind: 'note',
+          note: 'Pinned Channel guidance.',
+          createdAt: '2026-08-30T00:00:00.000Z',
+          removedAt: null,
+        }],
+      }),
+    }, { compactChannelContext, addPin, removePin })
+    render(<CommonspaceSidebar wide expandSidebar={() => undefined} store={store as never} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Manage agents in channel general' }))
+    fireEvent.change(screen.getByLabelText('Channel summary for general'), { target: { value: 'Updated Channel summary.' } })
+    fireEvent.change(screen.getByLabelText('Channel decisions for general'), { target: { value: 'Decision one.\nDecision two.' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Compact context for channel general' }))
+    expect(compactChannelContext).toHaveBeenCalledWith('general')
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Channel pin Pinned Channel guidance.' }))
+    expect(removePin).toHaveBeenCalledWith('channel-pin-1')
+    const note = screen.getByLabelText('New Channel pin note for general')
+    fireEvent.change(note, { target: { value: 'New Channel pin.' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add Channel pin note for general' }))
+    expect(addPin).toHaveBeenCalledWith({ scope: { kind: 'channel', id: 'general' }, kind: 'note', note: 'New Channel pin.' })
+    fireEvent.click(screen.getByRole('button', { name: 'Save channel general' }))
+
+    await waitFor(() => {
+      expect(mutate).toHaveBeenCalledWith({
+        action: 'set-channel-memory',
+        channelId: 'general',
+        summary: 'Updated Channel summary.',
+        decisions: ['Decision one.', 'Decision two.'],
+        openQuestions: ['Existing question?'],
+      })
+    })
+  })
+
   it('keeps each agent runtime status visible in the sidebar', () => {
     const style = document.createElement('style')
     style.textContent = commonspacePolish

@@ -1,6 +1,6 @@
 import type { IncomingMessage } from 'node:http'
 import express, { type ErrorRequestHandler, type Express, type NextFunction, type Request, type Response } from 'express'
-import { COMMONSPACE_SEARCH_KINDS, type CommonspaceLiveAgentActivity, type CommonspaceMutation, type CommonspaceSearchKind, type DiscoverAgentsRequest, type RemoveFollowupRequest, type ReorderFollowupRequest, type RerouteAssignmentRequest, type SelectDirectoryResponse, type SendMessageRequest, type StopAgentRunsRequest, type UpdateChannelContextRequest, type UpdateRoutingConfigurationRequest, type UpdateThreadContextRequest } from '@commonspace/shared'
+import { COMMONSPACE_SEARCH_KINDS, type AddPinRequest, type CommonspaceLiveAgentActivity, type CommonspaceMutation, type CommonspaceSearchKind, type DiscoverAgentsRequest, type EditMessageRequest, type RemoveFollowupRequest, type ReorderFollowupRequest, type RerouteAssignmentRequest, type SelectDirectoryResponse, type SendMessageRequest, type StopAgentRunsRequest, type UpdateChannelContextRequest, type UpdateRoutingConfigurationRequest, type UpdateThreadContextRequest } from '@commonspace/shared'
 import type { CommonspaceHostService } from './service.js'
 import type { CommonspaceMcpGateway } from './commonspace-mcp.js'
 import { selectLocalDirectory } from './directory-picker.js'
@@ -362,6 +362,45 @@ export function createCommonspaceApp({ service, mcpGateway, directoryPicker }: C
       res.status(202).json(await service.rerouteAssignment(recordBody(req.body) as unknown as RerouteAssignmentRequest))
     } catch (error) {
       res.status(400).json({ code: 'reroute_failed', error: error instanceof Error ? error.message : String(error) })
+    }
+  })
+
+  app.post('/api/messages/:messageId/edit', requireSameOrigin, async (req, res) => {
+    try {
+      const messageId = req.params.messageId
+      if (typeof messageId !== 'string' || messageId === '') throw new Error('message id is required')
+      const body = recordBody(req.body)
+      res.status(202).json(await service.editMessage({ ...body, messageId } as unknown as EditMessageRequest))
+    } catch (error) {
+      res.status(400).json({ code: 'message_edit_failed', error: error instanceof Error ? error.message : String(error) })
+    }
+  })
+
+  app.post('/api/messages/:messageId/delete', requireSameOrigin, async (req, res) => {
+    try {
+      const messageId = req.params.messageId
+      if (typeof messageId !== 'string' || messageId === '') throw new Error('message id is required')
+      res.json(await service.deleteMessage(messageId))
+    } catch (error) {
+      res.status(400).json({ code: 'message_delete_failed', error: error instanceof Error ? error.message : String(error) })
+    }
+  })
+
+  app.post('/api/pins', requireSameOrigin, async (req, res) => {
+    try {
+      res.status(201).json(await service.addPin(recordBody(req.body) as unknown as AddPinRequest))
+    } catch (error) {
+      res.status(400).json({ code: 'pin_add_failed', error: error instanceof Error ? error.message : String(error) })
+    }
+  })
+
+  app.post('/api/pins/:pinId/remove', requireSameOrigin, async (req, res) => {
+    try {
+      const pinId = req.params.pinId
+      if (typeof pinId !== 'string' || pinId === '') throw new Error('pin id is required')
+      res.json(await service.removePin(pinId))
+    } catch (error) {
+      res.status(400).json({ code: 'pin_remove_failed', error: error instanceof Error ? error.message : String(error) })
     }
   })
 

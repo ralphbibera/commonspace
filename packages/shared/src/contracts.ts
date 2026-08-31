@@ -1,4 +1,4 @@
-export const COMMONSPACE_STATE_VERSION = 19 as const
+export const COMMONSPACE_STATE_VERSION = 21 as const
 
 export type AgentAdapterKind = 'hermes' | 'codex'
 
@@ -291,6 +291,14 @@ export interface CommonspaceMessage {
   parentMessageId?: string
   /** User message that initiated the agent run represented by this message. */
   sourceMessageId?: string
+  /** First human message in this visible version chain. */
+  versionRootMessageId?: string
+  /** Earlier delivered human message superseded by this branch. */
+  supersedesMessageId?: string
+  /** Conversation branch created for this version. */
+  branchId?: string
+  /** Delivered content was removed while retaining its transcript marker. */
+  deletedAt?: string
   /** Routing assignment that initiated this reply or failure. */
   routingAssignmentId?: string
   /** Lifecycle of the agent reply requested by a direct-message user turn. */
@@ -336,6 +344,26 @@ export interface CommonspaceThreadContext {
   memory: CommonspaceThreadMemory
 }
 
+export type CommonspacePinScope =
+  | { kind: 'channel'; id: string }
+  | { kind: 'thread'; id: string }
+
+export interface CommonspacePin {
+  id: string
+  scope: CommonspacePinScope
+  kind: 'message' | 'attachment' | 'note'
+  messageId?: string
+  attachmentId?: string
+  note?: string
+  createdAt: string
+  removedAt: string | null
+}
+
+export type AddPinRequest =
+  | { scope: CommonspacePinScope; kind: 'message'; messageId: string }
+  | { scope: CommonspacePinScope; kind: 'attachment'; messageId: string; attachmentId: string }
+  | { scope: CommonspacePinScope; kind: 'note'; note: string }
+
 export interface CommonspaceThread {
   id: string
   channelId: string
@@ -345,6 +373,8 @@ export interface CommonspaceThread {
   projectId: string | null
   rootMessageId: string
   agentIds: string[]
+  branchedFromThreadId?: string
+  branchPointMessageId?: string
   context: CommonspaceThreadContext
   createdAt: string
 }
@@ -367,6 +397,7 @@ export interface CommonspaceState {
   projects: CommonspaceProject[]
   channels: CommonspaceChannel[]
   threads: CommonspaceThread[]
+  pins: CommonspacePin[]
   messages: Record<string, CommonspaceMessage[]>
 }
 
@@ -447,6 +478,12 @@ export interface SendMessageResponse {
   accepted: CommonspaceMessage
   thread?: CommonspaceThread
   state: CommonspaceState
+}
+
+export interface EditMessageRequest {
+  messageId: string
+  text: string
+  projectIds?: string[]
 }
 
 export interface RerouteAssignmentRequest {

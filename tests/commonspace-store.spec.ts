@@ -341,6 +341,113 @@ describe('Commonspace client revision ordering', () => {
     expect(store.getSnapshot().bootstrap?.state.revision).toBe(2)
   })
 
+  it('compacts Channel context and refreshes its durable state', async () => {
+    const initial = bootstrap(1, 'Initial')
+    const updated = bootstrap(2, 'Initial')
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(response(initial))
+      .mockResolvedValueOnce(response({ summary: 'Compacted Channel.' }))
+      .mockResolvedValueOnce(response(updated))
+    vi.stubGlobal('fetch', fetch)
+    const store = new CommonspaceClientStore()
+    await store.refresh()
+
+    const compactChannelContext = (store as unknown as { compactChannelContext(channelId: string): Promise<void> }).compactChannelContext
+    await compactChannelContext.call(store, 'general')
+
+    expect(fetch).toHaveBeenNthCalledWith(2, '/api/channels/general/context/compact', expect.objectContaining({ method: 'POST' }))
+    expect(store.getSnapshot().bootstrap?.state.revision).toBe(2)
+  })
+
+  it('adds and removes shared-context pins with durable refreshes', async () => {
+    const initial = bootstrap(1, 'Initial')
+    const afterAdd = bootstrap(2, 'Initial')
+    const afterRemove = bootstrap(3, 'Initial')
+    const pin = {
+      id: 'pin-1',
+      scope: { kind: 'thread' as const, id: 'thread-1' },
+      kind: 'note' as const,
+      note: 'Keep this visible.',
+      createdAt: '2026-08-30T00:00:00.000Z',
+      removedAt: null,
+    }
+    afterAdd.state.pins = [pin]
+    afterRemove.state.pins = [{ ...pin, removedAt: '2026-08-30T00:01:00.000Z' }]
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(response(initial))
+      .mockResolvedValueOnce(response(pin))
+      .mockResolvedValueOnce(response(afterAdd))
+      .mockResolvedValueOnce(response({ ...pin, removedAt: '2026-08-30T00:01:00.000Z' }))
+      .mockResolvedValueOnce(response(afterRemove))
+    vi.stubGlobal('fetch', fetch)
+    const store = new CommonspaceClientStore()
+    await store.refresh()
+    const pinStore = store as unknown as {
+      addPin(request: { scope: { kind: 'thread'; id: string }; kind: 'note'; note: string }): Promise<void>
+      removePin(pinId: string): Promise<void>
+    }
+
+    await pinStore.addPin({ scope: { kind: 'thread', id: 'thread-1' }, kind: 'note', note: 'Keep this visible.' })
+    await pinStore.removePin('pin-1')
+
+    expect(fetch).toHaveBeenNthCalledWith(2, '/api/pins', expect.objectContaining({ method: 'POST' }))
+    expect(fetch).toHaveBeenNthCalledWith(4, '/api/pins/pin-1/remove', expect.objectContaining({ method: 'POST' }))
+    expect(store.getSnapshot().bootstrap?.state.pins[0]?.removedAt).toBe('2026-08-30T00:01:00.000Z')
+  })
+
+  it('edits a message and focuses the returned conversation branch', async () => {
+    const initial = bootstrap(1, 'Initial')
+    const updated = bootstrap(2, 'Initial')
+    const accepted = {
+      id: 'edited-1',
+      conversation: { kind: 'channel' as const, id: 'general' },
+      authorType: 'user' as const,
+      authorId: 'user',
+      authorName: 'Ralph',
+      text: 'Corrected message.',
+      createdAt: '2026-08-30T00:00:00.000Z',
+      threadId: 'thread-2',
+      versionRootMessageId: 'root-1',
+      supersedesMessageId: 'root-1',
+      branchId: 'branch-1',
+    }
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(response(initial))
+      .mockResolvedValueOnce(response({ accepted, thread: { id: 'thread-2' }, state: updated.state }))
+    vi.stubGlobal('fetch', fetch)
+    const store = new CommonspaceClientStore()
+    await store.refresh()
+    const editMessage = (store as unknown as {
+      editMessage(messageId: string, request: { text: string; projectIds?: string[] }): Promise<void>
+    }).editMessage
+
+    await editMessage.call(store, 'root-1', { text: 'Corrected message.' })
+
+    expect(fetch).toHaveBeenNthCalledWith(2, '/api/messages/root-1/edit', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ text: 'Corrected message.' }),
+    }))
+    expect(store.getSnapshot()).toMatchObject({ activeThreadId: 'thread-2', bootstrap: { state: { revision: 2 } } })
+  })
+
+  it('deletes a message and refreshes its durable marker', async () => {
+    const initial = bootstrap(1, 'Initial')
+    const updated = bootstrap(2, 'Initial')
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(response(initial))
+      .mockResolvedValueOnce(response({ id: 'root-1', text: '', deletedAt: '2026-08-30T00:00:00.000Z' }))
+      .mockResolvedValueOnce(response(updated))
+    vi.stubGlobal('fetch', fetch)
+    const store = new CommonspaceClientStore()
+    await store.refresh()
+    const deleteMessage = (store as unknown as { deleteMessage(messageId: string): Promise<void> }).deleteMessage
+
+    await deleteMessage.call(store, 'root-1')
+
+    expect(fetch).toHaveBeenNthCalledWith(2, '/api/messages/root-1/delete', expect.objectContaining({ method: 'POST' }))
+    expect(store.getSnapshot().bootstrap?.state.revision).toBe(2)
+  })
+
   it('refreshes again when an SSE revision arrives during an in-flight refresh', async () => {
     const firstRefresh = deferred<Response>()
     const followUpRefresh = deferred<Response>()

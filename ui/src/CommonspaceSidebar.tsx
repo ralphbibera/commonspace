@@ -410,6 +410,11 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, inboxActive = f
   const [channelInstructions, setChannelInstructions] = useState('')
   const [channelModel, setChannelModel] = useState('')
   const [channelReasoning, setChannelReasoning] = useState<CommonspaceReasoning | ''>('')
+  const [channelSummary, setChannelSummary] = useState('')
+  const [channelDecisions, setChannelDecisions] = useState('')
+  const [channelQuestions, setChannelQuestions] = useState('')
+  const [channelPinNote, setChannelPinNote] = useState('')
+  const [compactingChannelId, setCompactingChannelId] = useState<string | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [defaultModel, setDefaultModel] = useState('')
   const [defaultReasoning, setDefaultReasoning] = useState<CommonspaceReasoning>('max')
@@ -522,7 +527,31 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, inboxActive = f
     await store.mutate({ action: 'set-channel-agents', channelId, agentIds: channelAgentIds })
     await store.mutate({ action: 'set-channel-context', channelId, instructions: channelInstructions })
     await store.mutate({ action: 'set-channel-settings', channelId, model: channelModel || null, reasoning: channelReasoning || null })
+    await store.mutate({
+      action: 'set-channel-memory',
+      channelId,
+      summary: channelSummary,
+      decisions: channelDecisions.split('\n').map(value => value.trim()).filter(Boolean),
+      openQuestions: channelQuestions.split('\n').map(value => value.trim()).filter(Boolean),
+    })
     setEditingChannelId(null)
+  }
+
+  const compactChannelContext = async (channelId: string) => {
+    if (compactingChannelId !== null) return
+    setCompactingChannelId(channelId)
+    try {
+      await store.compactChannelContext(channelId)
+    } finally {
+      setCompactingChannelId(null)
+    }
+  }
+
+  const addChannelPin = async (channelId: string) => {
+    const note = channelPinNote.trim()
+    if (note === '') return
+    await store.addPin({ scope: { kind: 'channel', id: channelId }, kind: 'note', note })
+    setChannelPinNote('')
   }
 
   const saveDefaults = async (event: FormEvent) => {
@@ -726,6 +755,7 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, inboxActive = f
           )}
           {channels.map(channel => {
             const unreadCount = channelUnreadCounts.get(channel.id) ?? 0
+            const channelPins = (state?.pins ?? []).filter(pin => pin.removedAt === null && pin.scope.kind === 'channel' && pin.scope.id === channel.id)
             return (
             <div key={channel.id} className="csp-channel-group">
               <div className="csp-channel-head">
@@ -746,6 +776,10 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, inboxActive = f
                     setChannelInstructions(channel.instructions)
                     setChannelModel(channel.settings.model ?? '')
                     setChannelReasoning(channel.settings.reasoning ?? '')
+                    setChannelSummary(channel.memory.summary)
+                    setChannelDecisions(channel.memory.decisions.join('\n'))
+                    setChannelQuestions(channel.memory.openQuestions.join('\n'))
+                    setChannelPinNote('')
                   }}
                 >⋯</button>
               </div>
@@ -759,8 +793,22 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, inboxActive = f
                   <label className="csp-context-label">Channel instructions<textarea aria-label={`Instructions for channel ${channel.name}`} value={channelInstructions} onChange={event => { setChannelInstructions(event.target.value) }} placeholder="What agents should remember and how they should behave in this channel" /></label>
                   <label className="csp-context-label">Channel model<input aria-label={`Model for channel ${channel.name}`} list="commonspace-models" placeholder="Inherit default" value={channelModel} onChange={event => { setChannelModel(event.target.value) }} /></label>
                   <label className="csp-context-label">Channel reasoning<select aria-label={`Reasoning for channel ${channel.name}`} value={channelReasoning} onChange={event => { setChannelReasoning(event.target.value as CommonspaceReasoning | '') }}><option value="">Inherit default</option>{['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].map(value => <option key={value} value={value}>{value}</option>)}</select></label>
-                  <details className="csp-memory-preview"><summary>Projected memory · {channel.memory.threadIds.length} threads</summary><pre>{channel.memory.summary || 'No completed thread memory yet.'}</pre>{channel.memory.decisions.length > 0 && <p><strong>Decisions:</strong> {channel.memory.decisions.join(' · ')}</p>}{channel.memory.openQuestions.length > 0 && <p><strong>Open questions:</strong> {channel.memory.openQuestions.join(' · ')}</p>}</details>
-                  <div><button type="submit">Save</button><button type="button" onClick={() => { setEditingChannelId(null) }}>Cancel</button></div>
+                  <section className="csp-channel-context-editor" aria-label={`Channel context for ${channel.name}`}>
+                    <header><strong>Canonical context</strong><span data-status={channel.memory.status ?? 'current'}>{channel.memory.status ?? 'current'}</span></header>
+                    <label className="csp-context-label">Summary<textarea aria-label={`Channel summary for ${channel.name}`} value={channelSummary} onChange={event => { setChannelSummary(event.target.value) }} /></label>
+                    <label className="csp-context-label">Decisions<textarea aria-label={`Channel decisions for ${channel.name}`} value={channelDecisions} onChange={event => { setChannelDecisions(event.target.value) }} /></label>
+                    <label className="csp-context-label">Open questions<textarea aria-label={`Channel open questions for ${channel.name}`} value={channelQuestions} onChange={event => { setChannelQuestions(event.target.value) }} /></label>
+                    <button type="button" aria-label={`Compact context for channel ${channel.name}`} disabled={compactingChannelId !== null} onClick={() => { void compactChannelContext(channel.id) }}>{compactingChannelId === channel.id ? 'Compacting…' : 'Compact context'}</button>
+                  </section>
+                  <section className="csp-channel-pins" aria-label={`Channel pins for ${channel.name}`}>
+                    <header><strong>Pins</strong><span>{channelPins.length}</span></header>
+                    {channelPins.map(pin => {
+                      const label = pin.note ?? pin.attachmentId ?? pin.messageId ?? 'Pinned source'
+                      return <div key={pin.id}><p>{label}</p><button type="button" aria-label={`Remove Channel pin ${label}`} onClick={() => { void store.removePin(pin.id) }}>Remove</button></div>
+                    })}
+                    <div><input aria-label={`New Channel pin note for ${channel.name}`} value={channelPinNote} onChange={event => { setChannelPinNote(event.target.value) }} placeholder="Pin a Channel note" /><button type="button" aria-label={`Add Channel pin note for ${channel.name}`} disabled={channelPinNote.trim() === ''} onClick={() => { void addChannelPin(channel.id) }}>Pin</button></div>
+                  </section>
+                  <div><button type="submit" aria-label={`Save channel ${channel.name}`}>Save</button><button type="button" onClick={() => { setEditingChannelId(null) }}>Cancel</button></div>
                 </form>
               )}
             </div>

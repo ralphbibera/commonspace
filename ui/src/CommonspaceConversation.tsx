@@ -222,6 +222,10 @@ function MessageRow({
   compact = false,
   onReplyToAgent,
   onReroute,
+  onPin,
+  onEdit,
+  onDelete,
+  onOpenVersion,
   speech,
 }: {
   message: CommonspaceMessage
@@ -229,9 +233,29 @@ function MessageRow({
   compact?: boolean
   onReplyToAgent?: (message: CommonspaceMessage) => void
   onReroute?: (request: RerouteAssignmentRequest) => Promise<void>
+  onPin?: (message: CommonspaceMessage, attachmentId?: string) => Promise<void>
+  onEdit?: (message: CommonspaceMessage, text: string, projectIds: string[]) => Promise<void>
+  onDelete?: (message: CommonspaceMessage) => Promise<void>
+  onOpenVersion?: (messageId: string) => void
   speech: MessageSpeechControls
 }) {
   const reading = speech.activeMessageId === message.id
+  const supersedesMessageId = message.supersedesMessageId
+  const [editing, setEditing] = useState(false)
+  const [editedText, setEditedText] = useState(message.text)
+  const [editedProjectIds, setEditedProjectIds] = useState<string[]>(message.projectIds ?? (message.projectId === undefined ? [] : [message.projectId]))
+  const [savingEdit, setSavingEdit] = useState(false)
+  const submitEdit = async (event: FormEvent) => {
+    event.preventDefault()
+    if (onEdit === undefined || editedText.trim() === '' || savingEdit) return
+    setSavingEdit(true)
+    try {
+      await onEdit(message, editedText, editedProjectIds)
+      setEditing(false)
+    } finally {
+      setSavingEdit(false)
+    }
+  }
   return (
     <article className={`csp-message csp-message--${message.authorType}${compact ? ' csp-message--compact' : ''}`} data-author={message.authorType}>
       <div className="csp-message-avatar" aria-hidden="true">{message.authorName.slice(0, 1).toUpperCase()}</div>
@@ -247,6 +271,26 @@ function MessageRow({
               onClick={() => { onReplyToAgent(message) }}
             ><span aria-hidden="true">↩</span> Reply</button>
           )}
+          {onPin !== undefined && (
+            <button
+              type="button"
+              className="csp-message-pin"
+              aria-label={`Pin message from ${message.authorName}`}
+              onClick={() => { void onPin(message) }}
+            >Pin</button>
+          )}
+          {message.authorType === 'user' && message.deletedAt === undefined && onEdit !== undefined && (
+            <button type="button" className="csp-message-version-action" aria-label={`Edit message from ${message.authorName}`} onClick={() => {
+              setEditedText(message.text)
+              setEditedProjectIds(message.projectIds ?? (message.projectId === undefined ? [] : [message.projectId]))
+              setEditing(true)
+            }}>Edit</button>
+          )}
+          {message.deletedAt === undefined && onDelete !== undefined && (
+            <button type="button" className="csp-message-version-action csp-message-version-action--delete" aria-label={`Delete message from ${message.authorName}`} onClick={() => {
+              if (window.confirm('Delete this delivered message content? The transcript marker and delivery history will remain.')) void onDelete(message)
+            }}>Delete</button>
+          )}
           {message.authorType === 'agent' && message.text.trim() !== '' && speech.supported && (
             <button
               type="button"
@@ -258,11 +302,38 @@ function MessageRow({
             ><span aria-hidden="true">{reading ? '■' : '◖))'}</span></button>
           )}
         </header>
-        {message.text !== '' && (message.authorType === 'agent'
+        {supersedesMessageId !== undefined && (
+          <div className="csp-message-version-link">
+            <span>Edited branch</span>
+            {onOpenVersion !== undefined && <button type="button" aria-label="Open previous message version" onClick={() => { onOpenVersion(supersedesMessageId) }}>Previous version</button>}
+          </div>
+        )}
+        {message.deletedAt !== undefined
+          ? <p className="csp-message-deleted" role="status">Message deleted · content was delivered at {new Date(message.createdAt).toLocaleString()}</p>
+          : message.text !== '' && (message.authorType === 'agent'
           ? <Suspense fallback={messageMarkdownFallback}>
               <LazyMessageMarkdown text={message.text} />
             </Suspense>
           : <p className="csp-message-plain-text">{renderMessageText(message, bootstrap ?? undefined)}</p>)}
+        {editing && (
+          <form className="csp-message-edit-form" aria-label="Edit delivered message" onSubmit={(event) => { void submitEdit(event) }}>
+            <label>Message<textarea aria-label="Edited message" value={editedText} onChange={event => { setEditedText(event.target.value) }} /></label>
+            {(bootstrap?.state.projects.length ?? 0) > 0 && <fieldset>
+              <legend>Projects for new branch</legend>
+              {bootstrap?.state.projects.map(project => (
+                <label key={project.id}>
+                  <input
+                    type="checkbox"
+                    checked={editedProjectIds.includes(project.id)}
+                    onChange={event => { setEditedProjectIds(current => event.target.checked ? [...new Set([...current, project.id])] : current.filter(id => id !== project.id)) }}
+                  />
+                  {project.name}
+                </label>
+              ))}
+            </fieldset>}
+            <div><button type="submit" disabled={savingEdit || editedText.trim() === ''}>{savingEdit ? 'Branching…' : 'Create branch'}</button><button type="button" onClick={() => { setEditing(false) }}>Cancel</button></div>
+          </form>
+        )}
         {message.routing !== undefined && (
           message.routing.status === 'pending'
             ? <div className="csp-message-routing" role="status" aria-label="Routing message">Routing…</div>
@@ -279,12 +350,14 @@ function MessageRow({
         {message.attachments !== undefined && message.attachments.length > 0 && (
           <div className="csp-message-attachments">
             {message.attachments.map(attachment => (
-              <img
-                key={attachment.id}
-                src={`/api/attachments/${encodeURIComponent(attachment.id)}`}
-                alt={attachment.name}
-                loading="lazy"
-              />
+              <figure key={attachment.id}>
+                <img
+                  src={`/api/attachments/${encodeURIComponent(attachment.id)}`}
+                  alt={attachment.name}
+                  loading="lazy"
+                />
+                {onPin !== undefined && <button type="button" aria-label={`Pin attachment ${attachment.name}`} onClick={() => { void onPin(message, attachment.id) }}>Pin</button>}
+              </figure>
             ))}
           </div>
         )}
@@ -544,6 +617,7 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
   const [threadContextSaving, setThreadContextSaving] = useState(false)
   const [threadContextCompacting, setThreadContextCompacting] = useState(false)
   const [threadProjectIds, setThreadProjectIds] = useState<string[]>([])
+  const [threadPinNote, setThreadPinNote] = useState('')
   const [selectedSuggestion, setSelectedSuggestion] = useState(0)
   const [selectedThreadSuggestion, setSelectedThreadSuggestion] = useState(0)
   const [commandFeedback, setCommandFeedback] = useState<CommandFeedback | null>(null)
@@ -604,6 +678,11 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
   const activeThreadFollowups = activeThread === undefined
     ? []
     : (bootstrap?.queuedFollowups ?? []).filter(item => item.threadId === activeThread.id)
+  const activeThreadPins = activeThread === undefined || bootstrap === null
+    ? []
+    : (bootstrap.state.pins ?? []).filter(pin => pin.removedAt === null && (
+        (pin.scope.kind === 'thread' && pin.scope.id === activeThread.id) ||
+        (pin.scope.kind === 'channel' && pin.scope.id === activeThread.channelId)))
   const rootIsCommand = pendingImages.length === 0 && draft.startsWith('/')
   const threadIsCommand = pendingThreadImages.length === 0 && threadDraft.startsWith('/')
 
@@ -633,6 +712,7 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
     setThreadReplyTarget(null)
     setPendingThreadImages([])
     setThreadContextOpen(false)
+    setThreadPinNote('')
   }, [snapshot.activeConversation?.id, snapshot.activeConversation?.kind, snapshot.activeThreadId])
   useEffect(() => {
     const memory = activeThread?.context?.memory
@@ -916,6 +996,35 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
     }
   }
 
+  const addThreadNotePin = async (event: FormEvent) => {
+    event.preventDefault()
+    const note = threadPinNote.trim()
+    if (activeThread === undefined || note === '') return
+    await store.addPin({ scope: { kind: 'thread', id: activeThread.id }, kind: 'note', note })
+    setThreadPinNote('')
+  }
+
+  const pinThreadMessage = async (message: CommonspaceMessage, attachmentId?: string) => {
+    if (activeThread === undefined) return
+    await store.addPin(attachmentId === undefined
+      ? { scope: { kind: 'thread', id: activeThread.id }, kind: 'message', messageId: message.id }
+      : { scope: { kind: 'thread', id: activeThread.id }, kind: 'attachment', messageId: message.id, attachmentId })
+  }
+
+  const editDeliveredMessage = async (message: CommonspaceMessage, text: string, projectIds: string[]) => {
+    await store.editMessage(message.id, { text, projectIds })
+  }
+
+  const deleteDeliveredMessage = async (message: CommonspaceMessage) => {
+    await store.deleteMessage(message.id)
+  }
+
+  const openMessageVersion = (messageId: string) => {
+    const version = messages.find(message => message.id === messageId)
+    if (version?.threadId !== undefined) store.selectThread(version.threadId)
+    setFocusedRootMessageId(version?.parentMessageId ?? version?.id ?? messageId)
+  }
+
   return (
     <main className="csp-conversation" aria-label="Commonspace conversation">
       <header className="csp-conversation-header">
@@ -969,7 +1078,7 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
                         className={`csp-thread-root${threadIsFocused ? ' csp-thread-root--focused' : ''}`}
                         aria-current={thread?.id === activeThread?.id ? 'true' : undefined}
                       >
-                        <MessageRow message={root} bootstrap={bootstrap} onReroute={request => store.rerouteAssignment(request)} speech={speech} />
+                        <MessageRow message={root} bootstrap={bootstrap} onReroute={request => store.rerouteAssignment(request)} onEdit={editDeliveredMessage} onDelete={deleteDeliveredMessage} onOpenVersion={openMessageVersion} speech={speech} />
                         <button
                           type="button"
                           className={`csp-thread-open${unreadCount === 0 ? '' : ' csp-thread-open--unread'}`}
@@ -1001,7 +1110,7 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
                       </article>
                     )
                   })
-                : roots.map(message => <MessageRow key={message.id} message={message} bootstrap={bootstrap} onReroute={request => store.rerouteAssignment(request)} speech={speech} />)}
+                : roots.map(message => <MessageRow key={message.id} message={message} bootstrap={bootstrap} onReroute={request => store.rerouteAssignment(request)} onEdit={editDeliveredMessage} onDelete={deleteDeliveredMessage} onOpenVersion={openMessageVersion} speech={speech} />)}
               {directMessagePhase !== null && <LiveAgentActivity
                 activities={directMessageActivities}
                 fallbackAgents={directMessageAgents}
@@ -1178,13 +1287,40 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
                     ))}
                     {(bootstrap?.state.projects.length ?? 0) === 0 && <span>No Projects configured. Replies remain projectless.</span>}
                   </fieldset>
+                  <section className="csp-thread-pins" aria-label="Thread pins">
+                    <header><strong>Pins</strong><span>{activeThreadPins.length}</span></header>
+                    {activeThreadPins.map((pin) => {
+                      const source = pin.messageId === undefined
+                        ? undefined
+                        : messages.find(message => message.id === pin.messageId)
+                      const attachment = pin.attachmentId === undefined
+                        ? undefined
+                        : source?.attachments?.find(candidate => candidate.id === pin.attachmentId)
+                      const label = pin.kind === 'note'
+                        ? pin.note ?? 'Pinned note'
+                        : pin.kind === 'attachment'
+                          ? attachment?.name ?? 'Pinned attachment'
+                          : source?.text ?? 'Pinned message'
+                      return (
+                        <div key={pin.id}>
+                          <span>{pin.scope.kind === 'channel' ? 'Channel' : pin.kind === 'note' ? 'Note' : pin.kind === 'attachment' ? 'File' : source?.authorName ?? 'Message'}</span>
+                          <p>{label}</p>
+                          <button type="button" aria-label={`Remove pin ${label}`} onClick={() => { void store.removePin(pin.id) }}>Remove</button>
+                        </div>
+                      )
+                    })}
+                    <form aria-label="Add Thread pin note" onSubmit={(event) => { void addThreadNotePin(event) }}>
+                      <input aria-label="New Thread pin note" value={threadPinNote} onChange={event => { setThreadPinNote(event.target.value) }} placeholder="Pin a note to shared context" />
+                      <button type="submit" disabled={threadPinNote.trim() === ''}>Pin note</button>
+                    </form>
+                  </section>
                 </section>
               )}
               <div ref={threadMessages} className="csp-thread-messages">
-                {activeRoot !== undefined && <MessageRow message={activeRoot} bootstrap={bootstrap} onReroute={request => store.rerouteAssignment(request)} speech={speech} />}
+                {activeRoot !== undefined && <MessageRow message={activeRoot} bootstrap={bootstrap} onReroute={request => store.rerouteAssignment(request)} onPin={pinThreadMessage} onEdit={editDeliveredMessage} onDelete={deleteDeliveredMessage} onOpenVersion={openMessageVersion} speech={speech} />}
                 <div className="csp-thread-divider">Replies</div>
                 {replies.map(reply => (
-                  <MessageRow key={reply.id} message={reply} bootstrap={bootstrap} compact onReplyToAgent={replyDirectlyToAgent} speech={speech} />
+                  <MessageRow key={reply.id} message={reply} bootstrap={bootstrap} compact onReplyToAgent={replyDirectlyToAgent} onPin={pinThreadMessage} onEdit={editDeliveredMessage} onDelete={deleteDeliveredMessage} onOpenVersion={openMessageVersion} speech={speech} />
                 ))}
                 {activeThreadActivities.length > 0 && (
                   <LiveAgentActivity

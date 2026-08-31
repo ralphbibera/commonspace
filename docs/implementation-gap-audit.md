@@ -1,6 +1,6 @@
 # Implementation gap audit
 
-Snapshot: 2026-08-31, audited against the current state-v19 implementation on `main`.
+Snapshot: 2026-08-31, audited against the current state-v21 implementation on `main`.
 
 This audit compares the intended behavior in [Product specification](product-spec.md), [Product direction](product-direction.md), and [Product model](product.md) with executable contracts, server behavior, persistence, API routes, UI use, and tests. It deliberately separates product behavior from later UI/UX work.
 
@@ -35,14 +35,14 @@ This audit compares the intended behavior in [Product specification](product-spe
 | Reroute, correction, and routing memory | Working | A user can change one current assignment's Agent, bounded sub-request, and Project subset without restarting unrelated Agents. Linked attempts and assignment-bound replies persist without a history cap; the UI marks superseded/corrected attempts. Explicit corrections compact through the configured inference layer into bounded per-Channel routing knowledge used by later decisions. |
 | Project-reference inference | Working | New unreferenced Channel roots offer all Projects to inference, persist the inferred union on the message/Thread, scope each assignment independently, and visibly mark inferred Projects. Explicit references and explicit projectless scope remain authoritative; reroute controls can correct one inferred assignment after dispatch. |
 | Shared Channel context projection | Working | Commonspace derives summary, decisions, questions, thread references, source counts, and estimated tokens independently of native sessions. |
-| Editable and compactable Channel context | Partial | Read/update/manual-compact APIs, preserved user edits, automatic token-pressure compaction, and durable empty/current/stale/compacting/failed states exist. Channel inspector/editor/compact controls and pins remain missing. |
+| Editable and compactable Channel context | Working | Read/update/manual-compact APIs, preserved user edits, automatic token-pressure compaction, durable empty/current/stale/compacting/failed states, a Channel editor, manual compaction control, and Channel note-pin management are implemented. |
 | Thread-specific context snapshots | Working | Each new Thread stores an immutable snapshot of Channel context at creation plus independent projected context. Thread context supports human editing, manual/pressure compaction, stale/failure state, scoped MCP inspection, and an inline UI inspector. Legacy Threads derive current memory from their transcripts without inventing a historical Channel snapshot. |
 | Native session continuity | Working | ACP sessions resume by opaque host-private reference, with stale-session recovery and hard `/new` boundaries. |
 | Image attachments | Working | Pasted/uploaded images are persisted with bounded private metadata and delivered to supported agents. |
 | General human and agent files | Missing | Arbitrary file attachment, agent-authored file attachment, download, and durable file-reference semantics are absent. |
-| Message editing and branches | Missing | Delivered human messages cannot create a new visible conversation version/session branch. |
-| Message deletion markers | Missing | There is no durable delivered-message deletion marker or associated branch semantics. |
-| Pins for messages/files/notes | Missing | Shared context has no first-class pin model. |
+| Message editing and branches | Working | Editing a delivered human message creates a linked version with a new Channel Thread/native session or DM generation. Prior messages, replies, routing, attachments, and sessions remain visible; reply edits expose only pre-branch transcript plus the corrected branch through scoped context. Agent replies cannot be edited. |
+| Message deletion markers | Working | Deletion retains author/delivery/version/routing identity while removing the body, attachment bytes, traces, attribution, and derived automatic context. Markers survive restart and cannot be edited back into content. |
+| Pins for messages/files/notes | Working | Channel/Thread-scoped message, exact attachment, and human-note pins persist with source and removal tombstones. Active Channel pins inherit into Thread MCP reads; Thread and Channel UI surfaces manage notes/messages/files without exposing bytes or host paths. |
 | Activity traces and work/result binding | Working | Replies preserve bounded harness-emitted plans, tools, results, usage, validation evidence, and Project/root attribution. |
 | Native permission requests | Partial | Generic activity can be preserved, but there is no normalized permission request/choice contract and response flow. |
 | Inbox, unread state, search, and navigation | Working | Reply-focused Inbox, exact thread navigation, read cursors, and unified transcript search exist. Search filtering now recognizes every referenced Project. |
@@ -56,14 +56,13 @@ This audit compares the intended behavior in [Product specification](product-spe
 
 ## Recommended feature order
 
-1. Complete durable conversation semantics: message edit branches, deletion markers, and pins.
-2. Generalize collaboration artifacts: human/agent files and normalized native permission requests.
-3. Complete operability: runtime/auth diagnostics, export/import/retention, installed background service, and OS notifications.
-4. Add UI/UX for the backend-ready capabilities and the features above after their behavior and contracts are stable.
+1. Generalize collaboration artifacts: human/agent files and normalized native permission requests.
+2. Complete operability: runtime/auth diagnostics, export/import/retention, installed background service, and OS notifications.
+3. Add UI/UX for the backend-ready capabilities and the features above after their behavior and contracts are stable.
 
 ## Documentation corrections made with this audit
 
-- State documentation now identifies v19 and migrations from versions 1–18.
+- State documentation now identifies v21 and migrations from versions 1–20.
 - Work/result binding moved from `Next` to `Working now` because run attribution, changes, traces, and validation evidence already implement it.
 - Multi-Project references and Channel-context controls are marked backend-ready instead of being implied as either wholly absent or fully surfaced.
 - The roadmap now separates feature behavior, later UI/UX, and scale-dependent storage work.

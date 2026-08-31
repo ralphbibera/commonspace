@@ -1,4 +1,5 @@
 import type {
+  AddPinRequest,
   AgentAdapterKind,
   CommonspaceApiError,
   CommonspaceBootstrap,
@@ -7,8 +8,10 @@ import type {
   CommonspaceQueuedFollowup,
   CommonspaceMessage,
   CommonspaceMutation,
+  CommonspacePin,
   CommonspaceRoutingConfiguration,
   ConversationRef,
+  EditMessageRequest,
   SelectDirectoryResponse,
   SendImageAttachment,
   SendMessageRequest,
@@ -275,6 +278,71 @@ export class CommonspaceClientStore {
   async compactThreadContext(threadId: string): Promise<void> {
     try {
       await requestJson(`/api/threads/${encodeURIComponent(threadId)}/context/compact`, { method: 'POST' })
+      await this.refresh()
+    } catch (error) {
+      this.set({ ...this.snapshot, error: error instanceof Error ? error.message : String(error) })
+      throw error
+    }
+  }
+
+  async compactChannelContext(channelId: string): Promise<void> {
+    try {
+      await requestJson(`/api/channels/${encodeURIComponent(channelId)}/context/compact`, { method: 'POST' })
+      await this.refresh()
+    } catch (error) {
+      this.set({ ...this.snapshot, error: error instanceof Error ? error.message : String(error) })
+      throw error
+    }
+  }
+
+  async addPin(request: AddPinRequest): Promise<void> {
+    try {
+      await requestJson<CommonspacePin>('/api/pins', { method: 'POST', body: JSON.stringify(request) })
+      await this.refresh()
+    } catch (error) {
+      this.set({ ...this.snapshot, error: error instanceof Error ? error.message : String(error) })
+      throw error
+    }
+  }
+
+  async removePin(pinId: string): Promise<void> {
+    try {
+      await requestJson<CommonspacePin>(`/api/pins/${encodeURIComponent(pinId)}/remove`, { method: 'POST' })
+      await this.refresh()
+    } catch (error) {
+      this.set({ ...this.snapshot, error: error instanceof Error ? error.message : String(error) })
+      throw error
+    }
+  }
+
+  async editMessage(messageId: string, request: Omit<EditMessageRequest, 'messageId'>): Promise<void> {
+    try {
+      const result = await requestJson<SendMessageResponse>(`/api/messages/${encodeURIComponent(messageId)}/edit`, {
+        method: 'POST',
+        body: JSON.stringify(request),
+      })
+      const bootstrap = this.snapshot.bootstrap
+      if (bootstrap === null) {
+        await this.refresh()
+        return
+      }
+      const merged = this.mergeBootstrap({ ...bootstrap, state: result.state })
+      this.set({
+        ...this.snapshot,
+        bootstrap: merged,
+        activeProjectId: this.resolveActiveProject(merged),
+        activeThreadId: result.thread?.id ?? this.snapshot.activeThreadId,
+        error: null,
+      })
+    } catch (error) {
+      this.set({ ...this.snapshot, error: error instanceof Error ? error.message : String(error) })
+      throw error
+    }
+  }
+
+  async deleteMessage(messageId: string): Promise<void> {
+    try {
+      await requestJson<CommonspaceMessage>(`/api/messages/${encodeURIComponent(messageId)}/delete`, { method: 'POST' })
       await this.refresh()
     } catch (error) {
       this.set({ ...this.snapshot, error: error instanceof Error ? error.message : String(error) })

@@ -151,6 +151,31 @@ describe('standalone Commonspace server', () => {
       error: 'unknown thread',
     })
 
+    const missingPinResponse = await fetch(`${running.url}/api/pins/missing/remove`, {
+      method: 'POST',
+      headers: { origin: running.url },
+    })
+    expect(missingPinResponse.status).toBe(400)
+    await expect(missingPinResponse.json()).resolves.toEqual({
+      code: 'pin_remove_failed',
+      error: 'unknown pin',
+    })
+
+    const missingEditResponse = await fetch(`${running.url}/api/messages/missing/edit`, {
+      method: 'POST',
+      headers: { origin: running.url, 'content-type': 'application/json' },
+      body: JSON.stringify({ text: 'Edited message.' }),
+    })
+    expect(missingEditResponse.status).toBe(400)
+    await expect(missingEditResponse.json()).resolves.toEqual({ code: 'message_edit_failed', error: 'unknown message' })
+
+    const missingDeleteResponse = await fetch(`${running.url}/api/messages/missing/delete`, {
+      method: 'POST',
+      headers: { origin: running.url },
+    })
+    expect(missingDeleteResponse.status).toBe(400)
+    await expect(missingDeleteResponse.json()).resolves.toEqual({ code: 'message_delete_failed', error: 'unknown message' })
+
     const discoveryResponse = await fetch(`${running.url}/api/discover-agents`, {
       method: 'POST',
       headers: { origin: running.url, 'content-type': 'application/json' },

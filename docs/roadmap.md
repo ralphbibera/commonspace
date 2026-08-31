@@ -23,6 +23,9 @@ Commonspace is a private preview focused on durable human-agent conversation and
 - Single-assignment rerouting with visible retained attempts, assignment-bound replies, corrected Agent/Project scope, and compacted per-Channel routing knowledge used by later inference.
 - Immutable Channel-context snapshots per Thread, independent editable/pressure-compacted Thread context, and visible manual compaction controls.
 - Prospective multi-Project/projectless Thread references that preserve earlier delivery and active-session scope.
+- Channel/Thread pins for messages, attachments, and notes with scoped MCP visibility and removal tombstones.
+- Human message edit branches with new native continuity, previous-version navigation, and pre-branch context; durable deletion markers remove content without rewriting delivery history.
+- Channel context editing, status inspection, manual compaction, and note-pin controls.
 - Project Files, Git Changes/diffs, image attachments, and reply speech playback.
 - Work/result binding through per-reply run attribution, changed-file surfaces, activity traces, and validation evidence emitted by the harness.
 - Hard-boundary cancellation, stale-session recovery that distinguishes missing from transient failures, and graceful bridge shutdown.
@@ -31,8 +34,7 @@ Commonspace is a private preview focused on durable human-agent conversation and
 
 ## Next: product behavior
 
-- Add pins and general human/agent file attachments.
-- Add message edit branches and visible deletion markers without rewriting delivered native-session history.
+- Add general human/agent file attachments.
 - Normalize native permission requests and add clearer runtime/authentication diagnostics.
 - Add export/import and retention controls for non-secret Commonspace data.
 - Package an installed background service and optional OS notifications.
@@ -40,8 +42,7 @@ Commonspace is a private preview focused on durable human-agent conversation and
 ## Later UI/UX work
 
 - Multi-Project controls for new roots and inferred-reference correction.
-- Channel context inspection, editing, pinning, and manual-compaction controls; add Thread pinning.
-- Message-version, file, permission, and notification surfaces.
+- File, permission, and notification surfaces.
 - Keyboard and narrow-screen acceptance coverage across every flow.
 
 ## Scale-dependent work

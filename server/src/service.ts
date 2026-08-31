@@ -5,6 +5,7 @@ import { homedir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
 import { promisify } from 'node:util'
 import type {
+  AddPinRequest,
   AgentAdapterKind,
   CommonspaceAgentTrace,
   CommonspaceAgentDefinition,
@@ -16,6 +17,7 @@ import type {
   CommonspaceImageMimeType,
   CommonspaceMessage,
   CommonspaceMutation,
+  CommonspacePin,
   CommonspaceRoutingConfiguration,
   CommonspaceRoutingAssignment,
   CommonspaceRoutingCorrection,
@@ -30,6 +32,7 @@ import type {
   CommonspaceTracePlanStep,
   CommonspaceThread,
   CommonspaceThreadContext,
+  EditMessageRequest,
   SendMessageRequest,
   SendMessageResponse,
   ReorderFollowupRequest,
@@ -201,6 +204,12 @@ interface PreparedSend {
   project?: CommonspaceState['projects'][number]
   thread?: CommonspaceThread
   dmSessionName?: string
+  version?: Pick<CommonspaceMessage, 'versionRootMessageId' | 'supersedesMessageId' | 'branchId'>
+  branch?: {
+    branchedFromThreadId: string
+    branchPointMessageId: string
+    channelSnapshot: CommonspaceThread['context']['channelSnapshot']
+  }
 }
 
 interface PrivateRoutingConfiguration extends Omit<CommonspaceRoutingConfiguration, 'apiKeyConfigured'> {
@@ -740,6 +749,8 @@ function sanitizeThreads(value: unknown, channels: readonly CommonspaceState['ch
     if (channel === undefined) continue
     const referencedProjects = loadedProjectIds(thread, projectIds)
     const createdAt = loadedString(thread.createdAt, 100)
+    const branchedFromThreadId = loadedId(thread.branchedFromThreadId)
+    const branchPointMessageId = loadedId(thread.branchPointMessageId)
     ids.add(id)
     threads.push({
       id,
@@ -748,6 +759,9 @@ function sanitizeThreads(value: unknown, channels: readonly CommonspaceState['ch
       projectId: referencedProjects[0] ?? null,
       rootMessageId,
       agentIds: loadedStringArray(thread.agentIds, 64, 200),
+      ...(branchedFromThreadId === null || branchPointMessageId === null
+        ? {}
+        : { branchedFromThreadId, branchPointMessageId }),
       context: sanitizeThreadContext(thread.context, createdAt),
       createdAt,
     })
@@ -952,14 +966,28 @@ function sanitizeMessages(
       if (message.parentMessageId !== undefined && parentMessageId === null) continue
       const sourceMessageId = loadedId(message.sourceMessageId)
       if (message.sourceMessageId !== undefined && sourceMessageId === null) continue
+      const versionRootMessageId = loadedId(message.versionRootMessageId)
+      if (message.versionRootMessageId !== undefined && versionRootMessageId === null) continue
+      const supersedesMessageId = loadedId(message.supersedesMessageId)
+      if (message.supersedesMessageId !== undefined && supersedesMessageId === null) continue
+      const branchId = loadedId(message.branchId)
+      if (message.branchId !== undefined && branchId === null) continue
+      const deletedAt = loadedIsoTimestamp(message.deletedAt)
       const routingAssignmentId = loadedId(message.routingAssignmentId)
       if (message.routingAssignmentId !== undefined && routingAssignmentId === null) continue
-      const trace = message.authorType === 'agent' ? sanitizeAgentTrace(message.trace) : undefined
-      const runAttribution = message.authorType === 'agent' ? sanitizeRunAttribution(message.runAttribution) : undefined
-      const attachments = sanitizeImageAttachments(message.attachments)
+      const trace = deletedAt === null && message.authorType === 'agent' ? sanitizeAgentTrace(message.trace) : undefined
+      const runAttribution = deletedAt === null && message.authorType === 'agent' ? sanitizeRunAttribution(message.runAttribution) : undefined
+      const attachments = deletedAt === null ? sanitizeImageAttachments(message.attachments) : undefined
 
       const referencedProjects = loadedProjectIds(message, projectIds)
-      const routing = sanitizeRoutingDecision(message.routing, agentIds, projectIds, id, message.text, referencedProjects)
+      const loadedRouting = sanitizeRoutingDecision(message.routing, agentIds, projectIds, id, deletedAt === null ? message.text : '[deleted]', referencedProjects)
+      const routing = deletedAt === null || loadedRouting === undefined
+        ? loadedRouting
+        : {
+            ...loadedRouting,
+            assignments: loadedRouting.assignments.map(assignment => ({ ...assignment, subRequest: '[deleted]' })),
+            reason: 'Routing record retained for deleted message.',
+          }
       seen.add(id)
       sanitized.push({
         id,
@@ -967,7 +995,7 @@ function sanitizeMessages(
         authorType: message.authorType,
         authorId,
         authorName,
-        text: message.text.slice(0, 64_000),
+        text: deletedAt === null ? message.text.slice(0, 64_000) : '',
         ...(attachments === undefined ? {} : { attachments }),
 
         createdAt: loadedString(message.createdAt, 100),
@@ -975,6 +1003,10 @@ function sanitizeMessages(
         ...(threadId === null ? {} : { threadId }),
         ...(parentMessageId === null ? {} : { parentMessageId }),
         ...(sourceMessageId === null ? {} : { sourceMessageId }),
+        ...(versionRootMessageId === null ? {} : { versionRootMessageId }),
+        ...(supersedesMessageId === null ? {} : { supersedesMessageId }),
+        ...(branchId === null ? {} : { branchId }),
+        ...(deletedAt === null ? {} : { deletedAt }),
         ...(routingAssignmentId === null ? {} : { routingAssignmentId }),
         ...(trace === undefined ? {} : { trace }),
         ...(runAttribution === undefined ? {} : { runAttribution }),
@@ -993,6 +1025,53 @@ function sanitizeMessages(
     messages[key] = sanitized
   }
   return messages
+}
+
+function sanitizePins(
+  value: unknown,
+  channels: readonly CommonspaceState['channels'][number][],
+  threads: readonly CommonspaceThread[],
+  messages: CommonspaceState['messages'],
+): CommonspacePin[] {
+  if (!Array.isArray(value)) return []
+  const channelIds = new Set(channels.map(channel => channel.id))
+  const threadIds = new Set(threads.map(thread => thread.id))
+  const messageById = new Map(Object.values(messages).flat().map(message => [message.id, message]))
+  const pins: CommonspacePin[] = []
+  const ids = new Set<string>()
+  for (const candidate of value) {
+    const pin = plainRecord(candidate)
+    const scope = plainRecord(pin?.scope)
+    const id = loadedId(pin?.id)
+    const scopeId = loadedId(scope?.id)
+    const removedAt = loadedIsoTimestamp(pin?.removedAt)
+    if (pin === null || scope === null || id === null || ids.has(id) || scopeId === null ||
+      (scope.kind !== 'channel' && scope.kind !== 'thread') ||
+      (removedAt === null && !(scope.kind === 'channel' ? channelIds.has(scopeId) : threadIds.has(scopeId)))) continue
+    const common = {
+      id,
+      scope: { kind: scope.kind, id: scopeId },
+      createdAt: loadedString(pin.createdAt, 100),
+      removedAt,
+    } as const
+    if (pin.kind === 'note') {
+      const note = loadedString(pin.note, 4_000).normalize('NFKC').trim()
+      if (note === '') continue
+      pins.push({ ...common, kind: 'note', note })
+    } else if (pin.kind === 'message' || pin.kind === 'attachment') {
+      const messageId = loadedId(pin.messageId)
+      const message = messageId === null ? undefined : messageById.get(messageId)
+      if (messageId === null || (removedAt === null && message === undefined)) continue
+      if (pin.kind === 'message') pins.push({ ...common, kind: 'message', messageId })
+      else {
+        const attachmentId = loadedId(pin.attachmentId)
+        if (attachmentId === null || (removedAt === null && message?.attachments?.some(attachment => attachment.id === attachmentId) !== true)) continue
+        pins.push({ ...common, kind: 'attachment', messageId, attachmentId })
+      }
+    } else continue
+    ids.add(id)
+  }
+  return pins
 }
 
 function sanitizeLoadedState(value: unknown): CommonspaceState {
@@ -1036,6 +1115,7 @@ function sanitizeLoadedState(value: unknown): CommonspaceState {
       },
     }))
   }
+  const pins = sanitizePins(record.pins, channels, threads, messages)
   const inboxMessageIds = new Set(Object.values(messages).flatMap(entries => entries
     .filter(message => message.authorType === 'agent' || message.authorType === 'system' || message.replyStatus === 'error' || message.replyStatus === 'failed' || message.replyStatus === 'timeout')
     .map(message => message.id)))
@@ -1056,6 +1136,7 @@ function sanitizeLoadedState(value: unknown): CommonspaceState {
     projects,
     channels,
     threads,
+    pins,
     messages,
   }
 }
@@ -1313,6 +1394,21 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
     const conversation = scoped.channel === undefined
       ? { kind: 'dm', id: scope.conversation.id, name: `Direct message with ${scoped.agent.displayName}` }
       : { kind: 'channel', id: scoped.channel.id, name: scoped.channel.name }
+    const scopedPins = scoped.channel === undefined
+      ? []
+      : this.state.pins.filter(pin => pin.removedAt === null && (
+          (pin.scope.kind === 'channel' && pin.scope.id === scoped.channel?.id) ||
+          (pin.scope.kind === 'thread' && pin.scope.id === scoped.thread?.id)))
+        .map((pin) => {
+          if (pin.kind === 'note') return pin
+          const source = Object.values(this.state.messages).flat().find(message => message.id === pin.messageId)
+          if (source === undefined) return pin
+          if (pin.kind === 'message') {
+            return { ...pin, source: { authorName: source.authorName, text: source.text } }
+          }
+          const attachment = source.attachments?.find(candidate => candidate.id === pin.attachmentId)
+          return { ...pin, source: { authorName: source.authorName, ...(attachment === undefined ? {} : { attachment }) } }
+        })
     return {
       agent: {
         id: scoped.agent.id,
@@ -1334,6 +1430,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
           }),
       instructions: scoped.channel?.instructions ?? '',
       memory: scoped.channel?.memory ?? { summary: '', decisions: [], openQuestions: [], threadIds: [], updatedAt: null },
+      pins: scopedPins,
       ...(scoped.channel === undefined || scoped.thread === undefined
         ? {}
         : {
@@ -1636,6 +1733,78 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
     }))
   }
 
+  async addPin(request: AddPinRequest): Promise<CommonspacePin> {
+    return this.withAdmission(async () => {
+      const scope = plainRecord(request.scope)
+      if (scope === null || (scope.kind !== 'channel' && scope.kind !== 'thread') || typeof scope.id !== 'string' || scope.id === '') {
+        throw new Error('invalid pin scope')
+      }
+      const pinScope = { kind: scope.kind, id: scope.id } as const
+      const channelId = pinScope.kind === 'channel'
+        ? this.state.channels.some(channel => channel.id === pinScope.id) ? pinScope.id : undefined
+        : this.state.threads.find(thread => thread.id === pinScope.id)?.channelId
+      if (channelId === undefined) throw new Error('unknown pin scope')
+      let sourceMessage: CommonspaceMessage | undefined
+      if (request.kind === 'message' || request.kind === 'attachment') {
+        if (typeof request.messageId !== 'string' || request.messageId === '') throw new Error('pin message id is required')
+        sourceMessage = Object.values(this.state.messages).flat().find(message => message.id === request.messageId)
+        const belongsToScope = pinScope.kind === 'channel'
+          ? sourceMessage?.conversation.kind === 'channel' && sourceMessage.conversation.id === channelId
+          : sourceMessage?.threadId === pinScope.id
+        if (sourceMessage === undefined || !belongsToScope) throw new Error('pin source is outside its scope')
+      }
+      const common = {
+        id: crypto.randomUUID(),
+        scope: pinScope,
+        createdAt: now(),
+        removedAt: null,
+      }
+      let pin: CommonspacePin
+      if (request.kind === 'note') {
+        if (typeof request.note !== 'string') throw new Error('pin note is required')
+        const note = request.note.normalize('NFKC').trim().slice(0, 4_000)
+        if (note === '') throw new Error('pin note is required')
+        pin = { ...common, kind: 'note', note }
+      } else if (request.kind === 'message') {
+        pin = { ...common, kind: 'message', messageId: request.messageId }
+      } else if (request.kind === 'attachment') {
+        if (typeof request.attachmentId !== 'string' ||
+          sourceMessage?.attachments?.some(attachment => attachment.id === request.attachmentId) !== true) {
+          throw new Error('pin attachment not found')
+        }
+        pin = { ...common, kind: 'attachment', messageId: request.messageId, attachmentId: request.attachmentId }
+      } else {
+        throw new Error('unsupported pin kind')
+      }
+      this.state = {
+        ...this.state,
+        revision: this.state.revision + 1,
+        pins: [...this.state.pins, pin],
+      }
+      await this.persist()
+      this.broadcastRevision()
+      return structuredClone(pin)
+    })
+  }
+
+  async removePin(pinId: string): Promise<CommonspacePin> {
+    return this.withAdmission(async () => {
+      if (typeof pinId !== 'string' || pinId === '') throw new Error('pin id is required')
+      const pin = this.state.pins.find(candidate => candidate.id === pinId)
+      if (pin === undefined) throw new Error('unknown pin')
+      if (pin.removedAt !== null) return structuredClone(pin)
+      const removed = { ...pin, removedAt: now() }
+      this.state = {
+        ...this.state,
+        revision: this.state.revision + 1,
+        pins: this.state.pins.map(candidate => candidate.id === pinId ? removed : candidate),
+      }
+      await this.persist()
+      this.broadcastRevision()
+      return structuredClone(removed)
+    })
+  }
+
   async discoverAgents(adapter: AgentAdapterKind): Promise<CommonspaceBootstrap> {
     if (adapter !== 'hermes' && adapter !== 'codex') throw new Error('unsupported agent adapter')
     const discovered = await this.discoverAgentCandidates(adapter)
@@ -1700,7 +1869,16 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
     const boundedToNativeSession = scope.conversation.kind === 'dm'
       ? messages.slice(messages.findLastIndex(message => message.authorId === DM_SESSION_BOUNDARY_AUTHOR_ID) + 1)
       : messages
-    return scope.threadId === undefined ? boundedToNativeSession : boundedToNativeSession.filter(message => message.threadId === scope.threadId)
+    if (scope.threadId === undefined) return boundedToNativeSession
+    const current = boundedToNativeSession.filter(message => message.threadId === scope.threadId)
+    const thread = this.state.threads.find(candidate => candidate.id === scope.threadId)
+    if (thread?.branchedFromThreadId === undefined || thread.branchPointMessageId === undefined) return current
+    const branchPointIndex = boundedToNativeSession.findIndex(message => message.id === thread.branchPointMessageId)
+    if (branchPointIndex < 0) return current
+    const prior = boundedToNativeSession
+      .slice(0, branchPointIndex)
+      .filter(message => message.threadId === thread.branchedFromThreadId)
+    return [...prior, ...current]
   }
 
   private boundedMcpMessages(source: readonly CommonspaceMessage[], limit: number): Array<Record<string, unknown> & { id: string }> {
@@ -1901,24 +2079,161 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
         throw new Error('invalid follow-up delivery mode')
       }
       const prepared = await this.prepareSend(request)
-      await this.overrides.beforeAcceptSend?.(prepared)
-      const response = await this.acceptSend(prepared)
-      const scopeKey = this.followupScopeKey(prepared.request.conversation, response.thread?.id)
-      if (this.activeConversationRuns.has(scopeKey)) {
-        const delivery = request.delivery ?? 'queue'
-        const queue = this.pendingFollowups.get(scopeKey) ?? []
-        const pending = { prepared, response, delivery }
-        if (delivery === 'steer' || delivery === 'stop-and-send') queue.unshift(pending)
-        else queue.push(pending)
-        this.pendingFollowups.set(scopeKey, queue)
-        if (delivery === 'steer' || delivery === 'stop-and-send') {
-          await this.abortConversationRuns(prepared.request.conversation, response.thread?.id, 'Stopped for a follow-up.')
-        }
-      } else {
-        this.startConversationRun(scopeKey, { prepared, response, delivery: request.delivery ?? 'queue' })
-      }
-      return response
+      return this.acceptPreparedSend(prepared)
     })
+  }
+
+  async editMessage(request: EditMessageRequest): Promise<SendMessageResponse> {
+    if (typeof request.messageId !== 'string' || request.messageId === '') throw new Error('message id is required')
+    if (typeof request.text !== 'string') throw new Error('edited message text is required')
+    if (request.text.normalize('NFKC').trim() === '') throw new Error('message text or image is required')
+    if (request.projectIds !== undefined && (!Array.isArray(request.projectIds) || request.projectIds.some(projectId =>
+      typeof projectId !== 'string' || !this.state.projects.some(project => project.id === projectId)))) {
+      throw new Error('edited message references an unknown project')
+    }
+    const source = Object.values(this.state.messages).flat().find(message => message.id === request.messageId)
+    if (source === undefined) throw new Error('unknown message')
+    if (source.authorType !== 'user') throw new Error('only human messages can be edited')
+    if (source.deletedAt !== undefined) throw new Error('deleted messages cannot be edited')
+    if (source.conversation.kind === 'dm') await this.mutate({ action: 'reset-dm', agentId: source.conversation.id })
+    return this.withAdmission(async () => {
+      const currentSource = Object.values(this.state.messages).flat().find(message => message.id === source.id)
+      if (currentSource === undefined || currentSource.authorType !== 'user') throw new Error('message changed before editing')
+      if (currentSource.deletedAt !== undefined) throw new Error('deleted messages cannot be edited')
+      const prepared = await this.prepareSend({
+        conversation: currentSource.conversation,
+        text: request.text,
+        projectIds: request.projectIds ?? referencedProjectIds(currentSource),
+      })
+      prepared.version = {
+        versionRootMessageId: currentSource.versionRootMessageId ?? currentSource.id,
+        supersedesMessageId: currentSource.id,
+        branchId: crypto.randomUUID(),
+      }
+      if (currentSource.conversation.kind === 'channel' && currentSource.threadId !== undefined) {
+        const sourceThread = this.state.threads.find(thread => thread.id === currentSource.threadId)
+        if (sourceThread === undefined) throw new Error('message branch source thread is unavailable')
+        prepared.branch = {
+          branchedFromThreadId: sourceThread.id,
+          branchPointMessageId: currentSource.id,
+          channelSnapshot: structuredClone(sourceThread.context.channelSnapshot),
+        }
+      }
+      return this.acceptPreparedSend(prepared)
+    })
+  }
+
+  async deleteMessage(messageId: string): Promise<CommonspaceMessage> {
+    return this.withAdmission(async () => {
+      if (typeof messageId !== 'string' || messageId === '') throw new Error('message id is required')
+      const located = Object.entries(this.state.messages).flatMap(([key, messages]) => {
+        const message = messages.find(candidate => candidate.id === messageId)
+        return message === undefined ? [] : [{ key, message }]
+      })[0]
+      if (located === undefined) throw new Error('unknown message')
+      if (located.message.deletedAt !== undefined) return structuredClone(located.message)
+      const attachmentIds = located.message.attachments?.map(attachment => attachment.id) ?? []
+      const deleted: CommonspaceMessage = {
+        ...located.message,
+        text: '',
+        deletedAt: now(),
+        ...(located.message.routing === undefined
+          ? {}
+          : {
+              routing: {
+                ...located.message.routing,
+                assignments: located.message.routing.assignments.map(assignment => ({ ...assignment, subRequest: '[deleted]' })),
+                reason: 'Routing record retained for deleted message.',
+              },
+            }),
+      }
+      delete deleted.attachments
+      delete deleted.trace
+      delete deleted.runAttribution
+      delete deleted.replyError
+      const previousState = this.state
+      this.state = {
+        ...this.state,
+        revision: this.state.revision + 1,
+        messages: {
+          ...this.state.messages,
+          [located.key]: (this.state.messages[located.key] ?? []).map(message => message.id === messageId ? deleted : message),
+        },
+      }
+      if (deleted.threadId !== undefined) {
+        const thread = this.state.threads.find(candidate => candidate.id === deleted.threadId)
+        if (thread !== undefined) {
+          const projection = projectThreadMemory(this.state, thread.id)
+          const memory = thread.context.memory.origin === 'user'
+            ? mergeThreadMemoryProjection(thread.context.memory, projection)
+            : projection
+          this.state = {
+            ...this.state,
+            threads: this.state.threads.map(candidate => candidate.id === thread.id
+              ? { ...candidate, context: { ...candidate.context, memory } }
+              : candidate),
+          }
+        }
+      }
+      if (deleted.conversation.kind === 'channel') {
+        const channel = this.state.channels.find(candidate => candidate.id === deleted.conversation.id)
+        if (channel !== undefined) {
+          const projection = projectChannelMemory(this.state, channel.id, this.state.defaults.memoryThreads)
+          const memory = channel.memory.origin === 'user'
+            ? mergeChannelMemoryProjection(channel.memory, projection)
+            : projection
+          this.state = {
+            ...this.state,
+            channels: this.state.channels.map(candidate => candidate.id === channel.id
+              ? {
+                  ...candidate,
+                  memory,
+                  ...(deleted.routing === undefined
+                    ? {}
+                    : {
+                        routingMemory: {
+                          ...candidate.routingMemory,
+                          summary: '',
+                          status: 'stale',
+                          compactedThroughCorrectionId: null,
+                          updatedAt: null,
+                        },
+                      }),
+                }
+              : candidate),
+          }
+        }
+      }
+      try {
+        await this.persist()
+      } catch (error) {
+        this.state = previousState
+        throw error
+      }
+      await this.removeImageAttachments(attachmentIds)
+      this.broadcastRevision()
+      return structuredClone(deleted)
+    })
+  }
+
+  private async acceptPreparedSend(prepared: PreparedSend): Promise<SendMessageResponse> {
+    await this.overrides.beforeAcceptSend?.(prepared)
+    const response = await this.acceptSend(prepared)
+    const scopeKey = this.followupScopeKey(prepared.request.conversation, response.thread?.id)
+    const delivery = prepared.request.delivery ?? 'queue'
+    if (this.activeConversationRuns.has(scopeKey)) {
+      const queue = this.pendingFollowups.get(scopeKey) ?? []
+      const pending = { prepared, response, delivery }
+      if (delivery === 'steer' || delivery === 'stop-and-send') queue.unshift(pending)
+      else queue.push(pending)
+      this.pendingFollowups.set(scopeKey, queue)
+      if (delivery === 'steer' || delivery === 'stop-and-send') {
+        await this.abortConversationRuns(prepared.request.conversation, response.thread?.id, 'Stopped for a follow-up.')
+      }
+    } else {
+      this.startConversationRun(scopeKey, { prepared, response, delivery })
+    }
+    return response
   }
 
   async rerouteAssignment(request: RerouteAssignmentRequest): Promise<RerouteAssignmentResponse> {
@@ -2479,7 +2794,15 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
         projectId: prepared.project?.id ?? null,
         rootMessageId: acceptedId,
         agentIds: prepared.agentIds,
-        context: createThreadContext(prepared.channel?.memory ?? emptyChannelMemory(), createdAt),
+        ...(prepared.branch === undefined
+          ? {}
+          : {
+              branchedFromThreadId: prepared.branch.branchedFromThreadId,
+              branchPointMessageId: prepared.branch.branchPointMessageId,
+            }),
+        context: prepared.branch === undefined
+          ? createThreadContext(prepared.channel?.memory ?? emptyChannelMemory(), createdAt)
+          : { channelSnapshot: prepared.branch.channelSnapshot, memory: emptyThreadMemory() },
         createdAt,
       }
     }
@@ -2490,6 +2813,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
       authorId: 'user',
       authorName: 'Ralph',
       text: prepared.text,
+      ...(prepared.version === undefined ? {} : prepared.version),
       ...(prepared.routing === undefined ? {} : { routing: prepared.routing }),
       ...(prepared.attachments.length === 0 ? {} : { attachments: prepared.attachments.map(attachment => attachment.metadata) }),
 

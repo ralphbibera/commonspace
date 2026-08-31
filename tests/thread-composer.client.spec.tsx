@@ -12,6 +12,8 @@ function renderChannelThread(
   routingPending = false,
   routingResolved = false,
   routingCorrected = false,
+  rootDeleted = false,
+  rootVersioned = false,
 ) {
   const listeners = new Set<() => void>()
   const initialThreadId: string | null = threadOpen ? 'thread-1' : null
@@ -20,6 +22,10 @@ function renderChannelThread(
   const rerouteAssignment = vi.fn(async () => undefined)
   const updateThreadContext = vi.fn(async () => undefined)
   const compactThreadContext = vi.fn(async () => undefined)
+  const addPin = vi.fn(async () => undefined)
+  const removePin = vi.fn(async () => undefined)
+  const editMessage = vi.fn(async () => undefined)
+  const deleteMessage = vi.fn(async () => undefined)
   const mutate = vi.fn(async () => undefined)
   const selectThread = vi.fn((threadId: string | null) => {
     snapshot = { ...snapshot, activeThreadId: threadId }
@@ -125,6 +131,14 @@ function renderChannelThread(
           },
           createdAt: '2026-08-26T00:00:00.000Z',
         }],
+        pins: [{
+          id: 'pin-1',
+          scope: { kind: 'thread' as const, id: 'thread-1' },
+          kind: 'note' as const,
+          note: 'Pinned Thread guidance.',
+          createdAt: '2026-08-26T00:04:00.000Z',
+          removedAt: null,
+        }],
         messages: {
           'channel:general': [
             {
@@ -133,8 +147,16 @@ function renderChannelThread(
               authorType: 'user',
               authorId: 'user',
               authorName: 'Ralph',
-              text: 'Start the investigation',
+              text: rootDeleted ? '' : 'Start the investigation',
+              projectIds: ['project-1'],
+              projectId: 'project-1',
               createdAt: '2026-08-26T00:00:00.000Z',
+              ...(rootDeleted ? { deletedAt: '2026-08-26T00:05:00.000Z' } : {}),
+              ...(rootVersioned ? {
+                versionRootMessageId: 'reply-1',
+                supersedesMessageId: 'reply-1',
+                branchId: 'branch-1',
+              } : {}),
               threadId: 'thread-1',
               ...(routingPending
                 ? { routing: { source: 'ai' as const, status: 'pending' as const, agentIds: [], assignments: [], reason: 'Routing with inference.' } }
@@ -223,11 +245,15 @@ function renderChannelThread(
     rerouteAssignment,
     updateThreadContext,
     compactThreadContext,
+    addPin,
+    removePin,
+    editMessage,
+    deleteMessage,
     mutate,
     selectThread,
   }
   render(<CommonspaceConversation store={store as never} />)
-  return { mutate, selectThread, send, sendDirectReply, rerouteAssignment, updateThreadContext, compactThreadContext }
+  return { mutate, selectThread, send, sendDirectReply, rerouteAssignment, updateThreadContext, compactThreadContext, addPin, removePin, editMessage, deleteMessage }
 }
 
 afterEach(cleanup)
@@ -317,6 +343,73 @@ describe('Commonspace reply-thread composer', () => {
     await waitFor(() => {
       expect(send).toHaveBeenCalledWith('Continue projectless.', 'thread-1', [], undefined, [])
     })
+  })
+
+  it('adds, removes, and sources Thread pins', async () => {
+    const { addPin, removePin } = renderChannelThread()
+    fireEvent.click(screen.getByRole('button', { name: 'Open thread context' }))
+    const inspector = screen.getByRole('region', { name: 'Thread context' })
+    expect(within(inspector).getByText('Pinned Thread guidance.')).toBeTruthy()
+    fireEvent.click(within(inspector).getByRole('button', { name: 'Remove pin Pinned Thread guidance.' }))
+    expect(removePin).toHaveBeenCalledWith('pin-1')
+
+    const note = within(inspector).getByLabelText('New Thread pin note')
+    fireEvent.change(note, { target: { value: 'Keep this new evidence visible.' } })
+    fireEvent.submit(note.closest('form')!)
+    await waitFor(() => {
+      expect(addPin).toHaveBeenCalledWith({
+        scope: { kind: 'thread', id: 'thread-1' },
+        kind: 'note',
+        note: 'Keep this new evidence visible.',
+      })
+    })
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Pin message from Ralph' })[0]!)
+    expect(addPin).toHaveBeenCalledWith({
+      scope: { kind: 'thread', id: 'thread-1' },
+      kind: 'message',
+      messageId: 'root-1',
+    })
+  })
+
+  it('edits only human messages into a new branch with explicit Projects', async () => {
+    const { editMessage } = renderChannelThread()
+    expect(screen.queryByRole('button', { name: 'Edit message from Frontend' })).toBeNull()
+    fireEvent.click(screen.getAllByRole('button', { name: 'Edit message from Ralph' })[0]!)
+    const form = screen.getByRole('form', { name: 'Edit delivered message' })
+    fireEvent.change(within(form).getByLabelText('Edited message'), { target: { value: 'Corrected investigation scope.' } })
+    fireEvent.submit(form)
+
+    await waitFor(() => {
+      expect(editMessage).toHaveBeenCalledWith('root-1', {
+        text: 'Corrected investigation scope.',
+        projectIds: ['project-1'],
+      })
+    })
+  })
+
+  it('confirms deletion of delivered content', async () => {
+    const { deleteMessage } = renderChannelThread()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Delete message from Ralph' })[0]!)
+
+    await waitFor(() => { expect(deleteMessage).toHaveBeenCalledWith('root-1') })
+  })
+
+  it('renders a visible marker for deleted delivered content', () => {
+    renderChannelThread('complete', false, true, false, false, false, true)
+
+    expect(screen.getAllByText(/Message deleted · content was delivered at/u)).toHaveLength(2)
+    expect(screen.queryByText('Start the investigation')).toBeNull()
+  })
+
+  it('navigates from an edited message to its preserved previous version', () => {
+    const { selectThread } = renderChannelThread('complete', false, true, false, false, false, false, true)
+
+    expect(screen.getAllByText('Edited branch')).toHaveLength(2)
+    fireEvent.click(screen.getAllByRole('button', { name: 'Open previous message version' })[0]!)
+    expect(selectThread).toHaveBeenCalledWith('thread-1')
   })
 
   it('opens at an equal split and lets the thread be widened by dragging', () => {

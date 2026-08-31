@@ -137,6 +137,7 @@ export function createInitialState(): CommonspaceState {
     projects: [],
     channels: [],
     threads: [],
+    pins: [],
     messages: {},
   }
 }
@@ -495,6 +496,10 @@ export function applyMutation(
       const removedSessionNames = new Set(state.threads
         .filter(thread => thread.channelId === mutation.channelId)
         .map(thread => `Commonspace Thread: ${thread.id}`))
+      const removedThreadIds = new Set(state.threads
+        .filter(thread => thread.channelId === mutation.channelId)
+        .map(thread => thread.id))
+      const removedAt = dependencies.now()
       const agentSessions = Object.fromEntries(Object.entries(state.agentSessions).flatMap(([agentId, sessions]) => {
         const remaining = Object.fromEntries(Object.entries(sessions).filter(([name]) => !removedSessionNames.has(name)))
         return Object.keys(remaining).length === 0 ? [] : [[agentId, remaining]]
@@ -504,6 +509,11 @@ export function applyMutation(
         revision: nextRevision(state),
         channels: state.channels.filter(channel => channel.id !== mutation.channelId),
         threads: state.threads.filter(thread => thread.channelId !== mutation.channelId),
+        pins: state.pins.map(pin => pin.removedAt === null && (
+          (pin.scope.kind === 'channel' && pin.scope.id === mutation.channelId) ||
+          (pin.scope.kind === 'thread' && removedThreadIds.has(pin.scope.id)))
+          ? { ...pin, removedAt }
+          : pin),
         agentSessions,
         messages: Object.fromEntries(Object.entries(state.messages).filter(([key]) => key !== `channel:${mutation.channelId}`)),
       }
