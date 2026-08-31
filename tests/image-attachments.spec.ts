@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { COMMONSPACE_STATE_VERSION } from '@commonspace/shared'
 import { startCommonspaceServer, type RunningCommonspaceServer } from '../server/src/index.ts'
 import { CommonspaceHostService } from '../server/src/service.ts'
-import { addTestCodexAgents } from './test-codex-agents.ts'
+import { addTestHarness, discoverTestHarnesses } from './test-harnesses.ts'
 
 const roots: string[] = []
 const servers: RunningCommonspaceServer[] = []
@@ -34,16 +34,16 @@ describe('managed chat image attachments', () => {
       inboxReadAt: null,
       inboxReadMessageIds: [],
       defaults: { model: null, reasoning: 'max', maxAgentsPerTurn: 4, memoryThreads: 12 },
-      agents: [{ id: 'codex-review-bot', displayName: 'Review Bot', adapter: 'codex', model: null, createdAt: 'now' }],
+      agents: [{ id: 'codex', displayName: 'Review Bot', adapter: 'codex', model: null, createdAt: 'now' }],
       dmSessions: {},
       agentSessions: {},
       projects: [],
       channels: [],
       threads: [],
       messages: {
-        'dm:codex-review-bot': [{
+        'dm:codex': [{
           id: 'message-1',
-          conversation: { kind: 'dm', id: 'codex-review-bot' },
+          conversation: { kind: 'dm', id: 'codex' },
           authorType: 'user',
           authorId: 'user',
           authorName: 'Ralph',
@@ -60,12 +60,12 @@ describe('managed chat image attachments', () => {
         }],
       },
     }))
-    const service = new CommonspaceHostService({} as never, { root }, { discoverAgents: async () => [] })
+    const service = new CommonspaceHostService({} as never, { root }, { discoverAgents: discoverTestHarnesses })
 
     await service.initialize()
 
     expect(service.snapshot().version).toBe(COMMONSPACE_STATE_VERSION)
-    expect(service.snapshot().messages['dm:codex-review-bot']?.[0]?.attachments).toEqual([{
+    expect(service.snapshot().messages['dm:codex']?.[0]?.attachments).toEqual([{
       id: '123e4567-e89b-42d3-a456-426614174000',
       name: 'clipboard.png',
       mimeType: 'image/png',
@@ -80,14 +80,14 @@ describe('managed chat image attachments', () => {
     const running = await startCommonspaceServer({
       root,
       port: 0,
-      dependencies: { discoverAgents: async () => [], runAgent },
+      dependencies: { discoverAgents: discoverTestHarnesses, runAgent },
       logger: { warn: () => undefined, info: () => undefined },
     })
     servers.push(running)
-    await addTestCodexAgents(running.service, 'codex-review-bot')
+    await addTestHarness(running.service, 'codex', 'Review Bot')
 
     const sendResponse = await post(running, '/api/send', {
-      conversation: { kind: 'dm', id: 'codex-review-bot' },
+      conversation: { kind: 'dm', id: 'codex' },
       text: '',
       attachments: [{ name: 'clipboard.png', mimeType: 'image/png', data: 'iVBORw==' }],
     })
@@ -132,14 +132,14 @@ describe('managed chat image attachments', () => {
     const running = await startCommonspaceServer({
       root,
       port: 0,
-      dependencies: { discoverAgents: async () => [], runAgent },
+      dependencies: { discoverAgents: discoverTestHarnesses, runAgent },
       logger: { warn: () => undefined, info: () => undefined },
     })
     servers.push(running)
-    await addTestCodexAgents(running.service, 'codex-review-bot')
+    await addTestHarness(running.service, 'codex', 'Review Bot')
 
     const response = await post(running, '/api/send', {
-      conversation: { kind: 'dm', id: 'codex-review-bot' },
+      conversation: { kind: 'dm', id: 'codex' },
       text: 'Inspect this',
       attachments: [{ name: 'active.svg', mimeType: 'image/svg+xml', data: 'PHN2Zz4=' }],
     })

@@ -32,7 +32,7 @@ All notable changes to Commonspace are recorded here.
 - New Channel threads include structurally selected Projects in inference routing context.
 - Queued and in-flight replies cannot execute or persist against stale Project authority after Project configuration changes.
 - Channel context refresh/compaction is race-safe and preserves human-authored context, while concurrent harness inference runs use isolated native sessions.
-- Hermes profiles are auto-discovered as candidates but join the Commonspace roster only after an explicit user choice; new Channels also start with no agents preselected.
+- Installed Hermes and Codex harnesses are discovered only during an explicit Add Agent flow; new Channels start with no agents preselected.
 - Local state migrates from versions 1–15 to version 16 for multi-Project references and durable Channel-context metadata, and automatically recovers an invalid primary from the previous valid rollback backup.
 - Independent agents can run concurrently; only the same native agent session is serialized.
 - Hermes and Codex use ACP for every agent turn.
@@ -43,8 +43,8 @@ All notable changes to Commonspace are recorded here.
 
 ### Removed
 
-- Managed Codex Agent creation through the generic mutation contract; every new Agent now enters the workspace through explicit native-profile discovery.
-- Commonspace-defined Codex `default`, `worker`, and `explorer` personas; Codex discovery now returns only native local profiles.
+- Managed/custom Agent creation and profile import; every new Agent now represents one explicitly selected supported harness installation.
+- Commonspace-defined Codex `default`, `worker`, and `explorer` personas.
 - Runtime-specific Hermes configuration inspection/mutation and the native-configuration dashboard; Commonspace now limits Agent customization to workspace-local appearance until capabilities are advertised through ACP.
 - Synthesized room/DM delivery envelopes, replayed Channel memory, duplicated recent transcripts, and execution-contract boilerplate from agent messages.
 - Plugin lifecycle, slot mounting, bundle manifests, and framework-specific build dependencies.

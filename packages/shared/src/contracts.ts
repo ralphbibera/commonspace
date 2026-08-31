@@ -51,7 +51,7 @@ export interface CommonspaceAgentProfile {
   avatarEmoji?: string
   accentColor?: string
   adapter: AgentAdapterKind
-  /** Native harness profile name used when invoking a discovered agent. */
+  /** @deprecated Legacy imported profile reference retained only for persisted-history compatibility. */
   nativeProfile?: string
   model: string | null
   status: 'running' | 'stopped' | 'unknown'
@@ -68,7 +68,7 @@ export interface CommonspaceAgentDefinition {
   avatarEmoji?: string
   accentColor?: string
   adapter: AgentAdapterKind
-  /** Native harness profile name used when invoking a discovered agent. */
+  /** @deprecated Legacy imported profile reference retained only for persisted-history compatibility. */
   nativeProfile?: string
   model: string | null
   createdAt: string

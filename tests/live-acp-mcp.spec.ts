@@ -1,9 +1,9 @@
 import { mkdir, mkdtemp, rm } from 'node:fs/promises'
-import { homedir, tmpdir } from 'node:os'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { startCommonspaceServer, type RunningCommonspaceServer } from '../server/src/index.ts'
-import { addTestCodexAgents } from './test-codex-agents.ts'
+import { addTestHarness } from './test-harnesses.ts'
 
 const live = process.env.COMMONSPACE_LIVE_ACP_MCP === '1'
 const roots: string[] = []
@@ -25,12 +25,10 @@ describe.skipIf(!live).sequential('installed ACP bridge with Commonspace MCP', (
       root,
       port: 0,
       runBudgetSeconds: 120,
-      dependencies: { discoverAgents: async () => [] },
       logger: { info: () => undefined, warn: () => undefined },
     })
     servers.push(running)
-    await addTestCodexAgents(running.service, 'codex-live-mcp')
-    vi.stubEnv('CODEX_HOME', join(homedir(), '.codex'))
+    await addTestHarness(running.service, 'codex', 'Live MCP')
     const project = (await running.service.mutate({
       action: 'create-project',
       name: 'Live MCP Workspace',
@@ -40,7 +38,7 @@ describe.skipIf(!live).sequential('installed ACP bridge with Commonspace MCP', (
       action: 'create-channel',
       name: 'live-mcp',
       projectId: project.id,
-      agentIds: ['codex-live-mcp'],
+      agentIds: ['codex'],
     })).channels[0]!
     await running.service.mutate({
       action: 'set-channel-context',

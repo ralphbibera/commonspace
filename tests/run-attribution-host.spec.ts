@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { afterEach, describe, expect, it } from 'vitest'
 import { CommonspaceHostService } from '../server/src/service.ts'
-import { addTestCodexAgents } from './test-codex-agents.ts'
+import { addTestHarness, discoverTestHarnesses } from './test-harnesses.ts'
 
 const execFileAsync = promisify(execFile)
 const roots: string[] = []
@@ -34,20 +34,20 @@ describe('host run attribution', () => {
     await writeFile(join(workspace, 'README.md'), 'pre-existing\n')
 
     const service = new CommonspaceHostService({} as never, { root: join(root, 'state') }, {
-      discoverAgents: async () => [],
+      discoverAgents: discoverTestHarnesses,
       runAgent: async () => {
         await writeFile(join(workspace, 'result.txt'), 'created by agent\n')
         return 'Implemented and verified.'
       },
     })
     await service.initialize()
-    await addTestCodexAgents(service, 'codex-writer')
+    await addTestHarness(service, 'codex', 'Writer')
     const project = (await service.mutate({ action: 'create-project', name: 'App', paths: [workspace] })).projects[0]!
 
-    await service.send({ conversation: { kind: 'dm', id: 'codex-writer' }, projectId: project.id, text: 'Implement it.' })
+    await service.send({ conversation: { kind: 'dm', id: 'codex' }, projectId: project.id, text: 'Implement it.' })
     await service.whenIdle()
 
-    const reply = service.snapshot().messages['dm:codex-writer']?.find(message => message.authorType === 'agent')
+    const reply = service.snapshot().messages['dm:codex']?.find(message => message.authorType === 'agent')
     expect(reply?.runAttribution).toMatchObject({
       roots: [{
         available: true,
@@ -59,9 +59,9 @@ describe('host run attribution', () => {
     expect(reply?.runAttribution?.roots[0]).not.toHaveProperty('root')
 
     await service.close()
-    const reloaded = new CommonspaceHostService({} as never, { root: join(root, 'state') }, { discoverAgents: async () => [] })
+    const reloaded = new CommonspaceHostService({} as never, { root: join(root, 'state') }, { discoverAgents: discoverTestHarnesses })
     await reloaded.initialize()
-    const persistedReply = reloaded.snapshot().messages['dm:codex-writer']?.find(message => message.authorType === 'agent')
+    const persistedReply = reloaded.snapshot().messages['dm:codex']?.find(message => message.authorType === 'agent')
     expect(persistedReply?.runAttribution).toEqual(reply?.runAttribution)
     await reloaded.close()
   })

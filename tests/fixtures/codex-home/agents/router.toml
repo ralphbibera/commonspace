@@ -1,3 +1,0 @@
-name = "router"
-description = "Routing test Agent."
-developer_instructions = "Return only the routing response requested by the test."

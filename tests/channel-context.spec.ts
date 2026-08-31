@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CommonspaceHostService } from '../server/src/service.ts'
-import { addTestCodexAgents } from './test-codex-agents.ts'
+import { addTestHarness, discoverTestHarnesses } from './test-harnesses.ts'
 
 const roots: string[] = []
 const services: CommonspaceHostService[] = []
@@ -31,16 +31,16 @@ async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'commonspace-channel-context-'))
   roots.push(root)
   const service = new CommonspaceHostService({} as never, { root }, {
-    discoverAgents: async () => [],
+    discoverAgents: discoverTestHarnesses,
     runAgent: async () => ({ text: 'Decision: ship the verified implementation.' }),
   })
   services.push(service)
   await service.initialize()
-  await addTestCodexAgents(service, 'codex-review-bot')
+  await addTestHarness(service, 'codex', 'Review Bot')
   const channel = (await service.mutate({
     action: 'create-channel',
     name: 'engineering',
-    agentIds: ['codex-review-bot'],
+    agentIds: ['codex'],
   })).channels[0]!
   await service.send({
     conversation: { kind: 'channel', id: channel.id },
@@ -140,14 +140,14 @@ describe('editable shared Channel context', () => {
     roots.push(root)
     const routing = deferred<{ agentIds: string[]; confidence: number; reason: string }>()
     const service = new CommonspaceHostService({ warn: () => undefined } as never, { root }, {
-      discoverAgents: async () => [],
+      discoverAgents: discoverTestHarnesses,
       runAgent: async () => ({ text: 'Initial reply.' }),
       routeAgents: async () => routing.promise,
     })
     services.push(service)
     await service.initialize()
-    await addTestCodexAgents(service, 'codex-review-bot')
-    const channel = (await service.mutate({ action: 'create-channel', name: 'routing', agentIds: ['codex-review-bot'] })).channels[0]!
+    await addTestHarness(service, 'codex', 'Review Bot')
+    const channel = (await service.mutate({ action: 'create-channel', name: 'routing', agentIds: ['codex'] })).channels[0]!
     await service.send({ conversation: { kind: 'channel', id: channel.id }, text: '@review-bot establish context.' })
     await service.whenIdle()
     await service.updateChannelContext(channel.id, { summary: 'Human-owned context.' })
@@ -173,13 +173,13 @@ describe('editable shared Channel context', () => {
     const request = vi.fn(async () => inferenceResponse('Inferred replacement.'))
     vi.stubGlobal('fetch', request)
     const service = new CommonspaceHostService({} as never, { root }, {
-      discoverAgents: async () => [],
+      discoverAgents: discoverTestHarnesses,
       runAgent: async () => ({ text: reply }),
     })
     services.push(service)
     await service.initialize()
-    await addTestCodexAgents(service, 'codex-review-bot')
-    const channel = (await service.mutate({ action: 'create-channel', name: 'user-pressure', agentIds: ['codex-review-bot'] })).channels[0]!
+    await addTestHarness(service, 'codex', 'Review Bot')
+    const channel = (await service.mutate({ action: 'create-channel', name: 'user-pressure', agentIds: ['codex'] })).channels[0]!
     await service.send({ conversation: { kind: 'channel', id: channel.id }, text: '@review-bot establish context.' })
     await service.whenIdle()
     await service.updateChannelContext(channel.id, { summary: 'Canonical human summary.', decisions: ['Keep human ownership.'] })
@@ -209,13 +209,13 @@ describe('editable shared Channel context', () => {
     const request = vi.fn(async () => completions[request.mock.calls.length - 1]!.promise)
     vi.stubGlobal('fetch', request)
     const service = new CommonspaceHostService({} as never, { root }, {
-      discoverAgents: async () => [],
+      discoverAgents: discoverTestHarnesses,
       runAgent: async () => ({ text: `Large result ${'y'.repeat(63_000)}` }),
     })
     services.push(service)
     await service.initialize()
-    await addTestCodexAgents(service, 'codex-review-bot')
-    const channel = (await service.mutate({ action: 'create-channel', name: 'race', agentIds: ['codex-review-bot'] })).channels[0]!
+    await addTestHarness(service, 'codex', 'Review Bot')
+    const channel = (await service.mutate({ action: 'create-channel', name: 'race', agentIds: ['codex'] })).channels[0]!
 
     await service.send({ conversation: { kind: 'channel', id: channel.id }, text: `@review-bot establish pressure ${'s'.repeat(49_000)}` })
     await service.whenIdle()
@@ -255,16 +255,16 @@ describe('editable shared Channel context', () => {
     }), { status: 200, headers: { 'content-type': 'application/json' } }))
     vi.stubGlobal('fetch', request)
     const service = new CommonspaceHostService({} as never, { root }, {
-      discoverAgents: async () => [],
+      discoverAgents: discoverTestHarnesses,
       runAgent: async () => ({ text: `Decision: ${'y'.repeat(63_900)}` }),
     })
     services.push(service)
     await service.initialize()
-    await addTestCodexAgents(service, 'codex-review-bot')
+    await addTestHarness(service, 'codex', 'Review Bot')
     const channel = (await service.mutate({
       action: 'create-channel',
       name: 'large-context',
-      agentIds: ['codex-review-bot'],
+      agentIds: ['codex'],
     })).channels[0]!
 
     for (let index = 0; index < 2; index += 1) {

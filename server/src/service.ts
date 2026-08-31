@@ -40,10 +40,9 @@ import type {
 import type { McpServer as AcpMcpServer } from '@agentclientprotocol/sdk'
 import { COMMONSPACE_STATE_VERSION, conversationKey, projectTagName, referencedProjectIds, uniqueAgentDisplayName } from '@commonspace/shared'
 import { mergeChannelMemoryProjection, projectChannelMemory } from './memory.js'
-import { mentionedAgents, mentionedChannelAgents, parseHermesProfileDescription, parseHermesProfileList, parseTags, rankChannelAgents } from './relay.js'
+import { mentionedAgents, mentionedChannelAgents, parseTags, rankChannelAgents } from './relay.js'
 import { addDiscoveredAgent, applyMutation, codexAgentId, createInitialState, defaultCommonspaceDefaults, defaultRunSettings, DM_SESSION_BOUNDARY_AUTHOR_ID, emptyChannelMemory, isCommonspaceReasoning } from './state.js'
 import { AcpAgentProcess, AcpSessionLoadError, AcpSessionRunError } from './acp-runtime.js'
-import { codexProfileRuntimeConfig, discoverCodexAgents, findCodexAgentProfile, type CodexAgentProfileConfig } from './codex-agents.js'
 import type { CommonspaceMcpGateway, CommonspaceMcpProvider, CommonspaceMcpScope } from './commonspace-mcp.js'
 import { buildRoutingPrompt, completeWithOpenAICompatible, parseRoutingResponse } from './ai-router.js'
 import { buildChannelContextCompactionPrompt, inferredChannelMemory, parseChannelContextCompaction } from './context.js'
@@ -56,7 +55,7 @@ const MAX_MESSAGE_CHARS = 16_000
 const MAX_IMAGE_ATTACHMENTS = 4
 const MAX_IMAGE_ATTACHMENT_BYTES = 8 * 1024 * 1024
 const MAX_IMAGE_ATTACHMENTS_BYTES = 16 * 1024 * 1024
-const MAX_PROFILE_LIST_BYTES = 1024 * 1024
+const MAX_HARNESS_DISCOVERY_BYTES = 1024 * 1024
 const MAX_AGENT_RESPONSE_CHARS = 64_000
 const MAX_MCP_CONTEXT_CHARS = 64_000
 
@@ -153,7 +152,7 @@ export interface AgentRunResult {
 }
 
 export interface CommonspaceHostDependencies {
-  discoverAgents(): Promise<CommonspaceAgentProfile[]>
+  discoverAgents(adapter: AgentAdapterKind): Promise<CommonspaceAgentProfile[]>
   runAgent(input: AgentRunInput): Promise<string | AgentRunResult>
   routeAgents(input: CommonspaceRouteInput): Promise<CommonspaceRouteResult>
   beforeAcceptSend?(prepared: PreparedSend): Promise<void>
@@ -368,7 +367,7 @@ function sanitizeAgents(value: unknown): CommonspaceState['agents'] {
     if (typeof agent.id !== 'string') continue
     if (adapter === 'hermes') {
       if (agent.id.trim() !== agent.id || agent.id === '' || agent.id.length > 200 || /\s/u.test(agent.id)) continue
-    } else if (!MANAGED_AGENT_ID_PATTERN.test(agent.id)) continue
+    } else if (agent.id !== 'codex' && !MANAGED_AGENT_ID_PATTERN.test(agent.id)) continue
     const nativeProfile = agent.nativeProfile
     if (nativeProfile !== undefined && (typeof nativeProfile !== 'string' || nativeProfile.trim() !== nativeProfile || nativeProfile === '' || nativeProfile.length > 200 || /\s/u.test(nativeProfile))) continue
     if (typeof agent.displayName !== 'string' || agent.displayName.trim() === '') continue
@@ -376,7 +375,8 @@ function sanitizeAgents(value: unknown): CommonspaceState['agents'] {
     if (typeof agent.createdAt !== 'string') continue
     const nativeDisplayName = agent.displayName.normalize('NFKC').trim().slice(0, 80)
     try {
-      if (adapter !== 'hermes' && codexAgentId(typeof nativeProfile === 'string' ? nativeProfile : nativeDisplayName) !== agent.id) continue
+      if (adapter === 'codex' && agent.id === 'codex' && nativeProfile !== undefined) continue
+      if (adapter === 'codex' && agent.id !== 'codex' && codexAgentId(typeof nativeProfile === 'string' ? nativeProfile : nativeDisplayName) !== agent.id) continue
     } catch {
       continue
     }
@@ -934,7 +934,6 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
   private readonly codexAcpCommand: string
   private readonly codexAcpArgs: string[]
   private discoveredAgentCandidates: CommonspaceAgentProfile[] = []
-  private readonly codexAgentProfileConfigs = new Map<string, CodexAgentProfileConfig>()
   private closeOperation: Promise<void> | undefined
   private drainOperation: Promise<void> | undefined
   private closing = false
@@ -2519,67 +2518,48 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
   }
 
   private async discoverAgentCandidates(adapter: AgentAdapterKind): Promise<CommonspaceAgentProfile[]> {
-    if (adapter === 'codex') {
-      const candidates = await discoverCodexAgents({
-        cwd: this.defaultCwd,
-        projectPaths: this.state.projects.flatMap(project => project.paths),
-      })
-      this.codexAgentProfileConfigs.clear()
-      for (const candidate of candidates) this.codexAgentProfileConfigs.set(candidate.profile.id, candidate.config)
-      return candidates.map(candidate => candidate.profile)
-    }
-    let discovered: CommonspaceAgentProfile[] = []
     if (this.overrides.discoverAgents !== undefined) {
-      discovered = await this.overrides.discoverAgents()
-    } else {
-      try {
-        const { stdout } = await execFileAsync(this.hermesPath, ['profile', 'list'], {
-          maxBuffer: MAX_PROFILE_LIST_BYTES,
-          timeout: 30_000,
-          encoding: 'utf8',
-        })
-        discovered = parseHermesProfileList(stdout)
-        discovered = await Promise.all(discovered.map(async (agent) => {
-          try {
-            const result = await execFileAsync(this.hermesPath, ['profile', 'describe', agent.id], {
-              maxBuffer: MAX_PROFILE_LIST_BYTES,
-              timeout: 30_000,
-              encoding: 'utf8',
-            })
-            const description = parseHermesProfileDescription(result.stdout)
-            return description === undefined ? agent : { ...agent, description }
-          } catch {
-            return agent
-          }
-        }))
-      } catch (error) {
-        this.environment.logger?.warn(`Commonspace could not discover Hermes profiles: ${error instanceof Error ? error.message : String(error)}`)
-      }
+      const discovered = await this.overrides.discoverAgents(adapter)
+      return [...new Map(discovered
+        .filter(agent => agent.adapter === adapter)
+        .map(agent => [agent.id, agent])).values()]
     }
-    const unique = new Map<string, CommonspaceAgentProfile>()
-    for (const agent of discovered) {
-      if (agent.adapter === 'hermes' && !unique.has(agent.id)) unique.set(agent.id, agent)
+    const executable = adapter === 'hermes' ? this.hermesPath : this.codexPath
+    try {
+      await execFileAsync(executable, ['--version'], {
+        maxBuffer: MAX_HARNESS_DISCOVERY_BYTES,
+        timeout: 30_000,
+        encoding: 'utf8',
+      })
+    } catch (error) {
+      this.environment.logger?.warn(`Commonspace could not discover ${adapter}: ${error instanceof Error ? error.message : String(error)}`)
+      return []
     }
-    return [...unique.values()]
+    return [{
+      id: adapter,
+      displayName: adapter === 'hermes' ? 'Hermes' : 'Codex',
+      adapter,
+      model: null,
+      status: 'stopped',
+      description: `Installed ${adapter === 'hermes' ? 'Hermes' : 'Codex'} harness.`,
+    }]
   }
 
   private configuredAgents(discoveredAgents: CommonspaceAgentProfile[] = this.discoveredAgentCandidates): CommonspaceAgentProfile[] {
     const discoveredById = new Map(discoveredAgents.map(agent => [agent.id, agent]))
     return this.state.agents.map<CommonspaceAgentProfile>((agent) => {
-      if (agent.adapter === 'hermes' || agent.nativeProfile !== undefined) {
-        const discovered = discoveredById.get(agent.id)
-        if (discovered?.adapter === agent.adapter) {
-          return {
-            id: agent.id,
-            displayName: agent.displayName,
-            ...(agent.avatarEmoji === undefined ? {} : { avatarEmoji: agent.avatarEmoji }),
-            ...(agent.accentColor === undefined ? {} : { accentColor: agent.accentColor }),
-            adapter: agent.adapter,
-            ...(agent.nativeProfile === undefined ? {} : { nativeProfile: agent.nativeProfile }),
-            model: discovered.model,
-            status: discovered.status,
-            ...(discovered.description === undefined ? {} : { description: discovered.description }),
-          }
+      const discovered = discoveredById.get(agent.id)
+      if (discovered?.adapter === agent.adapter) {
+        return {
+          id: agent.id,
+          displayName: agent.displayName,
+          ...(agent.avatarEmoji === undefined ? {} : { avatarEmoji: agent.avatarEmoji }),
+          ...(agent.accentColor === undefined ? {} : { accentColor: agent.accentColor }),
+          adapter: agent.adapter,
+          ...(agent.nativeProfile === undefined ? {} : { nativeProfile: agent.nativeProfile }),
+          model: discovered.model,
+          status: discovered.status,
+          ...(discovered.description === undefined ? {} : { description: discovered.description }),
         }
       }
       return {
@@ -2680,28 +2660,12 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
     this.broadcastLiveActivities()
   }
 
-  private async codexAgentProfileConfig(agent: CommonspaceAgentProfile, cwd: string): Promise<CodexAgentProfileConfig | undefined> {
-    const nativeProfile = agent.nativeProfile
-    if (agent.adapter !== 'codex' || nativeProfile === undefined) return undefined
-    const cached = this.codexAgentProfileConfigs.get(agent.id)
-    if (cached?.name === nativeProfile) return cached
-    const candidate = await findCodexAgentProfile({
-      nativeProfile,
-      cwd,
-      projectPaths: this.state.projects.flatMap(project => project.paths),
-    })
-    if (candidate === undefined) throw new Error(`Codex native agent profile "${nativeProfile}" is unavailable`)
-    this.codexAgentProfileConfigs.set(agent.id, candidate.config)
-    return candidate.config
-  }
-
   private async runAcpAgent(input: AgentRunInput): Promise<AgentRunResult> {
     if (input.signal.aborted) throw input.signal.reason
     const mcpServers = this.mcpServersFor(input)
-    const codexProfile = await this.codexAgentProfileConfig(input.agent, input.cwd)
-    const reasoning = codexProfile === undefined ? acpReasoningValue(input.agent.adapter, input.reasoning) : undefined
+    const reasoning = acpReasoningValue(input.agent.adapter, input.reasoning)
     const configOptions: Record<string, string> = {
-      ...(input.model === undefined || input.agent.adapter === 'hermes' || codexProfile !== undefined ? {} : { model: input.model }),
+      ...(input.model === undefined || input.agent.adapter === 'hermes' ? {} : { model: input.model }),
       ...(reasoning === undefined
         ? {}
         : { reasoning_effort: reasoning }),
@@ -2713,7 +2677,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
       processClient = new AcpAgentProcess({
         command: hermes ? this.hermesAcpCommand : this.codexAcpCommand,
         args: hermes
-          ? [...this.hermesAcpArgs, '-p', input.agent.id, 'acp', ...(this.hermesYolo ? ['--accept-hooks'] : [])]
+          ? [...this.hermesAcpArgs, 'acp', ...(this.hermesYolo ? ['--accept-hooks'] : [])]
           : this.codexAcpArgs,
         cwd: input.cwd,
         env: hermes
@@ -2723,7 +2687,6 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
               CODEX_PATH: this.codexPath,
               INITIAL_AGENT_MODE: this.externalAgentYolo ? 'agent-full-access' : 'agent',
               NO_BROWSER: '1',
-              ...(codexProfile === undefined ? {} : { CODEX_CONFIG: JSON.stringify(codexProfileRuntimeConfig(codexProfile)) }),
             },
         requestTimeoutMs: ((this.runBudgetSeconds ?? 3_600) + 30) * 1000,
         maxResponseChars: MAX_AGENT_RESPONSE_CHARS,

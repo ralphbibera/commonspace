@@ -326,19 +326,15 @@ describe('Commonspace interface', () => {
     })
   })
 
-  it('manages discovered Codex agents and explicitly selected Hermes profiles', async () => {
-    const codexAgent = { id: 'codex-review-bot', displayName: 'Review Bot', adapter: 'codex' as const, model: 'gpt-5.4', status: 'unknown' as const }
+  it('adds explicitly selected known harnesses', async () => {
     const discoveredAgents = [
-      { id: 'codex-worker', displayName: 'worker', adapter: 'codex' as const, nativeProfile: 'worker', model: null, status: 'unknown' as const },
-      { id: 'frontend', displayName: 'Frontend', adapter: 'hermes' as const, model: null, status: 'running' as const },
-      { id: 'backend', displayName: 'Backend', adapter: 'hermes' as const, model: null, status: 'stopped' as const },
+      { id: 'codex', displayName: 'Codex', adapter: 'codex' as const, model: null, status: 'stopped' as const },
+      { id: 'hermes', displayName: 'Hermes', adapter: 'hermes' as const, model: null, status: 'stopped' as const },
     ]
     const { store, mutate } = sidebarStore({
-      agents: [codexAgent],
+      agents: [],
       discoveredAgents,
-      state: state({
-        agents: [{ ...codexAgent, createdAt: '2026-08-25T00:00:00.000Z' }],
-      }),
+      state: state({ agents: [] }),
     })
     render(<CommonspaceSidebar wide expandSidebar={() => undefined} store={store as never} />)
 
@@ -347,18 +343,15 @@ describe('Commonspace interface', () => {
     await waitFor(() => {
       expect(store.discoverAgents).toHaveBeenCalledWith('codex')
     })
-    fireEvent.click(screen.getByRole('button', { name: 'Add discovered agent worker' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add discovered agent Codex' }))
 
     fireEvent.click(screen.getByRole('button', { name: 'Add agent' }))
     fireEvent.change(screen.getByLabelText('Agent harness'), { target: { value: 'hermes' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Add discovered agent Frontend' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Remove agent Review Bot' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add discovered agent Hermes' }))
     await waitFor(() => {
-      expect(mutate).toHaveBeenCalledWith({ action: 'add-discovered-agent', agentId: 'codex-worker' })
-      expect(mutate).toHaveBeenCalledWith({ action: 'add-discovered-agent', agentId: 'frontend' })
-      expect(mutate).toHaveBeenCalledWith({ action: 'remove-agent', agentId: 'codex-review-bot' })
+      expect(mutate).toHaveBeenCalledWith({ action: 'add-discovered-agent', agentId: 'codex' })
+      expect(mutate).toHaveBeenCalledWith({ action: 'add-discovered-agent', agentId: 'hermes' })
     })
-    expect(mutate).not.toHaveBeenCalledWith({ action: 'add-discovered-agent', agentId: 'backend' })
   })
 
   it('limits agent customization to workspace appearance', async () => {

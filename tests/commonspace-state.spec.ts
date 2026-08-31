@@ -74,22 +74,20 @@ describe('Commonspace local state', () => {
       .toThrow('unsupported reasoning')
   })
 
-  it('adds and removes discovered Codex agents with their channel and session state', () => {
+  it('adds and removes a discovered Codex harness with its channel and session state', () => {
     const state = addDiscoveredAgent(createInitialState(), {
-      id: 'codex-review-bot',
-      displayName: 'Review Bot',
+      id: 'codex',
+      displayName: 'Codex',
       adapter: 'codex',
-      nativeProfile: 'review-bot',
-      model: 'gpt-5.4',
-      status: 'unknown',
+      model: null,
+      status: 'stopped',
     }, { ids: () => 'unused', now: () => '2026-08-25T01:00:00.000Z' })
 
     expect(state.agents).toEqual([{
-      id: 'codex-review-bot',
-      displayName: 'Review Bot',
+      id: 'codex',
+      displayName: 'Codex',
       adapter: 'codex',
-      nativeProfile: 'review-bot',
-      model: 'gpt-5.4',
+      model: null,
       createdAt: '2026-08-25T01:00:00.000Z',
     }])
 
@@ -99,18 +97,18 @@ describe('Commonspace local state', () => {
         id: 'channel-1',
         name: 'general',
         projectId: null,
-        agentIds: ['codex-review-bot'],
+        agentIds: ['codex'],
         instructions: '',
         memory: { summary: '', decisions: [], openQuestions: [], threadIds: [], updatedAt: null },
         settings: { model: null, reasoning: null },
         createdAt: 'now',
       }],
       agentSessions: {
-        'codex-review-bot': { 'Bot Chat': '123e4567-e89b-42d3-a456-426614174000' },
+        codex: { 'Bot Chat': '123e4567-e89b-42d3-a456-426614174000' },
       },
-      messages: { 'dm:codex-review-bot': [] },
+      messages: { 'dm:codex': [] },
     }
-    const removed = applyMutation(seeded, { action: 'remove-agent', agentId: 'codex-review-bot' })
+    const removed = applyMutation(seeded, { action: 'remove-agent', agentId: 'codex' })
 
     expect(removed.agents).toEqual([])
     expect(removed.channels[0]?.agentIds).toEqual([])
@@ -118,19 +116,18 @@ describe('Commonspace local state', () => {
     expect(removed.messages).toEqual({})
   })
 
-  it('keeps imported harness names as unique Commonspace workspace names', () => {
+  it('keeps harness workspace names unique', () => {
     const withHermes = addDiscoveredAgent(createInitialState(), {
-      id: 'default',
-      displayName: 'default',
+      id: 'hermes',
+      displayName: 'Assistant',
       adapter: 'hermes',
       model: null,
       status: 'running',
     }, { ids: () => 'unused', now: () => 'now' })
     const withCodex = addDiscoveredAgent(withHermes, {
-      id: 'codex-default',
-      displayName: 'default',
+      id: 'codex',
+      displayName: 'Assistant',
       adapter: 'codex',
-      nativeProfile: 'default',
       model: null,
       status: 'unknown',
     }, { ids: () => 'unused', now: () => 'now' })
@@ -140,8 +137,8 @@ describe('Commonspace local state', () => {
       displayName: agent.displayName,
       nativeProfile: agent.nativeProfile,
     }))).toEqual([
-      { id: 'default', displayName: 'default', nativeProfile: undefined },
-      { id: 'codex-default', displayName: 'default (Codex)', nativeProfile: 'default' },
+      { id: 'hermes', displayName: 'Assistant', nativeProfile: undefined },
+      { id: 'codex', displayName: 'Assistant (Codex)', nativeProfile: undefined },
     ])
   })
 
