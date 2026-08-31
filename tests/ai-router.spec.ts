@@ -4,6 +4,7 @@ import { buildRoutingPrompt, parseRoutingResponse, routeWithOpenAICompatible } f
 const input = {
   text: 'Fix the login screen CSS.',
   context: ['Ralph: The API is already working.'],
+  routingMemory: '',
   candidates: [
     { id: 'frontend', displayName: 'Frontend', description: 'Owns React UI and CSS.', routingScore: 1, matchedTerms: ['css'] },
     { id: 'backend', displayName: 'Backend', description: 'Owns APIs and persistence.', routingScore: 0, matchedTerms: [] },
@@ -24,6 +25,15 @@ describe('Commonspace AI router', () => {
     expect(prompt).toContain('one bounded sub-request per selected agent')
     expect(prompt).toContain('useful evidence')
     expect(prompt).toContain('Fix the login screen CSS.')
+  })
+
+  it('includes compacted explicit correction knowledge in later routing prompts', () => {
+    const prompt = buildRoutingPrompt({
+      ...input,
+      routingMemory: 'Route review-only requests to Reviewer.',
+    })
+
+    expect(prompt).toContain('Routing knowledge from explicit user corrections: Route review-only requests to Reviewer.')
   })
 
   it('parses strict or fenced JSON routing results', () => {

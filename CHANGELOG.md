@@ -22,6 +22,8 @@ All notable changes to Commonspace are recorded here.
 - Inference-only Channel routing through either an agent harness or an OpenAI-compatible model, with inspectable routing decisions.
 - Persisted, inspectable per-harness routing assignments with bounded sub-requests and scoped Project references.
 - Visible Project-reference inference for unreferenced new Channel roots, with inferred union persisted on the source message and Thread.
+- Single-assignment rerouting with durable linked correction attempts, assignment-bound replies, scoped Agent/Project changes, and an inline correction UI.
+- Per-Channel routing memory compacted from explicit corrections through the configured inference layer and supplied to later routing decisions.
 - Project Files, Git Changes/diffs, speech playback, live activity, and stop controls.
 - Zero-to-many Project references on messages and threads, with multi-root agent execution, Project-aware search, correct run attribution, and backward-compatible singular fields for the current UI.
 - Editable Channel context APIs with user-owned context preservation, manual inference compaction, automatic token-pressure compaction, and visible current/stale metadata.
@@ -35,7 +37,7 @@ All notable changes to Commonspace are recorded here.
 - Queued and in-flight replies cannot execute or persist against stale Project authority after Project configuration changes.
 - Channel context refresh/compaction is race-safe and preserves human-authored context, while concurrent harness inference runs use isolated native sessions.
 - Installed Hermes and Codex harnesses are discovered only during an explicit Add Agent flow; new Channels start with no agents preselected.
-- Local state migrates from versions 1–16 to version 17 for routing assignments, including deterministic conversion of legacy routing decisions, and automatically recovers an invalid primary from the previous valid rollback backup.
+- Local state migrates from versions 1–17 to version 18 for linked routing corrections and per-Channel routing memory, including deterministic conversion of legacy routing decisions, and automatically recovers an invalid primary from the previous valid rollback backup.
 - Inferred routing uses the visible max-agents setting instead of a hidden two-Agent cap.
 - Independent agents can run concurrently; only the same native agent session is serialized.
 - Hermes and Codex use ACP for every agent turn.

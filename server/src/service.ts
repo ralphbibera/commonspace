@@ -18,6 +18,7 @@ import type {
   CommonspaceMutation,
   CommonspaceRoutingConfiguration,
   CommonspaceRoutingAssignment,
+  CommonspaceRoutingCorrection,
   CommonspaceRoutingDecision,
   CommonspaceRunAttribution,
   CommonspaceRunFileChange,
@@ -32,6 +33,8 @@ import type {
   SendMessageResponse,
   ReorderFollowupRequest,
   RemoveFollowupRequest,
+  RerouteAssignmentRequest,
+  RerouteAssignmentResponse,
   FollowupQueueResponse,
   StopAgentRunsRequest,
   StopAgentRunsResponse,
@@ -42,11 +45,12 @@ import type { McpServer as AcpMcpServer } from '@agentclientprotocol/sdk'
 import { COMMONSPACE_STATE_VERSION, conversationKey, projectTagName, referencedProjectIds, uniqueAgentDisplayName } from '@commonspace/shared'
 import { mergeChannelMemoryProjection, projectChannelMemory } from './memory.js'
 import { mentionedAgents, mentionedChannelAgents, parseTags, rankChannelAgents } from './relay.js'
-import { addDiscoveredAgent, applyMutation, codexAgentId, createInitialState, defaultCommonspaceDefaults, defaultRunSettings, DM_SESSION_BOUNDARY_AUTHOR_ID, emptyChannelMemory, isCommonspaceReasoning } from './state.js'
+import { addDiscoveredAgent, applyMutation, codexAgentId, createInitialState, defaultCommonspaceDefaults, defaultRunSettings, DM_SESSION_BOUNDARY_AUTHOR_ID, emptyChannelMemory, emptyRoutingMemory, isCommonspaceReasoning } from './state.js'
 import { AcpAgentProcess, AcpSessionLoadError, AcpSessionRunError } from './acp-runtime.js'
 import type { CommonspaceMcpGateway, CommonspaceMcpProvider, CommonspaceMcpScope } from './commonspace-mcp.js'
 import { buildRoutingPrompt, completeWithOpenAICompatible, parseRoutingResponse } from './ai-router.js'
 import { buildChannelContextCompactionPrompt, inferredChannelMemory, parseChannelContextCompaction } from './context.js'
+import { buildRoutingMemoryCompactionPrompt, parseRoutingMemoryCompaction } from './routing-memory.js'
 
 import { captureRunSnapshot, completeRunAttribution, type RunSnapshot } from './run-attribution.js'
 
@@ -161,6 +165,7 @@ export interface CommonspaceHostDependencies {
 export interface CommonspaceRouteInput {
   text: string
   context: string[]
+  routingMemory: string
   candidates: Array<Pick<CommonspaceAgentProfile, 'id' | 'displayName' | 'description'> & {
     routingScore: number
     matchedTerms: string[]
@@ -212,7 +217,7 @@ interface AgentDelivery {
   text: string
   projectIds?: readonly string[]
   images?: readonly AgentImageInput[]
-
+  routingAssignmentId?: string
 }
 
 interface ActiveAgentRun {
@@ -609,6 +614,24 @@ function sanitizeChannelMemory(value: unknown): CommonspaceState['channels'][num
   }
 }
 
+function sanitizeRoutingMemory(value: unknown): CommonspaceState['channels'][number]['routingMemory'] {
+  const memory = plainRecord(value)
+  if (memory === null) return emptyRoutingMemory()
+  const summary = loadedString(memory.summary, 8_000).normalize('NFKC').trim()
+  const status = memory.status === 'current' || memory.status === 'stale' || memory.status === 'failed' || memory.status === 'empty'
+    ? memory.status
+    : summary === '' ? 'empty' : 'current'
+  return {
+    summary,
+    status,
+    correctionCount: loadedBoundedInteger(memory.correctionCount, 0, 0, Number.MAX_SAFE_INTEGER),
+    compactedThroughCorrectionId: memory.compactedThroughCorrectionId === null
+      ? null
+      : loadedId(memory.compactedThroughCorrectionId),
+    updatedAt: loadedIsoTimestamp(memory.updatedAt),
+  }
+}
+
 function sanitizeProjects(value: unknown): CommonspaceState['projects'] {
   if (!Array.isArray(value)) return []
   const projects: CommonspaceState['projects'] = []
@@ -643,6 +666,7 @@ function sanitizeChannels(value: unknown): CommonspaceState['channels'] {
       agentIds: loadedStringArray(channel.agentIds, 64, 200),
       instructions: loadedString(channel.instructions, 8_000),
       memory: sanitizeChannelMemory(channel.memory),
+      routingMemory: sanitizeRoutingMemory(channel.routingMemory),
       settings: sanitizeRunSettings(channel.settings),
       createdAt: loadedString(channel.createdAt, 100),
     })
@@ -708,7 +732,7 @@ function sanitizeRoutingDecision(
   const routing = plainRecord(value)
   if (routing === null || (routing.source !== 'explicit' && routing.source !== 'ai' && routing.source !== 'local' && routing.source !== 'fallback')) return undefined
   if (!Array.isArray(routing.agentIds) || typeof routing.reason !== 'string') return undefined
-  const routedAgentIds = [...new Set(routing.agentIds.filter((id): id is string => typeof id === 'string' && agentIds.has(id)))].slice(0, 8)
+  const routedAgentIds = [...new Set(routing.agentIds.filter((id): id is string => typeof id === 'string' && agentIds.has(id)))]
   const status = routing.status === 'pending' || routing.status === 'resolved' || routing.status === 'failed'
     ? routing.status
     : undefined
@@ -721,33 +745,56 @@ function sanitizeRoutingDecision(
     .filter(projectId => projectIds.has(projectId))
   const assignments: CommonspaceRoutingAssignment[] = []
   const assignedAgents = new Set<string>()
+  const assignmentIds = new Set<string>()
   if (Array.isArray(routing.assignments)) {
-    for (const candidate of routing.assignments.slice(0, 8)) {
+    for (const candidate of routing.assignments) {
       const assignment = plainRecord(candidate)
       const id = loadedId(assignment?.id)
       const agentId = loadedId(assignment?.agentId)
       const subRequest = loadedString(assignment?.subRequest, MAX_MESSAGE_CHARS).normalize('NFKC').trim()
       const assignmentProjectIds = loadedStringArray(assignment?.projectIds, 32, 200)
         .filter(projectId => projectIds.has(projectId))
-      if (assignment === null || id === null || agentId === null || !routedAgentIds.includes(agentId) || assignedAgents.has(agentId) || subRequest === '') continue
+      if (assignment === null || id === null || assignmentIds.has(id) || agentId === null || !routedAgentIds.includes(agentId) || subRequest === '') continue
+      assignmentIds.add(id)
       assignedAgents.add(agentId)
       assignments.push({ id, agentId, subRequest, projectIds: assignmentProjectIds })
     }
   }
   for (const agentId of routedAgentIds) {
     if (assignedAgents.has(agentId)) continue
+    const id = `legacy:${messageId}:${agentId}`
+    assignmentIds.add(id)
     assignments.push({
-      id: `legacy:${messageId}:${agentId}`,
+      id,
       agentId,
       subRequest: messageText.slice(0, MAX_MESSAGE_CHARS),
       projectIds: [...fallbackProjectIds],
     })
+  }
+  const corrections: CommonspaceRoutingCorrection[] = []
+  const correctionIds = new Set<string>()
+  const correctedAssignments = new Set<string>()
+  if (Array.isArray(routing.corrections)) {
+    for (const candidate of routing.corrections) {
+      const correction = plainRecord(candidate)
+      const id = loadedId(correction?.id)
+      const fromAssignmentId = loadedId(correction?.fromAssignmentId)
+      const toAssignmentId = loadedId(correction?.toAssignmentId)
+      const createdAt = loadedIsoTimestamp(correction?.createdAt)
+      if (correction === null || id === null || correctionIds.has(id) || fromAssignmentId === null ||
+        toAssignmentId === null || createdAt === null || fromAssignmentId === toAssignmentId ||
+        !assignmentIds.has(fromAssignmentId) || !assignmentIds.has(toAssignmentId) || correctedAssignments.has(fromAssignmentId)) continue
+      correctionIds.add(id)
+      correctedAssignments.add(fromAssignmentId)
+      corrections.push({ id, fromAssignmentId, toAssignmentId, createdAt })
+    }
   }
   return {
     source: routing.source === 'fallback' ? 'local' : routing.source,
     ...(status === undefined ? {} : { status }),
     agentIds: routedAgentIds,
     assignments,
+    corrections,
     inferredProjectIds,
     ...(confidence === undefined ? {} : { confidence }),
     reason,
@@ -852,6 +899,8 @@ function sanitizeMessages(
       if (message.parentMessageId !== undefined && parentMessageId === null) continue
       const sourceMessageId = loadedId(message.sourceMessageId)
       if (message.sourceMessageId !== undefined && sourceMessageId === null) continue
+      const routingAssignmentId = loadedId(message.routingAssignmentId)
+      if (message.routingAssignmentId !== undefined && routingAssignmentId === null) continue
       const trace = message.authorType === 'agent' ? sanitizeAgentTrace(message.trace) : undefined
       const runAttribution = message.authorType === 'agent' ? sanitizeRunAttribution(message.runAttribution) : undefined
       const attachments = sanitizeImageAttachments(message.attachments)
@@ -873,6 +922,7 @@ function sanitizeMessages(
         ...(threadId === null ? {} : { threadId }),
         ...(parentMessageId === null ? {} : { parentMessageId }),
         ...(sourceMessageId === null ? {} : { sourceMessageId }),
+        ...(routingAssignmentId === null ? {} : { routingAssignmentId }),
         ...(trace === undefined ? {} : { trace }),
         ...(runAttribution === undefined ? {} : { runAttribution }),
         ...(routing === undefined ? {} : { routing }),
@@ -1684,6 +1734,147 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
     })
   }
 
+  async rerouteAssignment(request: RerouteAssignmentRequest): Promise<RerouteAssignmentResponse> {
+    return this.withAdmission(async () => {
+      if (typeof request.sourceMessageId !== 'string' || request.sourceMessageId.trim() === '') throw new Error('source message id is required')
+      if (typeof request.assignmentId !== 'string' || request.assignmentId.trim() === '') throw new Error('assignment id is required')
+      if (typeof request.agentId !== 'string' || request.agentId.trim() === '') throw new Error('agent id is required')
+      if (typeof request.subRequest !== 'string') throw new Error('corrected sub-request is required')
+      if (!Array.isArray(request.projectIds)) throw new Error('project ids must be an array')
+      const subRequest = request.subRequest.normalize('NFKC').trim().slice(0, MAX_MESSAGE_CHARS)
+      if (subRequest === '') throw new Error('corrected sub-request is required')
+      const requestedProjectIds = [...new Set(request.projectIds.map((projectId) => {
+        if (typeof projectId !== 'string' || projectId.trim() === '') throw new Error('project id must be a non-empty string')
+        return projectId.trim()
+      }))]
+      if (requestedProjectIds.length > 32) throw new Error('an assignment can reference at most 32 projects')
+
+      const keyAndSource = Object.entries(this.state.messages).flatMap(([key, messages]) => {
+        const source = messages.find(message => message.id === request.sourceMessageId)
+        return source === undefined ? [] : [{ key, source }]
+      })[0]
+      if (keyAndSource === undefined || keyAndSource.source.authorType !== 'user' ||
+        keyAndSource.source.conversation.kind !== 'channel' || keyAndSource.source.routing === undefined) {
+        throw new Error('routable source message not found')
+      }
+      const { key, source } = keyAndSource
+      const routing = source.routing
+      if (routing === undefined) throw new Error('routable source message not found')
+      const original = routing.assignments.find(assignment => assignment.id === request.assignmentId)
+      if (original === undefined) throw new Error('routing assignment not found')
+      if (routing.corrections.some(correction => correction.fromAssignmentId === original.id)) {
+        throw new Error('routing assignment was already superseded')
+      }
+      const agents = this.configuredAgents()
+      const target = agents.find(agent => agent.id === request.agentId)
+      if (target === undefined) throw new Error('unknown reroute agent')
+      const projects = requestedProjectIds.map((projectId) => {
+        const project = this.state.projects.find(candidate => candidate.id === projectId)
+        if (project === undefined) throw new Error('unknown reroute project')
+        return project
+      })
+      const thread = this.state.threads.find(candidate => candidate.id === source.threadId)
+      if (thread === undefined || thread.channelId !== source.conversation.id) throw new Error('routing source thread not found')
+      const channel = this.state.channels.find(candidate => candidate.id === thread.channelId)
+      if (channel === undefined) throw new Error('routing source channel not found')
+
+      const assignment: CommonspaceRoutingAssignment = {
+        id: crypto.randomUUID(),
+        agentId: target.id,
+        subRequest,
+        projectIds: projects.map(project => project.id),
+      }
+      const correction: CommonspaceRoutingCorrection = {
+        id: crypto.randomUUID(),
+        fromAssignmentId: original.id,
+        toAssignmentId: assignment.id,
+        createdAt: now(),
+      }
+      const updatedRouting: CommonspaceRoutingDecision = {
+        ...routing,
+        status: 'resolved',
+        agentIds: [...new Set([...routing.agentIds, target.id])],
+        assignments: [...routing.assignments, assignment],
+        corrections: [...routing.corrections, correction],
+      }
+      const updatedSource: CommonspaceMessage = { ...source, routing: updatedRouting }
+      const updatedThread: CommonspaceThread = {
+        ...thread,
+        agentIds: [...new Set([...thread.agentIds, target.id])],
+      }
+      const correctionCount = Object.entries(this.state.messages)
+        .filter(([messageKey]) => messageKey === key)
+        .flatMap(([, messages]) => messages)
+        .reduce((count, message) => count + (message.routing?.corrections.length ?? 0), 0) + 1
+      const updatedChannel = {
+        ...channel,
+        agentIds: [...new Set([...channel.agentIds, target.id])],
+        routingMemory: {
+          ...channel.routingMemory,
+          status: 'stale' as const,
+          correctionCount,
+        },
+      }
+      const previousState = this.state
+      this.state = {
+        ...this.state,
+        revision: this.state.revision + 1,
+        channels: this.state.channels.map(candidate => candidate.id === updatedChannel.id ? updatedChannel : candidate),
+        threads: this.state.threads.map(candidate => candidate.id === updatedThread.id ? updatedThread : candidate),
+        messages: {
+          ...this.state.messages,
+          [key]: (this.state.messages[key] ?? []).map(message => message.id === updatedSource.id ? updatedSource : message),
+        },
+      }
+      try {
+        await this.persist()
+      } catch (error) {
+        this.state = previousState
+        throw error
+      }
+      this.broadcastRevision()
+
+      const state = this.publicSnapshot()
+      const prepared: PreparedSend = {
+        request: {
+          conversation: source.conversation,
+          text: source.text,
+          projectIds: assignment.projectIds,
+          threadId: updatedThread.id,
+        },
+        text: source.text,
+        attachments: [],
+        agents,
+        agentIds: [target.id],
+        routing: {
+          source: 'explicit',
+          status: 'resolved',
+          agentIds: [target.id],
+          assignments: [assignment],
+          corrections: [],
+          inferredProjectIds: [],
+          reason: 'User corrected one routing assignment.',
+        },
+        channel: updatedChannel,
+        projects,
+        inferProjects: false,
+        ...(projects[0] === undefined ? {} : { project: projects[0] }),
+        thread: updatedThread,
+      }
+      const response: SendMessageResponse = { accepted: updatedSource, thread: updatedThread, state }
+      const operation = Promise.all([
+        this.processReplies(prepared, response),
+        this.compactRoutingMemory(updatedChannel.id),
+      ]).then(() => undefined)
+      this.backgroundRuns.add(operation)
+      void operation.finally(() => {
+        this.backgroundRuns.delete(operation)
+        this.broadcastLiveActivities()
+      }).catch(error => { this.environment.logger?.warn(error) })
+      return { sourceMessageId: source.id, assignment, correction, state }
+    })
+  }
+
   async reorderFollowup(request: ReorderFollowupRequest): Promise<FollowupQueueResponse> {
     return this.withAdmission(async () => {
       if (typeof request.messageId !== 'string' || request.messageId === '') throw new Error('message id is required')
@@ -1886,6 +2077,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
             subRequest: text,
             projectIds: projects.map(project => project.id),
           })),
+          corrections: [],
           inferredProjectIds: [],
           reason: 'Direct reply target selected.',
         }
@@ -1914,12 +2106,13 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
               subRequest: text,
               projectIds: projects.map(project => project.id),
             })),
+            corrections: [],
             inferredProjectIds: [],
             reason: parseTags(text).agents.includes('all') ? '@all addressed every channel agent.' : 'Agent mention selected.',
           }
         } else {
           agentIds = []
-          routing = { source: 'ai', status: 'pending', agentIds, assignments: [], inferredProjectIds: [], reason: 'Routing with inference.' }
+          routing = { source: 'ai', status: 'pending', agentIds, assignments: [], corrections: [], inferredProjectIds: [], reason: 'Routing with inference.' }
         }
       }
     } else {
@@ -1981,6 +2174,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
     const input: CommonspaceRouteInput = {
       text,
       context,
+      routingMemory: this.state.channels.find(channel => channel.id === request.conversation.id)?.routingMemory.summary ?? '',
       candidates,
       projects,
       inferProjects,
@@ -2270,6 +2464,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
         this.append({
           id: messageId(),
           sourceMessageId: response.accepted.id,
+          ...(delivery.routingAssignmentId === undefined ? {} : { routingAssignmentId: delivery.routingAssignmentId }),
           conversation: prepared.request.conversation,
           authorType: 'system',
           authorId: 'system',
@@ -2314,6 +2509,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
       const reply: CommonspaceMessage = {
         id: messageId(),
         sourceMessageId: response.accepted.id,
+        ...(delivery.routingAssignmentId === undefined ? {} : { routingAssignmentId: delivery.routingAssignmentId }),
         conversation: prepared.request.conversation,
         authorType: 'agent',
         authorId: agent.id,
@@ -2350,6 +2546,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
             ...rootDelivery,
             text: assignment.subRequest,
             projectIds: assignment.projectIds,
+            routingAssignmentId: assignment.id,
           },
         }))
     await Promise.all(rootDeliveries.slice(0, effectiveLimit).map(({ agentId, delivery }) => deliver(agentId, delivery)))
@@ -2387,6 +2584,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
         status: 'resolved',
         agentIds: decision.agentIds ?? assignments.map(assignment => assignment.agentId),
         assignments,
+        corrections: [],
         inferredProjectIds,
         ...(decision.confidence === undefined ? {} : { confidence: decision.confidence }),
         reason: decision.reason,
@@ -2431,6 +2629,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
         status: 'failed',
         agentIds: [],
         assignments: [],
+        corrections: [],
         inferredProjectIds: [],
         reason: error instanceof Error ? error.message : 'Inference routing failed.',
       }
@@ -2527,6 +2726,54 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
       2_000,
     ))
     return inferredChannelMemory(projection, compacted, now())
+  }
+
+  private async compactRoutingMemory(channelId: string): Promise<void> {
+    const source = buildRoutingMemoryCompactionPrompt(this.state, channelId)
+    if (source === null) return
+    try {
+      const summary = parseRoutingMemoryCompaction(await this.completeInference(
+        'You compact bounded routing feedback. Return only the requested JSON object.',
+        source.prompt,
+        1_000,
+      ))
+      if (!this.state.channels.some(channel => channel.id === channelId)) return
+      this.state = {
+        ...this.state,
+        revision: this.state.revision + 1,
+        channels: this.state.channels.map(channel => channel.id === channelId
+          ? {
+              ...channel,
+              routingMemory: {
+                summary,
+                status: 'current',
+                correctionCount: source.correctionCount,
+                compactedThroughCorrectionId: source.compactedThroughCorrectionId,
+                updatedAt: now(),
+              },
+            }
+          : channel),
+      }
+    } catch (error) {
+      this.environment.logger?.warn(`Commonspace routing memory compaction failed: ${error instanceof Error ? error.message : String(error)}`)
+      if (!this.state.channels.some(channel => channel.id === channelId)) return
+      this.state = {
+        ...this.state,
+        revision: this.state.revision + 1,
+        channels: this.state.channels.map(channel => channel.id === channelId
+          ? {
+              ...channel,
+              routingMemory: {
+                ...channel.routingMemory,
+                status: 'failed',
+                correctionCount: source.correctionCount,
+              },
+            }
+          : channel),
+      }
+    }
+    await this.persist()
+    this.broadcastRevision()
   }
 
   private reconcileInferredChannelMemory(

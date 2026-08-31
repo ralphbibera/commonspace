@@ -87,6 +87,13 @@ describe('Commonspace Inbox state migration', () => {
           origin: 'automatic', status: 'empty', sourceMessageCount: 0, estimatedTokens: 0,
           compactedThroughMessageId: null,
         },
+        routingMemory: {
+          summary: '',
+          status: 'empty',
+          correctionCount: 0,
+          compactedThroughCorrectionId: null,
+          updatedAt: null,
+        },
         settings: { model: null, reasoning: null },
         createdAt: '2026-08-27T09:00:00.000Z',
       }])

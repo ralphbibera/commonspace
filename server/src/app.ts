@@ -1,6 +1,6 @@
 import type { IncomingMessage } from 'node:http'
 import express, { type ErrorRequestHandler, type Express, type NextFunction, type Request, type Response } from 'express'
-import { COMMONSPACE_SEARCH_KINDS, type CommonspaceLiveAgentActivity, type CommonspaceMutation, type CommonspaceSearchKind, type DiscoverAgentsRequest, type RemoveFollowupRequest, type ReorderFollowupRequest, type SelectDirectoryResponse, type SendMessageRequest, type StopAgentRunsRequest, type UpdateChannelContextRequest, type UpdateRoutingConfigurationRequest } from '@commonspace/shared'
+import { COMMONSPACE_SEARCH_KINDS, type CommonspaceLiveAgentActivity, type CommonspaceMutation, type CommonspaceSearchKind, type DiscoverAgentsRequest, type RemoveFollowupRequest, type ReorderFollowupRequest, type RerouteAssignmentRequest, type SelectDirectoryResponse, type SendMessageRequest, type StopAgentRunsRequest, type UpdateChannelContextRequest, type UpdateRoutingConfigurationRequest } from '@commonspace/shared'
 import type { CommonspaceHostService } from './service.js'
 import type { CommonspaceMcpGateway } from './commonspace-mcp.js'
 import { selectLocalDirectory } from './directory-picker.js'
@@ -324,6 +324,14 @@ export function createCommonspaceApp({ service, mcpGateway, directoryPicker }: C
       res.status(202).json(await service.send(recordBody(req.body) as unknown as SendMessageRequest))
     } catch (error) {
       res.status(400).json({ code: 'send_failed', error: error instanceof Error ? error.message : String(error) })
+    }
+  })
+
+  app.post('/api/reroute', requireSameOrigin, async (req, res) => {
+    try {
+      res.status(202).json(await service.rerouteAssignment(recordBody(req.body) as unknown as RerouteAssignmentRequest))
+    } catch (error) {
+      res.status(400).json({ code: 'reroute_failed', error: error instanceof Error ? error.message : String(error) })
     }
   })
 

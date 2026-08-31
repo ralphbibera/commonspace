@@ -1,5 +1,5 @@
 import { Fragment, lazy, Suspense, useEffect, useId, useRef, useState, useSyncExternalStore, type CSSProperties, type Dispatch, type FormEvent, type SetStateAction } from 'react'
-import { deriveCommonspaceInboxItems, type AgentAdapterKind, type CommonspaceAgentProfile, type CommonspaceBootstrap, type CommonspaceLiveAgentActivity, type CommonspaceTraceEntry, type ConversationRef, type CommonspaceMessage, type CommonspaceThread, type SendImageAttachment } from '@commonspace/shared'
+import { deriveCommonspaceInboxItems, type AgentAdapterKind, type CommonspaceAgentProfile, type CommonspaceBootstrap, type CommonspaceLiveAgentActivity, type CommonspaceTraceEntry, type ConversationRef, type CommonspaceMessage, type CommonspaceThread, type RerouteAssignmentRequest, type SendImageAttachment } from '@commonspace/shared'
 import type { CommonspaceClientStore } from './commonspace-store.ts'
 import { AgentTrace, AgentTraceTimeline } from './AgentTrace.tsx'
 import { RunAttribution } from './RunAttribution.tsx'
@@ -107,17 +107,128 @@ function renderMessageText(message: CommonspaceMessage, bootstrap?: CommonspaceB
     : <mark key={`${message.id}-${String(index)}`} className={`csp-tag csp-tag--${part.kind}`}>{part.text}</mark>)
 }
 
+function RoutingAssignments({
+  message,
+  bootstrap,
+  onReroute,
+}: {
+  message: CommonspaceMessage
+  bootstrap: CommonspaceBootstrap | null | undefined
+  onReroute: ((request: RerouteAssignmentRequest) => Promise<void>) | undefined
+}) {
+  const routing = message.routing
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [agentId, setAgentId] = useState('')
+  const [subRequest, setSubRequest] = useState('')
+  const [projectIds, setProjectIds] = useState<string[]>([])
+  const [submitting, setSubmitting] = useState(false)
+  if (routing === undefined || routing.assignments.length === 0) return null
+  const corrections = routing.corrections ?? []
+  const supersededIds = new Set(corrections.map(correction => correction.fromAssignmentId))
+  const correctedIds = new Set(corrections.map(correction => correction.toAssignmentId))
+  const beginReroute = (assignmentId: string) => {
+    const assignment = routing.assignments.find(candidate => candidate.id === assignmentId)
+    if (assignment === undefined) return
+    setEditingId(assignment.id)
+    setAgentId(assignment.agentId)
+    setSubRequest(assignment.subRequest)
+    setProjectIds(assignment.projectIds)
+  }
+  const submit = async (event: FormEvent) => {
+    event.preventDefault()
+    if (editingId === null || agentId === '' || subRequest.trim() === '' || onReroute === undefined || submitting) return
+    setSubmitting(true)
+    try {
+      await onReroute({
+        sourceMessageId: message.id,
+        assignmentId: editingId,
+        agentId,
+        subRequest,
+        projectIds,
+      })
+      setEditingId(null)
+    } catch {
+      // Store exposes request failures through shared error state.
+    } finally {
+      setSubmitting(false)
+    }
+  }
+  return (
+    <ul className="csp-routing-assignments" aria-label="Routing assignments">
+      {routing.assignments.map((assignment) => {
+        const agent = bootstrap?.agents.find(candidate => candidate.id === assignment.agentId)
+        const projects = assignment.projectIds.flatMap(projectId => {
+          const project = bootstrap?.state.projects.find(candidate => candidate.id === projectId)
+          return project === undefined ? [] : [project.name]
+        })
+        const superseded = supersededIds.has(assignment.id)
+        const corrected = correctedIds.has(assignment.id)
+        const inferred = !corrected && assignment.projectIds.some(projectId =>
+          (routing.inferredProjectIds ?? []).includes(projectId))
+        return (
+          <li key={assignment.id} data-status={superseded ? 'superseded' : 'current'}>
+            <strong>@{agent?.displayName ?? assignment.agentId}{projects.length === 0 ? '' : ` · ${projects.join(', ')}`}{inferred ? ' · inferred' : ''}</strong>
+            {superseded && <span className="csp-routing-attempt-status">Superseded</span>}
+            {corrected && <span className="csp-routing-attempt-status">Correction</span>}
+            <p>{assignment.subRequest}</p>
+            {!superseded && onReroute !== undefined && (
+              <button
+                type="button"
+                className="csp-routing-reroute"
+                aria-label={`Reroute assignment for ${agent?.displayName ?? assignment.agentId}`}
+                onClick={() => { beginReroute(assignment.id) }}
+              >Reroute</button>
+            )}
+            {editingId === assignment.id && (
+              <form className="csp-routing-reroute-form" aria-label="Reroute assignment" onSubmit={(event) => { void submit(event) }}>
+                <label>Agent<select aria-label="Reroute agent" value={agentId} onChange={event => { setAgentId(event.target.value) }}>
+                  {(bootstrap?.agents ?? []).map(candidate => <option key={candidate.id} value={candidate.id}>{candidate.displayName}</option>)}
+                </select></label>
+                <label>Sub-request<textarea aria-label="Corrected sub-request" value={subRequest} onChange={event => { setSubRequest(event.target.value) }} /></label>
+                <fieldset>
+                  <legend>Projects</legend>
+                  {(bootstrap?.state.projects ?? []).map(project => (
+                    <label key={project.id}>
+                      <input
+                        type="checkbox"
+                        aria-label={`Project ${project.name}`}
+                        checked={projectIds.includes(project.id)}
+                        onChange={event => {
+                          setProjectIds(current => event.target.checked
+                            ? [...new Set([...current, project.id])]
+                            : current.filter(id => id !== project.id))
+                        }}
+                      />
+                      {project.name}
+                    </label>
+                  ))}
+                </fieldset>
+                <div>
+                  <button type="submit" disabled={submitting || agentId === '' || subRequest.trim() === ''}>{submitting ? 'Sending…' : 'Send correction'}</button>
+                  <button type="button" onClick={() => { setEditingId(null) }}>Cancel</button>
+                </div>
+              </form>
+            )}
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
 function MessageRow({
   message,
   bootstrap,
   compact = false,
   onReplyToAgent,
+  onReroute,
   speech,
 }: {
   message: CommonspaceMessage
   bootstrap?: CommonspaceBootstrap | null
   compact?: boolean
   onReplyToAgent?: (message: CommonspaceMessage) => void
+  onReroute?: (request: RerouteAssignmentRequest) => Promise<void>
   speech: MessageSpeechControls
 }) {
   const reading = speech.activeMessageId === message.id
@@ -152,35 +263,17 @@ function MessageRow({
               <LazyMessageMarkdown text={message.text} />
             </Suspense>
           : <p className="csp-message-plain-text">{renderMessageText(message, bootstrap ?? undefined)}</p>)}
-        {message.routing !== undefined && message.routing.source !== 'explicit' && (
+        {message.routing !== undefined && (
           message.routing.status === 'pending'
             ? <div className="csp-message-routing" role="status" aria-label="Routing message">Routing…</div>
             : message.routing.status === 'failed'
               ? <div className="csp-message-routing" role="alert">Routing failed · {message.routing.reason}</div>
               : <div className="csp-message-routing" title={message.routing.reason}>
-                  <span>{message.routing.source === 'ai' ? 'AI routed' : 'Local routing'} to {message.routing.agentIds.map((agentId) => {
+                  <span>{message.routing.source === 'ai' ? 'AI routed' : message.routing.source === 'explicit' ? 'Explicitly routed' : 'Local routing'} to {message.routing.agentIds.map((agentId) => {
                     const agent = bootstrap?.agents.find(candidate => candidate.id === agentId)
                     return `@${agent?.displayName ?? agentId}`
                   }).join(', ')} · {message.routing.reason}</span>
-                  {message.routing.assignments.length > 0 && (
-                    <ul className="csp-routing-assignments" aria-label="Routing assignments">
-                      {message.routing.assignments.map((assignment) => {
-                        const agent = bootstrap?.agents.find(candidate => candidate.id === assignment.agentId)
-                        const projects = assignment.projectIds.flatMap(projectId => {
-                          const project = bootstrap?.state.projects.find(candidate => candidate.id === projectId)
-                          return project === undefined ? [] : [project.name]
-                        })
-                        const inferred = assignment.projectIds.some(projectId =>
-                          (message.routing?.inferredProjectIds ?? []).includes(projectId))
-                        return (
-                          <li key={assignment.id}>
-                            <strong>@{agent?.displayName ?? assignment.agentId}{projects.length === 0 ? '' : ` · ${projects.join(', ')}`}{inferred ? ' · inferred' : ''}</strong>
-                            <p>{assignment.subRequest}</p>
-                          </li>
-                        )
-                      })}
-                    </ul>
-                  )}
+                  <RoutingAssignments message={message} bootstrap={bootstrap} onReroute={onReroute} />
                 </div>
         )}
         {message.attachments !== undefined && message.attachments.length > 0 && (
@@ -831,7 +924,7 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
                         className={`csp-thread-root${threadIsFocused ? ' csp-thread-root--focused' : ''}`}
                         aria-current={thread?.id === activeThread?.id ? 'true' : undefined}
                       >
-                        <MessageRow message={root} bootstrap={bootstrap} speech={speech} />
+                        <MessageRow message={root} bootstrap={bootstrap} onReroute={request => store.rerouteAssignment(request)} speech={speech} />
                         <button
                           type="button"
                           className={`csp-thread-open${unreadCount === 0 ? '' : ' csp-thread-open--unread'}`}
@@ -863,7 +956,7 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
                       </article>
                     )
                   })
-                : roots.map(message => <MessageRow key={message.id} message={message} bootstrap={bootstrap} speech={speech} />)}
+                : roots.map(message => <MessageRow key={message.id} message={message} bootstrap={bootstrap} onReroute={request => store.rerouteAssignment(request)} speech={speech} />)}
               {directMessagePhase !== null && <LiveAgentActivity
                 activities={directMessageActivities}
                 fallbackAgents={directMessageAgents}
@@ -1001,7 +1094,7 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
                 <button type="button" aria-label="Close thread" onClick={() => { store.selectThread(null) }}>×</button>
               </header>
               <div ref={threadMessages} className="csp-thread-messages">
-                {activeRoot !== undefined && <MessageRow message={activeRoot} bootstrap={bootstrap} speech={speech} />}
+                {activeRoot !== undefined && <MessageRow message={activeRoot} bootstrap={bootstrap} onReroute={request => store.rerouteAssignment(request)} speech={speech} />}
                 <div className="csp-thread-divider">Replies</div>
                 {replies.map(reply => (
                   <MessageRow key={reply.id} message={reply} bootstrap={bootstrap} compact onReplyToAgent={replyDirectlyToAgent} speech={speech} />

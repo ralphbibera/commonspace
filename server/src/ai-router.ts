@@ -27,6 +27,7 @@ async function boundedResponseText(response: Response): Promise<string> {
 export interface AiRouteInput {
   text: string
   context: string[]
+  routingMemory: string
   candidates: Array<Pick<CommonspaceAgentProfile, 'id' | 'displayName' | 'description'> & {
     routingScore: number
     matchedTerms: string[]
@@ -69,6 +70,7 @@ export function buildRoutingPrompt(input: AiRouteInput): string {
       ? 'Project selection: infer the relevant Project subset for each assignment; empty means genuinely projectless.'
       : 'Project selection: explicit references are authoritative; each assignment may use only the relevant subset.',
     input.context.length === 0 ? 'Recent thread context: none' : `Recent thread context:\n${input.context.join('\n')}`,
+    input.routingMemory === '' ? 'Routing knowledge: none' : `Routing knowledge from explicit user corrections: ${input.routingMemory}`,
     `Newest user message: ${input.text}`,
   ].join('\n\n')
 }

@@ -217,6 +217,43 @@ describe('Commonspace client revision ordering', () => {
     }))
   })
 
+  it('posts a routing correction and merges the accepted state revision', async () => {
+    const initial = bootstrap(1, 'Initial')
+    const updated = bootstrap(2, 'Initial')
+    const request = {
+      sourceMessageId: 'root-1',
+      assignmentId: 'assignment-1',
+      agentId: 'reviewer',
+      subRequest: 'Review only the UI boundary.',
+      projectIds: ['project-1'],
+    }
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(response(initial))
+      .mockResolvedValueOnce(response({
+        sourceMessageId: request.sourceMessageId,
+        assignment: { id: 'assignment-2', agentId: request.agentId, subRequest: request.subRequest, projectIds: request.projectIds },
+        correction: {
+          id: 'correction-1',
+          fromAssignmentId: request.assignmentId,
+          toAssignmentId: 'assignment-2',
+          createdAt: '2026-08-30T00:00:00.000Z',
+        },
+        state: updated.state,
+      }))
+    vi.stubGlobal('fetch', fetch)
+    const store = new CommonspaceClientStore()
+    await store.refresh()
+
+    const reroute = (store as unknown as { rerouteAssignment(value: typeof request): Promise<void> }).rerouteAssignment
+    await reroute.call(store, request)
+
+    expect(fetch).toHaveBeenNthCalledWith(2, '/api/reroute', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify(request),
+    }))
+    expect(store.getSnapshot().bootstrap?.state.revision).toBe(2)
+  })
+
   it('refreshes again when an SSE revision arrives during an in-flight refresh', async () => {
     const firstRefresh = deferred<Response>()
     const followUpRefresh = deferred<Response>()

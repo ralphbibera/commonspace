@@ -108,6 +108,23 @@ describe('standalone Commonspace server', () => {
     const routingReadResponse = await fetch(`${running.url}/api/routing`, { headers: { origin: running.url } })
     expect(JSON.stringify(await routingReadResponse.json())).not.toContain('private-key')
 
+    const rerouteResponse = await fetch(`${running.url}/api/reroute`, {
+      method: 'POST',
+      headers: { origin: running.url, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        sourceMessageId: 'missing-message',
+        assignmentId: 'missing-assignment',
+        agentId: 'missing-agent',
+        subRequest: 'Correct this assignment.',
+        projectIds: [],
+      }),
+    })
+    expect(rerouteResponse.status).toBe(400)
+    await expect(rerouteResponse.json()).resolves.toEqual({
+      code: 'reroute_failed',
+      error: 'routable source message not found',
+    })
+
     const channel = (await running.service.mutate({ action: 'create-channel', name: 'context-api', agentIds: [] })).channels[0]!
     const contextUpdateResponse = await fetch(`${running.url}/api/channels/${encodeURIComponent(channel.id)}/context`, {
       method: 'PUT',
