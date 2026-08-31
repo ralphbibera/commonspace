@@ -1,4 +1,4 @@
-export const COMMONSPACE_STATE_VERSION = 23 as const
+export const COMMONSPACE_STATE_VERSION = 24 as const
 export const COMMONSPACE_EXPORT_VERSION = 1 as const
 
 export type AgentAdapterKind = 'hermes' | 'codex'
@@ -47,6 +47,32 @@ export interface CommonspaceDiagnostics {
     runReadiness: 'ready' | 'unknown' | 'attention'
     recovery: string
   }>
+}
+
+export interface CommonspaceNotificationSettings {
+  enabled: boolean
+  replies: boolean
+  mentions: boolean
+  permissions: boolean
+  failures: boolean
+  sound: boolean
+}
+
+export const DEFAULT_COMMONSPACE_NOTIFICATION_SETTINGS: CommonspaceNotificationSettings = {
+  enabled: false,
+  replies: true,
+  mentions: true,
+  permissions: true,
+  failures: true,
+  sound: false,
+}
+
+export interface CommonspaceDesktopNotification {
+  category: 'reply' | 'mention' | 'permission' | 'failure'
+  title: string
+  body: string
+  url: string
+  sound: boolean
 }
 
 export interface CommonspacePortableProject {
@@ -494,6 +520,7 @@ export interface CommonspaceState {
   inboxSavedItemIds: string[]
   followedSessionIds: string[]
   mutedSessionIds: string[]
+  notifications: CommonspaceNotificationSettings
   defaults: CommonspaceDefaults
   agents: CommonspaceAgentDefinition[]
   /** Host-private native session scope selected for each direct message. */
@@ -526,6 +553,7 @@ export type CommonspaceMutation =
   | { action: 'set-inbox-item-saved'; messageId: string; saved: boolean }
   | { action: 'set-session-followed'; sessionId: string; followed: boolean }
   | { action: 'set-session-muted'; sessionId: string; muted: boolean }
+  | { action: 'set-notifications'; notifications: CommonspaceNotificationSettings }
   | { action: 'create-project'; name: string; paths: string[] }
   | { action: 'add-project-path'; projectId: string; path: string }
   | { action: 'remove-project'; projectId: string }

@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { CommonspaceClientStore } from './commonspace-store.ts'
 import { CommonspaceConversation } from './CommonspaceConversation.tsx'
 import { CommonspaceInbox } from './CommonspaceInbox.tsx'
@@ -16,11 +16,47 @@ export function CommonspaceApp({ store }: CommonspaceAppProps) {
   const [activeProjectViewId, setActiveProjectViewId] = useState<string | null>(null)
   const [targetProjectFile, setTargetProjectFile] = useState<{ rootIndex: number; path: string } | null>(null)
   const [targetMessageId, setTargetMessageId] = useState<string | null>(null)
+  const notificationLinkHandled = useRef(false)
 
   useEffect(() => {
     store.connectEvents()
     return () => { store.disconnectEvents() }
   }, [store])
+
+  useEffect(() => {
+    if (notificationLinkHandled.current || snapshot.bootstrap === null) return
+    const parameters = new URLSearchParams(window.location.search)
+    const kind = parameters.get('conversation')
+    const conversationId = parameters.get('conversationId')
+    const threadId = parameters.get('threadId')
+    const messageId = parameters.get('messageId')
+    if ((kind !== 'channel' && kind !== 'dm') || conversationId === null || messageId === null ||
+      conversationId === '' || conversationId.length > 200 || messageId === '' || messageId.length > 200 ||
+      (threadId !== null && (threadId === '' || threadId.length > 200))) {
+      notificationLinkHandled.current = true
+      return
+    }
+    const conversation = { kind, id: conversationId } as const
+    const state = snapshot.bootstrap.state
+    const conversationExists = kind === 'channel'
+      ? state.channels.some(channel => channel.id === conversationId)
+      : state.agents.some(agent => agent.id === conversationId)
+    const message = state.messages[`${kind}:${conversationId}`]?.find(candidate => candidate.id === messageId)
+    const thread = threadId === null ? undefined : state.threads.find(candidate => candidate.id === threadId)
+    const threadMatches = kind === 'dm'
+      ? threadId === null
+      : threadId === null || (thread !== undefined && thread.channelId === conversationId &&
+          (message?.threadId === thread.id || thread.rootMessageId === message?.id))
+    notificationLinkHandled.current = true
+    if (!conversationExists || message === undefined || !threadMatches) return
+    store.selectConversation(conversation)
+    if (thread !== undefined) store.selectThread(thread.id)
+    setActiveProjectViewId(null)
+    setTargetProjectFile(null)
+    setActiveDestination('conversation')
+    setTargetMessageId(message.id)
+    void store.mutate({ action: 'mark-inbox-item-read', messageId: message.id }).catch(() => undefined)
+  }, [snapshot.bootstrap, store])
 
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {

@@ -68,6 +68,45 @@ describe('Commonspace local state', () => {
     expect(state.channels[0]?.settings).toEqual({ model: null, reasoning: null })
   })
 
+  it('keeps OS notification preferences independent from durable Inbox state', () => {
+    const initial = createInitialState()
+    expect(initial.notifications).toEqual({
+      enabled: false,
+      replies: true,
+      mentions: true,
+      permissions: true,
+      failures: true,
+      sound: false,
+    })
+
+    const configured = applyMutation(initial, {
+      action: 'set-notifications',
+      notifications: {
+        enabled: true,
+        replies: false,
+        mentions: true,
+        permissions: false,
+        failures: true,
+        sound: true,
+      },
+    })
+
+    expect(configured.notifications).toEqual({
+      enabled: true,
+      replies: false,
+      mentions: true,
+      permissions: false,
+      failures: true,
+      sound: true,
+    })
+    expect(configured.inboxReadAt).toBeNull()
+    expect(configured.revision).toBe(1)
+    expect(() => applyMutation(initial, {
+      action: 'set-notifications',
+      notifications: { enabled: true } as never,
+    })).toThrow('notification settings must be booleans')
+  })
+
   it('rejects unsupported reasoning values at the runtime mutation boundary', () => {
     const state = createInitialState()
     expect(() => applyMutation(state, { action: 'set-defaults', reasoning: 'high"; malicious=true' } as never))

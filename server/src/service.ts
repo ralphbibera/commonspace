@@ -14,6 +14,7 @@ import type {
   CommonspaceBootstrap,
   CommonspaceArchiveAttachment,
   CommonspaceDiagnostics,
+  CommonspaceDesktopNotification,
   CommonspaceChannelMemory,
   CommonspaceAgentProfile,
   CommonspaceFileAttachment,
@@ -56,16 +57,17 @@ import type {
   UpdateRoutingConfigurationRequest,
 } from '@commonspace/shared'
 import type { McpServer as AcpMcpServer } from '@agentclientprotocol/sdk'
-import { COMMONSPACE_EXPORT_VERSION, COMMONSPACE_STATE_VERSION, conversationKey, projectTagName, referencedProjectIds, uniqueAgentDisplayName } from '@commonspace/shared'
+import { COMMONSPACE_EXPORT_VERSION, COMMONSPACE_STATE_VERSION, conversationKey, deriveCommonspaceInboxItems, projectTagName, referencedProjectIds, uniqueAgentDisplayName } from '@commonspace/shared'
 import { mergeChannelMemoryProjection, projectChannelMemory } from './memory.js'
 import { mentionedAgents, mentionedChannelAgents, parseTags, rankChannelAgents } from './relay.js'
-import { addDiscoveredAgent, applyMutation, codexAgentId, createInitialState, defaultCommonspaceDefaults, defaultRunSettings, DM_SESSION_BOUNDARY_AUTHOR_ID, emptyChannelMemory, emptyRoutingMemory, isCommonspaceReasoning } from './state.js'
+import { addDiscoveredAgent, applyMutation, codexAgentId, createInitialState, defaultCommonspaceDefaults, defaultNotificationSettings, defaultRunSettings, DM_SESSION_BOUNDARY_AUTHOR_ID, emptyChannelMemory, emptyRoutingMemory, isCommonspaceReasoning } from './state.js'
 import { AcpAgentProcess, AcpSessionLoadError, AcpSessionRunError } from './acp-runtime.js'
 import type { CommonspaceMcpGateway, CommonspaceMcpProvider, CommonspaceMcpScope } from './commonspace-mcp.js'
 import { buildRoutingPrompt, completeWithOpenAICompatible, parseRoutingResponse } from './ai-router.js'
 import { buildChannelContextCompactionPrompt, inferredChannelMemory, parseChannelContextCompaction } from './context.js'
 import { buildRoutingMemoryCompactionPrompt, parseRoutingMemoryCompaction } from './routing-memory.js'
 import { buildThreadContextCompactionPrompt, createThreadContext, emptyThreadMemory, inferredThreadMemory, mergeThreadMemoryProjection, projectThreadMemory, projectThreadMemoryFromMessages } from './thread-context.js'
+import { createDesktopNotifier, desktopNotificationForItem } from './desktop-notifications.js'
 
 import { captureRunSnapshot, completeRunAttribution, type RunSnapshot } from './run-attribution.js'
 
@@ -205,6 +207,7 @@ export interface CommonspaceHostDependencies {
   discoverAgents(adapter: AgentAdapterKind): Promise<CommonspaceAgentProfile[]>
   runAgent(input: AgentRunInput): Promise<string | AgentRunResult>
   routeAgents(input: CommonspaceRouteInput): Promise<CommonspaceRouteResult>
+  notify(notification: CommonspaceDesktopNotification): Promise<void>
   beforeAcceptSend?(prepared: PreparedSend): Promise<void>
 }
 
@@ -558,6 +561,20 @@ function redactPortableValue<T>(value: T, privateValues: readonly string[]): T {
     return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, redactPortableValue(item, privateValues)])) as T
   }
   return value
+}
+
+function sanitizeNotificationSettings(value: unknown): CommonspaceState['notifications'] {
+  const settings = plainRecord(value)
+  const defaults = defaultNotificationSettings()
+  if (settings === null) return defaults
+  return {
+    enabled: typeof settings.enabled === 'boolean' ? settings.enabled : defaults.enabled,
+    replies: typeof settings.replies === 'boolean' ? settings.replies : defaults.replies,
+    mentions: typeof settings.mentions === 'boolean' ? settings.mentions : defaults.mentions,
+    permissions: typeof settings.permissions === 'boolean' ? settings.permissions : defaults.permissions,
+    failures: typeof settings.failures === 'boolean' ? settings.failures : defaults.failures,
+    sound: typeof settings.sound === 'boolean' ? settings.sound : defaults.sound,
+  }
 }
 
 function loadedId(value: unknown): string | null {
@@ -1311,6 +1328,7 @@ function sanitizeLoadedState(value: unknown): CommonspaceState {
       .filter(messageId => inboxMessageIds.has(messageId)),
     followedSessionIds: loadedStringArray(record.followedSessionIds, 10_000, 500),
     mutedSessionIds: loadedStringArray(record.mutedSessionIds, 10_000, 500),
+    notifications: sanitizeNotificationSettings(record.notifications),
     defaults,
     agents,
     dmSessions,
@@ -1341,6 +1359,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
   private readonly revisionListeners = new Set<(revision: number) => void>()
   private readonly liveActivityListeners = new Set<(activities: readonly CommonspaceLiveAgentActivity[]) => void>()
   private readonly liveActivitiesById = new Map<string, CommonspaceLiveAgentActivity>()
+  private readonly knownInboxItemIds = new Set<string>()
   private readonly activeAgentRuns = new Map<string, ActiveAgentRun>()
   private readonly permissionResolvers = new Map<string, (outcome: AgentPermissionOutcome) => void>()
   private readonly backgroundRuns = new Set<Promise<void>>()
@@ -1361,6 +1380,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
   private readonly codexAcpCommand: string
   private readonly codexAcpArgs: string[]
   private readonly managedDefaultCwd: boolean
+  private readonly notifyDesktop: (notification: CommonspaceDesktopNotification) => Promise<void>
   private discoveredAgentCandidates: CommonspaceAgentProfile[] = []
   private closeOperation: Promise<void> | undefined
   private drainOperation: Promise<void> | undefined
@@ -1368,6 +1388,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
   private draining = false
   private mcpGateway: CommonspaceMcpGateway | undefined
   private mcpEndpoint: string | undefined
+  private clientUrl: string | undefined
 
   constructor(
     private readonly environment: CommonspaceHostEnvironment,
@@ -1389,6 +1410,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
     this.runBudgetSeconds = config.runBudgetSeconds === undefined
       ? undefined
       : Math.min(3_600, Math.max(30, config.runBudgetSeconds))
+    this.notifyDesktop = overrides.notify ?? createDesktopNotifier()
     this.hermesAcpCommand = config.hermesAcpCommand ?? this.hermesPath
     this.hermesAcpArgs = [...(config.hermesAcpArgs ?? [])]
     const defaultCodexAcp = moduleRequire.resolve('@agentclientprotocol/codex-acp')
@@ -1449,6 +1471,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
     }
     this.markInterruptedRuns('The previous Commonspace process ended before the agent completed.')
     await this.persist()
+    this.synchronizeNotificationBaseline()
   }
 
   private async canonicalizeLoadedProjectPaths(state: CommonspaceState): Promise<CommonspaceState> {
@@ -1578,6 +1601,16 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
     }
     this.mcpGateway = gateway
     this.mcpEndpoint = url.href
+  }
+
+  attachClientUrl(value: string): void {
+    if (this.closing) throw new Error('Commonspace is shutting down')
+    const url = new URL(value)
+    if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1') throw new Error('Commonspace client URL must use loopback HTTP')
+    url.pathname = '/'
+    url.search = ''
+    url.hash = ''
+    this.clientUrl = url.href
   }
 
   async readContext(scope: CommonspaceMcpScope): Promise<Record<string, unknown>> {
@@ -1814,6 +1847,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
       inboxSavedItemIds: state.inboxSavedItemIds,
       followedSessionIds: state.followedSessionIds,
       mutedSessionIds: state.mutedSessionIds,
+      notifications: state.notifications,
       defaults: state.defaults,
       agents: state.agents.map(agent => ({
         id: agent.id,
@@ -1896,6 +1930,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
         inboxSavedItemIds: imported.inboxSavedItemIds,
         followedSessionIds: imported.followedSessionIds,
         mutedSessionIds: imported.mutedSessionIds,
+        notifications: imported.notifications,
         defaults: imported.defaults,
         agents: imported.agents,
         projects: imported.projects.map(project => ({
@@ -1953,6 +1988,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
         throw error
       }
       this.revokeInvalidMcpCredentials()
+      this.synchronizeNotificationBaseline()
       this.broadcastRevision()
       return this.publicSnapshot()
     })
@@ -4089,6 +4125,27 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
         this.revisionListeners.delete(listener)
       }
     }
+    this.queueDesktopNotifications()
+  }
+
+  private queueDesktopNotifications(): void {
+    const items = deriveCommonspaceInboxItems(this.state)
+    const fresh = items.filter(item => !this.knownInboxItemIds.has(item.id))
+    for (const item of items) this.knownInboxItemIds.add(item.id)
+    if (this.closing || this.clientUrl === undefined || fresh.length === 0) return
+    for (const item of fresh) {
+      const notification = desktopNotificationForItem(item, this.state.notifications, this.clientUrl)
+      if (notification === null) continue
+      const operation = this.notifyDesktop(notification).catch(error => {
+        this.environment.logger?.warn(`Commonspace desktop notification failed: ${error instanceof Error ? error.message : String(error)}`)
+      })
+      this.backgroundRuns.add(operation)
+      void operation.finally(() => { this.backgroundRuns.delete(operation) }).catch(() => undefined)
+    }
+  }
+
+  private synchronizeNotificationBaseline(): void {
+    for (const item of deriveCommonspaceInboxItems(this.state)) this.knownInboxItemIds.add(item.id)
   }
 
   private broadcastLiveActivities(): void {

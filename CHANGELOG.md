@@ -39,6 +39,7 @@ All notable changes to Commonspace are recorded here.
 - Documented version-1 JSON workspace export with sanitized records and exact attachment bytes, plus clean-workspace import with explicit local Project-root mapping.
 - Revision-bound retention previews and confirmed scoped Channel/DM cleanup, including transcript, Thread, attachment-byte, pin, permission, context, and native-continuity removal.
 - One-command macOS installation with an owner LaunchAgent, same-origin installed UI/API, lifecycle health controls, staged updates, automatic failed-update restoration, and explicit rollback.
+- Opt-in native notifications for replies/input requests, mentions, ACP permissions, failures, and timeouts, with independent persisted settings, exact loopback deep links, and restart/import replay prevention.
 - Project Files, Git Changes/diffs, speech playback, live activity, and stop controls.
 - Zero-to-many Project references on messages and threads, with multi-root agent execution, Project-aware search, correct run attribution, and backward-compatible singular fields for the current UI.
 - Editable Channel context APIs with user-owned context preservation, manual inference compaction, automatic token-pressure compaction, and visible current/stale metadata.
@@ -52,7 +53,7 @@ All notable changes to Commonspace are recorded here.
 - Queued and in-flight replies cannot execute or persist against stale Project authority after Project configuration changes.
 - Channel context refresh/compaction is race-safe and preserves human-authored context, while concurrent harness inference runs use isolated native sessions.
 - Installed Hermes and Codex harnesses are discovered only during an explicit Add Agent flow; new Channels start with no agents preselected.
-- Local state migrates from versions 1–22 to version 23 for general files and native permission requests; it continues deriving Thread memory for legacy Threads and recovering an invalid primary from the previous valid rollback backup.
+- Local state migrates from versions 1–23 to version 24 for native notification preferences; it continues deriving Thread memory for legacy Threads and recovering an invalid primary from the previous valid rollback backup.
 - Channel and Thread context compaction now persists visible `compacting` and `failed` states while retaining the last valid representation.
 - Inferred routing uses the visible max-agents setting instead of a hidden two-Agent cap.
 - Independent agents can run concurrently; only the same native agent session is serialized.

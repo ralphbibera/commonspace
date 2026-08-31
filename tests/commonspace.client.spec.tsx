@@ -64,6 +64,30 @@ function sidebarStore(
 }
 
 describe('Commonspace interface', () => {
+  it('configures OS notifications without changing durable Inbox behavior', async () => {
+    const updateRoutingConfiguration = vi.fn(async () => undefined)
+    const { store, mutate } = sidebarStore({
+      state: state({
+        notifications: { enabled: false, replies: true, mentions: true, permissions: true, failures: true, sound: false },
+      }),
+    }, { updateRoutingConfiguration })
+    render(<CommonspaceSidebar wide expandSidebar={() => undefined} store={store as never} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Commonspace settings' }))
+
+    fireEvent.click(screen.getByLabelText('Enable OS notifications'))
+    fireEvent.click(screen.getByLabelText('Reply notifications'))
+    fireEvent.click(screen.getByLabelText('Notification sound'))
+    fireEvent.click(screen.getByRole('button', { name: 'Save notification settings' }))
+
+    await waitFor(() => {
+      expect(mutate).toHaveBeenCalledWith({
+        action: 'set-notifications',
+        notifications: { enabled: true, replies: false, mentions: true, permissions: true, failures: true, sound: true },
+      })
+      expect(updateRoutingConfiguration).not.toHaveBeenCalled()
+    })
+  })
+
   it('previews and confirms scoped retention without hidden deletion', async () => {
     const channel = {
       id: 'general',
@@ -139,7 +163,7 @@ describe('Commonspace interface', () => {
 
   it('shows runtime readiness, inference disclosure, and recovery guidance', async () => {
     const diagnostics = vi.fn(async () => ({
-      service: { status: 'ready', stateVersion: 23, storage: 'ready', projectlessWorkspace: 'ready' },
+      service: { status: 'ready', stateVersion: 24, storage: 'ready', projectlessWorkspace: 'ready' },
       inference: {
         provider: 'openai-compatible',
         location: 'remote',

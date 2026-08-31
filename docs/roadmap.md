@@ -33,20 +33,16 @@ Commonspace is a private preview focused on durable human-agent conversation and
 - Versioned non-secret workspace export, clean-workspace import with explicit Project-root mapping, and exact attachment restoration.
 - Explicit revision-guarded Channel/DM retention with impact preview and attachment-byte cleanup; no automatic expiry.
 - One-command macOS installation, owner LaunchAgent startup, same-origin built UI/API service, staged updates, health control, and one-release rollback.
+- Opt-in native notifications for replies, mentions, permission requests, failures, and timeouts, with independent category/sound controls and exact message deep links.
 - Project Files, Git Changes/diffs, image attachments, and reply speech playback.
 - Work/result binding through per-reply run attribution, changed-file surfaces, activity traces, and validation evidence emitted by the harness.
 - Hard-boundary cancellation, stale-session recovery that distinguishes missing from transient failures, and graceful bridge shutdown.
 - Slash commands and agent/project/channel references.
 - Versioned atomic state, loopback API guards, bounded execution, and live browser verification.
 
-## Next: product behavior
-
-- Add optional OS notifications and independent notification settings.
-
 ## Later UI/UX work
 
 - Multi-Project controls for new roots and inferred-reference correction.
-- Notification settings and surfaces.
 - Keyboard and narrow-screen acceptance coverage across every flow.
 
 ## Scale-dependent work

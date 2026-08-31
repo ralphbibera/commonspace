@@ -1,5 +1,5 @@
 import type { CommonspaceAgentDefinition, CommonspaceAgentProfile, CommonspaceMutation, CommonspaceState } from '@commonspace/shared'
-import { agentTagName, COMMONSPACE_STATE_VERSION, projectTagName, referencedProjectIds, uniqueAgentDisplayName } from '@commonspace/shared'
+import { agentTagName, COMMONSPACE_STATE_VERSION, DEFAULT_COMMONSPACE_NOTIFICATION_SETTINGS, projectTagName, referencedProjectIds, uniqueAgentDisplayName } from '@commonspace/shared'
 import { projectChannelMemory } from './memory.js'
 
 export const DM_SESSION_BOUNDARY_AUTHOR_ID = 'dm-session-boundary'
@@ -83,6 +83,10 @@ export function defaultCommonspaceDefaults() {
   return { ...defaultRunSettings(), reasoning: 'max' as const, maxAgentsPerTurn: 4, memoryThreads: 12 }
 }
 
+export function defaultNotificationSettings() {
+  return { ...DEFAULT_COMMONSPACE_NOTIFICATION_SETTINGS }
+}
+
 function normalizedName(value: string, label: string): string {
   const name = value.normalize('NFKC').trim().replace(/\s+/g, ' ').slice(0, 80)
   if (name === '') throw new Error(`${label} name is required`)
@@ -130,6 +134,7 @@ export function createInitialState(): CommonspaceState {
     inboxSavedItemIds: [],
     followedSessionIds: [],
     mutedSessionIds: [],
+    notifications: defaultNotificationSettings(),
     defaults: defaultCommonspaceDefaults(),
     agents: [],
     dmSessions: {},
@@ -235,6 +240,25 @@ export function applyMutation(
       const followedSessionIds = mutation.muted ? state.followedSessionIds.filter(id => id !== sessionId) : state.followedSessionIds
       if (mutedSessionIds.length === state.mutedSessionIds.length && followedSessionIds.length === state.followedSessionIds.length) return state
       return { ...state, revision: nextRevision(state), followedSessionIds, mutedSessionIds }
+    }
+    case 'set-notifications': {
+      const notifications = mutation.notifications
+      if (typeof notifications !== 'object' || notifications === null ||
+        typeof notifications.enabled !== 'boolean' || typeof notifications.replies !== 'boolean' ||
+        typeof notifications.mentions !== 'boolean' || typeof notifications.permissions !== 'boolean' ||
+        typeof notifications.failures !== 'boolean' || typeof notifications.sound !== 'boolean') {
+        throw new Error('notification settings must be booleans')
+      }
+      const next = {
+        enabled: notifications.enabled,
+        replies: notifications.replies,
+        mentions: notifications.mentions,
+        permissions: notifications.permissions,
+        failures: notifications.failures,
+        sound: notifications.sound,
+      }
+      if (JSON.stringify(next) === JSON.stringify(state.notifications)) return state
+      return { ...state, revision: nextRevision(state), notifications: next }
     }
     case 'create-project': {
       const name = normalizedName(mutation.name, 'project')

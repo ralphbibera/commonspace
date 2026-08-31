@@ -821,6 +821,8 @@ export const commonspaceStyles = String.raw`
 
 .csp-browser-form fieldset.csp-routing-options { grid-template-columns: 1fr; }
 .csp-browser-form fieldset.csp-run-defaults { grid-template-columns: 1fr; }
+.csp-browser-form fieldset.csp-notification-settings { grid-template-columns: 1fr; }
+.csp-notification-settings p { margin: 0 0 3px; color: var(--dsw-alias-label-tertiary, #8a8f98); font-size: 9px; line-height: 1.4; }
 .csp-runtime-diagnostics { display: grid; gap: 6px; padding: 8px; border: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.12)); border-radius: 7px; background: var(--dsw-alias-bg-subtle, rgba(0, 0, 0, 0.018)); }
 .csp-runtime-diagnostics header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .csp-runtime-diagnostics p { margin: 0; color: var(--dsw-alias-label-secondary, #666b74); font-size: 10px; line-height: 1.45; }

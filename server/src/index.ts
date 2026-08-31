@@ -81,6 +81,7 @@ export async function startCommonspaceServer(options: StartCommonspaceServerOpti
     const address = server.address() as AddressInfo
     url = `http://127.0.0.1:${String(address.port)}`
     service.attachMcpGateway(mcpGateway, `${url}/api/mcp`)
+    service.attachClientUrl(url)
   } catch (error) {
     if (server !== undefined) await closeHttpServer(server).catch(() => undefined)
     await mcpGateway.close().catch(() => undefined)

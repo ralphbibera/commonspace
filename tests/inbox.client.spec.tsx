@@ -10,7 +10,10 @@ import {
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { CommonspaceApp } from '../ui/src/CommonspaceApp.tsx'
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  window.history.replaceState(null, '', '/')
+})
 beforeAll(() => {
   Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: vi.fn() })
 })
@@ -183,6 +186,25 @@ function appStore(initialState: CommonspaceState, includeLiveActivity = true) {
 }
 
 describe('Commonspace Inbox', () => {
+  it('opens an exact notification deep link on first load', async () => {
+    const scrollIntoView = vi.fn()
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: scrollIntoView })
+    window.history.replaceState(null, '', '/?conversation=channel&conversationId=general&threadId=thread-1&messageId=reply-thread')
+    const { store, selectConversation, selectThread } = appStore(state(), false)
+
+    render(<CommonspaceApp store={store as never} />)
+
+    await waitFor(() => {
+      expect(selectConversation).toHaveBeenCalledWith({ kind: 'channel', id: 'general' })
+      expect(selectThread).toHaveBeenCalledWith('thread-1')
+    })
+    expect(await screen.findByText('Thread result.')).toBeTruthy()
+    await waitFor(() => {
+      expect(document.getElementById('csp-message-reply-thread')).not.toBeNull()
+      expect(scrollIntoView).toHaveBeenCalledWith({ block: 'center', behavior: 'smooth' })
+    })
+  })
+
   it('shows the unread Inbox count on its channel', () => {
     const { store } = appStore(state())
     render(<CommonspaceApp store={store as never} />)
