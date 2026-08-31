@@ -2,13 +2,14 @@ import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { COMMONSPACE_STATE_VERSION } from '@commonspace/shared'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { startCommonspaceServer, type RunningCommonspaceServer } from '../server/src/index.ts'
 
 const roots: string[] = []
 const servers: RunningCommonspaceServer[] = []
 
 afterEach(async () => {
+  vi.unstubAllEnvs()
   await Promise.all(servers.splice(0).map(server => server.close()))
   await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))
 })
@@ -19,10 +20,12 @@ describe('standalone Commonspace server', () => {
     roots.push(root)
     const workspace = join(root, 'workspace')
     await mkdir(workspace)
+    vi.stubEnv('CODEX_HOME', join(root, 'codex-home'))
     let discoveryCalls = 0
 
     const running = await startCommonspaceServer({
       root,
+      defaultCwd: workspace,
       port: 0,
       directoryPicker: async () => workspace,
       dependencies: { discoverAgents: async () => { discoveryCalls += 1; return [] } },
@@ -120,11 +123,7 @@ describe('standalone Commonspace server', () => {
       body: JSON.stringify({ adapter: 'codex' }),
     })
     expect(codexDiscoveryResponse.status).toBe(200)
-    await expect(codexDiscoveryResponse.json()).resolves.toMatchObject({
-      discoveredAgents: expect.arrayContaining([
-        expect.objectContaining({ id: 'codex-default', adapter: 'codex', nativeProfile: 'default' }),
-      ]),
-    })
+    await expect(codexDiscoveryResponse.json()).resolves.toMatchObject({ discoveredAgents: [] })
     expect(discoveryCalls).toBe(1)
 
     const unsupportedResponse = await fetch(`${running.url}/api/discover-agents`, {

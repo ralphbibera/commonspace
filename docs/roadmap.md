@@ -26,7 +26,7 @@ Commonspace is a private preview focused on durable human-agent conversation and
 
 ## Immediate direction-alignment work
 
-- Remove Commonspace-defined Codex personas and managed identities that do not come from explicit harness discovery.
+- Remove legacy managed Codex identity creation and preserve or migrate existing identity/history safely.
 
 ## Next: product behavior
 
