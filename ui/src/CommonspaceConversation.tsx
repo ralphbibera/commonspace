@@ -170,9 +170,11 @@ function MessageRow({
                           const project = bootstrap?.state.projects.find(candidate => candidate.id === projectId)
                           return project === undefined ? [] : [project.name]
                         })
+                        const inferred = assignment.projectIds.some(projectId =>
+                          (message.routing?.inferredProjectIds ?? []).includes(projectId))
                         return (
                           <li key={assignment.id}>
-                            <strong>@{agent?.displayName ?? assignment.agentId}{projects.length === 0 ? '' : ` · ${projects.join(', ')}`}</strong>
+                            <strong>@{agent?.displayName ?? assignment.agentId}{projects.length === 0 ? '' : ` · ${projects.join(', ')}`}{inferred ? ' · inferred' : ''}</strong>
                             <p>{assignment.subRequest}</p>
                           </li>
                         )

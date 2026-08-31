@@ -166,6 +166,7 @@ export interface CommonspaceRouteInput {
     matchedTerms: string[]
   }>
   projects: Array<{ id: string; name: string }>
+  inferProjects: boolean
   maxAgents: number
 }
 
@@ -187,6 +188,7 @@ interface PreparedSend {
   routing?: CommonspaceRoutingDecision
   channel?: CommonspaceState['channels'][number]
   projects: CommonspaceState['projects']
+  inferProjects: boolean
   /** Compatibility primary Project while singular consumers are migrated. */
   project?: CommonspaceState['projects'][number]
   thread?: CommonspaceThread
@@ -715,6 +717,8 @@ function sanitizeRoutingDecision(
   const confidence = typeof routing.confidence === 'number' && Number.isFinite(routing.confidence)
     ? Math.max(0, Math.min(1, routing.confidence))
     : undefined
+  const inferredProjectIds = loadedStringArray(routing.inferredProjectIds, 32, 200)
+    .filter(projectId => projectIds.has(projectId))
   const assignments: CommonspaceRoutingAssignment[] = []
   const assignedAgents = new Set<string>()
   if (Array.isArray(routing.assignments)) {
@@ -744,6 +748,7 @@ function sanitizeRoutingDecision(
     ...(status === undefined ? {} : { status }),
     agentIds: routedAgentIds,
     assignments,
+    inferredProjectIds,
     ...(confidence === undefined ? {} : { confidence }),
     reason,
   }
@@ -1881,6 +1886,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
             subRequest: text,
             projectIds: projects.map(project => project.id),
           })),
+          inferredProjectIds: [],
           reason: 'Direct reply target selected.',
         }
       } else {
@@ -1908,11 +1914,12 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
               subRequest: text,
               projectIds: projects.map(project => project.id),
             })),
+            inferredProjectIds: [],
             reason: parseTags(text).agents.includes('all') ? '@all addressed every channel agent.' : 'Agent mention selected.',
           }
         } else {
           agentIds = []
-          routing = { source: 'ai', status: 'pending', agentIds, assignments: [], reason: 'Routing with inference.' }
+          routing = { source: 'ai', status: 'pending', agentIds, assignments: [], inferredProjectIds: [], reason: 'Routing with inference.' }
         }
       }
     } else {
@@ -1929,7 +1936,8 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
       dmSessionName = this.state.dmSessions[request.conversation.id] ?? 'Bot Chat'
     }
     if (text === '' && attachments.length === 0) throw new Error('message text or image is required')
-    return { request, text, attachments, agents, agentIds, projects, ...(routing === undefined ? {} : { routing }), ...(channel === undefined ? {} : { channel }), ...(project === undefined ? {} : { project }), ...(thread === undefined ? {} : { thread }), ...(dmSessionName === undefined ? {} : { dmSessionName }) }
+    const inferProjects = request.conversation.kind === 'channel' && request.threadId === undefined && !projectSelectionProvided
+    return { request, text, attachments, agents, agentIds, projects, inferProjects, ...(routing === undefined ? {} : { routing }), ...(channel === undefined ? {} : { channel }), ...(project === undefined ? {} : { project }), ...(thread === undefined ? {} : { thread }), ...(dmSessionName === undefined ? {} : { dmSessionName }) }
   }
 
   private async routeChannelMessage(
@@ -1938,6 +1946,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
     thread: CommonspaceThread | undefined,
     memberIds: readonly string[],
     agents: readonly CommonspaceAgentProfile[],
+    inferProjects: boolean,
   ): Promise<CommonspaceRouteResult> {
     const agentById = new Map(agents.map(agent => [agent.id, agent]))
     const candidates = rankChannelAgents(memberIds, text, agents).flatMap((signal) => {
@@ -1952,7 +1961,8 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
       }]
     })
     if (candidates.length === 0) throw new Error('inference routing failed: no eligible agents')
-    const projects = referencedProjectIds(thread ?? {}).flatMap((projectId) => {
+    const explicitProjectIds = referencedProjectIds(thread ?? {})
+    const projects = (inferProjects ? this.state.projects.map(project => project.id) : explicitProjectIds).flatMap((projectId) => {
       const project = this.state.projects.find(candidate => candidate.id === projectId)
       return project === undefined ? [] : [{ id: project.id, name: project.name }]
     })
@@ -1973,6 +1983,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
       context,
       candidates,
       projects,
+      inferProjects,
       maxAgents: Math.min(this.state.defaults.maxAgentsPerTurn, candidates.length),
     }
     try {
@@ -2357,21 +2368,38 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
     try {
       const routingThread = prepared.thread ?? response.thread
       const memberIds = prepared.thread?.agentIds ?? prepared.channel?.agentIds ?? []
-      const decision = await this.routeChannelMessage(prepared.text, prepared.request, routingThread, memberIds, prepared.agents)
+      const decision = await this.routeChannelMessage(prepared.text, prepared.request, routingThread, memberIds, prepared.agents, prepared.inferProjects)
       const assignments: CommonspaceRoutingAssignment[] = (decision.assignments ?? []).map(assignment => ({
         id: crypto.randomUUID(),
         ...assignment,
       }))
+      const inferredProjectIds = prepared.inferProjects
+        ? [...new Set(assignments.flatMap(assignment => assignment.projectIds))]
+        : []
+      const inferredProjects = inferredProjectIds.map((projectId) => {
+        const project = this.state.projects.find(candidate => candidate.id === projectId)
+        if (project === undefined) throw new Error('inference routing returned an unknown Project')
+        return project
+      })
+      const resolvedProjects = prepared.inferProjects ? inferredProjects : prepared.projects
       const routing: CommonspaceRoutingDecision = {
         source: 'ai',
         status: 'resolved',
         agentIds: decision.agentIds ?? assignments.map(assignment => assignment.agentId),
         assignments,
+        inferredProjectIds,
         ...(decision.confidence === undefined ? {} : { confidence: decision.confidence }),
         reason: decision.reason,
       }
-      const thread = response.thread === undefined ? undefined : { ...response.thread, agentIds: routing.agentIds }
-      const accepted: CommonspaceMessage = { ...response.accepted, routing }
+      const thread = response.thread === undefined
+        ? undefined
+        : {
+            ...response.thread,
+            agentIds: routing.agentIds,
+            projectIds: resolvedProjects.map(project => project.id),
+            projectId: resolvedProjects[0]?.id ?? null,
+          }
+      const accepted: CommonspaceMessage = { ...response.accepted, ...projectReferenceFields(resolvedProjects), routing }
       const key = conversationKey(prepared.request.conversation)
       this.state = {
         ...this.state,
@@ -2387,7 +2415,14 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
       await this.persist()
       this.broadcastRevision()
       return {
-        prepared: { ...prepared, agentIds: routing.agentIds, routing, ...(thread === undefined ? {} : { thread }) },
+        prepared: {
+          ...prepared,
+          agentIds: routing.agentIds,
+          projects: resolvedProjects,
+          ...(resolvedProjects[0] === undefined ? {} : { project: resolvedProjects[0] }),
+          routing,
+          ...(thread === undefined ? {} : { thread }),
+        },
         response: { ...response, accepted, ...(thread === undefined ? {} : { thread }), state: this.publicSnapshot() },
       }
     } catch (error) {
@@ -2396,6 +2431,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
         status: 'failed',
         agentIds: [],
         assignments: [],
+        inferredProjectIds: [],
         reason: error instanceof Error ? error.message : 'Inference routing failed.',
       }
       const key = conversationKey(prepared.request.conversation)
