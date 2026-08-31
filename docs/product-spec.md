@@ -245,8 +245,8 @@ flowchart TD
 | AGT-01 | v0.1 | Add Agents only through an explicit user-initiated discovery flow. | Startup does not silently add discovered harness profiles. |
 | AGT-02 | v0.1 | Support known ACP harnesses through first-party adapters. | Unsupported arbitrary CLIs are rejected rather than represented as partially functional Agents. |
 | AGT-03 | v0.1 | Reuse one Agent identity across Projects, Channels, DMs, and Threads. | No per-Project Agent clone or hidden Project-specific memory identity is created. |
-| AGT-04 | v0.1 | Allow workspace-local display name, avatar/emoji, and accent changes. | Native harness identity and configuration remain unchanged. |
-| AGT-05 | Capability-dependent | Expose models, reasoning, steering, stopping, tools, and permissions only when advertised through ACP. | The UI and API do not synthesize unsupported choices. |
+| AGT-04 | v0.1 | Allow workspace-local display name, avatar/emoji, and accent changes. | Native harness identity and configuration remain unchanged; Commonspace does not create synthetic personas or behavior profiles. |
+| AGT-05 | Capability-dependent | Expose models, reasoning, steering, stopping, tools, and permissions only when advertised through ACP. | The UI and API do not synthesize unsupported choices or inspect/mutate harness configuration through runtime-specific side channels. |
 | AGT-06 | v0.1 | Avoid standalone Agent profile/dashboard requirements. | Agent discovery and context remain available through addition, DMs, Channel membership, mentions, and session indicators. |
 
 ### 6.3 Projects and references
@@ -351,7 +351,7 @@ flowchart TD
 | DAT-02 | v0.1 | Keep credentials, MCP capabilities, opaque native session IDs, and host paths private. | Browser snapshots, activity, search, and portable exports do not contain them. |
 | DAT-03 | v0.1 | Provide an open, versioned export of non-secret workspace data and attachments. | The archive is documented and usable without Commonspace cloud services. |
 | DAT-04 | v0.1 | Validate imports and resolve local resource mappings explicitly. | Import cannot overwrite current state or assume that exported absolute paths exist. |
-| DAT-05 | v0.1 | Keep data indefinitely by default and provide explicit retention controls. | Destructive cleanup is scoped, previewable, and does not silently rewrite delivered history. |
+| DAT-05 | v0.1 | Keep data indefinitely by default and provide explicit retention controls. | No fixed append/load window silently drops accepted messages; destructive cleanup is scoped, previewable, and does not silently rewrite delivered history. |
 | DAT-06 | v0.1 | Disclose configured inference data flow. | The user can see whether inference is local or remote and what categories of conversation/context may be sent. |
 | DAT-07 | Later | Migrate transcripts to a relational store only after measured need. | The product model and export format do not depend on the current JSON persistence implementation. |
 
@@ -458,6 +458,7 @@ These states describe message delivery and native execution. They are not task w
 ### Reliability invariants
 
 - Once a message is accepted, later failure cannot erase it.
+- Accepted messages are never evicted by an implicit count cap; bounds apply to derived context and activity, not the canonical transcript.
 - `/new`, Agent removal, Channel removal, and shutdown are hard generation boundaries.
 - Stale replies from cancelled or replaced generations cannot mutate the current conversation.
 - Same-session calls are serialized; unrelated sessions remain concurrent.
@@ -468,6 +469,12 @@ These states describe message delivery and native execution. They are not task w
 ## 11. Release slices
 
 The implementation order is behavior-first. UI/UX work begins after the underlying contracts and failure semantics stabilize.
+
+### Slice 0: Restore product invariants
+
+- Preserve every accepted conversation message until an explicit retention action removes it.
+- Remove Commonspace-defined Agent personas and managed identities that do not come from explicit harness discovery.
+- Remove runtime-specific configuration inspection/mutation; expose only capabilities and controls advertised through ACP.
 
 ### Slice A: Complete Commonspace inference
 
@@ -520,7 +527,7 @@ The implementation order is behavior-first. UI/UX work begins after the underlyi
 | E2E-08 | Reroute one bad assignment | Only that sub-request is corrected; other Agents are not restarted, and the correction enters routing memory. |
 | E2E-09 | Attach a normal file and receive an Agent file | Both attachments remain bound to their exact messages; no host path or credential data reaches the browser. |
 | E2E-10 | Receive a permission request while the client is closed | The service keeps the request pending, other sessions continue, and reopening shows an exact attention item with harness-provided choices. |
-| E2E-11 | Restart after completed conversations | Conversations and context restore, resumable sessions continue exactly, and unrecoverable in-flight work is marked interrupted. |
+| E2E-11 | Restart after a conversation exceeds the legacy 500-message boundary | Every accepted message and its context restore, resumable sessions continue exactly, and unrecoverable in-flight work is marked interrupted. |
 | E2E-12 | Export and import into a clean workspace | Non-secret conversation data and attachments import safely, and local Project roots require explicit remapping. |
 
 ## 13. v0.1 definition of done
@@ -530,7 +537,7 @@ Commonspace v0.1 is product-complete when:
 1. Every `v0.1` requirement above has automated contract/service coverage and a verified user-facing path.
 2. Capability-dependent behavior is tested against each supported harness that advertises it.
 3. All end-to-end acceptance scenarios pass on a clean supported machine.
-4. Existing state versions migrate without dropping conversations, context, references, attachments, or read state.
+4. Existing state versions migrate without dropping conversations, context, references, attachments, or read state, including transcripts beyond legacy count windows.
 5. The browser client works across desktop and narrow layouts, keyboard-only operation, and light/dark appearance.
 6. The local service can be installed, started, stopped, updated, and recovered without repository knowledge.
 7. No portable or browser-visible payload leaks credentials, absolute paths, native session IDs, or ephemeral capabilities.

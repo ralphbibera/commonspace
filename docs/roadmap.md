@@ -10,18 +10,24 @@ Commonspace is a private preview focused on durable human-agent conversation and
 - Channels with explicit agent rosters, instructions, settings, memory, and threaded native sessions.
 - Editable Channel context with state metadata, manual compaction, and automatic token-pressure compaction through the configured inference layer.
 - Persistent Direct Messages with generation-safe `/new` boundaries.
-- Hermes discovery with explicit roster selection, plus managed Codex agents.
+- Hermes and Codex profile discovery with explicit roster selection.
 - Native Hermes/Codex ACP relay with delta-only delivery, exact opaque-session resumption, and scoped Commonspace MCP context/actions.
 - Expandable, durable per-reply traces for harness-emitted reasoning, plans, tools, results, and context usage.
 - Live semantic activity with per-run and `/stop` cancellation controls.
 - Live run supervision with steering, queued follow-ups, reorder/remove controls, and stop-and-send.
 - Explicit completed, needs-input, failed, silent, cancelled, and timeout outcomes with needs-attention surfacing.
 - Inference-only unaddressed Channel routing through a harness or OpenAI-compatible model.
-- Project Files, Git Changes/diffs, image attachments, reply speech playback, and native agent configuration inspection.
+- Project Files, Git Changes/diffs, image attachments, and reply speech playback.
 - Work/result binding through per-reply run attribution, changed-file surfaces, activity traces, and validation evidence emitted by the harness.
 - Hard-boundary cancellation, stale-session recovery that distinguishes missing from transient failures, and graceful bridge shutdown.
 - Slash commands and agent/project/channel references.
 - Versioned atomic state, loopback API guards, bounded execution, and live browser verification.
+
+## Immediate direction-alignment work
+
+- Preserve every accepted conversation message instead of silently retaining only the newest 500 messages.
+- Remove Commonspace-defined Codex personas and managed identities that do not come from explicit harness discovery.
+- Remove direct Hermes configuration/profile mutation and expose only capabilities and controls advertised through ACP.
 
 ## Next: product behavior
 
@@ -44,6 +50,7 @@ Commonspace is a private preview focused on durable human-agent conversation and
 ## Scale-dependent work
 
 - A durable relational message store once transcript scale justifies migration from the current versioned state file.
+- Storage technology may remain JSON while appropriate, but the current store must preserve every accepted message until explicit retention exists.
 
 See [Product specification](product-spec.md) for the complete behavior and acceptance contract and [Implementation gap audit](implementation-gap-audit.md) for evidence-based implementation status.
 
