@@ -31,6 +31,10 @@ All notable changes to Commonspace are recorded here.
 - Human message editing through visible Channel Thread or DM generation branches with preserved prior results and pre-branch scoped context.
 - Durable deletion markers that remove message bodies, attachment bytes, and derived automatic context without misrepresenting delivered history.
 - Channel context editor with manual compaction, status visibility, and Channel note-pin management.
+- Dedicated canonical owner-only workspace isolation for turns without Project roots.
+- Durable general human files delivered as ACP resource links, safe downloads/search/pinning, credential-file refusal, and exact message-version binding.
+- Capability-dependent ACP Agent resource links imported only from permitted working roots into private durable attachments.
+- Native ACP permission requests with exact harness choices, durable attention/Inbox state, per-session blocking, response controls, and shutdown interruption recovery.
 - Project Files, Git Changes/diffs, speech playback, live activity, and stop controls.
 - Zero-to-many Project references on messages and threads, with multi-root agent execution, Project-aware search, correct run attribution, and backward-compatible singular fields for the current UI.
 - Editable Channel context APIs with user-owned context preservation, manual inference compaction, automatic token-pressure compaction, and visible current/stale metadata.
@@ -44,7 +48,7 @@ All notable changes to Commonspace are recorded here.
 - Queued and in-flight replies cannot execute or persist against stale Project authority after Project configuration changes.
 - Channel context refresh/compaction is race-safe and preserves human-authored context, while concurrent harness inference runs use isolated native sessions.
 - Installed Hermes and Codex harnesses are discovered only during an explicit Add Agent flow; new Channels start with no agents preselected.
-- Local state migrates from versions 1–20 to version 21 for pins, message-version branches, and deletion markers; it continues deriving Thread memory for legacy Threads and recovering an invalid primary from the previous valid rollback backup.
+- Local state migrates from versions 1–22 to version 23 for general files and native permission requests; it continues deriving Thread memory for legacy Threads and recovering an invalid primary from the previous valid rollback backup.
 - Channel and Thread context compaction now persists visible `compacting` and `failed` states while retaining the last valid representation.
 - Inferred routing uses the visible max-agents setting instead of a hidden two-Agent cap.
 - Independent agents can run concurrently; only the same native agent session is serialized.

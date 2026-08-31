@@ -93,6 +93,22 @@ function messageCandidates(bootstrap: CommonspaceBootstrap): Candidate[] {
         ...candidateProjectFields(projectIds),
         target: messageTarget(message),
       })
+      for (const attachment of [
+        ...(message.files ?? []).map(file => ({ id: file.id, name: file.name, mimeType: file.mimeType, size: file.size })),
+        ...(message.attachments ?? []).map(image => ({ id: image.id, name: image.name, mimeType: image.mimeType, size: image.size })),
+      ]) {
+        results.push({
+          id: `attachment:${attachment.id}`,
+          kind: 'file',
+          title: attachment.name,
+          detail: `${attachment.mimeType} · ${String(attachment.size)} bytes`,
+          receipt: `${location} · ${message.authorName} attachment · ${message.createdAt}`,
+          occurredAt: message.createdAt,
+          ...candidateProjectFields(projectIds),
+          target: messageTarget(message),
+          searchText: `${attachment.name} ${attachment.mimeType} ${message.authorName}`,
+        })
+      }
       if (message.authorType === 'agent') {
         const status = message.replyStatus ?? 'complete'
         results.push({

@@ -26,6 +26,9 @@ Commonspace is a private preview focused on durable human-agent conversation and
 - Channel/Thread pins for messages, attachments, and notes with scoped MCP visibility and removal tombstones.
 - Human message edit branches with new native continuity, previous-version navigation, and pre-branch context; durable deletion markers remove content without rewriting delivery history.
 - Channel context editing, status inspection, manual compaction, and note-pin controls.
+- Dedicated owner-only projectless workspace isolation.
+- General human files, permitted-root ACP Agent artifacts, safe download/search/pinning, and credential-file refusal.
+- Exact native ACP permission choices with durable conversation/Inbox attention and per-session blocking.
 - Project Files, Git Changes/diffs, image attachments, and reply speech playback.
 - Work/result binding through per-reply run attribution, changed-file surfaces, activity traces, and validation evidence emitted by the harness.
 - Hard-boundary cancellation, stale-session recovery that distinguishes missing from transient failures, and graceful bridge shutdown.
@@ -34,15 +37,14 @@ Commonspace is a private preview focused on durable human-agent conversation and
 
 ## Next: product behavior
 
-- Add general human/agent file attachments.
-- Normalize native permission requests and add clearer runtime/authentication diagnostics.
+- Add clearer runtime/authentication diagnostics.
 - Add export/import and retention controls for non-secret Commonspace data.
 - Package an installed background service and optional OS notifications.
 
 ## Later UI/UX work
 
 - Multi-Project controls for new roots and inferred-reference correction.
-- File, permission, and notification surfaces.
+- Notification and data-management surfaces.
 - Keyboard and narrow-screen acceptance coverage across every flow.
 
 ## Scale-dependent work

@@ -44,6 +44,8 @@ function inboxState(): CommonspaceState {
       createdAt: '2026-08-27T09:59:00.000Z',
       updatedAt: '2026-08-27T10:02:00.000Z',
     }],
+    pins: [],
+    permissions: [],
     messages: {
       'channel:general': [
         {
@@ -94,6 +96,47 @@ function inboxState(): CommonspaceState {
 }
 
 describe('Commonspace Inbox items', () => {
+  it('surfaces pending native permission requests as durable attention items', () => {
+    const state = inboxState()
+    state.permissions = [{
+      id: 'permission-1',
+      sourceMessageId: 'root-1',
+      agentId: 'backend',
+      conversation: { kind: 'channel', id: 'general' },
+      threadId: 'thread-1',
+      toolCallId: 'call-1',
+      title: 'Run database migration',
+      kind: 'execute',
+      options: [{ optionId: 'allow', name: 'Allow once', kind: 'allow_once' }],
+      status: 'pending',
+      createdAt: '2026-08-27T10:07:00.000Z',
+      resolvedAt: null,
+    }]
+
+    expect(deriveCommonspaceInboxItems(state)[0]).toMatchObject({
+      id: 'permission:permission-1',
+      messageId: 'root-1',
+      kind: 'permission-request',
+      actorId: 'backend',
+      actorName: 'Backend',
+      conversation: { kind: 'channel', id: 'general' },
+      threadId: 'thread-1',
+      text: 'Run database migration',
+      unread: true,
+    })
+    expect(deriveCommonspaceSessions(state, [{
+      id: 'run-permission',
+      sourceMessageId: 'root-1',
+      agentId: 'backend',
+      agentName: 'Backend',
+      adapter: 'hermes',
+      conversation: { kind: 'channel', id: 'general' },
+      threadId: 'thread-1',
+      startedAt: '2026-08-27T10:06:00.000Z',
+      entries: [],
+    }])[0]).toMatchObject({ status: 'needs-attention', attentionKind: 'permission-request' })
+  })
+
   it('classifies replies, mentions, failures, timeouts, completions, and input requests', () => {
     const state = inboxState()
     state.messages['dm:reviewer']?.push(

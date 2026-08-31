@@ -3,6 +3,40 @@ import { describe, expect, it } from 'vitest'
 import { applyMutation, createInitialState } from '../server/src/state.ts'
 
 describe('Commonspace Inbox state', () => {
+  it('marks a pending permission Inbox item read by its source message', () => {
+    const state = {
+      ...createInitialState(),
+      agents: [{ id: 'backend', displayName: 'Backend', adapter: 'hermes' as const, model: null, createdAt: 'now' }],
+      messages: {
+        'dm:backend': [{
+          id: 'request-1',
+          conversation: { kind: 'dm' as const, id: 'backend' },
+          authorType: 'user' as const,
+          authorId: 'user',
+          authorName: 'Ralph',
+          text: 'Run it.',
+          createdAt: '2026-08-27T09:00:00.000Z',
+        }],
+      },
+      permissions: [{
+        id: 'permission-1',
+        sourceMessageId: 'request-1',
+        agentId: 'backend',
+        conversation: { kind: 'dm' as const, id: 'backend' },
+        toolCallId: 'call-1',
+        title: 'Run command',
+        options: [{ optionId: 'allow', name: 'Allow', kind: 'allow_once' }],
+        status: 'pending' as const,
+        createdAt: '2026-08-27T09:01:00.000Z',
+        resolvedAt: null,
+      }],
+    }
+
+    const next = applyMutation(state, { action: 'mark-inbox-item-read', messageId: 'request-1' })
+
+    expect(deriveCommonspaceInboxItems(next)[0]?.unread).toBe(false)
+  })
+
   it('persists follow, mute, and save-for-later independently', () => {
     const state = {
       ...createInitialState(),

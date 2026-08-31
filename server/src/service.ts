@@ -2,7 +2,8 @@ import { execFile } from 'node:child_process'
 import { chmod, mkdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
-import { isAbsolute, join } from 'node:path'
+import { basename, isAbsolute, join, relative } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { promisify } from 'node:util'
 import type {
   AddPinRequest,
@@ -12,12 +13,15 @@ import type {
   CommonspaceBootstrap,
   CommonspaceChannelMemory,
   CommonspaceAgentProfile,
+  CommonspaceFileAttachment,
 
   CommonspaceImageAttachment,
   CommonspaceImageMimeType,
   CommonspaceMessage,
   CommonspaceMutation,
   CommonspacePin,
+  CommonspacePermissionOption,
+  CommonspacePermissionRequest,
   CommonspaceRoutingConfiguration,
   CommonspaceRoutingAssignment,
   CommonspaceRoutingCorrection,
@@ -66,6 +70,9 @@ const MAX_MESSAGE_CHARS = 16_000
 const MAX_IMAGE_ATTACHMENTS = 4
 const MAX_IMAGE_ATTACHMENT_BYTES = 8 * 1024 * 1024
 const MAX_IMAGE_ATTACHMENTS_BYTES = 16 * 1024 * 1024
+const MAX_FILE_ATTACHMENTS = 8
+const MAX_FILE_ATTACHMENT_BYTES = 8 * 1024 * 1024
+const MAX_FILE_ATTACHMENTS_BYTES = 16 * 1024 * 1024
 const MAX_HARNESS_DISCOVERY_BYTES = 1024 * 1024
 const MAX_AGENT_RESPONSE_CHARS = 64_000
 const MAX_MCP_CONTEXT_CHARS = 64_000
@@ -140,11 +147,13 @@ export interface AgentRunInput {
   /** The one newly delivered Commonspace message, without replayed context. */
   message: string
   images?: readonly AgentImageInput[]
+  files?: readonly AgentFileInput[]
   commonspaceScope?: CommonspaceMcpScope
   sessionId?: string
   model?: string
   reasoning?: CommonspaceState['defaults']['reasoning']
   onTraceUpdate?: (entries: readonly CommonspaceTraceEntry[]) => void
+  onPermissionRequest?: (request: AgentPermissionRequest) => Promise<AgentPermissionOutcome>
   /** Aborted when the user stops the Commonspace message that initiated this run. */
   signal: AbortSignal
 }
@@ -155,10 +164,36 @@ export interface AgentImageInput {
   data: string
 }
 
+export interface AgentFileInput {
+  name: string
+  mimeType: string
+  size: number
+  uri: string
+}
+
 export interface AgentRunResult {
   text: string
   sessionId?: string
   trace?: CommonspaceAgentTrace
+  files?: AgentGeneratedFile[]
+}
+
+export interface AgentGeneratedFile {
+  name: string
+  uri: string
+  mimeType?: string
+  size?: number
+}
+
+export interface AgentPermissionRequest {
+  toolCallId: string
+  title: string
+  kind?: string
+  options: CommonspacePermissionOption[]
+}
+
+export interface AgentPermissionOutcome {
+  optionId?: string
 }
 
 export interface CommonspaceHostDependencies {
@@ -193,6 +228,7 @@ interface PreparedSend {
   request: SendMessageRequest
   text: string
   attachments: PreparedImageAttachment[]
+  files: PreparedFileAttachment[]
 
   agents: CommonspaceAgentProfile[]
   agentIds: string[]
@@ -221,6 +257,11 @@ interface PreparedImageAttachment {
   data: Buffer
 }
 
+interface PreparedFileAttachment {
+  metadata: CommonspaceFileAttachment
+  data: Buffer
+}
+
 
 interface AgentDelivery {
   authorType: 'user' | 'agent'
@@ -229,6 +270,7 @@ interface AgentDelivery {
   text: string
   projectIds?: readonly string[]
   images?: readonly AgentImageInput[]
+  files?: readonly AgentFileInput[]
   routingAssignmentId?: string
 }
 
@@ -361,6 +403,44 @@ function prepareImageAttachments(value: unknown): PreparedImageAttachment[] {
     })
   }
   return attachments
+}
+
+function credentialBearingFileName(name: string): boolean {
+  const lower = name.toLocaleLowerCase()
+  return /^\.env(?:\.|$)/u.test(lower) || lower === '.npmrc' || lower === '.netrc' ||
+    /^(?:id_rsa|id_ed25519|credentials?|secrets?|tokens?)(?:\.|$)/u.test(lower) ||
+    /(?:^|[._-])(?:service-account|credentials?|secrets?|tokens?)(?:[._-]|$)/u.test(lower) ||
+    /\.(?:pem|key|p12|pfx|kdbx)$/u.test(lower)
+}
+
+function prepareFileAttachments(value: unknown): PreparedFileAttachment[] {
+  if (value === undefined) return []
+  if (!Array.isArray(value)) throw new Error('file attachments must be an array')
+  if (value.length > MAX_FILE_ATTACHMENTS) throw new Error(`at most ${String(MAX_FILE_ATTACHMENTS)} files can be attached`)
+  const files: PreparedFileAttachment[] = []
+  let totalBytes = 0
+  for (const candidate of value) {
+    const file = plainRecord(candidate)
+    if (file === null) throw new Error('invalid file attachment')
+    const name = loadedString(file.name, 200).normalize('NFKC').trim()
+    if (name === '' || name.includes('/') || name.includes('\\')) throw new Error('file name is invalid')
+    if (credentialBearingFileName(name)) throw new Error('credential-bearing files cannot be attached')
+    const mimeType = loadedString(file.mimeType, 200).trim().toLocaleLowerCase()
+    if (!/^[a-z0-9][a-z0-9!#$&^_.+-]*\/[a-z0-9][a-z0-9!#$&^_.+-]*$/u.test(mimeType)) throw new Error('file MIME type is invalid')
+    if (typeof file.data !== 'string' || file.data.length === 0 || file.data.length > Math.ceil(MAX_FILE_ATTACHMENT_BYTES / 3) * 4 + 4 ||
+      !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(file.data)) {
+      throw new Error('invalid file data')
+    }
+    const data = Buffer.from(file.data, 'base64')
+    if (data.length === 0 || data.length > MAX_FILE_ATTACHMENT_BYTES || data.toString('base64') !== file.data) throw new Error('invalid file data')
+    totalBytes += data.length
+    if (totalBytes > MAX_FILE_ATTACHMENTS_BYTES) throw new Error('file attachments are too large')
+    files.push({
+      metadata: { id: crypto.randomUUID(), name, mimeType, size: data.length },
+      data,
+    })
+  }
+  return files
 }
 
 
@@ -787,6 +867,25 @@ function sanitizeImageAttachments(value: unknown): CommonspaceImageAttachment[] 
   return attachments.length === 0 ? undefined : attachments
 }
 
+function sanitizeFileAttachments(value: unknown): CommonspaceFileAttachment[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const files: CommonspaceFileAttachment[] = []
+  const seen = new Set<string>()
+  for (const candidate of value.slice(0, MAX_FILE_ATTACHMENTS)) {
+    const file = plainRecord(candidate)
+    const id = loadedId(file?.id)
+    const name = loadedString(file?.name, 200).normalize('NFKC').trim()
+    const mimeType = loadedString(file?.mimeType, 200).trim().toLocaleLowerCase()
+    const size = file?.size
+    if (file === null || id === null || !IMAGE_ATTACHMENT_ID_PATTERN.test(id) || seen.has(id) || name === '' || credentialBearingFileName(name)) continue
+    if (!/^[a-z0-9][a-z0-9!#$&^_.+-]*\/[a-z0-9][a-z0-9!#$&^_.+-]*$/u.test(mimeType)) continue
+    if (typeof size !== 'number' || !Number.isSafeInteger(size) || size < 1 || size > MAX_FILE_ATTACHMENT_BYTES) continue
+    seen.add(id)
+    files.push({ id, name, mimeType, size })
+  }
+  return files.length === 0 ? undefined : files
+}
+
 
 function sanitizeRoutingDecision(
   value: unknown,
@@ -978,6 +1077,7 @@ function sanitizeMessages(
       const trace = deletedAt === null && message.authorType === 'agent' ? sanitizeAgentTrace(message.trace) : undefined
       const runAttribution = deletedAt === null && message.authorType === 'agent' ? sanitizeRunAttribution(message.runAttribution) : undefined
       const attachments = deletedAt === null ? sanitizeImageAttachments(message.attachments) : undefined
+      const files = deletedAt === null ? sanitizeFileAttachments(message.files) : undefined
 
       const referencedProjects = loadedProjectIds(message, projectIds)
       const loadedRouting = sanitizeRoutingDecision(message.routing, agentIds, projectIds, id, deletedAt === null ? message.text : '[deleted]', referencedProjects)
@@ -997,6 +1097,7 @@ function sanitizeMessages(
         authorName,
         text: deletedAt === null ? message.text.slice(0, 64_000) : '',
         ...(attachments === undefined ? {} : { attachments }),
+        ...(files === undefined ? {} : { files }),
 
         createdAt: loadedString(message.createdAt, 100),
         ...(referencedProjects.length === 0 ? {} : { projectIds: referencedProjects, projectId: referencedProjects[0] }),
@@ -1065,13 +1166,73 @@ function sanitizePins(
       if (pin.kind === 'message') pins.push({ ...common, kind: 'message', messageId })
       else {
         const attachmentId = loadedId(pin.attachmentId)
-        if (attachmentId === null || (removedAt === null && message?.attachments?.some(attachment => attachment.id === attachmentId) !== true)) continue
+        if (attachmentId === null || (removedAt === null &&
+          message?.attachments?.some(attachment => attachment.id === attachmentId) !== true &&
+          message?.files?.some(file => file.id === attachmentId) !== true)) continue
         pins.push({ ...common, kind: 'attachment', messageId, attachmentId })
       }
     } else continue
     ids.add(id)
   }
   return pins
+}
+
+function sanitizePermissions(
+  value: unknown,
+  agentIds: ReadonlySet<string>,
+  messages: CommonspaceState['messages'],
+): CommonspacePermissionRequest[] {
+  if (!Array.isArray(value)) return []
+  const messageIds = new Set(Object.values(messages).flat().map(message => message.id))
+  const permissions: CommonspacePermissionRequest[] = []
+  const ids = new Set<string>()
+  for (const candidate of value) {
+    const permission = plainRecord(candidate)
+    const conversation = plainRecord(permission?.conversation)
+    const id = loadedId(permission?.id)
+    const sourceMessageId = loadedId(permission?.sourceMessageId)
+    const agentId = loadedId(permission?.agentId)
+    const toolCallId = loadedId(permission?.toolCallId)
+    if (permission === null || conversation === null || id === null || ids.has(id) || sourceMessageId === null ||
+      agentId === null || toolCallId === null || !agentIds.has(agentId) || !messageIds.has(sourceMessageId) ||
+      (conversation.kind !== 'channel' && conversation.kind !== 'dm') || typeof conversation.id !== 'string') continue
+    const options: CommonspacePermissionOption[] = []
+    const optionIds = new Set<string>()
+    if (Array.isArray(permission.options)) {
+      for (const rawOption of permission.options.slice(0, 16)) {
+        const option = plainRecord(rawOption)
+        const optionId = loadedId(option?.optionId)
+        const name = loadedString(option?.name, 200).normalize('NFKC').trim()
+        const kind = loadedString(option?.kind, 100).trim()
+        if (option === null || optionId === null || optionIds.has(optionId) || name === '' || kind === '') continue
+        optionIds.add(optionId)
+        options.push({ optionId, name, kind })
+      }
+    }
+    if (options.length === 0) continue
+    const storedStatus = permission.status === 'resolved' || permission.status === 'cancelled' || permission.status === 'interrupted'
+      ? permission.status
+      : 'interrupted'
+    const selectedOptionId = loadedId(permission.selectedOptionId)
+    const threadId = loadedId(permission.threadId)
+    ids.add(id)
+    permissions.push({
+      id,
+      sourceMessageId,
+      agentId,
+      conversation: { kind: conversation.kind, id: conversation.id },
+      ...(threadId === null ? {} : { threadId }),
+      toolCallId,
+      title: loadedString(permission.title, 1_000).normalize('NFKC').trim() || 'Permission requested',
+      ...(typeof permission.kind === 'string' && permission.kind.trim() !== '' ? { kind: permission.kind.trim().slice(0, 100) } : {}),
+      options,
+      status: storedStatus,
+      ...(storedStatus === 'resolved' && selectedOptionId !== null && optionIds.has(selectedOptionId) ? { selectedOptionId } : {}),
+      createdAt: loadedString(permission.createdAt, 100),
+      resolvedAt: loadedIsoTimestamp(permission.resolvedAt),
+    })
+  }
+  return permissions
 }
 
 function sanitizeLoadedState(value: unknown): CommonspaceState {
@@ -1116,6 +1277,7 @@ function sanitizeLoadedState(value: unknown): CommonspaceState {
     }))
   }
   const pins = sanitizePins(record.pins, channels, threads, messages)
+  const permissions = sanitizePermissions(record.permissions, agentIds, messages)
   const inboxMessageIds = new Set(Object.values(messages).flatMap(entries => entries
     .filter(message => message.authorType === 'agent' || message.authorType === 'system' || message.replyStatus === 'error' || message.replyStatus === 'failed' || message.replyStatus === 'timeout')
     .map(message => message.id)))
@@ -1137,6 +1299,7 @@ function sanitizeLoadedState(value: unknown): CommonspaceState {
     channels,
     threads,
     pins,
+    permissions,
     messages,
   }
 }
@@ -1148,7 +1311,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
   private readonly stateCorruptPath: string
   private readonly routingPath: string
   private readonly attachmentsRoot: string
-  private readonly defaultCwd: string
+  private defaultCwd: string
   private state: CommonspaceState = createInitialState()
   private routingConfiguration: PrivateRoutingConfiguration = defaultRoutingConfiguration()
   private writeTail = Promise.resolve()
@@ -1159,6 +1322,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
   private readonly liveActivityListeners = new Set<(activities: readonly CommonspaceLiveAgentActivity[]) => void>()
   private readonly liveActivitiesById = new Map<string, CommonspaceLiveAgentActivity>()
   private readonly activeAgentRuns = new Map<string, ActiveAgentRun>()
+  private readonly permissionResolvers = new Map<string, (outcome: AgentPermissionOutcome) => void>()
   private readonly backgroundRuns = new Set<Promise<void>>()
   private readonly activeConversationRuns = new Map<string, Promise<void>>()
   private readonly pendingFollowups = new Map<string, PendingFollowup[]>()
@@ -1176,6 +1340,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
   private readonly hermesAcpArgs: string[]
   private readonly codexAcpCommand: string
   private readonly codexAcpArgs: string[]
+  private readonly managedDefaultCwd: boolean
   private discoveredAgentCandidates: CommonspaceAgentProfile[] = []
   private closeOperation: Promise<void> | undefined
   private drainOperation: Promise<void> | undefined
@@ -1195,7 +1360,8 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
     this.stateCorruptPath = join(this.root, 'state.corrupt.json')
     this.routingPath = join(this.root, 'routing.json')
     this.attachmentsRoot = join(this.root, 'attachments')
-    this.defaultCwd = config.defaultCwd ?? process.cwd()
+    this.managedDefaultCwd = config.defaultCwd === undefined
+    this.defaultCwd = config.defaultCwd ?? join(this.root, 'workspace')
     this.hermesPath = config.hermesPath ?? 'hermes'
     this.codexPath = config.codexPath ?? 'codex'
     this.hermesYolo = unsafeModeForAdapter(config, 'hermes')
@@ -1217,6 +1383,11 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
     await chmod(this.root, 0o700)
     await mkdir(this.attachmentsRoot, { recursive: true, mode: 0o700 })
     await chmod(this.attachmentsRoot, 0o700)
+    if (this.managedDefaultCwd) {
+      await mkdir(this.defaultCwd, { recursive: true, mode: 0o700 })
+      await chmod(this.defaultCwd, 0o700)
+    }
+    this.defaultCwd = await realpath(this.defaultCwd)
     try {
       this.routingConfiguration = sanitizeRoutingConfiguration(JSON.parse(await readFile(this.routingPath, 'utf8')))
     } catch (error) {
@@ -1353,6 +1524,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
   async close(): Promise<void> {
     this.closing = true
     this.closeOperation ??= (async () => {
+      const permissionsInterrupted = this.interruptPendingPermissions()
       const processes = [...this.acpProcesses.values()]
       this.acpProcesses.clear()
       this.activeAcpSessions.clear()
@@ -1364,7 +1536,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
         this.environment.logger?.warn(error)
       })))
       await this.whenIdle()
-      if (this.markInterruptedRuns('Commonspace shut down before the agent completed.')) {
+      if (this.markInterruptedRuns('Commonspace shut down before the agent completed.') || permissionsInterrupted) {
         await this.persist()
         this.broadcastRevision()
       }
@@ -1406,7 +1578,8 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
           if (pin.kind === 'message') {
             return { ...pin, source: { authorName: source.authorName, text: source.text } }
           }
-          const attachment = source.attachments?.find(candidate => candidate.id === pin.attachmentId)
+          const attachment = source.attachments?.find(candidate => candidate.id === pin.attachmentId) ??
+            source.files?.find(candidate => candidate.id === pin.attachmentId)
           return { ...pin, source: { authorName: source.authorName, ...(attachment === undefined ? {} : { attachment }) } }
         })
     return {
@@ -1769,7 +1942,8 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
         pin = { ...common, kind: 'message', messageId: request.messageId }
       } else if (request.kind === 'attachment') {
         if (typeof request.attachmentId !== 'string' ||
-          sourceMessage?.attachments?.some(attachment => attachment.id === request.attachmentId) !== true) {
+          (sourceMessage?.attachments?.some(attachment => attachment.id === request.attachmentId) !== true &&
+            sourceMessage?.files?.some(file => file.id === request.attachmentId) !== true)) {
           throw new Error('pin attachment not found')
         }
         pin = { ...common, kind: 'attachment', messageId: request.messageId, attachmentId: request.attachmentId }
@@ -1803,6 +1977,92 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
       this.broadcastRevision()
       return structuredClone(removed)
     })
+  }
+
+  async respondPermission(permissionId: string, optionId: string): Promise<CommonspacePermissionRequest> {
+    return this.withAdmission(async () => {
+      if (typeof permissionId !== 'string' || permissionId === '') throw new Error('permission id is required')
+      if (typeof optionId !== 'string' || optionId === '') throw new Error('permission option is required')
+      const permission = this.state.permissions.find(candidate => candidate.id === permissionId)
+      if (permission === undefined) throw new Error('unknown permission request')
+      if (permission.status !== 'pending') throw new Error('permission request is no longer pending')
+      if (!permission.options.some(option => option.optionId === optionId)) throw new Error('permission option was not advertised')
+      const resolve = this.permissionResolvers.get(permissionId)
+      if (resolve === undefined) throw new Error('permission request is no longer attached to a native session')
+      const resolved: CommonspacePermissionRequest = {
+        ...permission,
+        status: 'resolved',
+        selectedOptionId: optionId,
+        resolvedAt: now(),
+      }
+      if (permission.conversation.kind === 'dm') {
+        this.updateMessageReplyStatus(permission.conversation, permission.sourceMessageId, 'running')
+      }
+      this.state = {
+        ...this.state,
+        revision: this.state.revision + 1,
+        permissions: this.state.permissions.map(candidate => candidate.id === permissionId ? resolved : candidate),
+      }
+      await this.persist()
+      this.permissionResolvers.delete(permissionId)
+      resolve({ optionId })
+      this.broadcastRevision()
+      return structuredClone(resolved)
+    })
+  }
+
+  private async requestAgentPermission(
+    activeRun: ActiveAgentRun,
+    conversation: SendMessageRequest['conversation'],
+    thread: CommonspaceThread | undefined,
+    request: AgentPermissionRequest,
+  ): Promise<AgentPermissionOutcome> {
+    const toolCallId = request.toolCallId.normalize('NFKC').trim().slice(0, 200)
+    const title = request.title.normalize('NFKC').trim().slice(0, 1_000)
+    const options: CommonspacePermissionOption[] = []
+    const optionIds = new Set<string>()
+    for (const candidate of request.options.slice(0, 16)) {
+      const optionId = candidate.optionId.normalize('NFKC').trim().slice(0, 200)
+      const name = candidate.name.normalize('NFKC').trim().slice(0, 200)
+      const kind = candidate.kind.normalize('NFKC').trim().slice(0, 100)
+      if (optionId === '' || optionIds.has(optionId) || name === '' || kind === '') continue
+      optionIds.add(optionId)
+      options.push({ optionId, name, kind })
+    }
+    if (toolCallId === '' || options.length === 0) return {}
+    const permission: CommonspacePermissionRequest = {
+      id: crypto.randomUUID(),
+      sourceMessageId: activeRun.sourceMessageId,
+      agentId: activeRun.agentId,
+      conversation,
+      ...(thread === undefined ? {} : { threadId: thread.id }),
+      toolCallId,
+      title: title || 'Permission requested',
+      ...(request.kind === undefined || request.kind.trim() === '' ? {} : { kind: request.kind.trim().slice(0, 100) }),
+      options,
+      status: 'pending',
+      createdAt: now(),
+      resolvedAt: null,
+    }
+    const previousState = this.state
+    const outcome = new Promise<AgentPermissionOutcome>((resolve) => {
+      this.permissionResolvers.set(permission.id, resolve)
+    })
+    if (conversation.kind === 'dm') this.updateMessageReplyStatus(conversation, activeRun.sourceMessageId, 'needs_input')
+    this.state = {
+      ...this.state,
+      revision: this.state.revision + 1,
+      permissions: [...this.state.permissions, permission],
+    }
+    try {
+      await this.persist()
+    } catch (error) {
+      this.state = previousState
+      this.permissionResolvers.delete(permission.id)
+      throw error
+    }
+    this.broadcastRevision()
+    return outcome
   }
 
   async discoverAgents(adapter: AgentAdapterKind): Promise<CommonspaceBootstrap> {
@@ -2002,6 +2262,24 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
     return changed
   }
 
+  private interruptPendingPermissions(): boolean {
+    const pendingIds = new Set(this.state.permissions.filter(permission => permission.status === 'pending').map(permission => permission.id))
+    if (pendingIds.size === 0) return false
+    const interruptedAt = now()
+    this.state = {
+      ...this.state,
+      revision: this.state.revision + 1,
+      permissions: this.state.permissions.map(permission => pendingIds.has(permission.id)
+        ? { ...permission, status: 'interrupted' as const, resolvedAt: interruptedAt }
+        : permission),
+    }
+    for (const permissionId of pendingIds) {
+      this.permissionResolvers.get(permissionId)?.({})
+      this.permissionResolvers.delete(permissionId)
+    }
+    return true
+  }
+
   async mutate(mutation: CommonspaceMutation): Promise<CommonspaceState> {
     return this.withAdmission(async () => {
       const resetScope = mutation.action === 'reset-dm' && typeof mutation.agentId === 'string'
@@ -2133,6 +2411,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
       if (located === undefined) throw new Error('unknown message')
       if (located.message.deletedAt !== undefined) return structuredClone(located.message)
       const attachmentIds = located.message.attachments?.map(attachment => attachment.id) ?? []
+      const fileIds = located.message.files?.map(file => file.id) ?? []
       const deleted: CommonspaceMessage = {
         ...located.message,
         text: '',
@@ -2148,6 +2427,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
             }),
       }
       delete deleted.attachments
+      delete deleted.files
       delete deleted.trace
       delete deleted.runAttribution
       delete deleted.replyError
@@ -2211,6 +2491,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
         throw error
       }
       await this.removeImageAttachments(attachmentIds)
+      await this.removeFileAttachments(fileIds)
       this.broadcastRevision()
       return structuredClone(deleted)
     })
@@ -2346,6 +2627,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
         },
         text: source.text,
         attachments: [],
+        files: [],
         agents,
         agentIds: [target.id],
         routing: {
@@ -2483,9 +2765,22 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
     return { attachment: structuredClone(attachment), data }
   }
 
+  async readFileAttachment(id: string): Promise<{ metadata: CommonspaceFileAttachment; data: Buffer }> {
+    if (!IMAGE_ATTACHMENT_ID_PATTERN.test(id)) throw new Error('unknown file attachment')
+    const metadata = Object.values(this.state.messages)
+      .flatMap(messages => messages)
+      .flatMap(message => message.files ?? [])
+      .find(candidate => candidate.id === id)
+    if (metadata === undefined) throw new Error('unknown file attachment')
+    const data = await readFile(join(this.attachmentsRoot, id))
+    if (data.length !== metadata.size) throw new Error('file attachment is unavailable')
+    return { metadata: structuredClone(metadata), data }
+  }
+
   private async prepareSend(request: SendMessageRequest): Promise<PreparedSend> {
     const text = request.text.normalize('NFKC').trim().slice(0, MAX_MESSAGE_CHARS)
     const attachments = prepareImageAttachments(request.attachments)
+    const files = prepareFileAttachments(request.files)
     const taggedProjects = [...new Set(parseTags(text).projects)].flatMap(tag => {
       const project = this.state.projects.find(candidate => candidate.id.toLocaleLowerCase() === tag || projectTagName(candidate.name) === tag)
       return project === undefined ? [] : [project]
@@ -2637,9 +2932,9 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
       agentIds = [request.conversation.id]
       dmSessionName = this.state.dmSessions[request.conversation.id] ?? 'Bot Chat'
     }
-    if (text === '' && attachments.length === 0) throw new Error('message text or image is required')
+    if (text === '' && attachments.length === 0 && files.length === 0) throw new Error('message text, image, or file is required')
     const inferProjects = request.conversation.kind === 'channel' && request.threadId === undefined && !projectSelectionProvided
-    return { request, text, attachments, agents, agentIds, projects, inferProjects, ...(routing === undefined ? {} : { routing }), ...(channel === undefined ? {} : { channel }), ...(project === undefined ? {} : { project }), ...(thread === undefined ? {} : { thread }), ...(dmSessionName === undefined ? {} : { dmSessionName }) }
+    return { request, text, attachments, files, agents, agentIds, projects, inferProjects, ...(routing === undefined ? {} : { routing }), ...(channel === undefined ? {} : { channel }), ...(project === undefined ? {} : { project }), ...(thread === undefined ? {} : { thread }), ...(dmSessionName === undefined ? {} : { dmSessionName }) }
   }
 
   private async routeChannelMessage(
@@ -2782,6 +3077,12 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
     }
     const previousState = this.state
     await this.persistImageAttachments(prepared.attachments)
+    try {
+      await this.persistFileAttachments(prepared.files)
+    } catch (error) {
+      await this.removeImageAttachments(prepared.attachments.map(attachment => attachment.metadata.id))
+      throw error
+    }
     const createdAt = now()
     const acceptedId = messageId()
     let thread = prepared.thread
@@ -2816,6 +3117,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
       ...(prepared.version === undefined ? {} : prepared.version),
       ...(prepared.routing === undefined ? {} : { routing: prepared.routing }),
       ...(prepared.attachments.length === 0 ? {} : { attachments: prepared.attachments.map(attachment => attachment.metadata) }),
+      ...(prepared.files.length === 0 ? {} : { files: prepared.files.map(file => file.metadata) }),
 
       createdAt,
       ...projectReferenceFields(prepared.projects),
@@ -2878,6 +3180,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
     } catch (error) {
       this.state = previousState
       await this.removeImageAttachments(prepared.attachments.map(attachment => attachment.metadata.id))
+      await this.removeFileAttachments(prepared.files.map(file => file.metadata.id))
       throw error
     }
     this.broadcastRevision()
@@ -2913,6 +3216,14 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
             name: attachment.metadata.name,
             mimeType: attachment.metadata.mimeType,
             data: attachment.data.toString('base64'),
+          })) }),
+      ...(prepared.files.length === 0
+        ? {}
+        : { files: prepared.files.map(file => ({
+            name: file.metadata.name,
+            mimeType: file.metadata.mimeType,
+            size: file.metadata.size,
+            uri: pathToFileURL(join(this.attachmentsRoot, file.metadata.id)).href,
           })) }),
     }
 
@@ -2970,6 +3281,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
               sessionName,
               message: delivery.text,
               ...(delivery.images === undefined ? {} : { images: delivery.images }),
+              ...(delivery.files === undefined ? {} : { files: delivery.files }),
               commonspaceScope: {
                 agentId: agent.id,
                 conversation: prepared.request.conversation,
@@ -2984,6 +3296,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
               onTraceUpdate: entries => {
                 if (executionIsCurrent()) this.updateLiveActivity(liveActivityId, entries)
               },
+              onPermissionRequest: request => this.requestAgentPermission(activeRun, prepared.request.conversation, thread, request),
               signal: activeRun.abortController.signal,
             }, executionIsCurrent)
             return result
@@ -3043,6 +3356,17 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
               projectRootIndex,
             }))),
           }
+      let agentFiles: PreparedFileAttachment[] = []
+      try {
+        agentFiles = await this.prepareAgentFileAttachments(
+          agentResponse.files,
+          projectRoots.length === 0 ? [this.defaultCwd] : projectRoots.map(root => root.path),
+        )
+        await this.persistFileAttachments(agentFiles)
+      } catch (error) {
+        agentFiles = []
+        this.environment.logger?.warn(`Commonspace could not persist Agent files: ${error instanceof Error ? error.message : String(error)}`)
+      }
       const reply: CommonspaceMessage = {
         id: messageId(),
         sourceMessageId: response.accepted.id,
@@ -3052,6 +3376,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
         authorId: agent.id,
         authorName: agent.displayName,
         text: agentResponse.text,
+        ...(agentFiles.length === 0 ? {} : { files: agentFiles.map(file => file.metadata) }),
         createdAt: completedAt,
         ...projectReferenceFields(deliveryProjects),
         ...(trace === undefined ? {} : { trace }),
@@ -3696,6 +4021,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
         additionalCwds: input.additionalCwds,
         message: input.message,
         ...(input.images === undefined ? {} : { images: input.images }),
+        ...(input.files === undefined ? {} : { files: input.files }),
         mcpServers,
         modeId: input.agent.adapter === 'hermes'
           ? (this.hermesYolo ? 'dont_ask' : 'accept_edits')
@@ -3708,12 +4034,14 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
           if (input.signal.aborted) void processClient.cancelSession(sessionId)
         },
         ...(input.onTraceUpdate === undefined ? {} : { onTraceUpdate: input.onTraceUpdate }),
+        ...(input.onPermissionRequest === undefined ? {} : { onPermissionRequest: input.onPermissionRequest }),
         ...(input.sessionId === undefined ? {} : { sessionId: input.sessionId }),
       })
       if (result.text.trim() === '') throw new Error(`${input.agent.displayName} returned no response`)
       return {
         sessionId: result.sessionId,
         text: result.text,
+        ...(result.resources === undefined ? {} : { files: result.resources }),
         ...(result.trace === undefined
           ? {}
           : { trace: { adapter: input.agent.adapter, ...result.trace } }),
@@ -3796,7 +4124,64 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
     }
   }
 
+  private async persistFileAttachments(files: readonly PreparedFileAttachment[]): Promise<void> {
+    const storedIds: string[] = []
+    try {
+      for (const file of files) {
+        const temporary = join(this.attachmentsRoot, `file-${process.pid}-${crypto.randomUUID()}.tmp`)
+        try {
+          await writeFile(temporary, file.data, { mode: 0o600, flag: 'wx' })
+          await rename(temporary, join(this.attachmentsRoot, file.metadata.id))
+          storedIds.push(file.metadata.id)
+        } finally {
+          await rm(temporary, { force: true })
+        }
+      }
+    } catch (error) {
+      await this.removeFileAttachments(storedIds)
+      throw error
+    }
+  }
+
+  private async prepareAgentFileAttachments(
+    files: readonly AgentGeneratedFile[] | undefined,
+    allowedRoots: readonly string[],
+  ): Promise<PreparedFileAttachment[]> {
+    const prepared: PreparedFileAttachment[] = []
+    let totalBytes = 0
+    for (const candidate of files?.slice(0, MAX_FILE_ATTACHMENTS) ?? []) {
+      try {
+        const url = new URL(candidate.uri)
+        if (url.protocol !== 'file:') continue
+        const path = await realpath(fileURLToPath(url))
+        const insideAllowedRoot = allowedRoots.some((root) => {
+          const child = relative(root, path)
+          return child === '' || (!child.startsWith('..') && !isAbsolute(child))
+        })
+        if (!insideAllowedRoot) continue
+        const info = await stat(path)
+        if (!info.isFile() || info.size < 1 || info.size > MAX_FILE_ATTACHMENT_BYTES) continue
+        const requestedName = candidate.name.normalize('NFKC').trim()
+        const name = requestedName === '' ? basename(path) : requestedName
+        if (name.includes('/') || name.includes('\\') || credentialBearingFileName(name)) continue
+        const mimeType = candidate.mimeType?.trim().toLocaleLowerCase() ?? 'application/octet-stream'
+        if (!/^[a-z0-9][a-z0-9!#$&^_.+-]*\/[a-z0-9][a-z0-9!#$&^_.+-]*$/u.test(mimeType)) continue
+        const data = await readFile(path)
+        totalBytes += data.length
+        if (totalBytes > MAX_FILE_ATTACHMENTS_BYTES) break
+        prepared.push({ metadata: { id: crypto.randomUUID(), name, mimeType, size: data.length }, data })
+      } catch (error) {
+        this.environment.logger?.warn(`Commonspace ignored invalid Agent file: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+    return prepared
+  }
+
   private async removeImageAttachments(ids: readonly string[]): Promise<void> {
+    await Promise.all(ids.map(id => rm(join(this.attachmentsRoot, id), { force: true })))
+  }
+
+  private async removeFileAttachments(ids: readonly string[]): Promise<void> {
     await Promise.all(ids.map(id => rm(join(this.attachmentsRoot, id), { force: true })))
   }
 

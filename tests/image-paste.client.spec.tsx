@@ -48,6 +48,27 @@ afterEach(cleanup)
 beforeEach(() => { HTMLElement.prototype.scrollIntoView = vi.fn() })
 
 describe('chat image paste', () => {
+  it('attaches and sends a normal local file without requiring a caption', async () => {
+    const { send } = renderDirectMessage()
+    const file = new File(['notes'], 'notes.txt', { type: 'text/plain' })
+    const input = screen.getByLabelText('Attach files')
+
+    fireEvent.change(input, { target: { files: [file] } })
+
+    expect(await screen.findByText('notes.txt')).toBeTruthy()
+    const sendButton = screen.getByRole('button', { name: 'Send message' })
+    expect((sendButton as HTMLButtonElement).disabled).toBe(false)
+    fireEvent.click(sendButton)
+
+    await waitFor(() => {
+      expect(send).toHaveBeenCalledWith('', undefined, [], undefined, undefined, [{
+        name: 'notes.txt',
+        mimeType: 'text/plain',
+        data: 'bm90ZXM=',
+      }])
+    })
+  })
+
   it('attaches a pasted raster image and sends it without requiring a caption', async () => {
     const { send } = renderDirectMessage()
     const composer = screen.getByRole('textbox', { name: 'Message Review Bot' })
@@ -88,5 +109,27 @@ describe('chat image paste', () => {
 
     const image = screen.getByRole('img', { name: 'clipboard.png' })
     expect(image.getAttribute('src')).toBe('/api/attachments/123e4567-e89b-42d3-a456-426614174000')
+  })
+
+  it('renders persisted files as safe local downloads', () => {
+    renderDirectMessage([{
+      id: 'message-file',
+      conversation: { kind: 'dm', id: 'codex-review-bot' },
+      authorType: 'user',
+      authorId: 'user',
+      authorName: 'Ralph',
+      text: 'Attached notes.',
+      createdAt: '2026-08-31T00:00:00.000Z',
+      files: [{
+        id: '123e4567-e89b-42d3-a456-426614174001',
+        name: 'notes.txt',
+        mimeType: 'text/plain',
+        size: 18,
+      }],
+    }] as never)
+
+    const download = screen.getByRole('link', { name: 'Download notes.txt' })
+    expect(download.getAttribute('href')).toBe('/api/files/123e4567-e89b-42d3-a456-426614174001')
+    expect(screen.getByText('text/plain · 18 B')).toBeTruthy()
   })
 })

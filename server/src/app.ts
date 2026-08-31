@@ -404,6 +404,18 @@ export function createCommonspaceApp({ service, mcpGateway, directoryPicker }: C
     }
   })
 
+  app.post('/api/permissions/:permissionId/respond', requireSameOrigin, async (req, res) => {
+    try {
+      const permissionId = req.params.permissionId
+      const body = recordBody(req.body)
+      if (typeof permissionId !== 'string' || permissionId === '') throw new Error('permission id is required')
+      if (typeof body.optionId !== 'string' || body.optionId === '') throw new Error('permission option is required')
+      res.json(await service.respondPermission(permissionId, body.optionId))
+    } catch (error) {
+      res.status(400).json({ code: 'permission_response_failed', error: error instanceof Error ? error.message : String(error) })
+    }
+  })
+
   app.post('/api/stop', requireSameOrigin, async (req, res) => {
     try {
       res.json(await service.stopAgentRuns(recordBody(req.body) as unknown as StopAgentRunsRequest))
@@ -439,6 +451,21 @@ export function createCommonspaceApp({ service, mcpGateway, directoryPicker }: C
       res.send(data)
     } catch (error) {
       res.status(404).json({ code: 'attachment_not_found', error: error instanceof Error ? error.message : String(error) })
+    }
+  })
+
+  app.get('/api/files/:fileId', requireSameOrigin, async (req, res) => {
+    try {
+      const fileId = req.params.fileId
+      if (typeof fileId !== 'string') throw new Error('unknown file attachment')
+      const { metadata, data } = await service.readFileAttachment(fileId)
+      res.setHeader('content-type', metadata.mimeType)
+      res.setHeader('content-length', String(data.length))
+      res.setHeader('content-disposition', `attachment; filename*=UTF-8''${encodeURIComponent(metadata.name)}`)
+      res.setHeader('x-content-type-options', 'nosniff')
+      res.send(data)
+    } catch (error) {
+      res.status(404).json({ code: 'file_attachment_not_found', error: error instanceof Error ? error.message : String(error) })
     }
   })
 

@@ -7,6 +7,7 @@ const logPath = process.env.FAKE_ACP_LOG
 const mcpServersBySession = new Map()
 let processMcpServers
 const pendingPrompts = new Map()
+let pendingPermissionPrompt
 
 async function writeFrame(frame) {
   process.stdout.write(`${JSON.stringify(frame)}\n`)
@@ -64,6 +65,21 @@ for await (const line of lines) {
     await new Promise(resolve => setTimeout(resolve, Number(process.env.FAKE_ACP_DELAY_CANCEL_MS)))
   }
   await record(frame)
+
+  if (frame.id === 'permission-1' && pendingPermissionPrompt !== undefined) {
+    const pending = pendingPermissionPrompt
+    pendingPermissionPrompt = undefined
+    await writeFrame({
+      jsonrpc: '2.0',
+      method: 'session/update',
+      params: {
+        sessionId: pending.sessionId,
+        update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: `Echo: ${pending.text}` } },
+      },
+    })
+    await writeFrame({ jsonrpc: '2.0', id: pending.promptId, result: { stopReason: 'end_turn' } })
+    continue
+  }
 
   if (frame.method === 'initialize') {
     if (process.env.FAKE_ACP_HANG_INITIALIZE === '1') continue
@@ -165,6 +181,12 @@ for await (const line of lines) {
           ],
         },
       })
+      const promptText = frame.params.prompt
+        .filter(part => part.type === 'text')
+        .map(part => part.text)
+        .join('')
+      pendingPermissionPrompt = { promptId: frame.id, sessionId: frame.params.sessionId, text: promptText }
+      continue
     }
     const promptDelayMs = Number(process.env.FAKE_ACP_PROMPT_DELAY_MS ?? 0)
     if (Number.isFinite(promptDelayMs) && promptDelayMs > 0) {
@@ -273,6 +295,24 @@ for await (const line of lines) {
         params: {
           sessionId: frame.params.sessionId,
           update: { sessionUpdate: 'usage_update', used: 640, size: 128000 },
+        },
+      })
+    }
+    if (process.env.FAKE_ACP_RESOURCE_URI !== undefined) {
+      await writeFrame({
+        jsonrpc: '2.0',
+        method: 'session/update',
+        params: {
+          sessionId: frame.params.sessionId,
+          update: {
+            sessionUpdate: 'agent_message_chunk',
+            content: {
+              type: 'resource_link',
+              name: process.env.FAKE_ACP_RESOURCE_NAME ?? 'generated-file',
+              uri: process.env.FAKE_ACP_RESOURCE_URI,
+              mimeType: process.env.FAKE_ACP_RESOURCE_MIME ?? 'application/octet-stream',
+            },
+          },
         },
       })
     }
