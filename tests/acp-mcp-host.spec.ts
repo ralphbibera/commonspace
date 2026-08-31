@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { startCommonspaceServer, type RunningCommonspaceServer } from '../server/src/index.ts'
-import { addTestCodexAgents } from './test-codex-agents.ts'
+import { addTestHarness, discoverTestHarnesses } from './test-harnesses.ts'
 
 const roots: string[] = []
 const runningServers: RunningCommonspaceServer[] = []
@@ -27,7 +27,7 @@ describe('Commonspace ACP session context', () => {
       codexAcpCommand: process.execPath,
       codexAcpArgs: [fixturePath],
       dependencies: {
-        discoverAgents: async () => [],
+        discoverAgents: discoverTestHarnesses,
         routeAgents: async input => ({ agentIds: [input.candidates[0]!.id], reason: 'Test inference selected the channel agent.' }),
       },
       logger: { info: () => undefined, warn: () => undefined },
@@ -35,14 +35,14 @@ describe('Commonspace ACP session context', () => {
     runningServers.push(running)
     const workspace = join(root, 'private-workspace')
     await mkdir(workspace)
-    await addTestCodexAgents(running.service, 'codex-review-bot')
+    await addTestHarness(running.service, 'codex', 'Review Bot')
     const project = (await running.service.mutate({ action: 'create-project', name: 'App', paths: [workspace] }))
       .projects.find(project => project.name === 'App')!
     const state = await running.service.mutate({
       action: 'create-channel',
       name: 'engineering',
       projectId: project.id,
-      agentIds: ['codex-review-bot'],
+      agentIds: ['codex'],
     })
     const channel = state.channels[0]!
     await running.service.mutate({ action: 'set-channel-context', channelId: channel.id, instructions: 'Keep changes scoped.' })
@@ -57,7 +57,7 @@ describe('Commonspace ACP session context', () => {
     const privateState = running.service.snapshot()
     const thread = privateState.threads[0]!
     const context = await running.service.readContext({
-      agentId: 'codex-review-bot',
+      agentId: 'codex',
       conversation: { kind: 'channel', id: channel.id },
       threadId: thread.id,
       sessionName: `Commonspace Thread: ${thread.id}`,
@@ -65,12 +65,12 @@ describe('Commonspace ACP session context', () => {
     })
     expect(context.project).toEqual({ id: project.id, name: 'App' })
     expect(JSON.stringify(context)).not.toContain(workspace)
-    const nativeSessionId = privateState.agentSessions['codex-review-bot']?.[`Commonspace Thread: ${thread.id}`]
+    const nativeSessionId = privateState.agentSessions['codex']?.[`Commonspace Thread: ${thread.id}`]
     expect(nativeSessionId).toEqual(expect.any(String))
     expect(JSON.stringify(context)).not.toContain(nativeSessionId as string)
 
     const search = await running.service.searchMessages({
-      agentId: 'codex-review-bot',
+      agentId: 'codex',
       conversation: { kind: 'channel', id: channel.id },
       threadId: thread.id,
       sessionName: `Commonspace Thread: ${thread.id}`,
@@ -85,7 +85,7 @@ describe('Commonspace ACP session context', () => {
     })
 
     const scope = {
-      agentId: 'codex-review-bot',
+      agentId: 'codex',
       conversation: { kind: 'channel' as const, id: channel.id },
       threadId: thread.id,
       sessionName: `Commonspace Thread: ${thread.id}`,
@@ -106,26 +106,26 @@ describe('Commonspace ACP session context', () => {
       port: 0,
       codexAcpCommand: process.execPath,
       codexAcpArgs: [fixturePath],
-      dependencies: { discoverAgents: async () => [] },
+      dependencies: { discoverAgents: discoverTestHarnesses },
       logger: { info: () => undefined, warn: () => undefined },
     })
     runningServers.push(running)
-    await addTestCodexAgents(running.service, 'codex-review-bot')
-    await running.service.send({ conversation: { kind: 'dm', id: 'codex-review-bot' }, text: 'Start generation.' })
+    await addTestHarness(running.service, 'codex', 'Review Bot')
+    await running.service.send({ conversation: { kind: 'dm', id: 'codex' }, text: 'Start generation.' })
     await running.service.whenIdle()
     const frames = (await readFile(logPath, 'utf8')).trim().split('\n').map(line => JSON.parse(line))
     const authorization = frames.find(frame => frame.method === 'session/new')?.params.mcpServers[0].headers
       .find((header: { name: string; value: string }) => header.name === 'Authorization').value as string
 
-    await running.service.mutate({ action: 'reset-dm', agentId: 'codex-review-bot' })
-    const resetScope = running.service.snapshot().dmSessions['codex-review-bot']!
+    await running.service.mutate({ action: 'reset-dm', agentId: 'codex' })
+    const resetScope = running.service.snapshot().dmSessions['codex']!
     const resetContext = await running.service.readContext({
-      agentId: 'codex-review-bot',
-      conversation: { kind: 'dm', id: 'codex-review-bot' },
+      agentId: 'codex',
+      conversation: { kind: 'dm', id: 'codex' },
       sessionName: resetScope,
     })
     expect(resetContext.messages).toEqual([])
-    expect(running.service.snapshot().messages['dm:codex-review-bot']?.map(message => message.text)).toContain('Start generation.')
+    expect(running.service.snapshot().messages['dm:codex']?.map(message => message.text)).toContain('Start generation.')
     const response = await fetch(`${running.url}/api/mcp`, {
       method: 'POST',
       headers: { authorization, 'content-type': 'application/json' },

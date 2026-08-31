@@ -119,12 +119,11 @@ describe('Commonspace client revision ordering', () => {
 
   it('replaces the agent roster directly from a mutation response', async () => {
     const discovered = {
-      id: 'codex-review-bot',
-      displayName: 'Review Bot',
+      id: 'codex',
+      displayName: 'Codex',
       adapter: 'codex' as const,
-      nativeProfile: 'Review Bot',
-      model: 'gpt-5.4',
-      status: 'unknown' as const,
+      model: null,
+      status: 'stopped' as const,
     }
     const initial = bootstrap(1, 'Initial')
     const updated = bootstrap(2, 'Initial')
@@ -133,7 +132,6 @@ describe('Commonspace client revision ordering', () => {
       id: discovered.id,
       displayName: discovered.displayName,
       adapter: discovered.adapter,
-      nativeProfile: discovered.nativeProfile,
       model: discovered.model,
       createdAt: '2026-08-25T00:00:00.000Z',
     }]

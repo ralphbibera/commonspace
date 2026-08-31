@@ -1,9 +1,9 @@
 import { mkdtemp, rm } from 'node:fs/promises'
-import { homedir, tmpdir } from 'node:os'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CommonspaceHostService } from '../server/src/service.ts'
-import { addTestCodexAgents } from './test-codex-agents.ts'
+import { addTestHarness } from './test-harnesses.ts'
 
 const live = process.env.COMMONSPACE_LIVE_ACP === '1'
 const roots: string[] = []
@@ -29,13 +29,10 @@ describe.skipIf(!live).sequential('installed Commonspace ACP agents', () => {
     const service = new CommonspaceHostService({} as never, {
       root,
       runBudgetSeconds: 120,
-    }, {
-      discoverAgents: async () => [],
     })
     try {
       await service.initialize()
-      const [agent] = await addTestCodexAgents(service, 'codex-live-codex')
-      vi.stubEnv('CODEX_HOME', join(homedir(), '.codex'))
+      const agent = await addTestHarness(service, 'codex', 'Live Codex')
 
       await service.send({
         conversation: { kind: 'dm', id: agent.id },

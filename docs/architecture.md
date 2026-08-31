@@ -70,7 +70,7 @@ The relay is deliberately local: ACP runs over child-process stdio and Commonspa
 
 ## Agent runtimes
 
-Hermes launches one profile-scoped ACP process with `hermes -p <profile> acp`; Codex uses its bundled ACP bridge. Native sessions receive exactly one new Commonspace message per turn. Shared room context stays available through native MCP tools. Commonspace projects ACP reasoning, plan, tool-call, and usage updates into one bounded provider-neutral activity contract; it does not reinterpret or synthesize harness reasoning.
+Hermes launches its installed harness through `hermes acp`; Codex uses its bundled ACP bridge against the installed Codex CLI. Commonspace exposes one workspace Agent identity per supported harness, while each Thread or DM generation retains its own native session. Native sessions receive exactly one new Commonspace message per turn. Shared room context stays available through native MCP tools. Commonspace projects ACP reasoning, plan, tool-call, and usage updates into one bounded provider-neutral activity contract; it does not reinterpret or synthesize harness reasoning.
 
 ## UI
 

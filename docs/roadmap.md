@@ -11,7 +11,7 @@ Commonspace is a private preview focused on durable human-agent conversation and
 - Editable Channel context with state metadata, manual compaction, and automatic token-pressure compaction through the configured inference layer.
 - Persistent Direct Messages with generation-safe `/new` boundaries.
 - Complete conversation transcripts preserved across append and restart without implicit message-count eviction.
-- Hermes and Codex profile discovery with explicit roster selection.
+- Known installed Hermes and Codex harness discovery with explicit roster selection and one workspace identity per harness.
 - Native Hermes/Codex ACP relay with delta-only delivery, exact opaque-session resumption, and scoped Commonspace MCP context/actions.
 - Expandable, durable per-reply traces for harness-emitted reasoning, plans, tools, results, and context usage.
 - Live semantic activity with per-run and `/stop` cancellation controls.

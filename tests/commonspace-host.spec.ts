@@ -5,7 +5,7 @@ import { COMMONSPACE_STATE_VERSION } from '@commonspace/shared'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { requestIsLoopback, requestIsSameOrigin } from '../server/src/app.ts'
 import { CommonspaceHostService, unsafeModeForAdapter, type AgentRunInput } from '../server/src/service.ts'
-import { addTestCodexAgents } from './test-codex-agents.ts'
+import { addTestHarness, discoverTestHarnesses } from './test-harnesses.ts'
 
 const roots: string[] = []
 
@@ -162,13 +162,13 @@ describe('Commonspace host authority', () => {
       return { text: 'Done.' }
     })
     const service = new CommonspaceHostService({} as never, { root, defaultCwd }, {
-      discoverAgents: async () => [],
+      discoverAgents: discoverTestHarnesses,
       runAgent,
     })
     await service.initialize()
-    await addTestCodexAgents(service, 'codex-review-bot')
+    await addTestHarness(service, 'codex', 'Review Bot')
 
-    await service.send({ conversation: { kind: 'dm', id: 'codex-review-bot' }, text: 'Run.' })
+    await service.send({ conversation: { kind: 'dm', id: 'codex' }, text: 'Run.' })
     await service.whenIdle()
 
     expect(runAgent).toHaveBeenCalledOnce()
@@ -182,12 +182,12 @@ describe('Commonspace host authority', () => {
     const workspace = join(root, 'workspace')
     await Promise.all([mkdir(fallback), mkdir(workspace)])
     const runAgent = vi.fn(async (input: AgentRunInput) => { void input; return { text: 'Done.' } })
-    const service = new CommonspaceHostService({} as never, { root, defaultCwd: fallback }, { discoverAgents: async () => [], runAgent })
+    const service = new CommonspaceHostService({} as never, { root, defaultCwd: fallback }, { discoverAgents: discoverTestHarnesses, runAgent })
     await service.initialize()
-    await addTestCodexAgents(service, 'codex-review-bot')
+    await addTestHarness(service, 'codex', 'Review Bot')
     const project = (await service.mutate({ action: 'create-project', name: 'Tagged Workspace', paths: [workspace] })).projects[0]!
 
-    const sent = await service.send({ conversation: { kind: 'dm', id: 'codex-review-bot' }, text: 'Review @@tagged-workspace.' })
+    const sent = await service.send({ conversation: { kind: 'dm', id: 'codex' }, text: 'Review @@tagged-workspace.' })
     await service.whenIdle()
 
     expect(sent.accepted.projectId).toBe(project.id)
@@ -201,16 +201,16 @@ describe('Commonspace host authority', () => {
     await mkdir(workspace)
     const canonicalWorkspace = await realpath(workspace)
     const service = new CommonspaceHostService({} as never, { root }, {
-      discoverAgents: async () => [],
+      discoverAgents: discoverTestHarnesses,
       runAgent: async () => { throw new Error(`provider failed inside ${canonicalWorkspace}/secret.txt`) },
     })
     await service.initialize()
-    await addTestCodexAgents(service, 'codex-review-bot')
+    await addTestHarness(service, 'codex', 'Review Bot')
     const project = (await service.mutate({ action: 'create-project', name: 'Private', paths: [workspace] })).projects[0]!
-    await service.send({ conversation: { kind: 'dm', id: 'codex-review-bot' }, projectId: project.id, text: 'Run.' })
+    await service.send({ conversation: { kind: 'dm', id: 'codex' }, projectId: project.id, text: 'Run.' })
     await service.whenIdle()
 
-    const failure = service.snapshot().messages['dm:codex-review-bot']?.at(-1)?.text ?? ''
+    const failure = service.snapshot().messages['dm:codex']?.at(-1)?.text ?? ''
     expect(failure).toContain('[host path]/secret.txt')
     expect(failure).not.toContain(canonicalWorkspace)
   })
@@ -436,13 +436,14 @@ describe('Commonspace host authority', () => {
     roots.push(root)
     const firstResult = deferred<{ text: string; sessionId: string }>()
     const secondResult = deferred<{ text: string; sessionId: string }>()
-    const runAgent = vi.fn(async (input: AgentRunInput) => input.agent.id === 'codex-review-bot'
+    const runAgent = vi.fn(async (input: AgentRunInput) => input.agent.id === 'codex'
       ? firstResult.promise
       : secondResult.promise)
-    const service = new CommonspaceHostService({} as never, { root }, { discoverAgents: async () => [], runAgent })
+    const service = new CommonspaceHostService({} as never, { root }, { discoverAgents: discoverTestHarnesses, runAgent })
     await service.initialize()
-    await addTestCodexAgents(service, 'codex-review-bot', 'codex-second-bot')
-    await service.send({ conversation: { kind: 'dm', id: 'codex-review-bot' }, text: 'Keep working through reload.' })
+    await addTestHarness(service, 'codex', 'Review Bot')
+    await addTestHarness(service, 'hermes', 'Second Bot')
+    await service.send({ conversation: { kind: 'dm', id: 'codex' }, text: 'Keep working through reload.' })
     await vi.waitFor(() => { expect(runAgent).toHaveBeenCalledOnce() })
 
     const drain = service.drainAndClose()
@@ -450,7 +451,7 @@ describe('Commonspace host authority', () => {
       drain.then(() => 'closed'),
       new Promise(resolve => setTimeout(() => resolve('still-running'), 25)),
     ])).resolves.toBe('still-running')
-    await service.send({ conversation: { kind: 'dm', id: 'codex-second-bot' }, text: 'Join before the swap.' })
+    await service.send({ conversation: { kind: 'dm', id: 'hermes' }, text: 'Join before the swap.' })
     await vi.waitFor(() => { expect(runAgent).toHaveBeenCalledTimes(2) })
 
     firstResult.resolve({ text: 'Finished safely.', sessionId: 'codex:thread/reload-safe' })
@@ -461,7 +462,7 @@ describe('Commonspace host authority', () => {
     secondResult.resolve({ text: 'Also finished safely.', sessionId: 'codex:thread/second-reload-safe' })
     await drain
 
-    expect(service.snapshot().messages['dm:codex-review-bot']).toEqual([
+    expect(service.snapshot().messages['dm:codex']).toEqual([
       expect.objectContaining({
         authorType: 'user',
         replyStatus: 'complete',
@@ -469,34 +470,34 @@ describe('Commonspace host authority', () => {
       }),
       expect.objectContaining({ authorType: 'agent', text: 'Finished safely.' }),
     ])
-    expect(service.snapshot().agentSessions['codex-review-bot']?.['Bot Chat']).toBe('codex:thread/reload-safe')
-    expect(service.snapshot().messages['dm:codex-second-bot']?.at(-1)?.text).toBe('Also finished safely.')
+    expect(service.snapshot().agentSessions.codex?.['Bot Chat']).toBe('codex:thread/reload-safe')
+    expect(service.snapshot().messages['dm:hermes']?.at(-1)?.text).toBe('Also finished safely.')
 
     const restarted = new CommonspaceHostService({} as never, { root }, { discoverAgents: async () => [] })
     await restarted.initialize()
-    expect(restarted.snapshot().messages['dm:codex-review-bot']?.[0]?.replyError).toBeUndefined()
+    expect(restarted.snapshot().messages['dm:codex']?.[0]?.replyError).toBeUndefined()
     await restarted.close()
   })
 
-  it('discards an in-flight reply when a managed agent is removed and recreated', async () => {
+  it('discards an in-flight reply when a harness is removed and re-added', async () => {
     const root = await mkdtemp(join(tmpdir(), 'commonspace-remove-race-'))
     roots.push(root)
     const result = deferred<{ text: string; sessionId: string }>()
     const runAgent = vi.fn(async () => result.promise)
-    const service = new CommonspaceHostService({} as never, { root }, { discoverAgents: async () => [], runAgent })
+    const service = new CommonspaceHostService({} as never, { root }, { discoverAgents: discoverTestHarnesses, runAgent })
     await service.initialize()
-    await addTestCodexAgents(service, 'codex-review-bot')
-    await service.send({ conversation: { kind: 'dm', id: 'codex-review-bot' }, text: 'Review this.' })
+    await addTestHarness(service, 'codex', 'Review Bot')
+    await service.send({ conversation: { kind: 'dm', id: 'codex' }, text: 'Review this.' })
     await vi.waitFor(() => { expect(runAgent).toHaveBeenCalledOnce() })
 
-    await service.mutate({ action: 'remove-agent', agentId: 'codex-review-bot' })
-    await addTestCodexAgents(service, 'codex-review-bot')
+    await service.mutate({ action: 'remove-agent', agentId: 'codex' })
+    await addTestHarness(service, 'codex', 'Review Bot')
     result.resolve({ text: 'Stale response.', sessionId: '123e4567-e89b-42d3-a456-426614174000' })
     await service.whenIdle()
 
     expect(service.snapshot().agents).toHaveLength(1)
-    expect(service.snapshot().agentSessions['codex-review-bot']).toBeUndefined()
-    expect(service.snapshot().messages['dm:codex-review-bot']).toBeUndefined()
+    expect(service.snapshot().agentSessions.codex).toBeUndefined()
+    expect(service.snapshot().messages['dm:codex']).toBeUndefined()
   })
 
   it('does not resurrect a channel, thread, or native session after deletion', async () => {
@@ -506,11 +507,11 @@ describe('Commonspace host authority', () => {
     await mkdir(workspace)
     const result = deferred<{ text: string; sessionId: string }>()
     const runAgent = vi.fn(async () => result.promise)
-    const service = new CommonspaceHostService({} as never, { root }, { discoverAgents: async () => [], runAgent })
+    const service = new CommonspaceHostService({} as never, { root }, { discoverAgents: discoverTestHarnesses, runAgent })
     await service.initialize()
-    await addTestCodexAgents(service, 'codex-review-bot')
+    await addTestHarness(service, 'codex', 'Review Bot')
     const project = (await service.mutate({ action: 'create-project', name: 'App', paths: [workspace] })).projects[0]!
-    const channel = (await service.mutate({ action: 'create-channel', name: 'review', projectId: project.id, agentIds: ['codex-review-bot'] })).channels[0]!
+    const channel = (await service.mutate({ action: 'create-channel', name: 'review', projectId: project.id, agentIds: ['codex'] })).channels[0]!
     await service.send({ conversation: { kind: 'channel', id: channel.id }, text: 'Review.' })
     await vi.waitFor(() => { expect(runAgent).toHaveBeenCalledOnce() })
 
@@ -522,7 +523,7 @@ describe('Commonspace host authority', () => {
     expect(state.channels).toEqual([])
     expect(state.threads).toEqual([])
     expect(state.messages[`channel:${channel.id}`]).toBeUndefined()
-    expect(state.agentSessions['codex-review-bot']).toBeUndefined()
+    expect(state.agentSessions.codex).toBeUndefined()
   })
 
   it('does not block independent room deliveries on overlapping workspace paths', async () => {
@@ -538,15 +539,15 @@ describe('Commonspace host authority', () => {
       ? first.promise
       : second.promise)
     const service = new CommonspaceHostService({} as never, { root }, {
-      discoverAgents: async () => [{ id: 'frontend', displayName: 'Frontend', adapter: 'hermes', model: 'test', status: 'stopped' }],
+      discoverAgents: discoverTestHarnesses,
       runAgent,
     })
     await service.initialize()
-    await addDiscoveredAgents(service, 'frontend')
+    await addTestHarness(service, 'hermes', 'Frontend')
     const firstProject = (await service.mutate({ action: 'create-project', name: 'First', paths: [firstWorkspace] })).projects.at(-1)!
     const secondProject = (await service.mutate({ action: 'create-project', name: 'Second', paths: [secondWorkspace] })).projects.at(-1)!
-    const firstChannel = (await service.mutate({ action: 'create-channel', name: 'first', projectId: firstProject.id, agentIds: ['frontend'] })).channels.at(-1)!
-    const secondChannel = (await service.mutate({ action: 'create-channel', name: 'second', projectId: secondProject.id, agentIds: ['frontend'] })).channels.at(-1)!
+    const firstChannel = (await service.mutate({ action: 'create-channel', name: 'first', projectId: firstProject.id, agentIds: ['hermes'] })).channels.at(-1)!
+    const secondChannel = (await service.mutate({ action: 'create-channel', name: 'second', projectId: secondProject.id, agentIds: ['hermes'] })).channels.at(-1)!
     const firstChannelId = firstChannel.id
 
     await service.send({ conversation: { kind: 'channel', id: firstChannel.id }, text: 'First task.' })
@@ -1152,11 +1153,11 @@ describe('Commonspace host authority', () => {
     await mkdir(projectBPath)
     const runAgent = vi.fn(async () => 'ok')
     const service = new CommonspaceHostService({} as never, { root }, {
-      discoverAgents: async () => [{ id: 'frontend', displayName: 'Frontend', adapter: 'hermes', model: 'test', status: 'stopped' }],
+      discoverAgents: discoverTestHarnesses,
       runAgent,
     })
     await service.initialize()
-    await addDiscoveredAgents(service, 'frontend')
+    await addTestHarness(service, 'hermes', 'Frontend')
 
     await expect(service.send({ conversation: { kind: 'channel', id: 'missing' }, text: 'hello' }))
       .rejects.toThrow('unknown channel')
@@ -1167,7 +1168,7 @@ describe('Commonspace host authority', () => {
     await service.mutate({ action: 'create-project', name: 'A', paths: [projectAPath] })
     const second = await service.mutate({ action: 'create-project', name: 'B', paths: [projectBPath] })
     const projectB = second.projects.find(project => project.name === 'B')!
-    const channelState = await service.mutate({ action: 'create-channel', name: 'general', agentIds: ['frontend'] })
+    const channelState = await service.mutate({ action: 'create-channel', name: 'general', agentIds: ['hermes'] })
     const channel = channelState.channels[0]!
 
     const accepted = await service.send({
@@ -1195,13 +1196,13 @@ describe('Commonspace host authority', () => {
       return new Promise<string>((resolve) => { release = resolve })
     })
     const service = new CommonspaceHostService({} as never, { root }, {
-      discoverAgents: async () => [{ id: 'frontend', displayName: 'Frontend', adapter: 'hermes', model: 'test', status: 'stopped' }],
+      discoverAgents: discoverTestHarnesses,
       runAgent,
     })
     await service.initialize()
-    await addDiscoveredAgents(service, 'frontend')
+    await addTestHarness(service, 'hermes', 'Frontend')
     const project = (await service.mutate({ action: 'create-project', name: 'App', paths: [workspace] })).projects[0]!
-    const channel = (await service.mutate({ action: 'create-channel', name: 'general', projectId: project.id, agentIds: ['frontend'] })).channels[0]!
+    const channel = (await service.mutate({ action: 'create-channel', name: 'general', projectId: project.id, agentIds: ['hermes'] })).channels[0]!
 
     const accepted = await service.send({ conversation: { kind: 'channel', id: channel.id }, projectId: project.id, text: 'Investigate checkout.' })
     expect(accepted.thread).not.toHaveProperty('status')
@@ -1233,23 +1234,22 @@ describe('Commonspace host authority', () => {
       return { text: 'Codex response.', sessionId }
     })
     const service = new CommonspaceHostService({} as never, { root }, {
-      discoverAgents: async () => [{ id: 'frontend', displayName: 'Frontend', adapter: 'hermes', model: 'test', status: 'stopped' }],
+      discoverAgents: discoverTestHarnesses,
       runAgent,
     })
     await service.initialize()
-    await addDiscoveredAgents(service, 'frontend')
-    await addTestCodexAgents(service, 'codex-review-bot')
+    await addTestHarness(service, 'hermes', 'Frontend')
+    await addTestHarness(service, 'codex', 'Review Bot')
 
     expect((await service.bootstrap()).agents).toEqual([
-      { id: 'frontend', displayName: 'Frontend', adapter: 'hermes', model: 'test', status: 'stopped' },
+      { id: 'hermes', displayName: 'Frontend', adapter: 'hermes', model: null, status: 'stopped', description: 'Installed Hermes harness.' },
       {
-        id: 'codex-review-bot',
+        id: 'codex',
         displayName: 'Review Bot',
         adapter: 'codex',
-        nativeProfile: 'review-bot',
-        model: 'gpt-5.4',
-        status: 'unknown',
-        description: 'Test review Agent.',
+        model: null,
+        status: 'stopped',
+        description: 'Installed Codex harness.',
       },
     ])
 
@@ -1258,7 +1258,7 @@ describe('Commonspace host authority', () => {
       action: 'create-channel',
       name: 'review',
       projectId: project.id,
-      agentIds: ['codex-review-bot'],
+      agentIds: ['codex'],
     })).channels[0]!
     const accepted = await service.send({ conversation: { kind: 'channel', id: channel.id }, projectId: project.id, text: 'Review this.' })
     const thread = accepted.thread
@@ -1267,12 +1267,12 @@ describe('Commonspace host authority', () => {
     await service.whenIdle()
     const sessionName = `Commonspace Thread: ${thread.id}`
     expect(runAgent.mock.calls[0]?.[0]).toMatchObject({
-      agent: { id: 'codex-review-bot', adapter: 'codex' },
+      agent: { id: 'codex', adapter: 'codex' },
       cwd: resolvedWorkspace,
       additionalCwds: [resolvedSibling],
       sessionName,
     })
-    expect(service.snapshot().agentSessions['codex-review-bot']?.[sessionName]).toBe(sessionId)
+    expect(service.snapshot().agentSessions.codex?.[sessionName]).toBe(sessionId)
     expect((await service.bootstrap()).state.agentSessions).toEqual({})
 
     await service.send({
@@ -1283,12 +1283,12 @@ describe('Commonspace host authority', () => {
     await vi.waitFor(() => { expect(runAgent).toHaveBeenCalledTimes(2) })
     expect(runAgent.mock.calls[1]?.[0]).toMatchObject({ sessionName, sessionId })
 
-    await service.send({ conversation: { kind: 'dm', id: 'codex-review-bot' }, projectId: project.id, text: 'Start a DM.' })
+    await service.send({ conversation: { kind: 'dm', id: 'codex' }, projectId: project.id, text: 'Start a DM.' })
     await vi.waitFor(() => { expect(runAgent).toHaveBeenCalledTimes(3) })
     expect(runAgent.mock.calls[2]?.[0]).toMatchObject({ sessionName: 'Bot Chat' })
     expect(runAgent.mock.calls[2]?.[0]?.sessionId).toBeUndefined()
 
-    await service.send({ conversation: { kind: 'dm', id: 'codex-review-bot' }, projectId: project.id, text: 'Continue the DM.' })
+    await service.send({ conversation: { kind: 'dm', id: 'codex' }, projectId: project.id, text: 'Continue the DM.' })
     await vi.waitFor(() => { expect(runAgent).toHaveBeenCalledTimes(4) })
     expect(runAgent.mock.calls[3]?.[0]).toMatchObject({ sessionName: 'Bot Chat', sessionId })
     await service.whenIdle()

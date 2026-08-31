@@ -143,7 +143,7 @@ flowchart TD
 2. The workspace starts without silently importing every installed Agent.
 3. When the user chooses **Add Agent**, Commonspace scans only for supported ACP harnesses.
 4. The user explicitly selects the harness identity to add.
-5. Commonspace may assign a local display name, emoji/avatar, and accent color without renaming or altering the native harness profile.
+5. Commonspace may assign a local display name, emoji/avatar, and accent color without renaming or altering the harness identity or configuration.
 6. The Agent becomes available for DMs, Channel membership, mentions, and routing.
 
 ### 5.2 Project setup
@@ -242,7 +242,7 @@ flowchart TD
 
 | ID | Target | Requirement | Acceptance condition |
 | --- | --- | --- | --- |
-| AGT-01 | v0.1 | Add Agents only through an explicit user-initiated discovery flow. | Startup does not silently add discovered harness profiles. |
+| AGT-01 | v0.1 | Add Agents only through an explicit user-initiated discovery flow. | Startup does not silently add installed harnesses, and discovery returns one identity per supported harness rather than custom profiles. |
 | AGT-02 | v0.1 | Support known ACP harnesses through first-party adapters. | Unsupported arbitrary CLIs are rejected rather than represented as partially functional Agents. |
 | AGT-03 | v0.1 | Reuse one Agent identity across Projects, Channels, DMs, and Threads. | No per-Project Agent clone or hidden Project-specific memory identity is created. |
 | AGT-04 | v0.1 | Allow workspace-local display name, avatar/emoji, and accent changes. | Native harness identity and configuration remain unchanged; Commonspace does not create synthetic personas or behavior profiles. |

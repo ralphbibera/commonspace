@@ -1,11 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { mentionedAgents, mentionedChannelAgents, parseHermesProfileDescription, parseHermesProfileList, parseTags, rankChannelAgents, routeChannelAgents } from '../server/src/relay.ts'
-
-const PROFILE_TABLE = `Profile          Model                        Gateway      Alias        Distribution
- ───────────────    ───────────────────────────    ───────────    ───────────    ────────────────────
- ◆AgentOps (default) gpt-5.6-sol                  running      —            —
-  backend         gpt-5.6-luna                 stopped      backend      —
-  frontend        gpt-5.6-luna                 stopped      frontend     —`
+import { mentionedAgents, mentionedChannelAgents, parseTags, rankChannelAgents, routeChannelAgents } from '../server/src/relay.ts'
 
 describe('Commonspace tagging', () => {
   it('parses agent, project, and channel references without confusing @@ with @', () => {
@@ -93,21 +87,5 @@ describe('Commonspace tagging', () => {
       .toEqual(['codex-default'])
     expect(routeChannelAgents(agents.map(agent => agent.id), '@default hello', agents))
       .toEqual(['default'])
-  })
-
-  it('discovers default and named Hermes profiles as agent identities', () => {
-    expect(parseHermesProfileList(PROFILE_TABLE)).toEqual([
-      { id: 'default', displayName: 'AgentOps', adapter: 'hermes', model: 'gpt-5.6-sol', status: 'running' },
-      { id: 'backend', displayName: 'Backend', adapter: 'hermes', model: 'gpt-5.6-luna', status: 'stopped' },
-      { id: 'frontend', displayName: 'Frontend', adapter: 'hermes', model: 'gpt-5.6-luna', status: 'stopped' },
-    ])
-  })
-
-  it('parses a Hermes profile description for routing and peer discovery', () => {
-    expect(parseHermesProfileDescription('Owns APIs, persistence, and migrations.\n'))
-      .toBe('Owns APIs, persistence, and migrations.')
-    expect(parseHermesProfileDescription('Backend: Owns APIs and migrations.\n'))
-      .toBe('Backend: Owns APIs and migrations.')
-    expect(parseHermesProfileDescription('Backend has no description.')).toBeUndefined()
   })
 })

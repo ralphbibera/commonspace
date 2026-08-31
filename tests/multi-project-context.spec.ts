@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CommonspaceHostService } from '../server/src/service.ts'
-import { addTestCodexAgents } from './test-codex-agents.ts'
+import { addTestHarness, discoverTestHarnesses } from './test-harnesses.ts'
 
 const roots: string[] = []
 const services: CommonspaceHostService[] = []
@@ -28,12 +28,12 @@ async function fixture() {
   await Promise.all([mkdir(firstRoot), mkdir(secondRoot)])
   const runAgent = vi.fn(async (): Promise<{ text: string }> => ({ text: 'Done.' }))
   const service = new CommonspaceHostService({} as never, { root: stateRoot }, {
-    discoverAgents: async () => [],
+    discoverAgents: discoverTestHarnesses,
     runAgent,
   })
   services.push(service)
   await service.initialize()
-  await addTestCodexAgents(service, 'codex-review-bot')
+  await addTestHarness(service, 'codex', 'Review Bot')
   const first = (await service.mutate({ action: 'create-project', name: 'First App', paths: [firstRoot] })).projects[0]!
   const second = (await service.mutate({ action: 'create-project', name: 'Second API', paths: [secondRoot] })).projects[1]!
   return { service, runAgent, first, second, firstRoot: await realpath(firstRoot), secondRoot: await realpath(secondRoot), stateRoot }
@@ -44,7 +44,7 @@ describe('multi-project conversation context', () => {
     const { service, runAgent, first, second, firstRoot, secondRoot } = await fixture()
 
     const sent = await service.send({
-      conversation: { kind: 'dm', id: 'codex-review-bot' },
+      conversation: { kind: 'dm', id: 'codex' },
       text: 'Compare @@first-app with @@second-api.',
     })
     await service.whenIdle()
@@ -63,7 +63,7 @@ describe('multi-project conversation context', () => {
     const { service, runAgent, first, second } = await fixture()
 
     await expect(service.send({
-      conversation: { kind: 'dm', id: 'codex-review-bot' },
+      conversation: { kind: 'dm', id: 'codex' },
       projectIds: [first.id],
       projectId: second.id,
       text: 'Do not expand the selected Project set.',
@@ -76,7 +76,7 @@ describe('multi-project conversation context', () => {
     const channel = (await service.mutate({
       action: 'create-channel',
       name: 'engineering',
-      agentIds: ['codex-review-bot'],
+      agentIds: ['codex'],
     })).channels[0]!
 
     const root = await service.send({
@@ -89,7 +89,7 @@ describe('multi-project conversation context', () => {
     const compatibilityReply = await service.send({
       conversation: { kind: 'channel', id: channel.id },
       threadId: root.thread!.id,
-      targetAgentId: 'codex-review-bot',
+      targetAgentId: 'codex',
       projectId: first.id,
       text: 'Continue from the current UI Project selection.',
     })
@@ -99,7 +99,7 @@ describe('multi-project conversation context', () => {
     const reply = await service.send({
       conversation: { kind: 'channel', id: channel.id },
       threadId: root.thread!.id,
-      targetAgentId: 'codex-review-bot',
+      targetAgentId: 'codex',
       text: 'Continue with both.',
     })
     await service.whenIdle()
@@ -108,7 +108,7 @@ describe('multi-project conversation context', () => {
     await expect(service.send({
       conversation: { kind: 'channel', id: channel.id },
       threadId: root.thread!.id,
-      targetAgentId: 'codex-review-bot',
+      targetAgentId: 'codex',
       projectIds: [first.id],
       text: 'Silently change the context.',
     })).rejects.toThrow('thread projects cannot be changed')
@@ -116,7 +116,7 @@ describe('multi-project conversation context', () => {
     await expect(service.send({
       conversation: { kind: 'channel', id: channel.id },
       threadId: root.thread!.id,
-      targetAgentId: 'codex-review-bot',
+      targetAgentId: 'codex',
       projectIds: [],
       text: 'Explicitly remove every Project.',
     })).rejects.toThrow('thread projects cannot be changed')
@@ -125,19 +125,19 @@ describe('multi-project conversation context', () => {
   it('removes only the deleted Project from multi-project references', async () => {
     const { service, first, second } = await fixture()
     await service.send({
-      conversation: { kind: 'dm', id: 'codex-review-bot' },
+      conversation: { kind: 'dm', id: 'codex' },
       projectIds: [first.id, second.id],
       text: 'Review both.',
     })
     await service.whenIdle()
-    expect(service.snapshot().messages['dm:codex-review-bot']?.some(message =>
+    expect(service.snapshot().messages['dm:codex']?.some(message =>
       message.projectIds?.includes(first.id) === true && message.projectIds.includes(second.id))).toBe(true)
-    const beforeRemoval = service.snapshot().messages['dm:codex-review-bot']
+    const beforeRemoval = service.snapshot().messages['dm:codex']
       ?.find(message => message.authorType === 'agent')
     expect(beforeRemoval?.runAttribution?.roots.map(root => root.projectId)).toEqual([first.id, second.id])
 
     const state = await service.mutate({ action: 'remove-project', projectId: first.id })
-    const messages = state.messages['dm:codex-review-bot'] ?? []
+    const messages = state.messages['dm:codex'] ?? []
     expect(messages.every(message => message.projectIds?.includes(first.id) !== true)).toBe(true)
     expect(messages.filter(message => message.projectIds !== undefined).every(message => message.projectId === second.id)).toBe(true)
     const afterRemoval = messages.find(message => message.authorType === 'agent')
@@ -151,13 +151,13 @@ describe('multi-project conversation context', () => {
       .mockResolvedValue({ text: 'Queued work ran.' })
 
     await service.send({
-      conversation: { kind: 'dm', id: 'codex-review-bot' },
+      conversation: { kind: 'dm', id: 'codex' },
       projectIds: [first.id, second.id],
       text: 'Start the first run.',
     })
     await vi.waitFor(() => { expect(runAgent).toHaveBeenCalledOnce() })
     await service.send({
-      conversation: { kind: 'dm', id: 'codex-review-bot' },
+      conversation: { kind: 'dm', id: 'codex' },
       projectIds: [first.id, second.id],
       text: 'Queue another run.',
       delivery: 'queue',
@@ -168,7 +168,7 @@ describe('multi-project conversation context', () => {
     await service.whenIdle()
 
     expect(runAgent).toHaveBeenCalledOnce()
-    const messages = service.snapshot().messages['dm:codex-review-bot'] ?? []
+    const messages = service.snapshot().messages['dm:codex'] ?? []
     expect(messages.every(message => message.projectIds?.includes(first.id) !== true)).toBe(true)
     expect(messages.some(message => message.authorType === 'agent')).toBe(false)
   })
@@ -176,7 +176,7 @@ describe('multi-project conversation context', () => {
   it('removes attribution roots for Projects whose paths disappear before startup', async () => {
     const { service, first, second, firstRoot, stateRoot } = await fixture()
     await service.send({
-      conversation: { kind: 'dm', id: 'codex-review-bot' },
+      conversation: { kind: 'dm', id: 'codex' },
       projectIds: [first.id, second.id],
       text: 'Review both before restart.',
     })
@@ -185,14 +185,14 @@ describe('multi-project conversation context', () => {
     await rm(firstRoot, { recursive: true, force: true })
 
     const restarted = new CommonspaceHostService({} as never, { root: stateRoot }, {
-      discoverAgents: async () => [],
+      discoverAgents: discoverTestHarnesses,
       runAgent: async () => ({ text: 'Done.' }),
     })
     services.push(restarted)
     await restarted.initialize()
 
     expect(restarted.snapshot().projects.map(project => project.id)).toEqual([second.id])
-    const reply = restarted.snapshot().messages['dm:codex-review-bot']
+    const reply = restarted.snapshot().messages['dm:codex']
       ?.find(message => message.authorType === 'agent')
     expect(reply?.projectIds).toEqual([second.id])
     expect(reply?.runAttribution?.roots.map(root => root.projectId)).toEqual([second.id])

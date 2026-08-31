@@ -140,16 +140,19 @@ export function addDiscoveredAgent(
   if (agent.adapter === 'hermes' && (agent.id.trim() !== agent.id || agent.id === '' || agent.id.length > 200 || /\s/u.test(agent.id))) {
     throw new Error('invalid discovered agent id')
   }
-  const nativeProfile = agent.adapter === 'codex' ? agent.nativeProfile : undefined
-  if (agent.adapter === 'codex' && (nativeProfile === undefined || nativeProfile.trim() !== nativeProfile || nativeProfile === '' || nativeProfile.length > 200 || /\s/u.test(nativeProfile))) {
-    throw new Error('invalid native Codex profile')
+  if (agent.adapter === 'codex') {
+    const nativeProfile = agent.nativeProfile
+    const knownHarness = agent.id === 'codex' && nativeProfile === undefined
+    const legacyProfile = nativeProfile !== undefined && nativeProfile.trim() === nativeProfile && nativeProfile !== '' &&
+      nativeProfile.length <= 200 && !/\s/u.test(nativeProfile) && codexAgentId(nativeProfile) === agent.id
+    if (!knownHarness && !legacyProfile) throw new Error('invalid discovered Codex identity')
   }
   const displayName = uniqueAgentDisplayName(
     normalizedName(agent.displayName, 'agent'),
     agent.adapter,
     state.agents,
   )
-  const id = agent.adapter === 'hermes' ? agent.id : codexAgentId(nativeProfile!)
+  const id = agent.id
   if (state.agents.some(candidate => candidate.id === id)) throw new Error(`agent ${displayName} already exists`)
   return {
     ...state,
@@ -158,7 +161,7 @@ export function addDiscoveredAgent(
       id,
       displayName,
       adapter: agent.adapter,
-      ...(nativeProfile === undefined ? {} : { nativeProfile }),
+      ...(agent.nativeProfile === undefined ? {} : { nativeProfile: agent.nativeProfile }),
       model: optionalModel(agent.model, null),
       createdAt: dependencies.now(),
     }],

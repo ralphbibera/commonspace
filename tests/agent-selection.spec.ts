@@ -1,9 +1,9 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { CommonspaceAgentProfile } from '@commonspace/shared'
 import { CommonspaceHostService } from '../server/src/service.ts'
+import { discoverTestHarnesses } from './test-harnesses.ts'
 
 const roots: string[] = []
 
@@ -12,14 +12,10 @@ afterEach(async () => {
 })
 
 describe('Commonspace agent selection', () => {
-  it('adds only the Hermes profile selected by the user and persists that choice', async () => {
+  it('adds the explicitly selected Hermes harness and persists that choice', async () => {
     const root = await mkdtemp(join(tmpdir(), 'commonspace-agent-selection-'))
     roots.push(root)
-    const discoveredAgents: CommonspaceAgentProfile[] = [
-      { id: 'frontend', displayName: 'Frontend', adapter: 'hermes', model: 'gpt-test', status: 'running' },
-      { id: 'backend', displayName: 'Backend', adapter: 'hermes', model: 'gpt-test', status: 'stopped' },
-    ]
-    const discoverAgents = vi.fn(async () => discoveredAgents)
+    const discoverAgents = vi.fn(discoverTestHarnesses)
     const dependencies = { discoverAgents }
     const service = new CommonspaceHostService({}, { root }, dependencies)
     await service.initialize()
@@ -27,53 +23,50 @@ describe('Commonspace agent selection', () => {
     expect((await service.bootstrap()).agents).toEqual([])
     expect((await service.bootstrap()).discoveredAgents).toEqual([])
     expect(discoverAgents).not.toHaveBeenCalled()
-    expect((await service.discoverAgents('hermes')).discoveredAgents).toEqual(discoveredAgents)
+    const discoveredAgent = (await service.discoverAgents('hermes')).discoveredAgents[0]!
+    expect(discoveredAgent).toMatchObject({ id: 'hermes', adapter: 'hermes' })
     expect(discoverAgents).toHaveBeenCalledOnce()
-    await service.mutate({ action: 'add-discovered-agent', agentId: 'frontend' })
-    expect((await service.bootstrap()).agents).toEqual([discoveredAgents[0]])
+    await service.mutate({ action: 'add-discovered-agent', agentId: 'hermes' })
+    expect((await service.bootstrap()).agents).toEqual([discoveredAgent])
     await service.close()
 
     const restarted = new CommonspaceHostService({}, { root }, dependencies)
     await restarted.initialize()
     expect((await restarted.bootstrap()).agents).toEqual([{
-      ...discoveredAgents[0],
+      id: 'hermes',
+      displayName: 'Hermes',
+      adapter: 'hermes',
+      model: null,
       status: 'unknown',
     }])
-    expect((await restarted.discoverAgents('hermes')).agents).toEqual([discoveredAgents[0]])
+    expect((await restarted.discoverAgents('hermes')).agents).toEqual([discoveredAgent])
     await restarted.close()
   })
 
-  it('persists a Commonspace-local agent name and appearance without changing the native profile', async () => {
+  it('persists Commonspace-local appearance without changing the harness identity', async () => {
     const root = await mkdtemp(join(tmpdir(), 'commonspace-agent-identity-'))
     roots.push(root)
-    const discoveredAgent: CommonspaceAgentProfile = {
-      id: 'frontend',
-      displayName: 'Frontend',
-      adapter: 'hermes',
-      model: 'gpt-test',
-      status: 'running',
-    }
-    const dependencies = { discoverAgents: vi.fn(async () => [discoveredAgent]) }
+    const dependencies = { discoverAgents: vi.fn(discoverTestHarnesses) }
     const service = new CommonspaceHostService({}, { root }, dependencies)
     await service.initialize()
     await service.discoverAgents('hermes')
-    await service.mutate({ action: 'add-discovered-agent', agentId: 'frontend' })
+    await service.mutate({ action: 'add-discovered-agent', agentId: 'hermes' })
 
     await service.mutate({
       action: 'update-agent-profile',
-      agentId: 'frontend',
+      agentId: 'hermes',
       displayName: 'Atlas',
       avatarEmoji: '🧭',
       accentColor: '#7c3aed',
     })
 
     expect((await service.bootstrap()).agents).toEqual([expect.objectContaining({
-      id: 'frontend',
+      id: 'hermes',
       displayName: 'Atlas',
       avatarEmoji: '🧭',
       accentColor: '#7c3aed',
       adapter: 'hermes',
-      status: 'running',
+      status: 'stopped',
     })])
     await service.close()
 
@@ -84,7 +77,7 @@ describe('Commonspace agent selection', () => {
     const restarted = new CommonspaceHostService({}, { root }, dependencies)
     await restarted.initialize()
     expect((await restarted.bootstrap()).agents).toEqual([expect.objectContaining({
-      id: 'frontend',
+      id: 'hermes',
       displayName: 'Atlas',
       avatarEmoji: '🧭',
       accentColor: '#7c3aed',
@@ -113,28 +106,17 @@ describe('Commonspace agent selection', () => {
     await service.close()
   })
 
-  it('discovers and persists a selected native Codex agent profile', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'commonspace-codex-profile-selection-'))
+  it('discovers and persists the selected Codex harness', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-codex-harness-selection-'))
     roots.push(root)
-    const workspace = join(root, 'workspace')
-    await mkdir(join(workspace, '.codex', 'agents'), { recursive: true })
-    await writeFile(join(workspace, '.codex', 'agents', 'reviewer.toml'), [
-      'name = "reviewer"',
-      'description = "Reviews changes."',
-      'developer_instructions = "Review code with evidence."',
-    ].join('\n'))
-    const service = new CommonspaceHostService({}, { root, defaultCwd: workspace }, { discoverAgents: async () => [] })
+    const service = new CommonspaceHostService({}, { root }, { discoverAgents: discoverTestHarnesses })
     await service.initialize()
 
     const discovery = await service.discoverAgents('codex')
-    expect(discovery.discoveredAgents).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: 'codex-reviewer', adapter: 'codex', nativeProfile: 'reviewer' }),
-    ]))
-    await service.mutate({ action: 'add-discovered-agent', agentId: 'codex-reviewer' })
+    expect(discovery.discoveredAgents).toEqual([expect.objectContaining({ id: 'codex', adapter: 'codex' })])
+    await service.mutate({ action: 'add-discovered-agent', agentId: 'codex' })
 
-    expect(service.snapshot().agents).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: 'codex-reviewer', adapter: 'codex', nativeProfile: 'reviewer' }),
-    ]))
+    expect(service.snapshot().agents).toEqual([expect.objectContaining({ id: 'codex', adapter: 'codex' })])
     await service.close()
   })
 })
