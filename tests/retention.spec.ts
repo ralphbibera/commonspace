@@ -55,6 +55,11 @@ describe('explicit retention', () => {
       .rejects.toThrow('retention preview is stale')
 
     const current = previewRetention.call(service, { kind: 'channel', id: channel.id }) as typeof preview
+    const internals = service as unknown as { channelMemoryTails: Map<string, Promise<unknown>> }
+    internals.channelMemoryTails.set(channel.id, Promise.resolve())
+    await expect(applyRetention.call(service, { conversation: { kind: 'channel', id: channel.id }, expectedRevision: current.revision }))
+      .rejects.toThrow('conversation has active work')
+    internals.channelMemoryTails.delete(channel.id)
     await applyRetention.call(service, { conversation: { kind: 'channel', id: channel.id }, expectedRevision: current.revision })
 
     expect(service.snapshot().channels.some(candidate => candidate.id === channel.id)).toBe(true)

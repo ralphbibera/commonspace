@@ -148,6 +148,9 @@ export interface CommonspaceRoutingCorrection {
 export interface CommonspaceRoutingDecision {
   source: 'explicit' | 'ai' | 'local'
   status?: 'pending' | 'resolved' | 'failed'
+  startedAt?: string
+  resolvedAt?: string
+  durationMs?: number
   agentIds: string[]
   assignments: CommonspaceRoutingAssignment[]
   corrections: CommonspaceRoutingCorrection[]

@@ -1,7 +1,7 @@
 import { chmod, mkdtemp, mkdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { COMMONSPACE_STATE_VERSION } from '@commonspace/shared'
+import { COMMONSPACE_STATE_VERSION, deriveCommonspaceInboxItems } from '@commonspace/shared'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { requestIsLoopback, requestIsSameOrigin } from '../server/src/app.ts'
 import { CommonspaceHostService, unsafeModeForAdapter, type AgentRunInput } from '../server/src/service.ts'
@@ -970,16 +970,24 @@ describe('Commonspace host authority', () => {
     await service.whenIdle()
 
     expect(runAgent).not.toHaveBeenCalled()
-    expect((await service.bootstrap()).state.messages[`channel:${channel.id}`]
-      ?.find(message => message.id === sent.accepted.id)?.routing).toEqual({
+    const failed = (await service.bootstrap()).state.messages[`channel:${channel.id}`]
+      ?.find(message => message.id === sent.accepted.id)
+    expect(failed?.routing).toMatchObject({
       source: 'ai',
       status: 'failed',
+      startedAt: expect.any(String),
+      resolvedAt: expect.any(String),
+      durationMs: expect.any(Number),
       agentIds: [],
       assignments: [],
       corrections: [],
       inferredProjectIds: [],
       reason: 'inference routing failed',
     })
+    expect(failed).toMatchObject({ replyStatus: 'failed', replyError: 'inference routing failed' })
+    expect(deriveCommonspaceInboxItems(service.snapshot())).toEqual(expect.arrayContaining([
+      expect.objectContaining({ messageId: sent.accepted.id, kind: 'failure' }),
+    ]))
   })
 
   it('persists an unaddressed message as routing before inference resolves', async () => {
@@ -1008,9 +1016,10 @@ describe('Commonspace host authority', () => {
 
     expect(immediate.status).toBe('accepted')
     if (immediate.status !== 'accepted') return
-    expect(immediate.response.accepted.routing).toEqual({
+    expect(immediate.response.accepted.routing).toMatchObject({
       source: 'ai',
       status: 'pending',
+      startedAt: expect.any(String),
       agentIds: [],
       assignments: [],
       corrections: [],
@@ -1023,6 +1032,9 @@ describe('Commonspace host authority', () => {
       ?.find(message => message.id === immediate.response.accepted.id)?.routing).toMatchObject({
       source: 'ai',
       status: 'resolved',
+      startedAt: expect.any(String),
+      resolvedAt: expect.any(String),
+      durationMs: expect.any(Number),
       agentIds: ['backend'],
       assignments: [{
         id: expect.any(String),

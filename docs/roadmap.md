@@ -7,6 +7,7 @@ Commonspace is a private preview focused on durable human-agent conversation and
 - Standalone local server and browser application.
 - Filesystem Projects with multiple canonical paths.
 - Zero-to-many Project references on messages and threads, including multi-root agent execution and Project-aware search/attribution.
+- Inference-first Project context without root, DM, Thread, branch, or reroute Project pickers; `@@project` remains the explicit context path.
 - Channels with explicit agent rosters, instructions, settings, memory, and threaded native sessions.
 - Editable Channel context with state metadata, manual compaction, and automatic token-pressure compaction through the configured inference layer.
 - Persistent Direct Messages with generation-safe `/new` boundaries.
@@ -18,11 +19,12 @@ Commonspace is a private preview focused on durable human-agent conversation and
 - Live run supervision with steering, queued follow-ups, reorder/remove controls, and stop-and-send.
 - Explicit completed, needs-input, failed, silent, cancelled, and timeout outcomes with needs-attention surfacing.
 - Inference-only unaddressed Channel routing through a harness or OpenAI-compatible model.
+- Persisted routing-stage latency reported independently from Agent execution, with failed inference promoted to retryable Inbox attention.
 - Inspectable per-harness routing assignments with bounded sub-requests, scoped Projects, and visible user-controlled fan-out.
-- Visible Project-reference inference for unreferenced new Channel roots, with explicit and projectless selections remaining authoritative.
-- Single-assignment rerouting with visible retained attempts, assignment-bound replies, corrected Agent/Project scope, and compacted per-Channel routing knowledge used by later inference.
+- Visible Project-reference inference for new Channel roots, with `@@project` tags remaining authoritative.
+- Single-assignment rerouting among existing Channel members with visible retained attempts, assignment-bound replies, preserved Project scope, and compacted per-Channel routing knowledge used by later inference.
 - Immutable Channel-context snapshots per Thread, independent editable/pressure-compacted Thread context, and visible manual compaction controls.
-- Prospective multi-Project/projectless Thread references that preserve earlier delivery and active-session scope.
+- Prospective Thread references inherited from inference or supplied through `@@project`, preserving earlier delivery and active-session scope.
 - Channel/Thread pins for messages, attachments, and notes with scoped MCP visibility and removal tombstones.
 - Human message edit branches with new native continuity, previous-version navigation, and pre-branch context; durable deletion markers remove content without rewriting delivery history.
 - Channel context editing, status inspection, manual compaction, and note-pin controls.
@@ -39,11 +41,7 @@ Commonspace is a private preview focused on durable human-agent conversation and
 - Hard-boundary cancellation, stale-session recovery that distinguishes missing from transient failures, and graceful bridge shutdown.
 - Slash commands and agent/project/channel references.
 - Versioned atomic state, loopback API guards, bounded execution, and live browser verification.
-
-## Later UI/UX work
-
-- Multi-Project controls for new roots and inferred-reference correction.
-- Keyboard and narrow-screen acceptance coverage across every flow.
+- Browser-private canonical Project roots and retention guards for live/queued/compaction work.
 
 ## Scale-dependent work
 
@@ -55,7 +53,7 @@ See [Product specification](product-spec.md) for the complete behavior and accep
 ## Release readiness
 
 - Exercise Hermes and Codex ACP login/start/resume paths on a clean machine.
-- Verify light, dark, desktop, and narrow layouts.
-- Exercise state migration, automatic backup recovery, and rollback guarantees on release fixtures.
-- Exercise the installed service update and rollback path on a clean supported macOS user account.
+- Keep automated keyboard search/navigation, narrow overflow, and light/dark palette checks green in `pnpm verify:live`.
+- Keep state migration, automatic backup recovery, and rollback fixtures green in `pnpm check`.
+- Repeat the green isolated `pnpm verify:service` lifecycle on a clean supported macOS user account with real launchctl health.
 - Complete keyboard-only and destructive-action reviews.

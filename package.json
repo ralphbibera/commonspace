@@ -20,6 +20,7 @@
     "verify:acp:mcp:hermes": "COMMONSPACE_LIVE_ACP_MCP=1 vitest run tests/live-acp-mcp.spec.ts -t 'real Hermes' --testTimeout=240000",
     "verify:acp:mcp:codex": "COMMONSPACE_LIVE_ACP_MCP=1 vitest run tests/live-acp-mcp.spec.ts -t 'real Codex' --testTimeout=240000",
     "verify:live": "pnpm build && node scripts/verify-live.mjs",
+    "verify:service": "node scripts/verify-service.mjs",
     "service:install": "node scripts/commonspace-service.mjs install --source .",
     "service:update": "node scripts/commonspace-service.mjs update",
     "service:start": "node scripts/commonspace-service.mjs start",

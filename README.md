@@ -19,7 +19,7 @@ Commonspace is conversation-first. Hermes and Codex receive only the newly deliv
 
 Optional native notifications mirror new durable Inbox events for replies, mentions, permissions, failures, and timeouts. Their category/sound settings are independent from Inbox state, and clicks open the exact loopback conversation item.
 
-Unaddressed Channel messages always use configured inference—either an agent harness or a BYO OpenAI-compatible model—to select the smallest useful harness set and create an inspectable sub-request for each selection. When a new root has no explicit Project reference, the same decision infers visible Project scope; each harness receives only its assigned sub-request and Project subset. Explicit mentions and explicit projectless scope remain authoritative; there is no deterministic/no-inference routing mode.
+Unaddressed Channel messages always use configured inference—either an agent harness or a BYO OpenAI-compatible model—to select the smallest useful harness set and create an inspectable sub-request for each selection. When a new root has no `@@project` tag, the same decision infers visible Project scope; each harness receives only its assigned sub-request and Project subset. Explicit `@agent` and `@@project` tags remain authoritative; there is no deterministic/no-inference routing mode or separate Project picker.
 
 ## Quick start
 
@@ -89,6 +89,7 @@ pnpm typecheck              # workspace TypeScript checks
 pnpm build                  # all production builds
 pnpm check                  # complete local gate
 pnpm verify:live            # build, boot API + UI preview, and exercise the browser path
+pnpm verify:service         # isolated real clone/build/update/rollback lifecycle on macOS
 pnpm service:install        # install current committed main checkout as a macOS LaunchAgent
 pnpm service:status         # inspect installed service and health
 pnpm verify:acp             # opt-in real Hermes and Codex ACP start/resume tests
@@ -131,6 +132,7 @@ The Project Files browser refuses to preview known credential-bearing files such
 - [Design system](docs/design-system.md)
 - [Roadmap](docs/roadmap.md)
 - [Implementation gap audit](docs/implementation-gap-audit.md)
+- [v0.1 acceptance ledger](docs/v0.1-acceptance.md)
 
 ## License
 

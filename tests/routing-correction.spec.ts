@@ -21,6 +21,7 @@ describe('routing correction', () => {
       { id: 'backend', displayName: 'Backend', adapter: 'hermes' as const, model: null, status: 'stopped' as const },
       { id: 'frontend', displayName: 'Frontend', adapter: 'hermes' as const, model: null, status: 'stopped' as const },
       { id: 'reviewer', displayName: 'Reviewer', adapter: 'hermes' as const, model: null, status: 'stopped' as const },
+      { id: 'outsider', displayName: 'Outsider', adapter: 'hermes' as const, model: null, status: 'stopped' as const },
     ]
     const runAgent = vi.fn(async (input: AgentRunInput) => `${input.agent.id}: ${input.message}`)
     const service = new CommonspaceHostService({}, { root }, {
@@ -41,7 +42,7 @@ describe('routing correction', () => {
     const channel = (await service.mutate({
       action: 'create-channel',
       name: 'engineering',
-      agentIds: ['backend', 'frontend'],
+      agentIds: ['backend', 'frontend', 'reviewer'],
     })).channels[0]!
 
     const sent = await service.send({
@@ -52,6 +53,11 @@ describe('routing correction', () => {
     await service.whenIdle()
     const original = service.snapshot().messages[`channel:${channel.id}`]
       ?.find(message => message.id === sent.accepted.id)
+    expect(original?.routing).toMatchObject({
+      startedAt: expect.any(String),
+      resolvedAt: expect.any(String),
+      durationMs: expect.any(Number),
+    })
     const frontendAssignment = original?.routing?.assignments.find(assignment => assignment.agentId === 'frontend')
     expect(frontendAssignment).toBeDefined()
 
@@ -64,6 +70,13 @@ describe('routing correction', () => {
         projectIds: string[]
       }): Promise<unknown>
     }).rerouteAssignment
+    await expect(reroute.call(service, {
+      sourceMessageId: sent.accepted.id,
+      assignmentId: frontendAssignment!.id,
+      agentId: 'outsider',
+      subRequest: 'Review only the UI change.',
+      projectIds: [second.id],
+    })).rejects.toThrow('reroute agent must belong to the channel')
     await reroute.call(service, {
       sourceMessageId: sent.accepted.id,
       assignmentId: frontendAssignment!.id,

@@ -514,7 +514,6 @@ describe('Commonspace client revision ordering', () => {
       body: JSON.stringify({
         conversation: { kind: 'dm', id: 'backend' },
         text: 'Inspect this',
-        projectId: 'project-1',
         attachments: [{ name: 'clipboard.png', mimeType: 'image/png', data: 'iVBORw==' }],
       }),
     }))
@@ -560,7 +559,6 @@ describe('Commonspace client revision ordering', () => {
       body: JSON.stringify({
         conversation: { kind: 'dm', id: 'backend' },
         text: 'Inspect file',
-        projectId: 'project-1',
         files: [{ name: 'notes.txt', mimeType: 'text/plain', data: 'bm90ZXM=' }],
       }),
     }))

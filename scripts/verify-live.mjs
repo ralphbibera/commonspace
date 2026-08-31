@@ -60,6 +60,15 @@ async function stopProcess(child) {
   }
 }
 
+async function mutate(url, mutation) {
+  const response = await fetch(`${url}/api/mutate`, {
+    method: 'POST',
+    headers: { origin: url, 'content-type': 'application/json' },
+    body: JSON.stringify(mutation),
+  })
+  if (!response.ok) throw new Error(`verification fixture mutation failed with ${String(response.status)}: ${await response.text()}`)
+}
+
 try {
   const url = await waitForUrl(server, /Commonspace is running at (http:\/\/127\.0\.0\.1:\d+)/, 'Commonspace server')
   const health = await fetch(`${url}/api/health`)
@@ -72,6 +81,8 @@ try {
   if (rootBody.status !== 'ok') throw new Error('API root health check returned an unexpected body')
   const assetResponse = await fetch(`${url}/index.html`)
   if (assetResponse.status !== 404) throw new Error(`API server served UI asset with status ${String(assetResponse.status)}`)
+  await mutate(url, { action: 'create-project', name: 'Verification Project', paths: [stateRoot] })
+  await mutate(url, { action: 'create-channel', name: 'verification', agentIds: [] })
 
   uiServer = spawn(process.execPath, [join(repoRoot, 'ui/node_modules/vite/bin/vite.js'), 'preview', '--host', '127.0.0.1', '--port', '0'], {
     cwd: join(repoRoot, 'ui'),
@@ -92,6 +103,51 @@ try {
   await page.getByLabel('Commonspace browser').waitFor({ state: 'visible' })
   await page.getByLabel('Commonspace conversation').waitFor({ state: 'visible' })
   if (pageErrors.length > 0) throw new Error(`browser errors: ${pageErrors.join(' | ')}`)
+
+  const verificationChannel = page.getByRole('button', { name: 'Open channel verification' })
+  await verificationChannel.waitFor({ state: 'visible' })
+  await verificationChannel.focus()
+  await page.keyboard.press('Enter')
+  await page.getByLabel('Post in verification').waitFor({ state: 'visible' })
+  for (const label of ['Infer Projects', 'Use no Projects', 'Choose Projects']) {
+    if (await page.getByRole('button', { name: label }).count() !== 0) throw new Error(`unexpected Project picker: ${label}`)
+  }
+  const taggingHelp = await page.getByLabel('Tagging help').first().textContent()
+  if (!taggingHelp?.includes('@@')) throw new Error('explicit @@project tagging help is unavailable')
+
+  await page.emulateMedia({ colorScheme: 'light' })
+  const lightPalette = await page.evaluate(() => globalThis.getComputedStyle(globalThis.document.documentElement).getPropertyValue('--csp-shell-bg').trim())
+  await page.emulateMedia({ colorScheme: 'dark' })
+  const darkPalette = await page.evaluate(() => ({
+    colorScheme: globalThis.getComputedStyle(globalThis.document.documentElement).colorScheme,
+    shell: globalThis.getComputedStyle(globalThis.document.documentElement).getPropertyValue('--csp-shell-bg').trim(),
+  }))
+  if (darkPalette.colorScheme !== 'dark' || lightPalette === '' || darkPalette.shell === lightPalette) {
+    throw new Error('light/dark palette verification failed')
+  }
+  await page.emulateMedia({ colorScheme: 'light' })
+
+  await page.keyboard.press('Control+K')
+  await page.getByRole('dialog', { name: 'Search everything' }).waitFor({ state: 'visible' })
+  await page.keyboard.press('Escape')
+  await page.getByRole('dialog', { name: 'Search everything' }).waitFor({ state: 'detached' })
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  const navigationToggle = page.getByRole('button', { name: 'Open navigation' })
+  await navigationToggle.waitFor({ state: 'visible' })
+  await navigationToggle.focus()
+  await page.keyboard.press('Enter')
+  await page.getByRole('button', { name: 'Close navigation' }).first().waitFor({ state: 'visible' })
+  await page.keyboard.press('Escape')
+  await page.getByRole('button', { name: 'Open navigation' }).waitFor({ state: 'visible' })
+  const narrowLayout = await page.evaluate(() => ({
+    viewport: globalThis.innerWidth,
+    documentWidth: globalThis.document.documentElement.scrollWidth,
+    conversationWidth: globalThis.document.querySelector('[aria-label="Commonspace conversation"]')?.getBoundingClientRect().width ?? 0,
+  }))
+  if (narrowLayout.documentWidth > narrowLayout.viewport || narrowLayout.conversationWidth <= 0) {
+    throw new Error(`narrow layout overflowed: ${JSON.stringify(narrowLayout)}`)
+  }
 
   installedServer = spawn(process.execPath, [join(repoRoot, 'server/dist/index.js')], {
     cwd: repoRoot,
@@ -122,6 +178,9 @@ try {
     apiServer: true,
     browserMounted: true,
     installedBrowserMounted: true,
+    keyboardNavigation: true,
+    narrowLayout: true,
+    lightDarkPalettes: true,
   }))
 } finally {
   await browser?.close()

@@ -16,6 +16,27 @@ afterEach(async () => {
 })
 
 describe('standalone Commonspace server', () => {
+  it('keeps canonical Project roots out of browser-visible state', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-private-project-roots-'))
+    roots.push(root)
+    const workspace = join(root, 'private-workspace-name')
+    await mkdir(workspace)
+    const running = await startCommonspaceServer({
+      root: join(root, 'state'),
+      port: 0,
+      logger: { warn: () => undefined, info: () => undefined },
+    })
+    servers.push(running)
+    await running.service.mutate({ action: 'create-project', name: 'Private roots', paths: [workspace] })
+    const privateRoot = running.service.snapshot().projects[0]!.paths[0]!
+
+    const response = await fetch(`${running.url}/api/bootstrap`, { headers: { origin: running.url } })
+    const body = await response.json() as { state: { projects: Array<{ paths: string[] }> } }
+
+    expect(body.state.projects[0]?.paths).toEqual(['Working folder'])
+    expect(JSON.stringify(body)).not.toContain(privateRoot)
+  })
+
   it('serves an installed UI build on the same loopback origin when configured', async () => {
     const root = await mkdtemp(join(tmpdir(), 'commonspace-installed-ui-'))
     roots.push(root)

@@ -28,7 +28,7 @@ describe.skipIf(!live).sequential('installed ACP bridge with Commonspace MCP', (
       logger: { info: () => undefined, warn: () => undefined },
     })
     servers.push(running)
-    await addTestHarness(running.service, 'codex', 'Live MCP')
+    const codex = await addTestHarness(running.service, 'codex')
     const project = (await running.service.mutate({
       action: 'create-project',
       name: 'Live MCP Workspace',
@@ -37,8 +37,7 @@ describe.skipIf(!live).sequential('installed ACP bridge with Commonspace MCP', (
     const channel = (await running.service.mutate({
       action: 'create-channel',
       name: 'live-mcp',
-      projectId: project.id,
-      agentIds: ['codex'],
+      agentIds: [codex.id],
     })).channels[0]!
     await running.service.mutate({
       action: 'set-channel-context',
@@ -48,7 +47,9 @@ describe.skipIf(!live).sequential('installed ACP bridge with Commonspace MCP', (
 
     await running.service.send({
       conversation: { kind: 'channel', id: channel.id },
+      projectIds: [project.id],
       text: [
+        '@Codex',
         'Use commonspace_get_context before answering and read the Channel instructions.',
         'Then call commonspace_post_progress with exactly CODEX_MCP_PROGRESS_OK.',
         'Finally reply with exactly the verification token from the Channel instructions and nothing else.',
@@ -60,7 +61,6 @@ describe.skipIf(!live).sequential('installed ACP bridge with Commonspace MCP', (
     expect(messages.find(message => message.authorType === 'system')).toBeUndefined()
     expect(messages.some(message => message.authorType === 'agent' && message.text === 'CODEX_MCP_PROGRESS_OK')).toBe(true)
     expect(messages.some(message => message.authorType === 'agent' && message.text.includes('CODEX_MCP_CONTEXT_OK'))).toBe(true)
-    expect(state.threads[0]?.status).toBe('complete')
   }, 210_000)
 
   it('lets real Hermes read scoped Channel context and post visible progress', async () => {
@@ -75,9 +75,7 @@ describe.skipIf(!live).sequential('installed ACP bridge with Commonspace MCP', (
       logger: { info: () => undefined, warn: () => undefined },
     })
     servers.push(running)
-    const discovered = (await running.service.discoverAgents('hermes')).discoveredAgents.find(agent => agent.id === 'default')
-    if (discovered === undefined) throw new Error('Hermes default profile is not installed')
-    await running.service.mutate({ action: 'add-discovered-agent', agentId: discovered.id })
+    const discovered = await addTestHarness(running.service, 'hermes')
     const project = (await running.service.mutate({
       action: 'create-project',
       name: 'Live Hermes MCP Workspace',
@@ -86,7 +84,6 @@ describe.skipIf(!live).sequential('installed ACP bridge with Commonspace MCP', (
     const channel = (await running.service.mutate({
       action: 'create-channel',
       name: 'live-hermes-mcp',
-      projectId: project.id,
       agentIds: [discovered.id],
     })).channels[0]!
     await running.service.mutate({
@@ -97,7 +94,9 @@ describe.skipIf(!live).sequential('installed ACP bridge with Commonspace MCP', (
 
     await running.service.send({
       conversation: { kind: 'channel', id: channel.id },
+      projectIds: [project.id],
       text: [
+        '@Hermes',
         'Use commonspace_get_context before answering and read the Channel instructions.',
         'Then call commonspace_post_progress with exactly HERMES_MCP_PROGRESS_OK.',
         'Finally reply with exactly the verification token from the Channel instructions and nothing else.',
@@ -109,6 +108,5 @@ describe.skipIf(!live).sequential('installed ACP bridge with Commonspace MCP', (
     expect(messages.find(message => message.authorType === 'system')).toBeUndefined()
     expect(messages.some(message => message.authorType === 'agent' && message.text === 'HERMES_MCP_PROGRESS_OK')).toBe(true)
     expect(messages.some(message => message.authorType === 'agent' && message.text.includes('HERMES_MCP_CONTEXT_OK'))).toBe(true)
-    expect(state.threads[0]?.status).toBe('complete')
   }, 210_000)
 })

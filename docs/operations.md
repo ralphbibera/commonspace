@@ -70,12 +70,13 @@ Retention is manual and conversation-scoped. Select one Channel or Direct Messag
 ```bash
 curl http://127.0.0.1:3100/api/health
 pnpm verify:live
+pnpm verify:service
 pnpm verify:acp:hermes
 pnpm verify:acp:codex
 pnpm verify:acp:mcp
 ```
 
-The health response is `{"status":"ok"}`. The live verifier builds the workspace, exercises the separate API/Vite path and the installed same-origin server path on OS-assigned loopback ports, and mounts both clients in Chromium. ACP verifiers are opt-in because they use locally authenticated provider runtimes; each starts a native session and resumes the exact returned opaque ID.
+The health response is `{"status":"ok"}`. The live verifier builds the workspace, exercises the separate API/Vite path and the installed same-origin server path on OS-assigned loopback ports, and mounts both clients in Chromium. It also checks `@@project`-first composition, keyboard-opened search, keyboard-only narrow navigation, narrow overflow, and distinct complete light/dark palettes. `verify:service` performs a real local Git clone, frozen install, build, plist validation, staged update, and rollback under a temporary home while stubbing only launchctl and health. ACP verifiers are opt-in because they use locally authenticated provider runtimes; each starts and resumes native sessions. The MCP verifier additionally requires each real harness to read scoped Channel context, post visible progress, and return an exact final token.
 
 ## OS notifications
 
@@ -96,6 +97,8 @@ Run `hermes --version` or `codex --version` in the same environment. Commonspace
 ### Project path rejected
 
 Project paths must be absolute, exist, resolve through `realpath`, and be directories.
+
+Canonical roots remain server-private. Browser bootstrap and mutation responses expose only `Working folder` / `Reference folder N` labels; Project file and search endpoints use Project/root indexes plus relative paths.
 
 ### Agent authentication fails
 

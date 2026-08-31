@@ -25,8 +25,8 @@ All notable changes to Commonspace are recorded here.
 - Single-assignment rerouting with durable linked correction attempts, assignment-bound replies, scoped Agent/Project changes, and an inline correction UI.
 - Per-Channel routing memory compacted from explicit corrections through the configured inference layer and supplied to later routing decisions.
 - Immutable per-Thread Channel-context snapshots plus independently projected, editable, manually compactable, and pressure-compacted Thread context.
-- Prospective Thread Project references: each reply can add/remove Projects for that turn and future defaults without rewriting prior deliveries or invalidating active MCP scopes.
-- Inline Thread context inspection/editing, manual compaction, and multi-Project/projectless controls for the next reply.
+- Prospective Thread Project references: replies inherit inferred scope, while `@@project` tags can set explicit context for that turn and future defaults without rewriting prior deliveries or invalidating active MCP scopes.
+- Inline Thread context inspection/editing and manual compaction without Channel-specific Project picker controls.
 - Durable Channel/Thread pins for messages, exact attachments, and human notes, including removal tombstones and scoped MCP exposure.
 - Human message editing through visible Channel Thread or DM generation branches with preserved prior results and pre-branch scoped context.
 - Durable deletion markers that remove message bodies, attachment bytes, and derived automatic context without misrepresenting delivered history.
@@ -40,6 +40,11 @@ All notable changes to Commonspace are recorded here.
 - Revision-bound retention previews and confirmed scoped Channel/DM cleanup, including transcript, Thread, attachment-byte, pin, permission, context, and native-continuity removal.
 - One-command macOS installation with an owner LaunchAgent, same-origin installed UI/API, lifecycle health controls, staged updates, automatic failed-update restoration, and explicit rollback.
 - Opt-in native notifications for replies/input requests, mentions, ACP permissions, failures, and timeouts, with independent persisted settings, exact loopback deep links, and restart/import replay prevention.
+- Inference-first Project context with no root, Thread, branch, or reroute Project pickers; `@@project` remains the sole explicit Project-context interaction, and the hidden singular fallback is removed.
+- Live browser acceptance for keyboard search/navigation, narrow layout overflow, and complete light/dark palettes across preview and installed serving modes.
+- Persisted routing-stage start/resolution timing shown separately from harness execution, with inference failures promoted into retryable durable Inbox attention.
+- Browser-safe Project folder labels while canonical absolute roots remain server-private for file, Git, search, attribution, and execution.
+- Retention apply now refuses queued conversation runs and Channel/Thread/routing compaction in addition to live Agent activity.
 - Project Files, Git Changes/diffs, speech playback, live activity, and stop controls.
 - Zero-to-many Project references on messages and threads, with multi-root agent execution, Project-aware search, correct run attribution, and backward-compatible singular fields for the current UI.
 - Editable Channel context APIs with user-owned context preservation, manual inference compaction, automatic token-pressure compaction, and visible current/stale metadata.

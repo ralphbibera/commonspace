@@ -87,7 +87,7 @@ describe('Commonspace composer commands', () => {
     fireEvent.change(composer, { target: { value: '/retry' } })
     fireEvent.submit(composer.closest('form')!)
 
-    await waitFor(() => { expect(send).toHaveBeenCalledWith('Please review this') })
+    await waitFor(() => { expect(send).toHaveBeenCalledWith('Please review this', undefined, [], undefined, []) })
     expect(send).not.toHaveBeenCalledWith('/retry')
   })
 

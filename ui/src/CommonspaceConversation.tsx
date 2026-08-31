@@ -1,5 +1,5 @@
 import { Fragment, lazy, Suspense, useEffect, useId, useRef, useState, useSyncExternalStore, type CSSProperties, type Dispatch, type FormEvent, type SetStateAction } from 'react'
-import { deriveCommonspaceInboxItems, type AgentAdapterKind, type CommonspaceAgentProfile, type CommonspaceBootstrap, type CommonspaceLiveAgentActivity, type CommonspacePermissionRequest, type CommonspaceTraceEntry, type ConversationRef, type CommonspaceMessage, type CommonspaceThread, type RerouteAssignmentRequest, type SendFileAttachment, type SendImageAttachment } from '@commonspace/shared'
+import { deriveCommonspaceInboxItems, referencedProjectIds, type AgentAdapterKind, type CommonspaceAgentProfile, type CommonspaceBootstrap, type CommonspaceLiveAgentActivity, type CommonspacePermissionRequest, type CommonspaceTraceEntry, type ConversationRef, type CommonspaceMessage, type CommonspaceThread, type RerouteAssignmentRequest, type SendFileAttachment, type SendImageAttachment } from '@commonspace/shared'
 import type { CommonspaceClientStore } from './commonspace-store.ts'
 import { AgentTrace, AgentTraceTimeline } from './AgentTrace.tsx'
 import { RunAttribution } from './RunAttribution.tsx'
@@ -145,6 +145,12 @@ function fileSizeLabel(size: number): string {
   return `${(size / (1_024 * 1_024)).toFixed(1)} MB`
 }
 
+function routingDurationLabel(durationMs: number | undefined): string | null {
+  if (durationMs === undefined) return null
+  if (durationMs < 1_000) return `routed in ${String(durationMs)}ms`
+  return `routed in ${(durationMs / 1_000).toFixed(durationMs < 10_000 ? 1 : 0)}s`
+}
+
 function RoutingAssignments({
   message,
   bootstrap,
@@ -158,23 +164,27 @@ function RoutingAssignments({
   const [editingId, setEditingId] = useState<string | null>(null)
   const [agentId, setAgentId] = useState('')
   const [subRequest, setSubRequest] = useState('')
-  const [projectIds, setProjectIds] = useState<string[]>([])
   const [submitting, setSubmitting] = useState(false)
   if (routing === undefined || routing.assignments.length === 0) return null
   const corrections = routing.corrections ?? []
   const supersededIds = new Set(corrections.map(correction => correction.fromAssignmentId))
   const correctedIds = new Set(corrections.map(correction => correction.toAssignmentId))
+  const channelAgentIds = message.conversation.kind === 'channel'
+    ? bootstrap?.state.channels.find(channel => channel.id === message.conversation.id)?.agentIds ?? []
+    : []
+  const rerouteAgents = (bootstrap?.agents ?? []).filter(agent => channelAgentIds.includes(agent.id))
   const beginReroute = (assignmentId: string) => {
     const assignment = routing.assignments.find(candidate => candidate.id === assignmentId)
     if (assignment === undefined) return
     setEditingId(assignment.id)
     setAgentId(assignment.agentId)
     setSubRequest(assignment.subRequest)
-    setProjectIds(assignment.projectIds)
   }
   const submit = async (event: FormEvent) => {
     event.preventDefault()
     if (editingId === null || agentId === '' || subRequest.trim() === '' || onReroute === undefined || submitting) return
+    const assignment = routing.assignments.find(candidate => candidate.id === editingId)
+    if (assignment === undefined) return
     setSubmitting(true)
     try {
       await onReroute({
@@ -182,7 +192,7 @@ function RoutingAssignments({
         assignmentId: editingId,
         agentId,
         subRequest,
-        projectIds,
+        projectIds: assignment.projectIds,
       })
       setEditingId(null)
     } catch {
@@ -220,27 +230,9 @@ function RoutingAssignments({
             {editingId === assignment.id && (
               <form className="csp-routing-reroute-form" aria-label="Reroute assignment" onSubmit={(event) => { void submit(event) }}>
                 <label>Agent<select aria-label="Reroute agent" value={agentId} onChange={event => { setAgentId(event.target.value) }}>
-                  {(bootstrap?.agents ?? []).map(candidate => <option key={candidate.id} value={candidate.id}>{candidate.displayName}</option>)}
+                  {rerouteAgents.map(candidate => <option key={candidate.id} value={candidate.id}>{candidate.displayName}</option>)}
                 </select></label>
                 <label>Sub-request<textarea aria-label="Corrected sub-request" value={subRequest} onChange={event => { setSubRequest(event.target.value) }} /></label>
-                <fieldset>
-                  <legend>Projects</legend>
-                  {(bootstrap?.state.projects ?? []).map(project => (
-                    <label key={project.id}>
-                      <input
-                        type="checkbox"
-                        aria-label={`Project ${project.name}`}
-                        checked={projectIds.includes(project.id)}
-                        onChange={event => {
-                          setProjectIds(current => event.target.checked
-                            ? [...new Set([...current, project.id])]
-                            : current.filter(id => id !== project.id))
-                        }}
-                      />
-                      {project.name}
-                    </label>
-                  ))}
-                </fieldset>
                 <div>
                   <button type="submit" disabled={submitting || agentId === '' || subRequest.trim() === ''}>{submitting ? 'Sending…' : 'Send correction'}</button>
                   <button type="button" onClick={() => { setEditingId(null) }}>Cancel</button>
@@ -274,7 +266,7 @@ function MessageRow({
   onReplyToAgent?: (message: CommonspaceMessage) => void
   onReroute?: (request: RerouteAssignmentRequest) => Promise<void>
   onPin?: (message: CommonspaceMessage, attachmentId?: string) => Promise<void>
-  onEdit?: (message: CommonspaceMessage, text: string, projectIds: string[]) => Promise<void>
+  onEdit?: (message: CommonspaceMessage, text: string) => Promise<void>
   onDelete?: (message: CommonspaceMessage) => Promise<void>
   onOpenVersion?: (messageId: string) => void
   speech: MessageSpeechControls
@@ -283,14 +275,13 @@ function MessageRow({
   const supersedesMessageId = message.supersedesMessageId
   const [editing, setEditing] = useState(false)
   const [editedText, setEditedText] = useState(message.text)
-  const [editedProjectIds, setEditedProjectIds] = useState<string[]>(message.projectIds ?? (message.projectId === undefined ? [] : [message.projectId]))
   const [savingEdit, setSavingEdit] = useState(false)
   const submitEdit = async (event: FormEvent) => {
     event.preventDefault()
     if (onEdit === undefined || editedText.trim() === '' || savingEdit) return
     setSavingEdit(true)
     try {
-      await onEdit(message, editedText, editedProjectIds)
+      await onEdit(message, editedText)
       setEditing(false)
     } finally {
       setSavingEdit(false)
@@ -322,7 +313,6 @@ function MessageRow({
           {message.authorType === 'user' && message.deletedAt === undefined && onEdit !== undefined && (
             <button type="button" className="csp-message-version-action" aria-label={`Edit message from ${message.authorName}`} onClick={() => {
               setEditedText(message.text)
-              setEditedProjectIds(message.projectIds ?? (message.projectId === undefined ? [] : [message.projectId]))
               setEditing(true)
             }}>Edit</button>
           )}
@@ -358,19 +348,6 @@ function MessageRow({
         {editing && (
           <form className="csp-message-edit-form" aria-label="Edit delivered message" onSubmit={(event) => { void submitEdit(event) }}>
             <label>Message<textarea aria-label="Edited message" value={editedText} onChange={event => { setEditedText(event.target.value) }} /></label>
-            {(bootstrap?.state.projects.length ?? 0) > 0 && <fieldset>
-              <legend>Projects for new branch</legend>
-              {bootstrap?.state.projects.map(project => (
-                <label key={project.id}>
-                  <input
-                    type="checkbox"
-                    checked={editedProjectIds.includes(project.id)}
-                    onChange={event => { setEditedProjectIds(current => event.target.checked ? [...new Set([...current, project.id])] : current.filter(id => id !== project.id)) }}
-                  />
-                  {project.name}
-                </label>
-              ))}
-            </fieldset>}
             <div><button type="submit" disabled={savingEdit || editedText.trim() === ''}>{savingEdit ? 'Branching…' : 'Create branch'}</button><button type="button" onClick={() => { setEditing(false) }}>Cancel</button></div>
           </form>
         )}
@@ -378,12 +355,12 @@ function MessageRow({
           message.routing.status === 'pending'
             ? <div className="csp-message-routing" role="status" aria-label="Routing message">Routing…</div>
             : message.routing.status === 'failed'
-              ? <div className="csp-message-routing" role="alert">Routing failed · {message.routing.reason}</div>
+              ? <div className="csp-message-routing" role="alert">Routing failed · {message.routing.reason}{routingDurationLabel(message.routing.durationMs) === null ? '' : ` · ${routingDurationLabel(message.routing.durationMs)}`}</div>
               : <div className="csp-message-routing" title={message.routing.reason}>
                   <span>{message.routing.source === 'ai' ? 'AI routed' : message.routing.source === 'explicit' ? 'Explicitly routed' : 'Local routing'} to {message.routing.agentIds.map((agentId) => {
                     const agent = bootstrap?.agents.find(candidate => candidate.id === agentId)
                     return `@${agent?.displayName ?? agentId}`
-                  }).join(', ')} · {message.routing.reason}</span>
+                  }).join(', ')} · {message.routing.reason}{routingDurationLabel(message.routing.durationMs) === null ? '' : ` · ${routingDurationLabel(message.routing.durationMs)}`}</span>
                   <RoutingAssignments message={message} bootstrap={bootstrap} onReroute={onReroute} />
                 </div>
         )}
@@ -691,7 +668,6 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
   const [threadContextQuestions, setThreadContextQuestions] = useState('')
   const [threadContextSaving, setThreadContextSaving] = useState(false)
   const [threadContextCompacting, setThreadContextCompacting] = useState(false)
-  const [threadProjectIds, setThreadProjectIds] = useState<string[]>([])
   const [threadPinNote, setThreadPinNote] = useState('')
   const [selectedSuggestion, setSelectedSuggestion] = useState(0)
   const [selectedThreadSuggestion, setSelectedThreadSuggestion] = useState(0)
@@ -806,13 +782,6 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
     setThreadContextDecisions(memory.decisions.join('\n'))
     setThreadContextQuestions(memory.openQuestions.join('\n'))
   }, [activeThread?.context?.memory.updatedAt, activeThread?.id])
-  useEffect(() => {
-    if (activeThread === undefined) {
-      setThreadProjectIds([])
-      return
-    }
-    setThreadProjectIds(activeThread.projectIds ?? (activeThread.projectId === null ? [] : [activeThread.projectId]))
-  }, [activeThread?.id, activeThread?.projectId, activeThread?.projectIds])
   useEffect(() => {
     if (snapshot.activeThreadId === null) return
     if (suppressThreadAutoScroll.current) {
@@ -982,7 +951,7 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
       }
       setCommandFeedback({ tone: 'info', title: 'Retrying message', body: previous.text })
       try {
-        if (threadId === undefined) await store.send(previous.text)
+        if (threadId === undefined) await store.send(previous.text, undefined, [], undefined, referencedProjectIds(previous))
         else await store.send(previous.text, threadId)
       } catch (error) {
         setCommandFeedback({ tone: 'error', title: 'Retry failed', body: error instanceof Error ? error.message : String(error) })
@@ -1058,12 +1027,12 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
     scrollThreadToBottom()
     try {
       if (threadReplyTarget === null) {
-        if (files.length > 0) await store.send(text, activeThread.id, attachments, activeThreadActivities.length > 0 ? threadDelivery : undefined, threadProjectIds, files)
-        else if (activeThreadActivities.length > 0) await store.send(text, activeThread.id, attachments, threadDelivery, threadProjectIds)
-        else await store.send(text, activeThread.id, attachments, undefined, threadProjectIds)
+        if (files.length > 0) await store.send(text, activeThread.id, attachments, activeThreadActivities.length > 0 ? threadDelivery : undefined, undefined, files)
+        else if (activeThreadActivities.length > 0) await store.send(text, activeThread.id, attachments, threadDelivery)
+        else await store.send(text, activeThread.id, attachments)
       } else {
-        if (files.length > 0) await store.sendDirectReply(text, activeThread.id, threadReplyTarget.agentId, attachments, threadProjectIds, files)
-        else await store.sendDirectReply(text, activeThread.id, threadReplyTarget.agentId, attachments, threadProjectIds)
+        if (files.length > 0) await store.sendDirectReply(text, activeThread.id, threadReplyTarget.agentId, attachments, undefined, files)
+        else await store.sendDirectReply(text, activeThread.id, threadReplyTarget.agentId, attachments)
       }
       setThreadReplyTarget(null)
     } catch {
@@ -1119,8 +1088,8 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
       : { scope: { kind: 'thread', id: activeThread.id }, kind: 'attachment', messageId: message.id, attachmentId })
   }
 
-  const editDeliveredMessage = async (message: CommonspaceMessage, text: string, projectIds: string[]) => {
-    await store.editMessage(message.id, { text, projectIds })
+  const editDeliveredMessage = async (message: CommonspaceMessage, text: string) => {
+    await store.editMessage(message.id, { text })
   }
 
   const deleteDeliveredMessage = async (message: CommonspaceMessage) => {
@@ -1382,26 +1351,6 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
                       <button type="button" aria-label="Compact Thread context" disabled={threadContextCompacting} onClick={() => { void compactActiveThreadContext() }}>{threadContextCompacting ? 'Compacting…' : 'Compact'}</button>
                     </div>
                   </form>
-                  <fieldset className="csp-thread-projects">
-                    <legend>Next reply Projects</legend>
-                    <p>Changes apply to the next reply and future Thread defaults.</p>
-                    {(bootstrap?.state.projects ?? []).map(project => (
-                      <label key={project.id}>
-                        <input
-                          type="checkbox"
-                          aria-label={`Thread Project ${project.name}`}
-                          checked={threadProjectIds.includes(project.id)}
-                          onChange={event => {
-                            setThreadProjectIds(current => event.target.checked
-                              ? [...new Set([...current, project.id])]
-                              : current.filter(id => id !== project.id))
-                          }}
-                        />
-                        {project.name}
-                      </label>
-                    ))}
-                    {(bootstrap?.state.projects.length ?? 0) === 0 && <span>No Projects configured. Replies remain projectless.</span>}
-                  </fieldset>
                   <section className="csp-thread-pins" aria-label="Thread pins">
                     <header><strong>Pins</strong><span>{activeThreadPins.length}</span></header>
                     {activeThreadPins.map((pin) => {
