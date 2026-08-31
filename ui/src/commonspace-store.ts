@@ -3,6 +3,7 @@ import type {
   AgentAdapterKind,
   CommonspaceApiError,
   CommonspaceBootstrap,
+  CommonspaceDiagnostics,
 
   CommonspaceLiveAgentActivity,
   CommonspaceQueuedFollowup,
@@ -359,6 +360,17 @@ export class CommonspaceClientStore {
         body: JSON.stringify({ optionId }),
       })
       await this.refresh()
+    } catch (error) {
+      this.set({ ...this.snapshot, error: error instanceof Error ? error.message : String(error) })
+      throw error
+    }
+  }
+
+  async diagnostics(): Promise<CommonspaceDiagnostics> {
+    try {
+      const diagnostics = await requestJson<CommonspaceDiagnostics>('/api/diagnostics')
+      this.set({ ...this.snapshot, error: null })
+      return diagnostics
     } catch (error) {
       this.set({ ...this.snapshot, error: error instanceof Error ? error.message : String(error) })
       throw error

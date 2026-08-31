@@ -20,6 +20,7 @@ Endpoints:
 
 - `GET /api/health`
 - `GET /api/bootstrap`
+- `GET /api/diagnostics`
 - `GET|PUT /api/routing`
 - `GET|PUT /api/channels/:channelId/context`
 - `POST /api/channels/:channelId/context/compact`
@@ -55,6 +56,7 @@ Server-sent revision events prompt the UI store to refresh persisted state. Sepa
 - message-version branches, deletion-marker redaction, and durable scoped pins;
 - bounded general-file persistence, credential-name rejection, ACP resource links, and permitted-root Agent artifact imports;
 - durable normalized ACP permission requests with exact option responses and per-session blocking;
+- path-safe harness/service readiness diagnostics and inference data-flow disclosure;
 - zero-to-many Project references on messages and threads, with a compatibility mirror for older clients;
 - editable Channel context plus manual and token-pressure compaction through the configured inference provider;
 - immutable Thread snapshots, independently editable/compactable Thread context, and prospective per-reply Project defaults;

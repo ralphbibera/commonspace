@@ -1,0 +1,50 @@
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, describe, expect, it } from 'vitest'
+import { CommonspaceHostService } from '../server/src/service.ts'
+import { discoverTestHarnesses } from './test-harnesses.ts'
+
+const roots: string[] = []
+
+afterEach(async () => {
+  await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))
+})
+
+describe('runtime diagnostics', () => {
+  it('reports harness readiness and inference data flow without paths or secrets', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-diagnostics-'))
+    roots.push(root)
+    const service = new CommonspaceHostService({}, { root }, {
+      discoverAgents: discoverTestHarnesses,
+      runAgent: async () => ({ text: 'Done.' }),
+    })
+    await service.initialize()
+    await service.discoverAgents('codex')
+    await service.mutate({ action: 'add-discovered-agent', agentId: 'codex' })
+    await service.updateRoutingConfiguration({
+      provider: 'openai-compatible',
+      model: 'remote-router',
+      baseUrl: 'https://router.example/v1',
+      apiKey: 'private-routing-key',
+    })
+    const diagnostics = await (service as unknown as { diagnostics(): Promise<unknown> }).diagnostics()
+
+    expect(diagnostics).toMatchObject({
+      service: { status: 'ready', stateVersion: expect.any(Number), storage: 'ready', projectlessWorkspace: 'ready' },
+      inference: {
+        provider: 'openai-compatible',
+        location: 'remote',
+        configured: true,
+        sends: ['message text', 'Agent labels', 'Project labels', 'shared context', 'routing corrections'],
+      },
+      harnesses: expect.arrayContaining([
+        { adapter: 'codex', installed: true, rostered: true, runReadiness: 'unknown', recovery: expect.any(String) },
+        { adapter: 'hermes', installed: true, rostered: false, runReadiness: 'unknown', recovery: expect.any(String) },
+      ]),
+    })
+    expect(JSON.stringify(diagnostics)).not.toContain(root)
+    expect(JSON.stringify(diagnostics)).not.toContain('private-routing-key')
+    await service.close()
+  })
+})

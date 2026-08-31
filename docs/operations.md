@@ -17,6 +17,8 @@ The API server binds to `127.0.0.1:3100` by default and serves `/api` plus the r
 - Previous valid state: `~/.commonspace/state.backup.json`
 - Last invalid primary preserved after automatic recovery: `~/.commonspace/state.corrupt.json`
 - Routing provider configuration: `~/.commonspace/routing.json`
+- Managed projectless workspace: `~/.commonspace/workspace`
+- Private image and general-file bytes: `~/.commonspace/attachments`
 - Credentials and native transcripts: each agent CLI's supported stores
 
 ACP runs over child-process stdio. The Commonspace MCP endpoint is authenticated, loopback-only, and uses in-memory bearer capabilities that are never persisted. There is no Nostr or remote relay service to configure.
@@ -92,4 +94,4 @@ Before changing state versions:
 cp ~/.commonspace/state.json ~/.commonspace/state.backup.json
 ```
 
-State version 14 migrates versions 1–13 on startup. Each write automatically keeps the previous valid primary as `state.backup.json`. When `state.json` is invalid and the backup is valid, startup moves the invalid primary to `state.corrupt.json`, restores the backup, and writes a fresh primary. If both files are invalid, startup stops without replacing either one. Restore a backup compatible with the target release before rolling back to an older build.
+State version 23 migrates versions 1–22 on startup. Each write automatically keeps the previous valid primary as `state.backup.json`. When `state.json` is invalid and the backup is valid, startup moves the invalid primary to `state.corrupt.json`, restores the backup, and writes a fresh primary. If both files are invalid, startup stops without replacing either one. Restore a backup compatible with the target release before rolling back to an older build.

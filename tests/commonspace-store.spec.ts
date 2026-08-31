@@ -588,4 +588,18 @@ describe('Commonspace client revision ordering', () => {
     }))
     expect(store.getSnapshot().bootstrap?.state.revision).toBe(2)
   })
+
+  it('fetches runtime diagnostics on demand', async () => {
+    const initial = bootstrap(1, 'Initial')
+    const diagnostics = { service: { status: 'ready' }, inference: { location: 'local' }, harnesses: [] }
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(response(initial))
+      .mockResolvedValueOnce(response(diagnostics))
+    vi.stubGlobal('fetch', fetch)
+    const store = new CommonspaceClientStore()
+    await store.refresh()
+
+    await expect((store as unknown as { diagnostics(): Promise<unknown> }).diagnostics()).resolves.toEqual(diagnostics)
+    expect(fetch).toHaveBeenNthCalledWith(2, '/api/diagnostics', expect.any(Object))
+  })
 })

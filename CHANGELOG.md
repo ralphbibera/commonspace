@@ -35,6 +35,7 @@ All notable changes to Commonspace are recorded here.
 - Durable general human files delivered as ACP resource links, safe downloads/search/pinning, credential-file refusal, and exact message-version binding.
 - Capability-dependent ACP Agent resource links imported only from permitted working roots into private durable attachments.
 - Native ACP permission requests with exact harness choices, durable attention/Inbox state, per-session blocking, response controls, and shutdown interruption recovery.
+- Path/secret-safe runtime diagnostics for service storage, projectless workspace, harness installation/run readiness, recovery guidance, and local/remote inference data-flow disclosure.
 - Project Files, Git Changes/diffs, speech playback, live activity, and stop controls.
 - Zero-to-many Project references on messages and threads, with multi-root agent execution, Project-aware search, correct run attribution, and backward-compatible singular fields for the current UI.
 - Editable Channel context APIs with user-owned context preservation, manual inference compaction, automatic token-pressure compaction, and visible current/stale metadata.
