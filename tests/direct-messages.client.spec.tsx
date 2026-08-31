@@ -48,7 +48,10 @@ describe('Commonspace direct messages', () => {
           agents: [],
           dmSessions: {},
           agentSessions: {},
-          projects: [],
+          projects: [
+            { id: 'project-1', name: 'Commonspace', paths: [], createdAt: '2026-08-26T00:00:00.000Z' },
+            { id: 'project-2', name: 'API', paths: [], createdAt: '2026-08-26T00:00:00.000Z' },
+          ],
           channels: [],
           threads: [],
           messages: { 'dm:frontend': messages },
@@ -88,6 +91,7 @@ describe('Commonspace direct messages', () => {
     expect(store.removeFollowup).toHaveBeenCalledWith('message-2')
 
     fireEvent.change(screen.getByRole('textbox', { name: 'Message Frontend' }), { target: { value: 'Use this direction instead.' } })
+    expect(screen.queryByRole('button', { name: 'Choose Projects' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Stop and send' }))
     fireEvent.submit(screen.getByRole('textbox', { name: 'Message Frontend' }).closest('form')!)
     expect(store.send).toHaveBeenCalledWith('Use this direction instead.', undefined, [], 'stop-and-send')

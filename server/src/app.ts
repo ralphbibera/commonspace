@@ -193,7 +193,8 @@ export function createCommonspaceApp({ service, mcpGateway, directoryPicker, uiR
       const rawLimit = queryString(req.query.limit, '24')
       if (!/^\d+$/u.test(rawLimit)) throw new Error('search limit must be a positive integer')
       const projectId = queryString(req.query.project)
-      res.json(await searchCommonspace(await service.bootstrap(), {
+      const bootstrap = await service.bootstrap()
+      res.json(await searchCommonspace({ ...bootstrap, state: service.snapshot() }, {
         query,
         ...(kinds.length === 0 ? {} : { kinds }),
         ...(projectId === '' ? {} : { projectId }),

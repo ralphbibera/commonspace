@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -22,9 +22,15 @@ describe('message versions', () => {
     })
     await service.initialize()
     await addTestHarness(service, 'codex', 'Review Bot')
+    const firstPath = join(root, 'first-project')
+    const secondPath = join(root, 'second-project')
+    await Promise.all([mkdir(firstPath), mkdir(secondPath)])
+    const firstProject = (await service.mutate({ action: 'create-project', name: 'First', paths: [firstPath] })).projects[0]!
+    const secondProject = (await service.mutate({ action: 'create-project', name: 'Second', paths: [secondPath] })).projects[1]!
     const channel = (await service.mutate({ action: 'create-channel', name: 'versions', agentIds: ['codex'] })).channels[0]!
     const original = await service.send({
       conversation: { kind: 'channel', id: channel.id },
+      projectIds: [firstProject.id],
       text: '@review-bot inspect the original boundary.',
     })
     await service.whenIdle()
@@ -34,7 +40,7 @@ describe('message versions', () => {
 
     const edited = await editMessage.call(service, {
       messageId: original.accepted.id,
-      text: '@review-bot inspect only the corrected boundary.',
+      text: '@review-bot @@second inspect only the corrected boundary.',
     })
     await service.whenIdle()
 
@@ -42,7 +48,8 @@ describe('message versions', () => {
     const editedMessage = messages.find(message => message.id === edited.accepted.id)
     expect(edited.thread?.id).not.toBe(original.thread?.id)
     expect(editedMessage).toMatchObject({
-      text: '@review-bot inspect only the corrected boundary.',
+      text: '@review-bot @@second inspect only the corrected boundary.',
+      projectIds: [secondProject.id],
       versionRootMessageId: original.accepted.id,
       supersedesMessageId: original.accepted.id,
       branchId: expect.any(String),
@@ -50,7 +57,7 @@ describe('message versions', () => {
     expect(messages.find(message => message.id === original.accepted.id)?.text).toBe('@review-bot inspect the original boundary.')
     expect(messages).toEqual(expect.arrayContaining([
       expect.objectContaining({ sourceMessageId: original.accepted.id, text: 'Reply to: @review-bot inspect the original boundary.' }),
-      expect.objectContaining({ sourceMessageId: edited.accepted.id, text: 'Reply to: @review-bot inspect only the corrected boundary.' }),
+      expect.objectContaining({ sourceMessageId: edited.accepted.id, text: 'Reply to: @review-bot @@second inspect only the corrected boundary.' }),
     ]))
     expect(runAgent.mock.calls.map(call => call[0].sessionName)).toHaveLength(2)
     expect(runAgent.mock.calls[0]?.[0].sessionName).not.toBe(runAgent.mock.calls[1]?.[0].sessionName)

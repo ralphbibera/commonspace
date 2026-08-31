@@ -89,7 +89,10 @@ function renderChannelThread(
         agents: [],
         dmSessions: {},
         agentSessions: {},
-        projects: [{ id: 'project-1', name: 'Commonspace', paths: [], createdAt: '2026-08-26T00:00:00.000Z' }],
+        projects: [
+          { id: 'project-1', name: 'Commonspace', paths: [], createdAt: '2026-08-26T00:00:00.000Z' },
+          { id: 'project-2', name: 'API', paths: [], createdAt: '2026-08-26T00:00:00.000Z' },
+        ],
         channels: [{
           id: 'general',
           name: 'general',
@@ -203,6 +206,9 @@ function renderChannelThread(
                           createdAt: '2026-08-26T00:00:30.000Z',
                         }] : [],
                         inferredProjectIds: ['project-1'],
+                        startedAt: '2026-08-26T00:00:00.000Z',
+                        resolvedAt: '2026-08-26T00:00:00.125Z',
+                        durationMs: 125,
                         reason: 'Frontend owns this boundary.',
                       },
                     }
@@ -284,6 +290,21 @@ beforeEach(() => {
 
 describe('Commonspace reply-thread composer', () => {
 
+  it('always infers Project scope for new Channel roots', async () => {
+    const { send } = renderChannelThread('complete', false, false)
+
+    expect(screen.queryByRole('button', { name: 'Infer Projects' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Use no Projects' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Choose Projects' })).toBeNull()
+
+    const composer = screen.getByLabelText('Post in general')
+    fireEvent.change(composer, { target: { value: 'Infer the right Projects.' } })
+    fireEvent.submit(composer.closest('form')!)
+    await waitFor(() => {
+      expect(send).toHaveBeenCalledWith('Infer the right Projects.')
+    })
+  })
+
   it('shows routing state while an accepted message awaits inference', () => {
     renderChannelThread('complete', false, true, true)
 
@@ -296,6 +317,7 @@ describe('Commonspace reply-thread composer', () => {
 
     expect(screen.getAllByText('Fix the UI boundary only.')).toHaveLength(2)
     expect(screen.getAllByText('@Frontend · Commonspace · inferred')).toHaveLength(2)
+    expect(screen.getAllByText(/routed in \d+ms/u)).toHaveLength(2)
   })
 
   it('reroutes one assignment with corrected Agent, wording, and Projects', async () => {
@@ -303,7 +325,10 @@ describe('Commonspace reply-thread composer', () => {
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Reroute assignment for Frontend' })[0]!)
     const form = screen.getByRole('form', { name: 'Reroute assignment' })
-    fireEvent.change(within(form).getByLabelText('Reroute agent'), { target: { value: 'reviewer' } })
+    expect(within(form).queryByText('Projects')).toBeNull()
+    const rerouteAgent = within(form).getByLabelText('Reroute agent')
+    expect(within(rerouteAgent).queryByRole('option', { name: 'Reviewer' })).toBeNull()
+    fireEvent.change(rerouteAgent, { target: { value: 'backend' } })
     fireEvent.change(within(form).getByLabelText('Corrected sub-request'), { target: { value: 'Review only the UI boundary.' } })
     fireEvent.submit(form)
 
@@ -311,7 +336,7 @@ describe('Commonspace reply-thread composer', () => {
       expect(rerouteAssignment).toHaveBeenCalledWith({
         sourceMessageId: 'root-1',
         assignmentId: 'assignment-1',
-        agentId: 'reviewer',
+        agentId: 'backend',
         subRequest: 'Review only the UI boundary.',
         projectIds: ['project-1'],
       })
@@ -349,19 +374,17 @@ describe('Commonspace reply-thread composer', () => {
     await waitFor(() => { expect(compactThreadContext).toHaveBeenCalledWith('thread-1') })
   })
 
-  it('applies selected Projects to the next Thread reply and future defaults', async () => {
+  it('inherits inferred Projects for Thread replies without explicit controls', async () => {
     const { send } = renderChannelThread()
     fireEvent.click(screen.getByRole('button', { name: 'Open thread context' }))
     const inspector = screen.getByRole('region', { name: 'Thread context' })
-    const project = within(inspector).getByLabelText('Thread Project Commonspace') as HTMLInputElement
-    expect(project.checked).toBe(true)
-    fireEvent.click(project)
+    expect(within(inspector).queryByText('Next reply Projects')).toBeNull()
     const reply = screen.getByLabelText('Reply in thread')
-    fireEvent.change(reply, { target: { value: 'Continue projectless.' } })
+    fireEvent.change(reply, { target: { value: 'Continue with inferred context.' } })
     fireEvent.submit(reply.closest('form')!)
 
     await waitFor(() => {
-      expect(send).toHaveBeenCalledWith('Continue projectless.', 'thread-1', [], undefined, [])
+      expect(send).toHaveBeenCalledWith('Continue with inferred context.', 'thread-1', [])
     })
   })
 
@@ -392,18 +415,18 @@ describe('Commonspace reply-thread composer', () => {
     })
   })
 
-  it('edits only human messages into a new branch with explicit Projects', async () => {
+  it('edits only human messages into a new branch without explicit Project controls', async () => {
     const { editMessage } = renderChannelThread()
     expect(screen.queryByRole('button', { name: 'Edit message from Frontend' })).toBeNull()
     fireEvent.click(screen.getAllByRole('button', { name: 'Edit message from Ralph' })[0]!)
     const form = screen.getByRole('form', { name: 'Edit delivered message' })
+    expect(within(form).queryByText('Projects for new branch')).toBeNull()
     fireEvent.change(within(form).getByLabelText('Edited message'), { target: { value: 'Corrected investigation scope.' } })
     fireEvent.submit(form)
 
     await waitFor(() => {
       expect(editMessage).toHaveBeenCalledWith('root-1', {
         text: 'Corrected investigation scope.',
-        projectIds: ['project-1'],
       })
     })
   })
@@ -579,7 +602,7 @@ describe('Commonspace reply-thread composer', () => {
     expect((composer as HTMLTextAreaElement).value).toBe('@backend ')
     fireEvent.keyDown(composer, { key: 'Enter' })
 
-    await waitFor(() => { expect(send).toHaveBeenCalledWith('@backend', 'thread-1', [], undefined, ['project-1']) })
+    await waitFor(() => { expect(send).toHaveBeenCalledWith('@backend', 'thread-1', []) })
   })
 
   it('separates agents outside the channel and explains that tagging adds them', () => {
@@ -609,7 +632,7 @@ describe('Commonspace reply-thread composer', () => {
     fireEvent.keyDown(composer, { key: 'Enter' })
 
     await waitFor(() => {
-      expect(sendDirectReply).toHaveBeenCalledWith('Check that boundary again.', 'thread-1', 'frontend', [], ['project-1'])
+      expect(sendDirectReply).toHaveBeenCalledWith('Check that boundary again.', 'thread-1', 'frontend', [])
     })
     expect(send).not.toHaveBeenCalled()
   })
@@ -629,7 +652,7 @@ describe('Commonspace reply-thread composer', () => {
     expect(messagesViewport.scrollTop).toBe(500)
     expect(scrollTo).toHaveBeenCalledTimes(scrollCallsBeforeReply + 1)
     expect(scrollTo).toHaveBeenLastCalledWith({ top: 500, behavior: 'auto' })
-    await waitFor(() => { expect(send).toHaveBeenCalledWith('A new thread reply.', 'thread-1', [], undefined, ['project-1']) })
+    await waitFor(() => { expect(send).toHaveBeenCalledWith('A new thread reply.', 'thread-1', []) })
   })
 
   it('offers slash commands and executes them in the active thread', async () => {

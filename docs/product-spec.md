@@ -175,7 +175,7 @@ flowchart TD
 ### 5.5 Thread continuation and peer handoff
 
 1. A human reply continues the exact native sessions already mapped to that Thread.
-2. Project references inherit from the Thread unless the new message explicitly adds, removes, or corrects them.
+2. Project references inherit from the Thread unless the new message supplies visible `@@project` tags; there is no separate Channel/Thread Project picker.
 3. A change affects the new message and future Thread defaults, never the context already delivered in earlier turns.
 4. An Agent can mention another Agent in its visible reply.
 5. That mention invokes the Agent in the same Thread with the newly delivered handoff message and bounded shared context.
@@ -258,7 +258,7 @@ flowchart TD
 | PRJ-03 | v0.1 | Treat explicit Project references as authoritative. | Inference cannot silently remove or replace an explicit reference. |
 | PRJ-04 | v0.1 | Infer Project references when none are explicit. | Every inferred reference is marked as inferred and can be corrected before or after dispatch through a new branch/reroute. |
 | PRJ-05 | v0.1 | Assign Project references per sub-request. | A split request can give different Agents different relevant Project roots. |
-| PRJ-06 | v0.1 | Let Thread references evolve prospectively. | A reply can add/remove a reference for that turn and future defaults without rewriting earlier deliveries. |
+| PRJ-06 | v0.1 | Let Thread references evolve prospectively. | A reply can supply `@@project` context for that turn and future defaults without a separate Project picker or rewriting earlier deliveries. |
 | PRJ-07 | v0.1 | Keep projectless conversation genuinely projectless. | An Agent in a no-Project turn receives no Project filesystem roots and starts in a neutral configured working directory. |
 | PRJ-08 | Later | Add non-folder Project resource kinds. | New resource kinds extend the Project resource contract without turning Projects into tasks. |
 
@@ -506,7 +506,7 @@ The implementation order is behavior-first. UI/UX work begins after the underlyi
 
 ### Slice E: UI/UX implementation
 
-- Multi-Project and inferred-reference controls.
+- Visible inferred references and `@@project` autocomplete without dedicated Project-scope controls.
 - Routing/sub-request inspection and rerouting.
 - Channel/Thread context inspector, editor, pins, and compaction controls.
 - Message branch/version navigation and deletion surfaces.
