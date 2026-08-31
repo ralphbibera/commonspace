@@ -26,6 +26,28 @@ export interface CommonspaceRoutingConfiguration {
   apiKeyConfigured: boolean
 }
 
+export interface CommonspaceDiagnostics {
+  service: {
+    status: 'ready' | 'attention'
+    stateVersion: number
+    storage: 'ready' | 'attention'
+    projectlessWorkspace: 'ready' | 'attention'
+  }
+  inference: {
+    provider: CommonspaceRoutingProvider
+    location: 'local' | 'remote'
+    configured: boolean
+    sends: string[]
+  }
+  harnesses: Array<{
+    adapter: AgentAdapterKind
+    installed: boolean
+    rostered: boolean
+    runReadiness: 'ready' | 'unknown' | 'attention'
+    recovery: string
+  }>
+}
+
 export type UpdateRoutingConfigurationRequest =
   | { provider: 'harness'; harnessAgentId: string }
   | {

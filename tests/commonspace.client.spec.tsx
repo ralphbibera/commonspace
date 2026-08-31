@@ -64,6 +64,35 @@ function sidebarStore(
 }
 
 describe('Commonspace interface', () => {
+  it('shows runtime readiness, inference disclosure, and recovery guidance', async () => {
+    const diagnostics = vi.fn(async () => ({
+      service: { status: 'ready', stateVersion: 23, storage: 'ready', projectlessWorkspace: 'ready' },
+      inference: {
+        provider: 'openai-compatible',
+        location: 'remote',
+        configured: true,
+        sends: ['message text', 'Agent labels', 'Project labels', 'shared context', 'routing corrections'],
+      },
+      harnesses: [{
+        adapter: 'codex',
+        installed: true,
+        rostered: true,
+        runReadiness: 'unknown',
+        recovery: 'Authenticate with Codex and retry.',
+      }],
+    }))
+    const { store } = sidebarStore({}, { diagnostics })
+    render(<CommonspaceSidebar wide expandSidebar={() => undefined} store={store as never} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Commonspace settings' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Run runtime diagnostics' }))
+
+    const panel = await screen.findByRole('region', { name: 'Runtime diagnostics' })
+    expect(within(panel).getByText('Remote inference')).toBeTruthy()
+    expect(within(panel).getByText(/message text · Agent labels · Project labels/u)).toBeTruthy()
+    expect(within(panel).getByText('Authenticate with Codex and retry.')).toBeTruthy()
+  })
+
   it('edits, compacts, and pins canonical Channel context', async () => {
     const compactChannelContext = vi.fn(async () => undefined)
     const addPin = vi.fn(async () => undefined)

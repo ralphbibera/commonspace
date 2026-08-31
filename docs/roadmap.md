@@ -29,6 +29,7 @@ Commonspace is a private preview focused on durable human-agent conversation and
 - Dedicated owner-only projectless workspace isolation.
 - General human files, permitted-root ACP Agent artifacts, safe download/search/pinning, and credential-file refusal.
 - Exact native ACP permission choices with durable conversation/Inbox attention and per-session blocking.
+- Runtime readiness diagnostics, recovery guidance, and local/remote inference data-flow disclosure.
 - Project Files, Git Changes/diffs, image attachments, and reply speech playback.
 - Work/result binding through per-reply run attribution, changed-file surfaces, activity traces, and validation evidence emitted by the harness.
 - Hard-boundary cancellation, stale-session recovery that distinguishes missing from transient failures, and graceful bridge shutdown.
@@ -37,7 +38,6 @@ Commonspace is a private preview focused on durable human-agent conversation and
 
 ## Next: product behavior
 
-- Add clearer runtime/authentication diagnostics.
 - Add export/import and retention controls for non-secret Commonspace data.
 - Package an installed background service and optional OS notifications.
 

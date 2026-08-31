@@ -137,6 +137,14 @@ export function createCommonspaceApp({ service, mcpGateway, directoryPicker }: C
     res.json(await service.bootstrap())
   })
 
+  app.get('/api/diagnostics', requireSameOrigin, async (_req, res) => {
+    try {
+      res.json(await service.diagnostics())
+    } catch (error) {
+      res.status(500).json({ code: 'diagnostics_failed', error: error instanceof Error ? error.message : String(error) })
+    }
+  })
+
   app.get('/api/search', requireSameOrigin, async (req, res) => {
     try {
       const query = queryString(req.query.q)

@@ -217,5 +217,16 @@ describe('standalone Commonspace server', () => {
       body: JSON.stringify({ adapter: 'claude-code' }),
     })
     expect(unsupportedResponse.status).toBe(400)
+
+    const diagnosticsResponse = await fetch(`${running.url}/api/diagnostics`, { headers: { origin: running.url } })
+    expect(diagnosticsResponse.status).toBe(200)
+    await expect(diagnosticsResponse.json()).resolves.toMatchObject({
+      service: { status: 'ready' },
+      harnesses: expect.arrayContaining([
+        expect.objectContaining({ adapter: 'codex', installed: true }),
+        expect.objectContaining({ adapter: 'hermes', installed: true }),
+      ]),
+    })
+    expect(discoveryCalls).toBe(4)
   })
 })

@@ -11,6 +11,7 @@ import type {
   CommonspaceAgentTrace,
   CommonspaceAgentDefinition,
   CommonspaceBootstrap,
+  CommonspaceDiagnostics,
   CommonspaceChannelMemory,
   CommonspaceAgentProfile,
   CommonspaceFileAttachment,
@@ -1715,6 +1716,57 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
       liveActivities: this.liveActivities(),
       queuedFollowups: this.queuedFollowups(),
       routing: this.publicRoutingConfiguration(),
+    }
+  }
+
+  async diagnostics(): Promise<CommonspaceDiagnostics> {
+    const [codex, hermes] = await Promise.all([
+      this.discoverAgentCandidates('codex'),
+      this.discoverAgentCandidates('hermes'),
+    ])
+    const installed = new Set([...codex, ...hermes].map(agent => agent.adapter))
+    const successfulAgents = new Set(Object.values(this.state.messages).flat()
+      .filter(message => message.authorType === 'agent')
+      .map(message => message.authorId))
+    const failedAgents = new Set(Object.values(this.state.messages).flat().flatMap((message) => {
+      if (message.authorType !== 'system' || !/\brun failed:/iu.test(message.text)) return []
+      const id = /^@([^\s]+)\s/u.exec(message.text)?.[1]
+      return id === undefined ? [] : [id]
+    }))
+    const readiness = (adapter: AgentAdapterKind): 'ready' | 'unknown' | 'attention' => {
+      const roster = this.state.agents.filter(agent => agent.adapter === adapter)
+      if (roster.some(agent => failedAgents.has(agent.id))) return 'attention'
+      if (roster.some(agent => successfulAgents.has(agent.id))) return 'ready'
+      return 'unknown'
+    }
+    const storageReady = await stat(this.root).then(info => info.isDirectory()).catch(() => false)
+    const workspaceReady = await stat(this.defaultCwd).then(info => info.isDirectory()).catch(() => false)
+    const routingUrl = new URL(this.routingConfiguration.baseUrl)
+    const localRoutingHost = routingUrl.hostname === 'localhost' || routingUrl.hostname === '127.0.0.1' || routingUrl.hostname === '::1'
+    return {
+      service: {
+        status: storageReady && workspaceReady ? 'ready' : 'attention',
+        stateVersion: COMMONSPACE_STATE_VERSION,
+        storage: storageReady ? 'ready' : 'attention',
+        projectlessWorkspace: workspaceReady ? 'ready' : 'attention',
+      },
+      inference: {
+        provider: this.routingConfiguration.provider,
+        location: this.routingConfiguration.provider === 'harness' || localRoutingHost ? 'local' : 'remote',
+        configured: this.routingConfiguration.provider === 'harness'
+          ? this.state.agents.some(agent => agent.id === this.routingConfiguration.harnessAgentId)
+          : this.routingConfiguration.model !== '',
+        sends: ['message text', 'Agent labels', 'Project labels', 'shared context', 'routing corrections'],
+      },
+      harnesses: (['codex', 'hermes'] as const).map(adapter => ({
+        adapter,
+        installed: installed.has(adapter),
+        rostered: this.state.agents.some(agent => agent.adapter === adapter),
+        runReadiness: readiness(adapter),
+        recovery: adapter === 'codex'
+          ? 'Run codex --version, then authenticate with the installed Codex CLI and retry from Commonspace.'
+          : 'Run hermes --version, authenticate with Hermes, verify hermes acp starts, then retry from Commonspace.',
+      })),
     }
   }
 

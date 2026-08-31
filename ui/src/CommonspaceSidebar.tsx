@@ -5,6 +5,7 @@ import {
   type AgentAdapterKind,
   type CommonspaceAgentProfile,
   type CommonspaceChannel,
+  type CommonspaceDiagnostics,
   type CommonspaceMessage,
   type CommonspaceMutation,
   type CommonspaceReasoning,
@@ -427,6 +428,8 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, inboxActive = f
   const [routingApiKey, setRoutingApiKey] = useState('')
   const [clearRoutingApiKey, setClearRoutingApiKey] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
+  const [diagnostics, setDiagnostics] = useState<CommonspaceDiagnostics | null>(null)
+  const [diagnosticsLoading, setDiagnosticsLoading] = useState(false)
 
   useEffect(() => { void store.refresh() }, [store])
   useEffect(() => {
@@ -569,6 +572,16 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, inboxActive = f
     setSettingsOpen(false)
   }
 
+  const runDiagnostics = async () => {
+    if (diagnosticsLoading) return
+    setDiagnosticsLoading(true)
+    try {
+      setDiagnostics(await store.diagnostics())
+    } finally {
+      setDiagnosticsLoading(false)
+    }
+  }
+
   const saveAgentProfile = async (event: FormEvent, agentId: string) => {
     event.preventDefault()
     await store.mutate({
@@ -660,6 +673,16 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, inboxActive = f
             <label>Max agents per turn<input aria-label="Default max agents" type="number" min="1" max="8" value={defaultMaxAgents} onChange={event => { setDefaultMaxAgents(Number(event.target.value)) }} /></label>
             <label>Memory thread window<input aria-label="Default memory threads" type="number" min="1" max="50" value={defaultMemoryThreads} onChange={event => { setDefaultMemoryThreads(Number(event.target.value)) }} /></label>
           </fieldset>
+          <section className="csp-runtime-diagnostics" role="region" aria-label="Runtime diagnostics">
+            <header><strong>Runtime diagnostics</strong><button type="button" aria-label="Run runtime diagnostics" disabled={diagnosticsLoading} onClick={() => { void runDiagnostics() }}>{diagnosticsLoading ? 'Checking…' : 'Run diagnostics'}</button></header>
+            {diagnostics === null
+              ? <p>Check installed harnesses, storage readiness, and inference data flow.</p>
+              : <>
+                  <p><strong>{diagnostics.inference.location === 'remote' ? 'Remote inference' : 'Local inference'}</strong> · {diagnostics.inference.provider} · {diagnostics.inference.configured ? 'configured' : 'needs configuration'}</p>
+                  <p>Inference sends: {diagnostics.inference.sends.join(' · ')}</p>
+                  <ul>{diagnostics.harnesses.map(harness => <li key={harness.adapter}><strong>{runtimeLabel(harness.adapter)}</strong> · {harness.installed ? 'installed' : 'not installed'} · {harness.rostered ? 'added' : 'not added'} · {harness.runReadiness}<small>{harness.recovery}</small></li>)}</ul>
+                </>}
+          </section>
           <div><button type="submit">Save defaults</button><button type="button" onClick={() => { setSettingsOpen(false) }}>Cancel</button></div>
         </form>
       )}

@@ -46,7 +46,7 @@ This audit compares the intended behavior in [Product specification](product-spe
 | Activity traces and work/result binding | Working | Replies preserve bounded harness-emitted plans, tools, results, usage, validation evidence, and Project/root attribution. |
 | Native permission requests | Working | ACP permission requests persist with only harness-advertised choices, block only the affected native session, appear in the conversation and durable Inbox/session attention, return the exact selected option, and become interrupted on shutdown/restart rather than hanging or pretending completion. |
 | Inbox, unread state, search, and navigation | Working | Reply-focused Inbox, exact thread navigation, read cursors, and unified transcript search exist. Search filtering now recognizes every referenced Project. |
-| Runtime and authentication diagnostics | Partial | Failures and outcomes surface, but clean-machine runtime/auth readiness and guided recovery are incomplete. |
+| Runtime and authentication diagnostics | Working | On-demand diagnostics report service storage/projectless readiness, installed versus rostered supported harnesses, observed run readiness, recovery guidance, and local/remote inference data categories without returning credentials, host paths, or native IDs. |
 | Notifications | Partial | In-app attention state exists; OS notifications and settings do not. |
 | Installed background service | Partial | The server can run independently, but installation, startup registration, health control, and updating are not packaged. |
 | Export, import, and retention | Missing | No non-secret archive format, import validation, or retention controls exist. |
