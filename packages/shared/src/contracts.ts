@@ -1,4 +1,4 @@
-export const COMMONSPACE_STATE_VERSION = 18 as const
+export const COMMONSPACE_STATE_VERSION = 19 as const
 
 export type AgentAdapterKind = 'hermes' | 'codex'
 
@@ -205,7 +205,7 @@ export interface CommonspaceChannelMemory {
   /** How the current compacted representation was produced. */
   origin?: 'automatic' | 'inference' | 'user'
   /** Whether newer source messages exist beyond the current representation. */
-  status?: 'empty' | 'current' | 'stale'
+  status?: 'empty' | 'current' | 'stale' | 'compacting' | 'failed'
   sourceMessageCount?: number
   estimatedTokens?: number
   compactedThroughMessageId?: string | null
@@ -224,6 +224,8 @@ export interface UpdateChannelContextRequest {
   decisions?: string[]
   openQuestions?: string[]
 }
+
+export type UpdateThreadContextRequest = UpdateChannelContextRequest
 
 export interface CommonspaceChannel {
   id: string
@@ -312,6 +314,28 @@ export type CommonspaceReplyStatus =
   | 'silent'
   | 'timeout'
   | 'error'
+
+export interface CommonspaceThreadMemory {
+  summary: string
+  decisions: string[]
+  openQuestions: string[]
+  updatedAt: string | null
+  origin: 'automatic' | 'inference' | 'user'
+  status: 'empty' | 'current' | 'stale' | 'compacting' | 'failed'
+  sourceMessageCount: number
+  estimatedTokens: number
+  compactedThroughMessageId: string | null
+}
+
+export interface CommonspaceThreadContextSnapshot extends CommonspaceThreadMemory {
+  capturedAt: string
+}
+
+export interface CommonspaceThreadContext {
+  channelSnapshot: CommonspaceThreadContextSnapshot
+  memory: CommonspaceThreadMemory
+}
+
 export interface CommonspaceThread {
   id: string
   channelId: string
@@ -321,6 +345,7 @@ export interface CommonspaceThread {
   projectId: string | null
   rootMessageId: string
   agentIds: string[]
+  context: CommonspaceThreadContext
   createdAt: string
 }
 

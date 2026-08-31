@@ -2,7 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { CommonspaceHostService } from '../server/src/service.ts'
+import { CommonspaceHostService, type AgentRunInput } from '../server/src/service.ts'
 import { addTestHarness, discoverTestHarnesses } from './test-harnesses.ts'
 
 const roots: string[] = []
@@ -51,6 +51,179 @@ async function fixture() {
 }
 
 describe('editable shared Channel context', () => {
+  it('keeps the Channel snapshot captured at Thread creation separate from newer context', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-thread-snapshot-'))
+    roots.push(root)
+    let scope: AgentRunInput['commonspaceScope']
+    const service = new CommonspaceHostService({} as never, { root }, {
+      discoverAgents: discoverTestHarnesses,
+      runAgent: async (input) => {
+        scope = input.commonspaceScope
+        return { text: 'Thread reply.' }
+      },
+    })
+    services.push(service)
+    await service.initialize()
+    await addTestHarness(service, 'codex', 'Review Bot')
+    const channel = (await service.mutate({ action: 'create-channel', name: 'snapshots', agentIds: ['codex'] })).channels[0]!
+    await service.updateChannelContext(channel.id, {
+      summary: 'Context at Thread creation.',
+      decisions: ['Keep the original boundary.'],
+    })
+
+    const sent = await service.send({
+      conversation: { kind: 'channel', id: channel.id },
+      text: '@review-bot start from this context.',
+    })
+    await service.whenIdle()
+    await service.updateChannelContext(channel.id, {
+      summary: 'Newer Channel context.',
+      decisions: ['A later decision.'],
+    })
+
+    const thread = service.snapshot().threads.find(candidate => candidate.id === sent.thread?.id)
+    expect(thread?.context.channelSnapshot).toMatchObject({
+      summary: 'Context at Thread creation.',
+      decisions: ['Keep the original boundary.'],
+      capturedAt: sent.thread?.createdAt,
+    })
+    expect(thread?.context.memory).toMatchObject({
+      status: 'current',
+      sourceMessageCount: 2,
+    })
+    await expect(service.readContext(scope!)).resolves.toMatchObject({
+      sharedContext: {
+        currentChannel: { summary: 'Newer Channel context.' },
+        threadSnapshot: { summary: 'Context at Thread creation.' },
+        thread: { sourceMessageCount: 2 },
+      },
+    })
+  })
+
+  it('preserves human-edited Thread context and marks it stale after newer replies', async () => {
+    const { service, channel } = await fixture()
+    const thread = service.snapshot().threads[0]!
+    const updateThreadContext = (service as unknown as {
+      updateThreadContext(threadId: string, request: { summary: string; decisions?: string[]; openQuestions?: string[] }): Promise<unknown>
+    }).updateThreadContext
+
+    await updateThreadContext.call(service, thread.id, {
+      summary: 'Human-owned Thread summary.',
+      decisions: ['Keep this Thread scoped.'],
+      openQuestions: ['Does the focused fix pass?'],
+    })
+    expect(service.snapshot().threads[0]?.context.memory).toMatchObject({
+      summary: 'Human-owned Thread summary.',
+      origin: 'user',
+      status: 'current',
+    })
+
+    await service.send({
+      conversation: { kind: 'channel', id: channel.id },
+      threadId: thread.id,
+      targetAgentId: 'codex',
+      text: 'Add newer evidence.',
+    })
+    await service.whenIdle()
+
+    expect(service.snapshot().threads[0]?.context.memory).toMatchObject({
+      summary: 'Human-owned Thread summary.',
+      decisions: ['Keep this Thread scoped.'],
+      origin: 'user',
+      status: 'stale',
+      sourceMessageCount: 4,
+    })
+  })
+
+  it('compacts Thread context independently from Channel context', async () => {
+    const { service } = await fixture()
+    const thread = service.snapshot().threads[0]!
+    const channelMemory = structuredClone(service.snapshot().channels[0]!.memory)
+    const request = vi.fn(async (_resource: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { messages: Array<{ role: string; content: string }> }
+      expect(body.messages.find(message => message.role === 'user')?.content).toContain('verify the implementation')
+      return inferenceResponse('Focused Thread context.')
+    })
+    vi.stubGlobal('fetch', request)
+    const compactThreadContext = (service as unknown as {
+      compactThreadContext(threadId: string): Promise<unknown>
+    }).compactThreadContext
+
+    await expect(compactThreadContext.call(service, thread.id)).resolves.toMatchObject({
+      memory: {
+        summary: 'Focused Thread context.',
+        origin: 'inference',
+        status: 'current',
+        sourceMessageCount: 2,
+      },
+    })
+    expect(service.snapshot().channels[0]?.memory).toEqual(channelMemory)
+    expect(request).toHaveBeenCalledOnce()
+  })
+
+  it('persists compacting and failed states without losing the last valid Thread context', async () => {
+    const { service } = await fixture()
+    const thread = service.snapshot().threads[0]!
+    await service.updateThreadContext(thread.id, { summary: 'Last valid Thread context.' })
+    const completion = deferred<Response>()
+    vi.stubGlobal('fetch', vi.fn(async () => completion.promise))
+
+    const compacting = service.compactThreadContext(thread.id)
+    await vi.waitFor(() => {
+      expect(service.snapshot().threads[0]?.context.memory.status).toBe('compacting')
+    })
+    completion.reject(new Error('thread compactor unavailable'))
+    await expect(compacting).rejects.toThrow('thread compactor unavailable')
+
+    expect(service.snapshot().threads[0]?.context.memory).toMatchObject({
+      summary: 'Last valid Thread context.',
+      origin: 'user',
+      status: 'failed',
+    })
+  })
+
+  it('automatically compacts Thread context under token pressure', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-thread-pressure-'))
+    roots.push(root)
+    const request = vi.fn(async () => inferenceResponse('Pressure-compacted Thread context.'))
+    vi.stubGlobal('fetch', request)
+    const service = new CommonspaceHostService({} as never, { root }, {
+      discoverAgents: discoverTestHarnesses,
+      runAgent: async () => ({ text: `Large Thread result ${'y'.repeat(63_000)}` }),
+    })
+    services.push(service)
+    await service.initialize()
+    await addTestHarness(service, 'codex', 'Review Bot')
+    const channel = (await service.mutate({ action: 'create-channel', name: 'thread-pressure', agentIds: ['codex'] })).channels[0]!
+    const sent = await service.send({
+      conversation: { kind: 'channel', id: channel.id },
+      text: `@review-bot first pass ${'a'.repeat(15_000)}`,
+    })
+    await service.whenIdle()
+    await service.updateChannelContext(channel.id, { summary: 'Human-owned Channel context.' })
+
+    await service.send({
+      conversation: { kind: 'channel', id: channel.id },
+      threadId: sent.thread!.id,
+      targetAgentId: 'codex',
+      text: `second pass ${'b'.repeat(15_000)}`,
+    })
+    await service.whenIdle()
+
+    expect(service.snapshot().threads[0]?.context.memory).toMatchObject({
+      summary: 'Pressure-compacted Thread context.',
+      origin: 'inference',
+      status: 'current',
+      sourceMessageCount: 4,
+    })
+    expect(service.snapshot().channels[0]?.memory).toMatchObject({
+      summary: 'Human-owned Channel context.',
+      origin: 'user',
+      status: 'stale',
+    })
+    expect(request).toHaveBeenCalledOnce()
+  })
+
   it('preserves a user edit and marks it stale when newer source messages arrive', async () => {
     const { service, channel } = await fixture()
     await service.mutate({
@@ -107,6 +280,26 @@ describe('editable shared Channel context', () => {
     })
     expect(memory.compactedThroughMessageId).toBeTruthy()
     expect(request).toHaveBeenCalledOnce()
+  })
+
+  it('persists compacting and failed states without losing the last valid Channel context', async () => {
+    const { service, channel } = await fixture()
+    await service.updateChannelContext(channel.id, { summary: 'Last valid Channel context.' })
+    const completion = deferred<Response>()
+    vi.stubGlobal('fetch', vi.fn(async () => completion.promise))
+
+    const compacting = service.compactChannelContext(channel.id)
+    await vi.waitFor(() => {
+      expect(service.snapshot().channels[0]?.memory.status).toBe('compacting')
+    })
+    completion.reject(new Error('compactor unavailable'))
+    await expect(compacting).rejects.toThrow('compactor unavailable')
+
+    expect(service.snapshot().channels[0]?.memory).toMatchObject({
+      summary: 'Last valid Channel context.',
+      origin: 'user',
+      status: 'failed',
+    })
   })
 
   it('marks a manual compaction stale when a message arrives during inference', async () => {

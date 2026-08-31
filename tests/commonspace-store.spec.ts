@@ -217,6 +217,47 @@ describe('Commonspace client revision ordering', () => {
     }))
   })
 
+  it('sends explicit Thread Project references including projectless scope', async () => {
+    const initial = bootstrap(1, 'Initial')
+    const accepted = {
+      id: 'reply-projectless',
+      conversation: { kind: 'channel' as const, id: 'general' },
+      authorType: 'user' as const,
+      authorId: 'user',
+      authorName: 'Ralph',
+      text: 'Continue projectless.',
+      createdAt: '2026-08-25T00:01:00.000Z',
+      threadId: 'thread-1',
+      parentMessageId: 'root-1',
+    }
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(response(initial))
+      .mockResolvedValueOnce(response({ accepted, state: initial.state }))
+    vi.stubGlobal('fetch', fetch)
+    const store = new CommonspaceClientStore()
+    await store.refresh()
+    store.selectConversation({ kind: 'channel', id: 'general' })
+
+    const send = store.send as unknown as (
+      text: string,
+      threadId: string,
+      attachments: readonly never[],
+      delivery: undefined,
+      projectIds: readonly string[],
+    ) => Promise<void>
+    await send.call(store, 'Continue projectless.', 'thread-1', [], undefined, [])
+
+    expect(fetch).toHaveBeenNthCalledWith(2, '/api/send', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({
+        conversation: { kind: 'channel', id: 'general' },
+        text: 'Continue projectless.',
+        projectIds: [],
+        threadId: 'thread-1',
+      }),
+    }))
+  })
+
   it('posts a routing correction and merges the accepted state revision', async () => {
     const initial = bootstrap(1, 'Initial')
     const updated = bootstrap(2, 'Initial')
@@ -251,6 +292,52 @@ describe('Commonspace client revision ordering', () => {
       method: 'POST',
       body: JSON.stringify(request),
     }))
+    expect(store.getSnapshot().bootstrap?.state.revision).toBe(2)
+  })
+
+  it('updates Thread context and refreshes its durable state', async () => {
+    const initial = bootstrap(1, 'Initial')
+    const updated = bootstrap(2, 'Initial')
+    const request = {
+      summary: 'Focused Thread context.',
+      decisions: ['Keep the fix scoped.'],
+      openQuestions: ['Does verification pass?'],
+    }
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(response(initial))
+      .mockResolvedValueOnce(response({ channelSnapshot: {}, memory: request }))
+      .mockResolvedValueOnce(response(updated))
+    vi.stubGlobal('fetch', fetch)
+    const store = new CommonspaceClientStore()
+    await store.refresh()
+
+    const updateThreadContext = (store as unknown as {
+      updateThreadContext(threadId: string, value: typeof request): Promise<void>
+    }).updateThreadContext
+    await updateThreadContext.call(store, 'thread-1', request)
+
+    expect(fetch).toHaveBeenNthCalledWith(2, '/api/threads/thread-1/context', expect.objectContaining({
+      method: 'PUT',
+      body: JSON.stringify(request),
+    }))
+    expect(store.getSnapshot().bootstrap?.state.revision).toBe(2)
+  })
+
+  it('compacts Thread context and refreshes its durable state', async () => {
+    const initial = bootstrap(1, 'Initial')
+    const updated = bootstrap(2, 'Initial')
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(response(initial))
+      .mockResolvedValueOnce(response({ channelSnapshot: {}, memory: { summary: 'Compacted.' } }))
+      .mockResolvedValueOnce(response(updated))
+    vi.stubGlobal('fetch', fetch)
+    const store = new CommonspaceClientStore()
+    await store.refresh()
+
+    const compactThreadContext = (store as unknown as { compactThreadContext(threadId: string): Promise<void> }).compactThreadContext
+    await compactThreadContext.call(store, 'thread-1')
+
+    expect(fetch).toHaveBeenNthCalledWith(2, '/api/threads/thread-1/context/compact', expect.objectContaining({ method: 'POST' }))
     expect(store.getSnapshot().bootstrap?.state.revision).toBe(2)
   })
 

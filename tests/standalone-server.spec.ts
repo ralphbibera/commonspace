@@ -142,6 +142,15 @@ describe('standalone Commonspace server', () => {
     })
     await expect(contextReadResponse.json()).resolves.toMatchObject({ summary: 'Editable canonical context.' })
 
+    const missingThreadContextResponse = await fetch(`${running.url}/api/threads/missing/context`, {
+      headers: { origin: running.url },
+    })
+    expect(missingThreadContextResponse.status).toBe(404)
+    await expect(missingThreadContextResponse.json()).resolves.toEqual({
+      code: 'thread_context_not_found',
+      error: 'unknown thread',
+    })
+
     const discoveryResponse = await fetch(`${running.url}/api/discover-agents`, {
       method: 'POST',
       headers: { origin: running.url, 'content-type': 'application/json' },

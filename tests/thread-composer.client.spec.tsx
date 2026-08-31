@@ -18,6 +18,8 @@ function renderChannelThread(
   const send = vi.fn(async () => undefined)
   const sendDirectReply = vi.fn(async () => undefined)
   const rerouteAssignment = vi.fn(async () => undefined)
+  const updateThreadContext = vi.fn(async () => undefined)
+  const compactThreadContext = vi.fn(async () => undefined)
   const mutate = vi.fn(async () => undefined)
   const selectThread = vi.fn((threadId: string | null) => {
     snapshot = { ...snapshot, activeThreadId: threadId }
@@ -92,9 +94,35 @@ function renderChannelThread(
         threads: [{
           id: 'thread-1',
           channelId: 'general',
-          projectId: null,
+          projectIds: ['project-1'],
+          projectId: 'project-1',
           rootMessageId: 'root-1',
           agentIds: ['frontend'],
+          context: {
+            channelSnapshot: {
+              summary: 'Inherited Channel summary.',
+              decisions: ['Keep the original boundary.'],
+              openQuestions: [],
+              updatedAt: '2026-08-26T00:00:00.000Z',
+              origin: 'user',
+              status: 'current',
+              sourceMessageCount: 2,
+              estimatedTokens: 20,
+              compactedThroughMessageId: 'older-message',
+              capturedAt: '2026-08-26T00:00:00.000Z',
+            },
+            memory: {
+              summary: 'Focused Thread summary.',
+              decisions: ['Inspect the UI boundary.'],
+              openQuestions: ['Does the fix pass?'],
+              updatedAt: '2026-08-26T00:03:00.000Z',
+              origin: 'automatic',
+              status: 'current',
+              sourceMessageCount: 4,
+              estimatedTokens: 40,
+              compactedThroughMessageId: 'reply-3',
+            },
+          },
           createdAt: '2026-08-26T00:00:00.000Z',
         }],
         messages: {
@@ -193,11 +221,13 @@ function renderChannelThread(
     send,
     sendDirectReply,
     rerouteAssignment,
+    updateThreadContext,
+    compactThreadContext,
     mutate,
     selectThread,
   }
   render(<CommonspaceConversation store={store as never} />)
-  return { mutate, selectThread, send, sendDirectReply, rerouteAssignment }
+  return { mutate, selectThread, send, sendDirectReply, rerouteAssignment, updateThreadContext, compactThreadContext }
 }
 
 afterEach(cleanup)
@@ -249,6 +279,44 @@ describe('Commonspace reply-thread composer', () => {
     expect(screen.getAllByText('Correction')).toHaveLength(2)
     expect(screen.queryByRole('button', { name: 'Reroute assignment for Frontend' })).toBeNull()
     expect(screen.getAllByRole('button', { name: 'Reroute assignment for Reviewer' })).toHaveLength(2)
+  })
+
+  it('inspects, edits, and compacts Thread context', async () => {
+    const { updateThreadContext, compactThreadContext } = renderChannelThread()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open thread context' }))
+    const inspector = screen.getByRole('region', { name: 'Thread context' })
+    expect(within(inspector).getByText('Inherited Channel summary.')).toBeTruthy()
+    const form = within(inspector).getByRole('form', { name: 'Edit Thread context' })
+    fireEvent.change(within(form).getByLabelText('Thread summary'), { target: { value: 'Human-focused Thread summary.' } })
+    fireEvent.change(within(form).getByLabelText('Thread decisions'), { target: { value: 'Keep this focused.\nVerify before merge.' } })
+    fireEvent.submit(form)
+
+    await waitFor(() => {
+      expect(updateThreadContext).toHaveBeenCalledWith('thread-1', {
+        summary: 'Human-focused Thread summary.',
+        decisions: ['Keep this focused.', 'Verify before merge.'],
+        openQuestions: ['Does the fix pass?'],
+      })
+    })
+    fireEvent.click(within(inspector).getByRole('button', { name: 'Compact Thread context' }))
+    await waitFor(() => { expect(compactThreadContext).toHaveBeenCalledWith('thread-1') })
+  })
+
+  it('applies selected Projects to the next Thread reply and future defaults', async () => {
+    const { send } = renderChannelThread()
+    fireEvent.click(screen.getByRole('button', { name: 'Open thread context' }))
+    const inspector = screen.getByRole('region', { name: 'Thread context' })
+    const project = within(inspector).getByLabelText('Thread Project Commonspace') as HTMLInputElement
+    expect(project.checked).toBe(true)
+    fireEvent.click(project)
+    const reply = screen.getByLabelText('Reply in thread')
+    fireEvent.change(reply, { target: { value: 'Continue projectless.' } })
+    fireEvent.submit(reply.closest('form')!)
+
+    await waitFor(() => {
+      expect(send).toHaveBeenCalledWith('Continue projectless.', 'thread-1', [], undefined, [])
+    })
   })
 
   it('opens at an equal split and lets the thread be widened by dragging', () => {
@@ -386,7 +454,7 @@ describe('Commonspace reply-thread composer', () => {
     expect((composer as HTMLTextAreaElement).value).toBe('@backend ')
     fireEvent.keyDown(composer, { key: 'Enter' })
 
-    await waitFor(() => { expect(send).toHaveBeenCalledWith('@backend', 'thread-1') })
+    await waitFor(() => { expect(send).toHaveBeenCalledWith('@backend', 'thread-1', [], undefined, ['project-1']) })
   })
 
   it('separates agents outside the channel and explains that tagging adds them', () => {
@@ -416,7 +484,7 @@ describe('Commonspace reply-thread composer', () => {
     fireEvent.keyDown(composer, { key: 'Enter' })
 
     await waitFor(() => {
-      expect(sendDirectReply).toHaveBeenCalledWith('Check that boundary again.', 'thread-1', 'frontend')
+      expect(sendDirectReply).toHaveBeenCalledWith('Check that boundary again.', 'thread-1', 'frontend', [], ['project-1'])
     })
     expect(send).not.toHaveBeenCalled()
   })
@@ -436,7 +504,7 @@ describe('Commonspace reply-thread composer', () => {
     expect(messagesViewport.scrollTop).toBe(500)
     expect(scrollTo).toHaveBeenCalledTimes(scrollCallsBeforeReply + 1)
     expect(scrollTo).toHaveBeenLastCalledWith({ top: 500, behavior: 'auto' })
-    await waitFor(() => { expect(send).toHaveBeenCalledWith('A new thread reply.', 'thread-1') })
+    await waitFor(() => { expect(send).toHaveBeenCalledWith('A new thread reply.', 'thread-1', [], undefined, ['project-1']) })
   })
 
   it('offers slash commands and executes them in the active thread', async () => {

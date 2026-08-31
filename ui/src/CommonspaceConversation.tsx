@@ -537,6 +537,13 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
   const [pendingThreadImages, setPendingThreadImages] = useState<SendImageAttachment[]>([])
 
   const [threadReplyTarget, setThreadReplyTarget] = useState<{ agentId: string; agentName: string } | null>(null)
+  const [threadContextOpen, setThreadContextOpen] = useState(false)
+  const [threadContextSummary, setThreadContextSummary] = useState('')
+  const [threadContextDecisions, setThreadContextDecisions] = useState('')
+  const [threadContextQuestions, setThreadContextQuestions] = useState('')
+  const [threadContextSaving, setThreadContextSaving] = useState(false)
+  const [threadContextCompacting, setThreadContextCompacting] = useState(false)
+  const [threadProjectIds, setThreadProjectIds] = useState<string[]>([])
   const [selectedSuggestion, setSelectedSuggestion] = useState(0)
   const [selectedThreadSuggestion, setSelectedThreadSuggestion] = useState(0)
   const [commandFeedback, setCommandFeedback] = useState<CommandFeedback | null>(null)
@@ -625,7 +632,22 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
   useEffect(() => {
     setThreadReplyTarget(null)
     setPendingThreadImages([])
+    setThreadContextOpen(false)
   }, [snapshot.activeConversation?.id, snapshot.activeConversation?.kind, snapshot.activeThreadId])
+  useEffect(() => {
+    const memory = activeThread?.context?.memory
+    if (memory === undefined) return
+    setThreadContextSummary(memory.summary)
+    setThreadContextDecisions(memory.decisions.join('\n'))
+    setThreadContextQuestions(memory.openQuestions.join('\n'))
+  }, [activeThread?.context?.memory.updatedAt, activeThread?.id])
+  useEffect(() => {
+    if (activeThread === undefined) {
+      setThreadProjectIds([])
+      return
+    }
+    setThreadProjectIds(activeThread.projectIds ?? (activeThread.projectId === null ? [] : [activeThread.projectId]))
+  }, [activeThread?.id, activeThread?.projectId, activeThread?.projectIds])
   useEffect(() => {
     if (snapshot.activeThreadId === null) return
     scrollThreadToBottom()
@@ -851,12 +873,10 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
     scrollThreadToBottom()
     try {
       if (threadReplyTarget === null) {
-        if (activeThreadActivities.length > 0) await store.send(text, activeThread.id, attachments, threadDelivery)
-        else if (attachments.length > 0) await store.send(text, activeThread.id, attachments)
-        else await store.send(text, activeThread.id)
+        if (activeThreadActivities.length > 0) await store.send(text, activeThread.id, attachments, threadDelivery, threadProjectIds)
+        else await store.send(text, activeThread.id, attachments, undefined, threadProjectIds)
       } else {
-        if (attachments.length > 0) await store.sendDirectReply(text, activeThread.id, threadReplyTarget.agentId, attachments)
-        else await store.sendDirectReply(text, activeThread.id, threadReplyTarget.agentId)
+        await store.sendDirectReply(text, activeThread.id, threadReplyTarget.agentId, attachments, threadProjectIds)
       }
       setThreadReplyTarget(null)
     } catch {
@@ -869,6 +889,31 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
     setThreadReplyTarget({ agentId: message.authorId, agentName: message.authorName })
     threadComposer.current?.focus()
     scrollThreadToBottom()
+  }
+
+  const saveThreadContext = async (event: FormEvent) => {
+    event.preventDefault()
+    if (activeThread === undefined || threadContextSaving) return
+    setThreadContextSaving(true)
+    try {
+      await store.updateThreadContext(activeThread.id, {
+        summary: threadContextSummary,
+        decisions: threadContextDecisions.split('\n').map(value => value.trim()).filter(Boolean),
+        openQuestions: threadContextQuestions.split('\n').map(value => value.trim()).filter(Boolean),
+      })
+    } finally {
+      setThreadContextSaving(false)
+    }
+  }
+
+  const compactActiveThreadContext = async () => {
+    if (activeThread === undefined || threadContextCompacting) return
+    setThreadContextCompacting(true)
+    try {
+      await store.compactThreadContext(activeThread.id)
+    } finally {
+      setThreadContextCompacting(false)
+    }
   }
 
   return (
@@ -1091,8 +1136,50 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
             <aside className="csp-thread-panel" aria-label="Thread replies">
               <header className="csp-thread-header">
                 <div><strong>Thread</strong>{activeThreadActivities.length > 0 && <span>Agents working</span>}</div>
-                <button type="button" aria-label="Close thread" onClick={() => { store.selectThread(null) }}>×</button>
+                <div className="csp-thread-header-actions">
+                  <button type="button" aria-label="Open thread context" aria-pressed={threadContextOpen} onClick={() => { setThreadContextOpen(value => !value) }}>Context</button>
+                  <button type="button" aria-label="Close thread" onClick={() => { store.selectThread(null) }}>×</button>
+                </div>
               </header>
+              {threadContextOpen && (
+                <section className="csp-thread-context" role="region" aria-label="Thread context">
+                  <details open>
+                    <summary>Inherited Channel snapshot</summary>
+                    <p>{activeThread.context.channelSnapshot.summary || 'No Channel summary existed when this Thread started.'}</p>
+                    {activeThread.context.channelSnapshot.decisions.length > 0 && <ul>{activeThread.context.channelSnapshot.decisions.map(decision => <li key={decision}>{decision}</li>)}</ul>}
+                  </details>
+                  <form aria-label="Edit Thread context" onSubmit={(event) => { void saveThreadContext(event) }}>
+                    <header><strong>Current Thread context</strong><span data-status={activeThread.context.memory.status}>{activeThread.context.memory.status}</span></header>
+                    <label>Summary<textarea aria-label="Thread summary" value={threadContextSummary} onChange={event => { setThreadContextSummary(event.target.value) }} /></label>
+                    <label>Decisions<textarea aria-label="Thread decisions" value={threadContextDecisions} onChange={event => { setThreadContextDecisions(event.target.value) }} /></label>
+                    <label>Open questions<textarea aria-label="Thread open questions" value={threadContextQuestions} onChange={event => { setThreadContextQuestions(event.target.value) }} /></label>
+                    <div>
+                      <button type="submit" disabled={threadContextSaving}>{threadContextSaving ? 'Saving…' : 'Save context'}</button>
+                      <button type="button" aria-label="Compact Thread context" disabled={threadContextCompacting} onClick={() => { void compactActiveThreadContext() }}>{threadContextCompacting ? 'Compacting…' : 'Compact'}</button>
+                    </div>
+                  </form>
+                  <fieldset className="csp-thread-projects">
+                    <legend>Next reply Projects</legend>
+                    <p>Changes apply to the next reply and future Thread defaults.</p>
+                    {(bootstrap?.state.projects ?? []).map(project => (
+                      <label key={project.id}>
+                        <input
+                          type="checkbox"
+                          aria-label={`Thread Project ${project.name}`}
+                          checked={threadProjectIds.includes(project.id)}
+                          onChange={event => {
+                            setThreadProjectIds(current => event.target.checked
+                              ? [...new Set([...current, project.id])]
+                              : current.filter(id => id !== project.id))
+                          }}
+                        />
+                        {project.name}
+                      </label>
+                    ))}
+                    {(bootstrap?.state.projects.length ?? 0) === 0 && <span>No Projects configured. Replies remain projectless.</span>}
+                  </fieldset>
+                </section>
+              )}
               <div ref={threadMessages} className="csp-thread-messages">
                 {activeRoot !== undefined && <MessageRow message={activeRoot} bootstrap={bootstrap} onReroute={request => store.rerouteAssignment(request)} speech={speech} />}
                 <div className="csp-thread-divider">Replies</div>

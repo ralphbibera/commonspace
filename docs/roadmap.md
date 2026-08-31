@@ -21,6 +21,8 @@ Commonspace is a private preview focused on durable human-agent conversation and
 - Inspectable per-harness routing assignments with bounded sub-requests, scoped Projects, and visible user-controlled fan-out.
 - Visible Project-reference inference for unreferenced new Channel roots, with explicit and projectless selections remaining authoritative.
 - Single-assignment rerouting with visible retained attempts, assignment-bound replies, corrected Agent/Project scope, and compacted per-Channel routing knowledge used by later inference.
+- Immutable Channel-context snapshots per Thread, independent editable/pressure-compacted Thread context, and visible manual compaction controls.
+- Prospective multi-Project/projectless Thread references that preserve earlier delivery and active-session scope.
 - Project Files, Git Changes/diffs, image attachments, and reply speech playback.
 - Work/result binding through per-reply run attribution, changed-file surfaces, activity traces, and validation evidence emitted by the harness.
 - Hard-boundary cancellation, stale-session recovery that distinguishes missing from transient failures, and graceful bridge shutdown.
@@ -29,7 +31,7 @@ Commonspace is a private preview focused on durable human-agent conversation and
 
 ## Next: product behavior
 
-- Add thread-specific context snapshots, prospective Thread Project-reference changes, pins, and general human/agent file attachments.
+- Add pins and general human/agent file attachments.
 - Add message edit branches and visible deletion markers without rewriting delivered native-session history.
 - Normalize native permission requests and add clearer runtime/authentication diagnostics.
 - Add export/import and retention controls for non-secret Commonspace data.
@@ -37,8 +39,8 @@ Commonspace is a private preview focused on durable human-agent conversation and
 
 ## Later UI/UX work
 
-- Multi-Project reference controls and inferred-reference correction.
-- Channel/Thread context inspection, editing, pinning, and manual-compaction controls.
+- Multi-Project controls for new roots and inferred-reference correction.
+- Channel context inspection, editing, pinning, and manual-compaction controls; add Thread pinning.
 - Message-version, file, permission, and notification surfaces.
 - Keyboard and narrow-screen acceptance coverage across every flow.
 
