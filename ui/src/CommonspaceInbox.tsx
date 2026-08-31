@@ -28,6 +28,7 @@ function kindLabel(item: CommonspaceInboxItem): string {
     case 'completion': return 'Completed'
     case 'timeout': return 'Timed out'
     case 'input-request': return 'Needs input'
+    case 'permission-request': return 'Permission'
   }
 }
 
@@ -46,6 +47,7 @@ function sessionStatusLabel(session: CommonspaceSessionItem): string {
   if (session.status === 'running') return 'Running'
   if (session.status === 'completed') return 'Completed'
   if (session.attentionKind === 'input-request') return 'Needs input'
+  if (session.attentionKind === 'permission-request') return 'Permission'
   if (session.attentionKind === 'timeout') return 'Timed out'
   return 'Failed'
 }

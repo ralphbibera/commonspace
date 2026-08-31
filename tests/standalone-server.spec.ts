@@ -176,6 +176,18 @@ describe('standalone Commonspace server', () => {
     expect(missingDeleteResponse.status).toBe(400)
     await expect(missingDeleteResponse.json()).resolves.toEqual({ code: 'message_delete_failed', error: 'unknown message' })
 
+    const missingFileResponse = await fetch(`${running.url}/api/files/missing`, { headers: { origin: running.url } })
+    expect(missingFileResponse.status).toBe(404)
+    await expect(missingFileResponse.json()).resolves.toEqual({ code: 'file_attachment_not_found', error: 'unknown file attachment' })
+
+    const missingPermissionResponse = await fetch(`${running.url}/api/permissions/missing/respond`, {
+      method: 'POST',
+      headers: { origin: running.url, 'content-type': 'application/json' },
+      body: JSON.stringify({ optionId: 'allow' }),
+    })
+    expect(missingPermissionResponse.status).toBe(400)
+    await expect(missingPermissionResponse.json()).resolves.toEqual({ code: 'permission_response_failed', error: 'unknown permission request' })
+
     const discoveryResponse = await fetch(`${running.url}/api/discover-agents`, {
       method: 'POST',
       headers: { origin: running.url, 'content-type': 'application/json' },

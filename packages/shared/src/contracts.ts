@@ -1,4 +1,4 @@
-export const COMMONSPACE_STATE_VERSION = 21 as const
+export const COMMONSPACE_STATE_VERSION = 23 as const
 
 export type AgentAdapterKind = 'hermes' | 'codex'
 
@@ -259,6 +259,19 @@ export interface SendImageAttachment {
   data: string
 }
 
+export interface CommonspaceFileAttachment {
+  id: string
+  name: string
+  mimeType: string
+  size: number
+}
+
+export interface SendFileAttachment {
+  name: string
+  mimeType: string
+  data: string
+}
+
 
 /** Provider-emitted activity for an agent turn that is still running. */
 export interface CommonspaceLiveAgentActivity {
@@ -282,6 +295,7 @@ export interface CommonspaceMessage {
   authorName: string
   text: string
   attachments?: CommonspaceImageAttachment[]
+  files?: CommonspaceFileAttachment[]
   createdAt: string
   /** Authoritative Project context for this message; Channels themselves are global. */
   projectIds?: string[]
@@ -359,6 +373,28 @@ export interface CommonspacePin {
   removedAt: string | null
 }
 
+export interface CommonspacePermissionOption {
+  optionId: string
+  name: string
+  kind: string
+}
+
+export interface CommonspacePermissionRequest {
+  id: string
+  sourceMessageId: string
+  agentId: string
+  conversation: ConversationRef
+  threadId?: string
+  toolCallId: string
+  title: string
+  kind?: string
+  options: CommonspacePermissionOption[]
+  status: 'pending' | 'resolved' | 'cancelled' | 'interrupted'
+  selectedOptionId?: string
+  createdAt: string
+  resolvedAt: string | null
+}
+
 export type AddPinRequest =
   | { scope: CommonspacePinScope; kind: 'message'; messageId: string }
   | { scope: CommonspacePinScope; kind: 'attachment'; messageId: string; attachmentId: string }
@@ -398,6 +434,7 @@ export interface CommonspaceState {
   channels: CommonspaceChannel[]
   threads: CommonspaceThread[]
   pins: CommonspacePin[]
+  permissions: CommonspacePermissionRequest[]
   messages: Record<string, CommonspaceMessage[]>
 }
 
@@ -446,6 +483,7 @@ export interface SendMessageRequest {
   /** Restrict a channel-thread reply to one current channel agent. */
   targetAgentId?: string
   attachments?: SendImageAttachment[]
+  files?: SendFileAttachment[]
   /** Behavior when the same conversation session already has an active run. */
   delivery?: 'queue' | 'steer' | 'stop-and-send'
 }

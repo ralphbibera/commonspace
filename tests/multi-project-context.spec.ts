@@ -40,6 +40,33 @@ async function fixture() {
 }
 
 describe('multi-project conversation context', () => {
+  it('runs projectless Channel work from a dedicated neutral workspace', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-projectless-'))
+    roots.push(root)
+    const runAgent = vi.fn(async (): Promise<{ text: string }> => ({ text: 'Done.' }))
+    const service = new CommonspaceHostService({}, { root }, {
+      discoverAgents: discoverTestHarnesses,
+      runAgent,
+    })
+    services.push(service)
+    await service.initialize()
+    await addTestHarness(service, 'codex', 'Review Bot')
+    const channel = (await service.mutate({ action: 'create-channel', name: 'projectless', agentIds: ['codex'] })).channels[0]!
+
+    await service.send({
+      conversation: { kind: 'channel', id: channel.id },
+      projectIds: [],
+      text: '@review-bot work without Project access.',
+    })
+    await service.whenIdle()
+
+    expect(runAgent.mock.calls[0]?.[0]).toMatchObject({
+      cwd: await realpath(join(root, 'workspace')),
+      additionalCwds: [],
+      commonspaceScope: { projectIds: [] },
+    })
+  })
+
   it('delivers every tagged Project to a direct-message agent', async () => {
     const { service, runAgent, first, second, firstRoot, secondRoot } = await fixture()
 

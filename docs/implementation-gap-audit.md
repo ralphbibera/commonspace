@@ -1,6 +1,6 @@
 # Implementation gap audit
 
-Snapshot: 2026-08-31, audited against the current state-v21 implementation on `main`.
+Snapshot: 2026-08-31, audited against the current state-v23 implementation on `main`.
 
 This audit compares the intended behavior in [Product specification](product-spec.md), [Product direction](product-direction.md), and [Product model](product.md) with executable contracts, server behavior, persistence, API routes, UI use, and tests. It deliberately separates product behavior from later UI/UX work.
 
@@ -26,7 +26,7 @@ This audit compares the intended behavior in [Product specification](product-spe
 | Projects with multiple local roots | Working | Projects persist canonical filesystem roots and expose files, Git changes, diffs, and agent working directories. |
 | Zero/one/many Project references | Backend-ready | Messages, threads, search, MCP context, run attribution, and multi-root launches support multiple references. Thread replies now expose multi-Project/projectless controls; new root and DM composition still use the first selected Project as their compatibility input. |
 | Prospective Thread Project-reference changes | Working | An explicit reply Project set applies to that message and future Thread defaults while earlier messages, runs, and MCP scopes retain their delivered references. Omitted replies inherit the latest default; explicit empty sets stay projectless. |
-| Projectless filesystem isolation | Partial | A projectless turn receives no Project roots, but its working directory still defaults to the service process directory rather than a dedicated neutral workspace. |
+| Projectless filesystem isolation | Working | A projectless turn receives an explicit empty Project scope and runs from Commonspace's canonical owner-only neutral workspace rather than the service repository/process directory. Explicit configured working directories remain supported and canonicalized. |
 | Channels, DMs, and threads | Working | Durable conversations, `/new` DM boundaries, per-thread sessions, concurrent agents, and same-session serialization are implemented. |
 | Explicit mentions and peer handoffs | Working | Mentions are authoritative, can seat an agent, and create bounded non-blocking handoffs in the same visible thread. |
 | Unaddressed agent selection | Working | A configured harness or OpenAI-compatible provider selects the smallest useful agent set and records the routing decision. |
@@ -39,12 +39,12 @@ This audit compares the intended behavior in [Product specification](product-spe
 | Thread-specific context snapshots | Working | Each new Thread stores an immutable snapshot of Channel context at creation plus independent projected context. Thread context supports human editing, manual/pressure compaction, stale/failure state, scoped MCP inspection, and an inline UI inspector. Legacy Threads derive current memory from their transcripts without inventing a historical Channel snapshot. |
 | Native session continuity | Working | ACP sessions resume by opaque host-private reference, with stale-session recovery and hard `/new` boundaries. |
 | Image attachments | Working | Pasted/uploaded images are persisted with bounded private metadata and delivered to supported agents. |
-| General human and agent files | Missing | Arbitrary file attachment, agent-authored file attachment, download, and durable file-reference semantics are absent. |
+| General human and agent files | Working | Bounded human files persist against exact message versions, render as safe downloads, are searchable/pinnable, and reach ACP sessions as baseline resource links. Known credential-bearing names are rejected before acceptance. Capability-dependent Agent resource links are copied only from granted working roots into Commonspace storage without exposing source URIs/paths. |
 | Message editing and branches | Working | Editing a delivered human message creates a linked version with a new Channel Thread/native session or DM generation. Prior messages, replies, routing, attachments, and sessions remain visible; reply edits expose only pre-branch transcript plus the corrected branch through scoped context. Agent replies cannot be edited. |
 | Message deletion markers | Working | Deletion retains author/delivery/version/routing identity while removing the body, attachment bytes, traces, attribution, and derived automatic context. Markers survive restart and cannot be edited back into content. |
 | Pins for messages/files/notes | Working | Channel/Thread-scoped message, exact attachment, and human-note pins persist with source and removal tombstones. Active Channel pins inherit into Thread MCP reads; Thread and Channel UI surfaces manage notes/messages/files without exposing bytes or host paths. |
 | Activity traces and work/result binding | Working | Replies preserve bounded harness-emitted plans, tools, results, usage, validation evidence, and Project/root attribution. |
-| Native permission requests | Partial | Generic activity can be preserved, but there is no normalized permission request/choice contract and response flow. |
+| Native permission requests | Working | ACP permission requests persist with only harness-advertised choices, block only the affected native session, appear in the conversation and durable Inbox/session attention, return the exact selected option, and become interrupted on shutdown/restart rather than hanging or pretending completion. |
 | Inbox, unread state, search, and navigation | Working | Reply-focused Inbox, exact thread navigation, read cursors, and unified transcript search exist. Search filtering now recognizes every referenced Project. |
 | Runtime and authentication diagnostics | Partial | Failures and outcomes surface, but clean-machine runtime/auth readiness and guided recovery are incomplete. |
 | Notifications | Partial | In-app attention state exists; OS notifications and settings do not. |
@@ -56,13 +56,12 @@ This audit compares the intended behavior in [Product specification](product-spe
 
 ## Recommended feature order
 
-1. Generalize collaboration artifacts: human/agent files and normalized native permission requests.
-2. Complete operability: runtime/auth diagnostics, export/import/retention, installed background service, and OS notifications.
-3. Add UI/UX for the backend-ready capabilities and the features above after their behavior and contracts are stable.
+1. Complete operability: runtime/auth diagnostics, export/import/retention, installed background service, and OS notifications.
+2. Add UI/UX for the backend-ready capabilities and the features above after their behavior and contracts are stable.
 
 ## Documentation corrections made with this audit
 
-- State documentation now identifies v21 and migrations from versions 1–20.
+- State documentation now identifies v23 and migrations from versions 1–22.
 - Work/result binding moved from `Next` to `Working now` because run attribution, changes, traces, and validation evidence already implement it.
 - Multi-Project references and Channel-context controls are marked backend-ready instead of being implied as either wholly absent or fully surfaced.
 - The roadmap now separates feature behavior, later UI/UX, and scale-dependent storage work.

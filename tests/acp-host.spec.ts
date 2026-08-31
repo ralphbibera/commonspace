@@ -1,7 +1,7 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CommonspaceHostService, type CommonspaceHostConfig } from '../server/src/service.ts'
 import { addTestHarness, discoverTestHarnesses } from './test-harnesses.ts'
@@ -23,6 +23,88 @@ function acpConfig(root: string): CommonspaceHostConfig {
 }
 
 describe('Commonspace ACP host path', () => {
+  it('delivers general files as ACP resource links', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-acp-file-'))
+    roots.push(root)
+    const logPath = join(root, 'frames.ndjson')
+    vi.stubEnv('FAKE_ACP_LOG', logPath)
+    const service = new CommonspaceHostService({}, acpConfig(root), { discoverAgents: discoverTestHarnesses })
+    await service.initialize()
+    await addTestHarness(service, 'codex', 'Review Bot')
+
+    await service.send({
+      conversation: { kind: 'dm', id: 'codex' },
+      text: 'Read the attached notes.',
+      files: [{ name: 'notes.txt', mimeType: 'text/plain', data: Buffer.from('notes').toString('base64') }],
+    } as never)
+    await service.whenIdle()
+    await service.close()
+
+    const frames = (await readFile(logPath, 'utf8')).trim().split('\n').map(line => JSON.parse(line))
+    const prompt = frames.find(frame => frame.method === 'session/prompt')?.params.prompt
+    expect(prompt).toEqual([
+      { type: 'text', text: 'Read the attached notes.' },
+      {
+        type: 'resource_link',
+        name: 'notes.txt',
+        uri: expect.stringMatching(/^file:\/\//u),
+        mimeType: 'text/plain',
+        size: 5,
+      },
+    ])
+    expect(JSON.stringify(await service.bootstrap())).not.toContain(prompt[1].uri)
+  })
+
+  it('imports an ACP agent resource link as a durable file attachment', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-acp-generated-file-'))
+    roots.push(root)
+    const workspace = join(root, 'workspace')
+    await mkdir(workspace)
+    const generated = join(workspace, 'report.txt')
+    await writeFile(generated, 'generated report')
+    vi.stubEnv('FAKE_ACP_RESOURCE_URI', pathToFileURL(generated).href)
+    vi.stubEnv('FAKE_ACP_RESOURCE_NAME', 'report.txt')
+    vi.stubEnv('FAKE_ACP_RESOURCE_MIME', 'text/plain')
+    const service = new CommonspaceHostService({}, { ...acpConfig(root), defaultCwd: workspace }, { discoverAgents: discoverTestHarnesses })
+    await service.initialize()
+    await addTestHarness(service, 'codex', 'Review Bot')
+
+    await service.send({ conversation: { kind: 'dm', id: 'codex' }, text: 'Create the report.' })
+    await service.whenIdle()
+
+    const reply = service.snapshot().messages['dm:codex']?.find(message => message.authorType === 'agent')
+    const file = reply?.files?.[0]
+    expect(file).toMatchObject({ name: 'report.txt', mimeType: 'text/plain', size: 16 })
+    await expect(service.readFileAttachment(file!.id)).resolves.toMatchObject({ data: Buffer.from('generated report') })
+    expect(JSON.stringify(await service.bootstrap())).not.toContain(generated)
+    expect(JSON.stringify(await service.bootstrap())).not.toContain(pathToFileURL(generated).href)
+    await service.close()
+  })
+
+  it('returns the exact Commonspace-selected ACP permission option', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'commonspace-acp-permission-'))
+    roots.push(root)
+    const logPath = join(root, 'frames.ndjson')
+    vi.stubEnv('FAKE_ACP_LOG', logPath)
+    vi.stubEnv('FAKE_ACP_PERMISSION_REQUEST', '1')
+    const service = new CommonspaceHostService({}, acpConfig(root), { discoverAgents: discoverTestHarnesses })
+    await service.initialize()
+    await addTestHarness(service, 'codex', 'Review Bot')
+
+    await service.send({ conversation: { kind: 'dm', id: 'codex' }, text: 'Request permission.' })
+    await vi.waitFor(() => { expect(service.snapshot().permissions[0]?.status).toBe('pending') })
+    await service.respondPermission(service.snapshot().permissions[0]!.id, 'allow')
+    await service.whenIdle()
+
+    const frames = (await readFile(logPath, 'utf8')).trim().split('\n').map(line => JSON.parse(line))
+    expect(frames).toContainEqual({
+      jsonrpc: '2.0',
+      id: 'permission-1',
+      result: { outcome: { outcome: 'selected', optionId: 'allow' } },
+    })
+    await service.close()
+  })
+
   it('delivers delta-only prompts, reloads persisted sessions, and preserves hard DM resets', async () => {
     const root = await mkdtemp(join(tmpdir(), 'commonspace-acp-host-'))
     roots.push(root)

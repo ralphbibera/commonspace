@@ -9,10 +9,12 @@ import type {
   CommonspaceMessage,
   CommonspaceMutation,
   CommonspacePin,
+  CommonspacePermissionRequest,
   CommonspaceRoutingConfiguration,
   ConversationRef,
   EditMessageRequest,
   SelectDirectoryResponse,
+  SendFileAttachment,
   SendImageAttachment,
   SendMessageRequest,
   SendMessageResponse,
@@ -230,12 +232,12 @@ export class CommonspaceClientStore {
     return this.snapshot.bootstrap?.state.messages[conversationKey(conversation)] ?? []
   }
 
-  async send(text: string, threadId?: string, attachments: readonly SendImageAttachment[] = [], delivery?: SendMessageRequest['delivery'], projectIds?: readonly string[]): Promise<void> {
-    return this.sendMessage(text, threadId, undefined, attachments, delivery, projectIds)
+  async send(text: string, threadId?: string, attachments: readonly SendImageAttachment[] = [], delivery?: SendMessageRequest['delivery'], projectIds?: readonly string[], files: readonly SendFileAttachment[] = []): Promise<void> {
+    return this.sendMessage(text, threadId, undefined, attachments, delivery, projectIds, files)
   }
 
-  async sendDirectReply(text: string, threadId: string, targetAgentId: string, attachments: readonly SendImageAttachment[] = [], projectIds?: readonly string[]): Promise<void> {
-    return this.sendMessage(text, threadId, targetAgentId, attachments, undefined, projectIds)
+  async sendDirectReply(text: string, threadId: string, targetAgentId: string, attachments: readonly SendImageAttachment[] = [], projectIds?: readonly string[], files: readonly SendFileAttachment[] = []): Promise<void> {
+    return this.sendMessage(text, threadId, targetAgentId, attachments, undefined, projectIds, files)
   }
 
   async rerouteAssignment(request: RerouteAssignmentRequest): Promise<void> {
@@ -350,6 +352,19 @@ export class CommonspaceClientStore {
     }
   }
 
+  async respondPermission(permissionId: string, optionId: string): Promise<void> {
+    try {
+      await requestJson<CommonspacePermissionRequest>(`/api/permissions/${encodeURIComponent(permissionId)}/respond`, {
+        method: 'POST',
+        body: JSON.stringify({ optionId }),
+      })
+      await this.refresh()
+    } catch (error) {
+      this.set({ ...this.snapshot, error: error instanceof Error ? error.message : String(error) })
+      throw error
+    }
+  }
+
   async stopAgentRuns(messageId: string, agentId?: string): Promise<string[]> {
     try {
       const result = await requestJson<StopAgentRunsResponse>('/api/stop', {
@@ -387,7 +402,7 @@ export class CommonspaceClientStore {
     }
   }
 
-  private async sendMessage(text: string, threadId?: string, targetAgentId?: string, attachments: readonly SendImageAttachment[] = [], delivery?: SendMessageRequest['delivery'], projectIds?: readonly string[]): Promise<void> {
+  private async sendMessage(text: string, threadId?: string, targetAgentId?: string, attachments: readonly SendImageAttachment[] = [], delivery?: SendMessageRequest['delivery'], projectIds?: readonly string[], files: readonly SendFileAttachment[] = []): Promise<void> {
     const conversation = this.snapshot.activeConversation
     if (conversation === null || this.snapshot.sending) return
     // A thread already owns its complete Project scope. The singular selection is
@@ -401,6 +416,7 @@ export class CommonspaceClientStore {
       ...(threadId === undefined ? {} : { threadId }),
       ...(targetAgentId === undefined ? {} : { targetAgentId }),
       ...(attachments.length === 0 ? {} : { attachments: [...attachments] }),
+      ...(files.length === 0 ? {} : { files: [...files] }),
 
       ...(delivery === undefined ? {} : { delivery }),
     }

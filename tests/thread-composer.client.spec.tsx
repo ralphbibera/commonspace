@@ -14,6 +14,7 @@ function renderChannelThread(
   routingCorrected = false,
   rootDeleted = false,
   rootVersioned = false,
+  permissionPending = false,
 ) {
   const listeners = new Set<() => void>()
   const initialThreadId: string | null = threadOpen ? 'thread-1' : null
@@ -26,6 +27,7 @@ function renderChannelThread(
   const removePin = vi.fn(async () => undefined)
   const editMessage = vi.fn(async () => undefined)
   const deleteMessage = vi.fn(async () => undefined)
+  const respondPermission = vi.fn(async () => undefined)
   const mutate = vi.fn(async () => undefined)
   const selectThread = vi.fn((threadId: string | null) => {
     snapshot = { ...snapshot, activeThreadId: threadId }
@@ -139,6 +141,23 @@ function renderChannelThread(
           createdAt: '2026-08-26T00:04:00.000Z',
           removedAt: null,
         }],
+        permissions: permissionPending ? [{
+          id: 'permission-1',
+          sourceMessageId: 'root-1',
+          agentId: 'frontend',
+          conversation: { kind: 'channel' as const, id: 'general' },
+          threadId: 'thread-1',
+          toolCallId: 'call-1',
+          title: 'Run database migration',
+          kind: 'execute',
+          options: [
+            { optionId: 'allow', name: 'Allow once', kind: 'allow_once' },
+            { optionId: 'reject', name: 'Reject once', kind: 'reject_once' },
+          ],
+          status: 'pending' as const,
+          createdAt: '2026-08-26T00:04:00.000Z',
+          resolvedAt: null,
+        }] : [],
         messages: {
           'channel:general': [
             {
@@ -249,11 +268,12 @@ function renderChannelThread(
     removePin,
     editMessage,
     deleteMessage,
+    respondPermission,
     mutate,
     selectThread,
   }
   render(<CommonspaceConversation store={store as never} />)
-  return { mutate, selectThread, send, sendDirectReply, rerouteAssignment, updateThreadContext, compactThreadContext, addPin, removePin, editMessage, deleteMessage }
+  return { mutate, selectThread, send, sendDirectReply, rerouteAssignment, updateThreadContext, compactThreadContext, addPin, removePin, editMessage, deleteMessage, respondPermission }
 }
 
 afterEach(cleanup)
@@ -410,6 +430,18 @@ describe('Commonspace reply-thread composer', () => {
     expect(screen.getAllByText('Edited branch')).toHaveLength(2)
     fireEvent.click(screen.getAllByRole('button', { name: 'Open previous message version' })[0]!)
     expect(selectThread).toHaveBeenCalledWith('thread-1')
+  })
+
+  it('shows only harness-advertised permission choices without blocking the Thread', async () => {
+    const { respondPermission } = renderChannelThread('complete', false, true, false, false, false, false, false, true)
+
+    const request = screen.getByRole('region', { name: 'Permission request from Frontend' })
+    expect(within(request).getByText('Run database migration')).toBeTruthy()
+    expect(within(request).getAllByRole('button').map(button => button.textContent)).toEqual(['Allow once', 'Reject once'])
+    expect((screen.getByRole('textbox', { name: 'Reply in thread' }) as HTMLTextAreaElement).disabled).toBe(false)
+    fireEvent.click(within(request).getByRole('button', { name: 'Allow once' }))
+
+    await waitFor(() => { expect(respondPermission).toHaveBeenCalledWith('permission-1', 'allow') })
   })
 
   it('opens at an equal split and lets the thread be widened by dragging', () => {

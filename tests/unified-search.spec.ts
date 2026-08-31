@@ -45,6 +45,7 @@ function bootstrap(): CommonspaceBootstrap {
           text: 'Run the recovery checklist.',
           projectId: 'storefront',
           threadId: 'thread-1',
+          files: [{ id: 'file-1', name: 'verification-notes.txt', mimeType: 'text/plain', size: 128 }],
           createdAt: '2026-08-20T00:00:00.000Z',
         },
         {
@@ -97,6 +98,20 @@ function bootstrap(): CommonspaceBootstrap {
 }
 
 describe('unified search', () => {
+  it('finds durable message attachments by filename', async () => {
+    const result = await searchCommonspace(bootstrap(), { query: 'verification-notes', kinds: ['file'], limit: 10 })
+
+    expect(result.results).toEqual([
+      expect.objectContaining({
+        id: 'attachment:file-1',
+        kind: 'file',
+        title: 'verification-notes.txt',
+        detail: 'text/plain · 128 bytes',
+        target: { kind: 'conversation', conversation: { kind: 'channel', id: 'general' }, threadId: 'thread-1', messageId: 'message-1' },
+      }),
+    ])
+  })
+
   it('searches messages, DMs, agents, traces, decisions, runs, and briefs with inspectable receipts', async () => {
     const result = await searchCommonspace(bootstrap(), { query: 'recovery', limit: 50 })
     const kinds = new Set(result.results.map(item => item.kind))

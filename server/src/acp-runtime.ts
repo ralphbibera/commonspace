@@ -43,6 +43,7 @@ export interface AcpRunInput {
   additionalCwds?: readonly string[]
   message: string
   images?: readonly AcpImageInput[]
+  files?: readonly AcpFileInput[]
   sessionId?: string
   mcpServers?: readonly McpServer[]
   modeId?: string
@@ -51,12 +52,31 @@ export interface AcpRunInput {
   configOptions?: Readonly<Record<string, string | boolean>>
   onSessionReady?(sessionId: string): void
   onTraceUpdate?(entries: readonly CommonspaceTraceEntry[]): void
+  onPermissionRequest?(request: AcpPermissionRequest): Promise<AcpPermissionOutcome>
+}
+
+export interface AcpPermissionRequest {
+  toolCallId: string
+  title: string
+  kind?: string
+  options: Array<{ optionId: string; name: string; kind: string }>
+}
+
+export interface AcpPermissionOutcome {
+  optionId?: string
 }
 
 export interface AcpImageInput {
   name: string
   mimeType: string
   data: string
+}
+
+export interface AcpFileInput {
+  name: string
+  mimeType: string
+  size: number
+  uri: string
 }
 
 export interface AcpRunTrace {
@@ -69,10 +89,19 @@ export interface AcpRunResult {
   sessionId: string
   text: string
   trace?: AcpRunTrace
+  resources?: AcpResourceLink[]
+}
+
+export interface AcpResourceLink {
+  name: string
+  uri: string
+  mimeType?: string
+  size?: number
 }
 
 interface ActiveTurn {
   chunks: string[]
+  resources: AcpResourceLink[]
   chars: number
   exceededLimit: boolean
   settled: Promise<void>
@@ -80,6 +109,7 @@ interface ActiveTurn {
   traceStartedAt: string
   traceEntries: CommonspaceTraceEntry[]
   onTraceUpdate?: AcpRunInput['onTraceUpdate']
+  onPermissionRequest?: AcpRunInput['onPermissionRequest']
 }
 
 interface SessionSetup {
@@ -262,7 +292,7 @@ export class AcpAgentProcess {
 
   async run(input: AcpRunInput): Promise<AcpRunResult> {
     if (this.#closing) throw new Error('ACP process is closed')
-    if (input.message === '' && (input.images?.length ?? 0) === 0) throw new Error('ACP message or image is required')
+    if (input.message === '' && (input.images?.length ?? 0) === 0 && (input.files?.length ?? 0) === 0) throw new Error('ACP message, image, or file is required')
     await this.#ensureStarted()
     const connection = this.#connection
     if (connection === undefined || connection.signal.aborted) throw new Error('ACP process is not connected')
@@ -277,6 +307,7 @@ export class AcpAgentProcess {
       const settled = new Promise<void>(resolve => { resolveSettled = resolve })
       const turn: ActiveTurn = {
         chunks: [],
+        resources: [],
         chars: 0,
         exceededLimit: false,
         settled,
@@ -284,6 +315,7 @@ export class AcpAgentProcess {
         traceStartedAt: timestamp(),
         traceEntries: [],
         ...(input.onTraceUpdate === undefined ? {} : { onTraceUpdate: input.onTraceUpdate }),
+        ...(input.onPermissionRequest === undefined ? {} : { onPermissionRequest: input.onPermissionRequest }),
       }
       this.#activeTurns.set(sessionId, turn)
       try {
@@ -291,6 +323,13 @@ export class AcpAgentProcess {
         const prompt: ContentBlock[] = [
           ...(input.message === '' ? [] : [{ type: 'text' as const, text: input.message }]),
           ...(input.images ?? []).map(image => ({ type: 'image' as const, mimeType: image.mimeType, data: image.data })),
+          ...(input.files ?? []).map(file => ({
+            type: 'resource_link' as const,
+            name: file.name,
+            uri: file.uri,
+            mimeType: file.mimeType,
+            size: file.size,
+          })),
         ]
         await this.#request('session/prompt', signal => connection.agent.request(methods.agent.session.prompt, {
           sessionId,
@@ -300,7 +339,12 @@ export class AcpAgentProcess {
         const trace = turn.traceEntries.length === 0
           ? undefined
           : { startedAt: turn.traceStartedAt, completedAt: timestamp(), entries: structuredClone(turn.traceEntries) }
-        return { sessionId, text: turn.chunks.join(''), ...(trace === undefined ? {} : { trace }) }
+        return {
+          sessionId,
+          text: turn.chunks.join(''),
+          ...(trace === undefined ? {} : { trace }),
+          ...(turn.resources.length === 0 ? {} : { resources: structuredClone(turn.resources) }),
+        }
       } finally {
         this.#activeTurns.delete(sessionId)
         turn.resolveSettled()
@@ -397,7 +441,20 @@ export class AcpAgentProcess {
         child.once('error', reject)
       })
       const app = client({ name: this.#options.clientName ?? 'commonspace' })
-        .onRequest(methods.client.session.requestPermission, ({ params }) => {
+        .onRequest(methods.client.session.requestPermission, async ({ params }) => {
+          const turn = this.#activeTurns.get(params.sessionId)
+          if (turn?.onPermissionRequest !== undefined) {
+            const outcome = await turn.onPermissionRequest({
+              toolCallId: params.toolCall.toolCallId,
+              title: typeof params.toolCall.title === 'string' ? params.toolCall.title : 'Permission requested',
+              ...(typeof params.toolCall.kind === 'string' ? { kind: params.toolCall.kind } : {}),
+              options: params.options.map(option => ({ optionId: option.optionId, name: option.name, kind: option.kind })),
+            })
+            if (outcome.optionId !== undefined && params.options.some(option => option.optionId === outcome.optionId)) {
+              return { outcome: { outcome: 'selected', optionId: outcome.optionId } }
+            }
+            return { outcome: { outcome: 'cancelled' } }
+          }
           const rejection = params.options.find(option => option.kind === 'reject_once' || option.kind === 'reject_always')
           return rejection === undefined
             ? { outcome: { outcome: 'cancelled' } }
@@ -552,6 +609,17 @@ export class AcpAgentProcess {
       }
       turn.chars = nextChars
       turn.chunks.push(update.content.text)
+      return
+    }
+    if (update.sessionUpdate === 'agent_message_chunk' && update.content.type === 'resource_link') {
+      const resource = update.content
+      if (turn.resources.length >= 8 || turn.resources.some(candidate => candidate.uri === resource.uri)) return
+      turn.resources.push({
+        name: resource.name,
+        uri: resource.uri,
+        ...(typeof resource.mimeType === 'string' ? { mimeType: resource.mimeType } : {}),
+        ...(typeof resource.size === 'number' ? { size: resource.size } : {}),
+      })
       return
     }
 

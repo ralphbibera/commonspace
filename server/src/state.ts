@@ -138,6 +138,7 @@ export function createInitialState(): CommonspaceState {
     channels: [],
     threads: [],
     pins: [],
+    permissions: [],
     messages: {},
   }
 }
@@ -194,7 +195,8 @@ export function applyMutation(
       const messageId = mutation.messageId.trim()
       const message = Object.values(state.messages).flat().find(candidate =>
         candidate.id === messageId && (candidate.authorType === 'agent' || (candidate.authorType === 'system' && /\brun failed:/iu.test(candidate.text)) || candidate.replyStatus === 'error' || candidate.replyStatus === 'failed' || candidate.replyStatus === 'timeout' || candidate.replyStatus === 'silent' || candidate.replyStatus === 'needs_input'))
-      if (message === undefined) throw new Error('inbox item not found')
+      const permission = state.permissions.some(candidate => candidate.status === 'pending' && candidate.sourceMessageId === messageId)
+      if (message === undefined && !permission) throw new Error('inbox item not found')
       if (state.inboxReadMessageIds.includes(messageId)) return state
       return {
         ...state,
@@ -206,7 +208,8 @@ export function applyMutation(
       const messageId = mutation.messageId.trim()
       const message = Object.values(state.messages).flat().find(candidate =>
         candidate.id === messageId && (candidate.authorType === 'agent' || (candidate.authorType === 'system' && /\brun failed:/iu.test(candidate.text)) || candidate.replyStatus === 'error' || candidate.replyStatus === 'failed' || candidate.replyStatus === 'timeout' || candidate.replyStatus === 'silent' || candidate.replyStatus === 'needs_input'))
-      if (message === undefined) throw new Error('inbox item not found')
+      const permission = state.permissions.some(candidate => candidate.status === 'pending' && candidate.sourceMessageId === messageId)
+      if (message === undefined && !permission) throw new Error('inbox item not found')
       const inboxSavedItemIds = mutation.saved
         ? [...new Set([...state.inboxSavedItemIds, messageId])]
         : state.inboxSavedItemIds.filter(id => id !== messageId)

@@ -1044,6 +1044,13 @@ export const commonspaceStyles = String.raw`
 .csp-message-attachments { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 7px; }
 .csp-message-attachments figure { position: relative; margin: 0; }
 .csp-message-attachments figure button { position: absolute; right: 5px; bottom: 5px; padding: 3px 6px; border: 1px solid rgba(255, 255, 255, 0.55); border-radius: 5px; background: rgba(20, 22, 28, 0.72); color: #fff; font: inherit; font-size: 9px; cursor: pointer; }
+.csp-message-files { display: grid; gap: 5px; margin-top: 7px; }
+.csp-message-files > span { display: flex; align-items: center; gap: 6px; max-width: 440px; padding: 6px 8px; border: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.12)); border-radius: 6px; background: var(--dsw-alias-bg-subtle, rgba(0, 0, 0, 0.018)); }
+.csp-message-files a { display: grid; min-width: 0; flex: 1; color: var(--dsw-alias-label-primary, #202124); text-decoration: none; }
+.csp-message-files a strong { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.csp-message-files a small { color: var(--dsw-alias-label-tertiary, #8a8f98); font-size: 9px; }
+.csp-message-files a:hover strong { color: var(--dsw-alias-interactive-brand, #4d6bfe); text-decoration: underline; }
+.csp-message-files button { padding: 2px 5px; border: 0; background: transparent; color: var(--dsw-alias-label-tertiary, #8a8f98); font: inherit; font-size: 9px; cursor: pointer; }
 .csp-message-attachments img {
   display: block;
   width: auto;
@@ -1308,6 +1315,16 @@ button.csp-live-activity-trigger:focus-visible { outline: 2px solid var(--dsw-al
 }
 .csp-live-activity-stop:hover { background: color-mix(in srgb, var(--dsw-alias-negative, #c83f49) 8%, transparent); }
 .csp-thread-messages .csp-live-activity { margin-right: 0; margin-left: 0; }
+.csp-permission-request { margin: 8px 18px; padding: 10px; border: 1px solid var(--dsw-alias-warning, #d5a000); border-left-width: 3px; border-radius: 7px; background: color-mix(in srgb, var(--dsw-alias-warning, #d5a000) 7%, var(--dsw-alias-bg-base, #fff)); }
+.csp-thread-messages .csp-permission-request { margin-right: 0; margin-left: 0; }
+.csp-permission-request header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.csp-permission-request header strong { color: var(--dsw-alias-label-primary, #202124); font-size: 11px; }
+.csp-permission-request header span { color: var(--dsw-alias-label-tertiary, #8a8f98); font-size: 8px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; }
+.csp-permission-request p { margin: 6px 0 8px; color: var(--dsw-alias-label-primary, #202124); font-size: 11px; }
+.csp-permission-request > div { display: flex; flex-wrap: wrap; gap: 6px; }
+.csp-permission-request button { min-height: 28px; padding: 3px 8px; border: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.14)); border-radius: 5px; background: var(--dsw-alias-bg-base, #fff); color: var(--dsw-alias-label-primary, #202124); font: inherit; font-size: 10px; cursor: pointer; }
+.csp-permission-request button[data-kind^='allow'] { border-color: var(--dsw-alias-interactive-brand, #4d6bfe); color: var(--dsw-alias-interactive-brand, #4d6bfe); }
+.csp-permission-request button[data-kind^='reject'] { color: var(--dsw-alias-negative, #b52f3a); }
 
 .csp-message-composer {
   display: flex;
@@ -1318,6 +1335,14 @@ button.csp-live-activity-trigger:focus-visible { outline: 2px solid var(--dsw-al
   border: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.14));
   border-radius: 12px;
 }
+.csp-file-picker { position: relative; flex: none; padding: 4px 6px; border: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.14)); border-radius: 5px; color: var(--dsw-alias-label-secondary, #666b74); font-size: 9px; font-weight: 700; cursor: pointer; }
+.csp-file-picker:hover { border-color: var(--dsw-alias-interactive-brand, #4d6bfe); color: var(--dsw-alias-interactive-brand, #4d6bfe); }
+.csp-file-picker input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
+.csp-composer-files { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.csp-composer-files > span { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0 6px; max-width: 240px; padding: 5px 7px; border: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.12)); border-radius: 6px; background: var(--dsw-alias-bg-subtle, rgba(0, 0, 0, 0.018)); }
+.csp-composer-files strong { overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.csp-composer-files small { grid-column: 1; color: var(--dsw-alias-label-tertiary, #8a8f98); font-size: 8px; }
+.csp-composer-files button { grid-column: 2; grid-row: 1 / span 2; padding: 0 2px; border: 0; background: transparent; color: var(--dsw-alias-label-tertiary, #8a8f98); cursor: pointer; }
 
 .csp-message-composer textarea {
   min-height: 38px;

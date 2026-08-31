@@ -1,5 +1,5 @@
 import { Fragment, lazy, Suspense, useEffect, useId, useRef, useState, useSyncExternalStore, type CSSProperties, type Dispatch, type FormEvent, type SetStateAction } from 'react'
-import { deriveCommonspaceInboxItems, type AgentAdapterKind, type CommonspaceAgentProfile, type CommonspaceBootstrap, type CommonspaceLiveAgentActivity, type CommonspaceTraceEntry, type ConversationRef, type CommonspaceMessage, type CommonspaceThread, type RerouteAssignmentRequest, type SendImageAttachment } from '@commonspace/shared'
+import { deriveCommonspaceInboxItems, type AgentAdapterKind, type CommonspaceAgentProfile, type CommonspaceBootstrap, type CommonspaceLiveAgentActivity, type CommonspacePermissionRequest, type CommonspaceTraceEntry, type ConversationRef, type CommonspaceMessage, type CommonspaceThread, type RerouteAssignmentRequest, type SendFileAttachment, type SendImageAttachment } from '@commonspace/shared'
 import type { CommonspaceClientStore } from './commonspace-store.ts'
 import { AgentTrace, AgentTraceTimeline } from './AgentTrace.tsx'
 import { RunAttribution } from './RunAttribution.tsx'
@@ -31,6 +31,8 @@ interface CommandFeedback {
 
 const MAX_PASTED_IMAGES = 4
 const MAX_PASTED_IMAGE_BYTES = 8 * 1024 * 1024
+const MAX_ATTACHED_FILES = 8
+const MAX_ATTACHED_FILE_BYTES = 8 * 1024 * 1024
 const PASTED_IMAGE_TYPES = new Set<SendImageAttachment['mimeType']>(['image/png', 'image/jpeg', 'image/gif', 'image/webp'])
 
 function readPastedImage(file: File): Promise<SendImageAttachment> {
@@ -57,6 +59,29 @@ function readPastedImage(file: File): Promise<SendImageAttachment> {
   })
 }
 
+function readAttachedFile(file: File): Promise<SendFileAttachment> {
+  if (file.size === 0 || file.size > MAX_ATTACHED_FILE_BYTES) return Promise.reject(new Error('Attached files must be 8 MB or smaller.'))
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => { reject(new Error('Could not read the attached file.')) }
+    reader.onload = () => {
+      const result = reader.result
+      const marker = ';base64,'
+      const markerIndex = typeof result === 'string' ? result.indexOf(marker) : -1
+      if (typeof result !== 'string' || markerIndex < 0) {
+        reject(new Error('Could not read the attached file.'))
+        return
+      }
+      resolve({
+        name: file.name.trim() || 'attachment',
+        mimeType: file.type.trim() || 'application/octet-stream',
+        data: result.slice(markerIndex + marker.length),
+      })
+    }
+    reader.readAsDataURL(file)
+  })
+}
+
 function PendingImageStrip({
   images,
   onRemove,
@@ -76,6 +101,13 @@ function PendingImageStrip({
       ))}
     </div>
   )
+}
+
+function PendingFileStrip({ files, onRemove }: { files: readonly SendFileAttachment[]; onRemove: (index: number) => void }) {
+  if (files.length === 0) return null
+  return <div className="csp-composer-files" aria-label="Attached files">{files.map((file, index) => (
+    <span key={`${file.name}-${String(index)}`}><strong>{file.name}</strong><small>{file.mimeType}</small><button type="button" aria-label={`Remove ${file.name}`} onClick={() => { onRemove(index) }}>×</button></span>
+  ))}</div>
 }
 
 
@@ -105,6 +137,12 @@ function renderMessageText(message: CommonspaceMessage, bootstrap?: CommonspaceB
   return tagReferenceParts(message.text, bootstrap).map((part, index) => part.kind === 'text'
     ? <span key={`${message.id}-${String(index)}`}>{part.text}</span>
     : <mark key={`${message.id}-${String(index)}`} className={`csp-tag csp-tag--${part.kind}`}>{part.text}</mark>)
+}
+
+function fileSizeLabel(size: number): string {
+  if (size < 1_024) return `${String(size)} B`
+  if (size < 1_024 * 1_024) return `${(size / 1_024).toFixed(1)} KB`
+  return `${(size / (1_024 * 1_024)).toFixed(1)} MB`
 }
 
 function RoutingAssignments({
@@ -361,6 +399,16 @@ function MessageRow({
             ))}
           </div>
         )}
+        {message.files !== undefined && message.files.length > 0 && (
+          <div className="csp-message-files" aria-label="Message files">
+            {message.files.map(file => (
+              <span key={file.id}>
+                <a href={`/api/files/${encodeURIComponent(file.id)}`} download={file.name} aria-label={`Download ${file.name}`}><strong>{file.name}</strong><small>{file.mimeType} · {fileSizeLabel(file.size)}</small></a>
+                {onPin !== undefined && <button type="button" aria-label={`Pin attachment ${file.name}`} onClick={() => { void onPin(message, file.id) }}>Pin</button>}
+              </span>
+            ))}
+          </div>
+        )}
 
         {message.authorType === 'agent' && message.trace !== undefined && <AgentTrace authorName={message.authorName} trace={message.trace} />}
         {message.authorType === 'agent' && message.projectId !== undefined && message.runAttribution !== undefined && <RunAttribution attribution={message.runAttribution} authorName={message.authorName} messageId={message.id} projectId={message.projectId} />}
@@ -595,6 +643,29 @@ function ThreadReplyAgents({
   )
 }
 
+function PermissionRequests({
+  permissions,
+  agents,
+  onRespond,
+}: {
+  permissions: readonly CommonspacePermissionRequest[]
+  agents: readonly CommonspaceAgentProfile[]
+  onRespond: (permissionId: string, optionId: string) => Promise<void>
+}) {
+  return <>{permissions.map((permission) => {
+    const agentName = agents.find(agent => agent.id === permission.agentId)?.displayName ?? permission.agentId
+    return (
+      <section key={permission.id} className="csp-permission-request" role="region" aria-label={`Permission request from ${agentName}`}>
+        <header><strong>{agentName} needs permission</strong><span>{permission.kind ?? 'native request'}</span></header>
+        <p>{permission.title}</p>
+        <div>{permission.options.map(option => (
+          <button key={option.optionId} type="button" data-kind={option.kind} onClick={() => { void onRespond(permission.id, option.optionId) }}>{option.name}</button>
+        ))}</div>
+      </section>
+    )
+  })}</>
+}
+
 export function CommonspaceConversation({ store, targetMessageId = null, onTargetMessageHandled }: CommonspaceConversationProps) {
   const suggestionListId = useId()
   const threadSuggestionListId = useId()
@@ -608,6 +679,8 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
   const [threadDraft, setThreadDraft] = useState('')
   const [pendingImages, setPendingImages] = useState<SendImageAttachment[]>([])
   const [pendingThreadImages, setPendingThreadImages] = useState<SendImageAttachment[]>([])
+  const [pendingFiles, setPendingFiles] = useState<SendFileAttachment[]>([])
+  const [pendingThreadFiles, setPendingThreadFiles] = useState<SendFileAttachment[]>([])
 
   const [threadReplyTarget, setThreadReplyTarget] = useState<{ agentId: string; agentName: string } | null>(null)
   const [threadContextOpen, setThreadContextOpen] = useState(false)
@@ -639,8 +712,8 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
   const activeChannel = isChannel && bootstrap !== null
     ? bootstrap.state.channels.find(channel => channel.id === snapshot.activeConversation?.id)
     : undefined
-  const slashSuggestions = snapshot.activeConversation === null || pendingImages.length > 0 ? [] : slashCommandSuggestions(draft, snapshot.activeConversation.kind)
-  const resolvedDraftCommand = snapshot.activeConversation === null || pendingImages.length > 0 ? null : resolveSlashCommand(draft, snapshot.activeConversation.kind)
+  const slashSuggestions = snapshot.activeConversation === null || pendingImages.length > 0 || pendingFiles.length > 0 ? [] : slashCommandSuggestions(draft, snapshot.activeConversation.kind)
+  const resolvedDraftCommand = snapshot.activeConversation === null || pendingImages.length > 0 || pendingFiles.length > 0 ? null : resolveSlashCommand(draft, snapshot.activeConversation.kind)
   const referenceSuggestions = bootstrap === null || draft.startsWith('/') ? [] : tagSuggestions(draft, bootstrap, activeChannel?.agentIds)
   const suggestionCount = slashSuggestions.length + referenceSuggestions.length
   const activeSuggestionId = suggestionCount > 0 ? `${suggestionListId}-option-${String(selectedSuggestion)}` : undefined
@@ -649,8 +722,8 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
     : []
   const activeThread = channelThreads.find(thread => thread.id === snapshot.activeThreadId)
 
-  const threadSlashSuggestions = activeThread === undefined || pendingThreadImages.length > 0 ? [] : slashCommandSuggestions(threadDraft, 'channel')
-  const resolvedThreadCommand = activeThread === undefined || pendingThreadImages.length > 0 ? null : resolveSlashCommand(threadDraft, 'channel')
+  const threadSlashSuggestions = activeThread === undefined || pendingThreadImages.length > 0 || pendingThreadFiles.length > 0 ? [] : slashCommandSuggestions(threadDraft, 'channel')
+  const resolvedThreadCommand = activeThread === undefined || pendingThreadImages.length > 0 || pendingThreadFiles.length > 0 ? null : resolveSlashCommand(threadDraft, 'channel')
   const threadReferenceSuggestions = activeThread === undefined || bootstrap === null || threadDraft.startsWith('/') ? [] : tagSuggestions(threadDraft, bootstrap, activeChannel?.agentIds)
   const threadSuggestionCount = threadSlashSuggestions.length + threadReferenceSuggestions.length
   const activeThreadSuggestionId = threadSuggestionCount > 0 ? `${threadSuggestionListId}-option-${String(selectedThreadSuggestion)}` : undefined
@@ -667,6 +740,9 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
   const directMessageFollowups = snapshot.activeConversation?.kind === 'dm'
     ? (bootstrap?.queuedFollowups ?? []).filter(item => item.conversation.kind === 'dm' && item.conversation.id === snapshot.activeConversation?.id)
     : []
+  const directMessagePermissions = snapshot.activeConversation?.kind === 'dm'
+    ? (bootstrap?.state.permissions ?? []).filter(permission => permission.status === 'pending' && permission.conversation.kind === 'dm' && permission.conversation.id === snapshot.activeConversation?.id)
+    : []
   const directMessageAgents = snapshot.activeConversation?.kind === 'dm' && bootstrap !== null
     ? bootstrap.agents.filter(agent => agent.id === snapshot.activeConversation?.id)
     : []
@@ -678,13 +754,16 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
   const activeThreadFollowups = activeThread === undefined
     ? []
     : (bootstrap?.queuedFollowups ?? []).filter(item => item.threadId === activeThread.id)
+  const activeThreadPermissions = activeThread === undefined
+    ? []
+    : (bootstrap?.state.permissions ?? []).filter(permission => permission.status === 'pending' && permission.threadId === activeThread.id)
   const activeThreadPins = activeThread === undefined || bootstrap === null
     ? []
     : (bootstrap.state.pins ?? []).filter(pin => pin.removedAt === null && (
         (pin.scope.kind === 'thread' && pin.scope.id === activeThread.id) ||
         (pin.scope.kind === 'channel' && pin.scope.id === activeThread.channelId)))
-  const rootIsCommand = pendingImages.length === 0 && draft.startsWith('/')
-  const threadIsCommand = pendingThreadImages.length === 0 && threadDraft.startsWith('/')
+  const rootIsCommand = pendingImages.length === 0 && pendingFiles.length === 0 && draft.startsWith('/')
+  const threadIsCommand = pendingThreadImages.length === 0 && pendingThreadFiles.length === 0 && threadDraft.startsWith('/')
 
   const scrollThreadToBottom = () => {
     const messagesViewport = threadMessages.current
@@ -707,10 +786,12 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
     composer.current?.focus()
     setCommandFeedback(null)
     setPendingImages([])
+    setPendingFiles([])
   }, [snapshot.activeConversation?.id, snapshot.activeConversation?.kind])
   useEffect(() => {
     setThreadReplyTarget(null)
     setPendingThreadImages([])
+    setPendingThreadFiles([])
     setThreadContextOpen(false)
     setThreadPinNote('')
   }, [snapshot.activeConversation?.id, snapshot.activeConversation?.kind, snapshot.activeThreadId])
@@ -760,6 +841,16 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
       setCommandFeedback(null)
     } catch (error) {
       setCommandFeedback({ tone: 'error', title: 'Could not attach image', body: error instanceof Error ? error.message : String(error) })
+    }
+  }
+
+  const attachFiles = async (files: readonly File[], setFiles: Dispatch<SetStateAction<SendFileAttachment[]>>) => {
+    try {
+      const attached = await Promise.all(files.slice(0, MAX_ATTACHED_FILES).map(readAttachedFile))
+      setFiles(current => [...current, ...attached].slice(0, MAX_ATTACHED_FILES))
+      setCommandFeedback(null)
+    } catch (error) {
+      setCommandFeedback({ tone: 'error', title: 'Could not attach file', body: error instanceof Error ? error.message : String(error) })
     }
   }
 
@@ -918,30 +1009,35 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
   const sendRoot = async (event: FormEvent) => {
     event.preventDefault()
     const text = draft.trim()
-    if (text === '' && pendingImages.length === 0) return
+    if (text === '' && pendingImages.length === 0 && pendingFiles.length === 0) return
     const attachments = pendingImages
+    const files = pendingFiles
     setDraft('')
     if (rootIsCommand) {
       await executeSlashCommand(text)
       return
     }
     setPendingImages([])
+    setPendingFiles([])
     setCommandFeedback(null)
     try {
-      if (directMessageActivities.length > 0 && !isChannel) await store.send(text, undefined, attachments, activeDelivery)
+      if (files.length > 0) await store.send(text, undefined, attachments, directMessageActivities.length > 0 && !isChannel ? activeDelivery : undefined, undefined, files)
+      else if (directMessageActivities.length > 0 && !isChannel) await store.send(text, undefined, attachments, activeDelivery)
       else if (attachments.length > 0) await store.send(text, undefined, attachments)
       else await store.send(text)
     } catch {
       setDraft(text)
       setPendingImages(attachments)
+      setPendingFiles(files)
     }
   }
 
   const sendThreadReply = async (event: FormEvent) => {
     event.preventDefault()
     const text = threadDraft.trim()
-    if ((text === '' && pendingThreadImages.length === 0) || activeThread === undefined) return
+    if ((text === '' && pendingThreadImages.length === 0 && pendingThreadFiles.length === 0) || activeThread === undefined) return
     const attachments = pendingThreadImages
+    const files = pendingThreadFiles
     setThreadDraft('')
     if (threadIsCommand) {
       setThreadReplyTarget(null)
@@ -949,19 +1045,23 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
       return
     }
     setPendingThreadImages([])
+    setPendingThreadFiles([])
     setCommandFeedback(null)
     scrollThreadToBottom()
     try {
       if (threadReplyTarget === null) {
-        if (activeThreadActivities.length > 0) await store.send(text, activeThread.id, attachments, threadDelivery, threadProjectIds)
+        if (files.length > 0) await store.send(text, activeThread.id, attachments, activeThreadActivities.length > 0 ? threadDelivery : undefined, threadProjectIds, files)
+        else if (activeThreadActivities.length > 0) await store.send(text, activeThread.id, attachments, threadDelivery, threadProjectIds)
         else await store.send(text, activeThread.id, attachments, undefined, threadProjectIds)
       } else {
-        await store.sendDirectReply(text, activeThread.id, threadReplyTarget.agentId, attachments, threadProjectIds)
+        if (files.length > 0) await store.sendDirectReply(text, activeThread.id, threadReplyTarget.agentId, attachments, threadProjectIds, files)
+        else await store.sendDirectReply(text, activeThread.id, threadReplyTarget.agentId, attachments, threadProjectIds)
       }
       setThreadReplyTarget(null)
     } catch {
       setThreadDraft(text)
       setPendingThreadImages(attachments)
+      setPendingThreadFiles(files)
     }
   }
 
@@ -1117,6 +1217,7 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
                 phase={directMessagePhase}
                 onStop={(activity) => { void stopActivity(activity) }}
               />}
+              <PermissionRequests permissions={directMessagePermissions} agents={bootstrap?.agents ?? []} onRespond={(permissionId, optionId) => store.respondPermission(permissionId, optionId)} />
               <div ref={bottom} />
             </div>
 
@@ -1192,6 +1293,7 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
                   images={pendingImages}
                   onRemove={index => { setPendingImages(current => current.filter((_, candidate) => candidate !== index)) }}
                 />
+                <PendingFileStrip files={pendingFiles} onRemove={index => { setPendingFiles(current => current.filter((_, candidate) => candidate !== index)) }} />
                 <p className="csp-tag-hint" aria-label="Tagging help"><b>@</b> agent <b>@@</b> project context <b>#</b> channel</p>
                 {suggestionCount > 0 && <SuggestionMenu
                   id={suggestionListId}
@@ -1210,12 +1312,17 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
                       <button type="button" aria-label="Stop and send" aria-pressed={activeDelivery === 'stop-and-send'} onClick={() => { setActiveDelivery('stop-and-send') }}>Stop + send</button>
                     </div>
                   : <div className="csp-composer-tools" aria-hidden="true"><span>@</span><span>⌁</span><span>☺</span><span>Aa</span></div>}
-                <span className="csp-composer-hint">{isChannel ? '@ agent · @@ project · # channel · paste image · / commands' : 'Enter to send · paste image · / commands'}</span>
+                <label className="csp-file-picker">Attach<input type="file" multiple aria-label="Attach files" onChange={event => {
+                  const files = Array.from(event.target.files ?? [])
+                  if (files.length > 0) void attachFiles(files, setPendingFiles)
+                  event.target.value = ''
+                }} /></label>
+                <span className="csp-composer-hint">{isChannel ? '@ agent · @@ project · # channel · files · / commands' : 'Enter to send · files · / commands'}</span>
                 <button
                   type="submit"
                   aria-label={rootIsCommand ? 'Run command' : isChannel ? 'Post message' : 'Send message'}
                   title={rootIsCommand ? 'Run command' : isChannel ? 'Post message' : 'Send message'}
-                  disabled={snapshot.sending || (draft.trim() === '' && pendingImages.length === 0)}
+                  disabled={snapshot.sending || (draft.trim() === '' && pendingImages.length === 0 && pendingFiles.length === 0)}
                 ><span aria-hidden="true">↑</span><span className="csp-send-label">{rootIsCommand ? 'Run' : isChannel ? 'Post' : 'Send'}</span></button>
               </div>
             </form>
@@ -1330,6 +1437,7 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
                     onStop={(activity) => { void stopActivity(activity) }}
                   />
                 )}
+                <PermissionRequests permissions={activeThreadPermissions} agents={bootstrap?.agents ?? []} onRespond={(permissionId, optionId) => store.respondPermission(permissionId, optionId)} />
               </div>
               {activeThreadFollowups.length > 0 && (
                 <section className="csp-followup-queue csp-followup-queue--thread" role="region" aria-label="Queued thread follow-ups">
@@ -1399,6 +1507,7 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
                     images={pendingThreadImages}
                     onRemove={index => { setPendingThreadImages(current => current.filter((_, candidate) => candidate !== index)) }}
                   />
+                  <PendingFileStrip files={pendingThreadFiles} onRemove={index => { setPendingThreadFiles(current => current.filter((_, candidate) => candidate !== index)) }} />
                   <p className="csp-tag-hint" aria-label="Tagging help"><b>@</b> agent <b>@@</b> project context <b>#</b> channel</p>
                   {threadSuggestionCount > 0 && <SuggestionMenu
                     id={threadSuggestionListId}
@@ -1416,7 +1525,12 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
                     <button type="button" aria-label="Stop and send thread follow-up" aria-pressed={threadDelivery === 'stop-and-send'} onClick={() => { setThreadDelivery('stop-and-send') }}>Stop + send</button>
                   </div>
                 )}
-                <button type="submit" disabled={snapshot.sending || (threadDraft.trim() === '' && pendingThreadImages.length === 0)}>{threadIsCommand ? 'Run' : 'Reply'}</button>
+                <label className="csp-file-picker">Attach<input type="file" multiple aria-label="Attach files to Thread" onChange={event => {
+                  const files = Array.from(event.target.files ?? [])
+                  if (files.length > 0) void attachFiles(files, setPendingThreadFiles)
+                  event.target.value = ''
+                }} /></label>
+                <button type="submit" disabled={snapshot.sending || (threadDraft.trim() === '' && pendingThreadImages.length === 0 && pendingThreadFiles.length === 0)}>{threadIsCommand ? 'Run' : 'Reply'}</button>
               </form>
             </aside>
           )}

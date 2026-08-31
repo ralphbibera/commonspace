@@ -519,4 +519,73 @@ describe('Commonspace client revision ordering', () => {
       }),
     }))
   })
+
+  it('includes general file payloads in the send request', async () => {
+    const initial = bootstrap(1, 'Initial')
+    const accepted = bootstrap(2, 'Initial')
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(response(initial))
+      .mockResolvedValueOnce(response({
+        accepted: {
+          id: 'message-file',
+          conversation: { kind: 'dm', id: 'backend' },
+          authorType: 'user',
+          authorId: 'user',
+          authorName: 'Ralph',
+          text: 'Inspect file',
+          createdAt: '2026-08-31T00:00:00.000Z',
+        },
+        state: accepted.state,
+      }))
+    vi.stubGlobal('fetch', fetch)
+    const store = new CommonspaceClientStore()
+    await store.refresh()
+    store.selectConversation({ kind: 'dm', id: 'backend' })
+    const send = store.send as unknown as (
+      text: string,
+      threadId: undefined,
+      images: readonly never[],
+      delivery: undefined,
+      projectIds: undefined,
+      files: readonly { name: string; mimeType: string; data: string }[],
+    ) => Promise<void>
+
+    await send.call(store, 'Inspect file', undefined, [], undefined, undefined, [{
+      name: 'notes.txt',
+      mimeType: 'text/plain',
+      data: 'bm90ZXM=',
+    }])
+
+    expect(fetch).toHaveBeenNthCalledWith(2, '/api/send', expect.objectContaining({
+      body: JSON.stringify({
+        conversation: { kind: 'dm', id: 'backend' },
+        text: 'Inspect file',
+        projectId: 'project-1',
+        files: [{ name: 'notes.txt', mimeType: 'text/plain', data: 'bm90ZXM=' }],
+      }),
+    }))
+  })
+
+  it('responds with an exact permission option and refreshes state', async () => {
+    const initial = bootstrap(1, 'Initial')
+    const updated = bootstrap(2, 'Initial')
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(response(initial))
+      .mockResolvedValueOnce(response({ id: 'permission-1', status: 'resolved', selectedOptionId: 'allow' }))
+      .mockResolvedValueOnce(response(updated))
+    vi.stubGlobal('fetch', fetch)
+    const store = new CommonspaceClientStore()
+    await store.refresh()
+    const respondPermission = (store as unknown as {
+      respondPermission(permissionId: string, optionId: string): Promise<void>
+    }).respondPermission
+
+    await respondPermission.call(store, 'permission-1', 'allow')
+
+    expect(fetch).toHaveBeenNthCalledWith(2, '/api/permissions/permission-1/respond', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ optionId: 'allow' }),
+    }))
+    expect(store.getSnapshot().bootstrap?.state.revision).toBe(2)
+  })
 })

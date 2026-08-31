@@ -15,6 +15,7 @@ export type CommonspaceInboxItemKind =
   | 'completion'
   | 'timeout'
   | 'input-request'
+  | 'permission-request'
 
 export interface CommonspaceInboxItem {
   id: string
@@ -46,7 +47,7 @@ export interface CommonspaceSessionItem {
   projectName: string | null
   threadId?: string
   status: CommonspaceSessionStatus
-  attentionKind?: 'failure' | 'timeout' | 'input-request'
+  attentionKind?: 'failure' | 'timeout' | 'input-request' | 'permission-request'
   summary: string
   updatedAt: string
   followed: boolean
@@ -156,6 +157,30 @@ export function deriveCommonspaceInboxItems(state: CommonspaceState): Commonspac
     }
   }
 
+  for (const permission of state.permissions ?? []) {
+    if (permission.status !== 'pending') continue
+    const itemSessionId = `${permission.sourceMessageId}:${permission.agentId}`
+    const muted = mutedSessionIds.has(itemSessionId)
+    const created = timestampValue(permission.createdAt)
+    items.push({
+      id: `permission:${permission.id}`,
+      messageId: permission.sourceMessageId,
+      sessionId: itemSessionId,
+      kind: 'permission-request',
+      actorId: permission.agentId,
+      actorName: agents.get(permission.agentId)?.displayName ?? permission.agentId,
+      conversation: permission.conversation,
+      conversationName: conversationName(permission.conversation, channelNames, agents),
+      ...(permission.threadId === undefined ? {} : { threadId: permission.threadId }),
+      createdAt: permission.createdAt,
+      text: conciseText(permission.title, 'Permission requested.'),
+      unread: !muted && !readMessageIds.has(permission.sourceMessageId) &&
+        (readAt === null || (created !== null && created > readAt)),
+      saved: savedMessageIds.has(permission.sourceMessageId),
+      muted,
+    })
+  }
+
   return items.sort((left, right) => {
     const leftTime = timestampValue(left.createdAt)
     const rightTime = timestampValue(right.createdAt)
@@ -193,9 +218,10 @@ export function deriveCommonspaceSessions(
     if (message === undefined) continue
     const sourceId = sourceMessageId(message)
     const source = messagesById.get(sourceId) ?? message
-    const status: CommonspaceSessionStatus = item.kind === 'failure' || item.kind === 'timeout' || item.kind === 'input-request'
+    const status: CommonspaceSessionStatus = item.kind === 'failure' || item.kind === 'timeout' || item.kind === 'input-request' || item.kind === 'permission-request'
       ? 'needs-attention'
       : 'completed'
+    if (sessions.get(item.sessionId)?.attentionKind === 'permission-request' && item.kind !== 'permission-request') continue
     sessions.set(item.sessionId, {
       id: item.sessionId,
       sourceMessageId: sourceId,
@@ -207,7 +233,7 @@ export function deriveCommonspaceSessions(
       projectName: projectNameFor(source, item.threadId),
       ...(item.threadId === undefined ? {} : { threadId: item.threadId }),
       status,
-      ...(status === 'needs-attention' ? { attentionKind: item.kind as 'failure' | 'timeout' | 'input-request' } : {}),
+      ...(status === 'needs-attention' ? { attentionKind: item.kind as 'failure' | 'timeout' | 'input-request' | 'permission-request' } : {}),
       summary: item.text,
       updatedAt: item.createdAt,
       followed: followed.has(item.sessionId),
@@ -219,6 +245,7 @@ export function deriveCommonspaceSessions(
     const id = `${activity.sourceMessageId}:${activity.agentId}`
     const source = messagesById.get(activity.sourceMessageId)
     const current = sessions.get(id)
+    if (current?.attentionKind === 'permission-request') continue
     const latestEntry = activity.entries.at(-1)
     sessions.set(id, {
       id,

@@ -179,7 +179,7 @@ describe('Commonspace host authority', () => {
     await service.whenIdle()
 
     expect(runAgent).toHaveBeenCalledOnce()
-    expect(runAgent.mock.calls[0]?.[0]).toMatchObject({ cwd: defaultCwd, additionalCwds: [] })
+    expect(runAgent.mock.calls[0]?.[0]).toMatchObject({ cwd: await realpath(defaultCwd), additionalCwds: [] })
   })
 
   it('uses an explicit project tag as the message project context', async () => {
