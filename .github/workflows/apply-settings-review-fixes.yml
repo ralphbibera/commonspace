@@ -97,6 +97,72 @@ jobs:
           NODE
           node --check scripts/apply-settings-review-fixes.mjs
           node scripts/apply-settings-review-fixes.mjs
+      - name: Preserve legacy store compatibility
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = 'ui/src/CommonspaceSidebar.tsx';
+          let source = fs.readFileSync(path, 'utf8');
+
+          const saveStart = source.indexOf('\tconst saveDefaults = async (event: FormEvent) => {');
+          const saveEnd = source.indexOf('\n\t};', saveStart);
+          if (saveStart < 0 || saveEnd < 0) throw new Error('Missing saveDefaults function');
+          const saveReplacement = [
+            '\tconst saveDefaults = async (event: FormEvent) => {',
+            '\t\tevent.preventDefault();',
+            '\t\tconst request = {',
+            '\t\t\trouting: routingUpdateRequest(),',
+            '\t\t\tdefaults: {',
+            '\t\t\t\tmodel: defaultModel || null,',
+            '\t\t\t\treasoning: defaultReasoning,',
+            '\t\t\t\tmaxAgentsPerTurn: defaultMaxAgents,',
+            '\t\t\t\tmemoryThreads: defaultMemoryThreads,',
+            '\t\t\t},',
+            '\t\t};',
+            '\t\tif (typeof store.updateWorkspaceSettings === "function") {',
+            '\t\t\tawait store.updateWorkspaceSettings(request);',
+            '\t\t} else {',
+            '\t\t\tawait store.updateRoutingConfiguration(request.routing);',
+            '\t\t\tawait store.mutate({ action: "set-defaults", ...request.defaults });',
+            '\t\t}',
+            '\t\tsetSettingsOpen(false);',
+            '\t};',
+          ].join('\n');
+          source = source.slice(0, saveStart) + saveReplacement + source.slice(saveEnd + 4);
+
+          const checkStart = source.indexOf('\tconst checkInferenceConfiguration = async () => {');
+          const checkEnd = source.indexOf('\n\t};', checkStart);
+          if (checkStart < 0 || checkEnd < 0) throw new Error('Missing inference check function');
+          const checkReplacement = [
+            '\tconst checkInferenceConfiguration = async () => {',
+            '\t\tif (inferenceChecking) return;',
+            '\t\tsetInferenceChecking(true);',
+            '\t\tsetInferenceCheckOk(null);',
+            '\t\tsetInferenceCheckStatus("Checking unsaved configuration…");',
+            '\t\ttry {',
+            '\t\t\tconst result =',
+            '\t\t\t\ttypeof store.validateRoutingConfiguration === "function"',
+            '\t\t\t\t\t? await store.validateRoutingConfiguration(routingUpdateRequest())',
+            '\t\t\t\t\t: (await store.diagnostics()).inference;',
+            '\t\t\tsetInferenceCheckOk(result.configured);',
+            '\t\t\tsetInferenceCheckStatus(',
+            '\t\t\t\tresult.configured',
+            '\t\t\t\t\t? `Configuration verified · ${result.provider}`',
+            '\t\t\t\t\t: "Configuration needs attention",',
+            '\t\t\t);',
+            '\t\t} catch {',
+            '\t\t\tsetInferenceCheckOk(false);',
+            '\t\t\tsetInferenceCheckStatus("Configuration check failed");',
+            '\t\t} finally {',
+            '\t\t\tsetInferenceChecking(false);',
+            '\t\t}',
+            '\t};',
+          ].join('\n');
+          source = source.slice(0, checkStart) + checkReplacement + source.slice(checkEnd + 4);
+          fs.writeFileSync(path, source);
+          NODE
+      - name: Update Storybook store fixture
+        run: |
           node <<'NODE'
           const fs = require('node:fs');
           const path = 'ui/src/storybook-fixtures.ts';
