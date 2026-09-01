@@ -469,9 +469,14 @@ describe("Commonspace interface", () => {
 		);
 
 		await waitFor(() => {
+			expect(mutate).toHaveBeenCalledTimes(1);
 			expect(mutate).toHaveBeenCalledWith({
-				action: "set-channel-memory",
+				action: "set-channel-configuration",
 				channelId: "general",
+				agentIds: [],
+				instructions: "Keep work scoped.",
+				model: null,
+				reasoning: null,
 				summary: "Updated Channel summary.",
 				decisions: ["Decision one.", "Decision two."],
 				openQuestions: ["Existing question?"],

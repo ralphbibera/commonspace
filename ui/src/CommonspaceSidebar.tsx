@@ -562,24 +562,12 @@ export function CommonspaceSidebar({
 	const saveChannelAgents = async (event: FormEvent, channelId: string) => {
 		event.preventDefault();
 		await store.mutate({
-			action: "set-channel-agents",
+			action: "set-channel-configuration",
 			channelId,
 			agentIds: channelAgentIds,
-		});
-		await store.mutate({
-			action: "set-channel-context",
-			channelId,
 			instructions: channelInstructions,
-		});
-		await store.mutate({
-			action: "set-channel-settings",
-			channelId,
 			model: channelModel || null,
 			reasoning: channelReasoning || null,
-		});
-		await store.mutate({
-			action: "set-channel-memory",
-			channelId,
 			summary: channelSummary,
 			decisions: channelDecisions
 				.split("\n")

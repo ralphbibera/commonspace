@@ -45,10 +45,17 @@ describe("desktop conversation parity", () => {
 		);
 
 		await waitFor(() => {
+			expect(mutate).toHaveBeenCalledTimes(1);
 			expect(mutate).toHaveBeenCalledWith({
-				action: "set-channel-agents",
+				action: "set-channel-configuration",
 				channelId: "general",
 				agentIds: ["agentops", "backend"],
+				instructions: "",
+				model: null,
+				reasoning: null,
+				summary: "",
+				decisions: [],
+				openQuestions: [],
 			});
 		});
 	});

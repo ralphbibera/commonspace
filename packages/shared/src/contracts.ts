@@ -616,6 +616,17 @@ export type CommonspaceMutation =
 			reasoning?: CommonspaceReasoning | null;
 	  }
 	| {
+			action: "set-channel-configuration";
+			channelId: string;
+			agentIds: string[];
+			instructions: string;
+			model?: string | null;
+			reasoning?: CommonspaceReasoning | null;
+			summary: string;
+			decisions?: string[];
+			openQuestions?: string[];
+	  }
+	| {
 			action: "set-defaults";
 			model?: string | null;
 			reasoning?: CommonspaceReasoning;
