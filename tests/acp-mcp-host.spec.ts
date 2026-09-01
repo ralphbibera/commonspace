@@ -1,238 +1,349 @@
-import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { startCommonspaceServer, type RunningCommonspaceServer } from '../server/src/index.ts'
-import { addTestHarness, discoverTestHarnesses } from './test-harnesses.ts'
+import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+	type RunningCommonspaceServer,
+	startCommonspaceServer,
+} from "../server/src/index.ts";
+import { addTestHarness, discoverTestHarnesses } from "./test-harnesses.ts";
+import { mustExist } from "./test-helpers.ts";
 
-const roots: string[] = []
-const runningServers: RunningCommonspaceServer[] = []
-const fixturePath = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'fake-acp-agent.mjs')
+const roots: string[] = [];
+const runningServers: RunningCommonspaceServer[] = [];
+const fixturePath = join(
+	dirname(fileURLToPath(import.meta.url)),
+	"fixtures",
+	"fake-acp-agent.mjs",
+);
 
 afterEach(async () => {
-  await Promise.all(runningServers.splice(0).map(server => server.close()))
-  vi.unstubAllEnvs()
-  await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))
-})
+	await Promise.all(runningServers.splice(0).map((server) => server.close()));
+	vi.unstubAllEnvs();
+	await Promise.all(
+		roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
+	);
+});
 
-describe('Commonspace ACP session context', () => {
-  it('attaches a bearer-scoped MCP server instead of replaying room context in the prompt', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'commonspace-acp-mcp-host-'))
-    roots.push(root)
-    vi.stubEnv('FAKE_ACP_USE_MCP', '1')
-    const running = await startCommonspaceServer({
-      root,
-      port: 0,
-      codexAcpCommand: process.execPath,
-      codexAcpArgs: [fixturePath],
-      dependencies: {
-        discoverAgents: discoverTestHarnesses,
-        routeAgents: async input => ({ agentIds: [input.candidates[0]!.id], reason: 'Test inference selected the channel agent.' }),
-      },
-      logger: { info: () => undefined, warn: () => undefined },
-    })
-    runningServers.push(running)
-    const workspace = join(root, 'private-workspace')
-    await mkdir(workspace)
-    await addTestHarness(running.service, 'codex', 'Review Bot')
-    const project = (await running.service.mutate({ action: 'create-project', name: 'App', paths: [workspace] }))
-      .projects.find(project => project.name === 'App')!
-    const state = await running.service.mutate({
-      action: 'create-channel',
-      name: 'engineering',
-      projectId: project.id,
-      agentIds: ['codex'],
-    })
-    const channel = state.channels[0]!
-    await running.service.mutate({ action: 'set-channel-context', channelId: channel.id, instructions: 'Keep changes scoped.' })
+describe("Commonspace ACP session context", () => {
+	it("attaches a bearer-scoped MCP server instead of replaying room context in the prompt", async () => {
+		const root = await mkdtemp(join(tmpdir(), "commonspace-acp-mcp-host-"));
+		roots.push(root);
+		vi.stubEnv("FAKE_ACP_USE_MCP", "1");
+		const running = await startCommonspaceServer({
+			root,
+			port: 0,
+			codexAcpCommand: process.execPath,
+			codexAcpArgs: [fixturePath],
+			dependencies: {
+				discoverAgents: discoverTestHarnesses,
+				routeAgents: async (input) => ({
+					agentIds: [mustExist(input.candidates[0]).id],
+					reason: "Test inference selected the channel agent.",
+				}),
+			},
+			logger: { info: () => undefined, warn: () => undefined },
+		});
+		runningServers.push(running);
+		const workspace = join(root, "private-workspace");
+		await mkdir(workspace);
+		await addTestHarness(running.service, "codex", "Review Bot");
+		const project = mustExist(
+			(
+				await running.service.mutate({
+					action: "create-project",
+					name: "App",
+					paths: [workspace],
+				})
+			).projects.find((project) => project.name === "App"),
+		);
+		const state = await running.service.mutate({
+			action: "create-channel",
+			name: "engineering",
+			projectId: project.id,
+			agentIds: ["codex"],
+		});
+		const channel = mustExist(state.channels[0]);
+		await running.service.mutate({
+			action: "set-channel-context",
+			channelId: channel.id,
+			instructions: "Keep changes scoped.",
+		});
 
-    await running.service.send({ conversation: { kind: 'channel', id: channel.id }, projectId: project.id, text: 'Review the relay.' })
-    await running.service.whenIdle()
+		await running.service.send({
+			conversation: { kind: "channel", id: channel.id },
+			projectId: project.id,
+			text: "Review the relay.",
+		});
+		await running.service.whenIdle();
 
-    expect(running.service.snapshot().messages[`channel:${channel.id}`]?.at(-1)?.text).toBe([
-      'Context: engineering; instructions: Keep changes scoped.',
-      'Echo: Review the relay.',
-    ].join('\n'))
-    const privateState = running.service.snapshot()
-    const thread = privateState.threads[0]!
-    const context = await running.service.readContext({
-      agentId: 'codex',
-      conversation: { kind: 'channel', id: channel.id },
-      threadId: thread.id,
-      sessionName: `Commonspace Thread: ${thread.id}`,
-      projectId: project.id,
-    })
-    expect(context.project).toEqual({ id: project.id, name: 'App' })
-    expect(JSON.stringify(context)).not.toContain(workspace)
-    const nativeSessionId = privateState.agentSessions['codex']?.[`Commonspace Thread: ${thread.id}`]
-    expect(nativeSessionId).toEqual(expect.any(String))
-    expect(JSON.stringify(context)).not.toContain(nativeSessionId as string)
+		expect(
+			running.service.snapshot().messages[`channel:${channel.id}`]?.at(-1)
+				?.text,
+		).toBe(
+			[
+				"Context: engineering; instructions: Keep changes scoped.",
+				"Echo: Review the relay.",
+			].join("\n"),
+		);
+		const privateState = running.service.snapshot();
+		const thread = mustExist(privateState.threads[0]);
+		const context = await running.service.readContext({
+			agentId: "codex",
+			conversation: { kind: "channel", id: channel.id },
+			threadId: thread.id,
+			sessionName: `Commonspace Thread: ${thread.id}`,
+			projectId: project.id,
+		});
+		expect(context.project).toEqual({ id: project.id, name: "App" });
+		expect(JSON.stringify(context)).not.toContain(workspace);
+		const nativeSessionId =
+			privateState.agentSessions["codex"]?.[`Commonspace Thread: ${thread.id}`];
+		expect(nativeSessionId).toEqual(expect.any(String));
+		expect(JSON.stringify(context)).not.toContain(mustExist(nativeSessionId));
 
-    const search = await running.service.searchMessages({
-      agentId: 'codex',
-      conversation: { kind: 'channel', id: channel.id },
-      threadId: thread.id,
-      sessionName: `Commonspace Thread: ${thread.id}`,
-      projectId: project.id,
-    }, { query: '"review the relay" -echo', limit: 20 })
-    expect(search).toMatchObject({
-      results: [{
-        text: 'Review the relay.',
-        authorName: 'Ralph',
-        threadId: thread.id,
-      }],
-    })
+		const search = await running.service.searchMessages(
+			{
+				agentId: "codex",
+				conversation: { kind: "channel", id: channel.id },
+				threadId: thread.id,
+				sessionName: `Commonspace Thread: ${thread.id}`,
+				projectId: project.id,
+			},
+			{ query: '"review the relay" -echo', limit: 20 },
+		);
+		expect(search).toMatchObject({
+			results: [
+				{
+					text: "Review the relay.",
+					authorName: "Ralph",
+					threadId: thread.id,
+				},
+			],
+		});
 
-    const scope = {
-      agentId: 'codex',
-      conversation: { kind: 'channel' as const, id: channel.id },
-      threadId: thread.id,
-      sessionName: `Commonspace Thread: ${thread.id}`,
-      projectId: project.id,
-    }
-    await running.service.postProgress(scope, `${'prefix '.repeat(90)}unique needle${' suffix'.repeat(90)}`)
-    const distantMatch = await running.service.searchMessages(scope, { query: '"unique needle"', limit: 1 })
-    expect(distantMatch).toMatchObject({ results: [{ text: expect.stringContaining('unique needle') }] })
-  })
+		const scope = {
+			agentId: "codex",
+			conversation: { kind: "channel" as const, id: channel.id },
+			threadId: thread.id,
+			sessionName: `Commonspace Thread: ${thread.id}`,
+			projectId: project.id,
+		};
+		await running.service.postProgress(
+			scope,
+			`${"prefix ".repeat(90)}unique needle${" suffix".repeat(90)}`,
+		);
+		const distantMatch = await running.service.searchMessages(scope, {
+			query: '"unique needle"',
+			limit: 1,
+		});
+		expect(distantMatch).toMatchObject({
+			results: [{ text: expect.stringContaining("unique needle") }],
+		});
+	});
 
-  it('revokes the old MCP capability at a hard DM reset boundary', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'commonspace-acp-mcp-reset-'))
-    roots.push(root)
-    const logPath = join(root, 'frames.ndjson')
-    vi.stubEnv('FAKE_ACP_LOG', logPath)
-    const running = await startCommonspaceServer({
-      root,
-      port: 0,
-      codexAcpCommand: process.execPath,
-      codexAcpArgs: [fixturePath],
-      dependencies: { discoverAgents: discoverTestHarnesses },
-      logger: { info: () => undefined, warn: () => undefined },
-    })
-    runningServers.push(running)
-    await addTestHarness(running.service, 'codex', 'Review Bot')
-    await running.service.send({ conversation: { kind: 'dm', id: 'codex' }, text: 'Start generation.' })
-    await running.service.whenIdle()
-    const frames = (await readFile(logPath, 'utf8')).trim().split('\n').map(line => JSON.parse(line))
-    const authorization = frames.find(frame => frame.method === 'session/new')?.params.mcpServers[0].headers
-      .find((header: { name: string; value: string }) => header.name === 'Authorization').value as string
+	it("revokes the old MCP capability at a hard DM reset boundary", async () => {
+		const root = await mkdtemp(join(tmpdir(), "commonspace-acp-mcp-reset-"));
+		roots.push(root);
+		const logPath = join(root, "frames.ndjson");
+		vi.stubEnv("FAKE_ACP_LOG", logPath);
+		const running = await startCommonspaceServer({
+			root,
+			port: 0,
+			codexAcpCommand: process.execPath,
+			codexAcpArgs: [fixturePath],
+			dependencies: { discoverAgents: discoverTestHarnesses },
+			logger: { info: () => undefined, warn: () => undefined },
+		});
+		runningServers.push(running);
+		await addTestHarness(running.service, "codex", "Review Bot");
+		await running.service.send({
+			conversation: { kind: "dm", id: "codex" },
+			text: "Start generation.",
+		});
+		await running.service.whenIdle();
+		const frames = (await readFile(logPath, "utf8"))
+			.trim()
+			.split("\n")
+			.map((line) => JSON.parse(line));
+		const authorization = mustExist(
+			frames
+				.find((frame) => frame.method === "session/new")
+				?.params.mcpServers[0].headers.find(
+					(header: { name: string; value: string }) =>
+						header.name === "Authorization",
+				)?.value,
+		);
 
-    await running.service.mutate({ action: 'reset-dm', agentId: 'codex' })
-    const resetScope = running.service.snapshot().dmSessions['codex']!
-    const resetContext = await running.service.readContext({
-      agentId: 'codex',
-      conversation: { kind: 'dm', id: 'codex' },
-      sessionName: resetScope,
-    })
-    expect(resetContext.messages).toEqual([])
-    expect(running.service.snapshot().messages['dm:codex']?.map(message => message.text)).toContain('Start generation.')
-    const response = await fetch(`${running.url}/api/mcp`, {
-      method: 'POST',
-      headers: { authorization, 'content-type': 'application/json' },
-      body: '{}',
-    })
-    expect(response.status).toBe(401)
-  })
+		await running.service.mutate({ action: "reset-dm", agentId: "codex" });
+		const resetScope = mustExist(
+			running.service.snapshot().dmSessions["codex"],
+		);
+		const resetContext = await running.service.readContext({
+			agentId: "codex",
+			conversation: { kind: "dm", id: "codex" },
+			sessionName: resetScope,
+		});
+		expect(resetContext.messages).toEqual([]);
+		expect(
+			running.service
+				.snapshot()
+				.messages["dm:codex"]?.map((message) => message.text),
+		).toContain("Start generation.");
+		const response = await fetch(`${running.url}/api/mcp`, {
+			method: "POST",
+			headers: { authorization, "content-type": "application/json" },
+			body: "{}",
+		});
+		expect(response.status).toBe(401);
+	});
 
-  it('gives a Hermes profile scoped Channel context through MCP without prompt replay', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'commonspace-hermes-acp-mcp-'))
-    roots.push(root)
-    const logPath = join(root, 'frames.ndjson')
-    vi.stubEnv('FAKE_ACP_LOG', logPath)
-    vi.stubEnv('FAKE_ACP_USE_MCP', '1')
-    const running = await startCommonspaceServer({
-      root,
-      port: 0,
-      hermesAcpCommand: process.execPath,
-      hermesAcpArgs: [fixturePath],
-      dependencies: {
-        discoverAgents: async () => [{
-          id: 'default',
-          displayName: 'Default',
-          adapter: 'hermes',
-          model: 'gpt-test',
-          status: 'stopped',
-        }],
-        routeAgents: async input => ({ agentIds: [input.candidates[0]!.id], reason: 'Test inference selected the channel agent.' }),
-      },
-      logger: { info: () => undefined, warn: () => undefined },
-    })
-    runningServers.push(running)
-    await running.service.mutate({ action: 'add-discovered-agent', agentId: 'default' })
-    const channel = (await running.service.mutate({
-      action: 'create-channel',
-      name: 'general',
-      agentIds: ['default'],
-    })).channels[0]!
-    await running.service.mutate({
-      action: 'set-channel-context',
-      channelId: channel.id,
-      instructions: 'Read this natively.',
-    })
+	it("gives a Hermes profile scoped Channel context through MCP without prompt replay", async () => {
+		const root = await mkdtemp(join(tmpdir(), "commonspace-hermes-acp-mcp-"));
+		roots.push(root);
+		const logPath = join(root, "frames.ndjson");
+		vi.stubEnv("FAKE_ACP_LOG", logPath);
+		vi.stubEnv("FAKE_ACP_USE_MCP", "1");
+		const running = await startCommonspaceServer({
+			root,
+			port: 0,
+			hermesAcpCommand: process.execPath,
+			hermesAcpArgs: [fixturePath],
+			dependencies: {
+				discoverAgents: async () => [
+					{
+						id: "default",
+						displayName: "Default",
+						adapter: "hermes",
+						model: "gpt-test",
+						status: "stopped",
+					},
+				],
+				routeAgents: async (input) => ({
+					agentIds: [mustExist(input.candidates[0]).id],
+					reason: "Test inference selected the channel agent.",
+				}),
+			},
+			logger: { info: () => undefined, warn: () => undefined },
+		});
+		runningServers.push(running);
+		await running.service.mutate({
+			action: "add-discovered-agent",
+			agentId: "default",
+		});
+		const channel = mustExist(
+			(
+				await running.service.mutate({
+					action: "create-channel",
+					name: "general",
+					agentIds: ["default"],
+				})
+			).channels[0],
+		);
+		await running.service.mutate({
+			action: "set-channel-context",
+			channelId: channel.id,
+			instructions: "Read this natively.",
+		});
 
-    await running.service.send({ conversation: { kind: 'channel', id: channel.id }, text: 'Only this Hermes delta.' })
-    await running.service.whenIdle()
+		await running.service.send({
+			conversation: { kind: "channel", id: channel.id },
+			text: "Only this Hermes delta.",
+		});
+		await running.service.whenIdle();
 
-    expect(running.service.snapshot().messages[`channel:${channel.id}`]?.at(-1)?.text).toBe([
-      'Context: general; instructions: Read this natively.',
-      'Echo: Only this Hermes delta.',
-    ].join('\n'))
-    const frames = (await readFile(logPath, 'utf8')).trim().split('\n').map(line => JSON.parse(line))
-    expect(frames.find(frame => frame.method === 'session/prompt')?.params.prompt).toEqual([
-      { type: 'text', text: 'Only this Hermes delta.' },
-    ])
-    expect(frames.find(frame => frame.method === 'session/new')?.params.mcpServers[0]).toMatchObject({
-      type: 'http',
-      name: 'commonspace',
-    })
-  })
+		expect(
+			running.service.snapshot().messages[`channel:${channel.id}`]?.at(-1)
+				?.text,
+		).toBe(
+			[
+				"Context: general; instructions: Read this natively.",
+				"Echo: Only this Hermes delta.",
+			].join("\n"),
+		);
+		const frames = (await readFile(logPath, "utf8"))
+			.trim()
+			.split("\n")
+			.map((line) => JSON.parse(line));
+		expect(
+			frames.find((frame) => frame.method === "session/prompt")?.params.prompt,
+		).toEqual([{ type: "text", text: "Only this Hermes delta." }]);
+		expect(
+			frames.find((frame) => frame.method === "session/new")?.params
+				.mcpServers[0],
+		).toMatchObject({
+			type: "http",
+			name: "commonspace",
+		});
+	});
 
-  it('isolates MCP context between channel threads when the ACP adapter caches MCP servers per process', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'commonspace-acp-mcp-thread-isolation-'))
-    roots.push(root)
-    vi.stubEnv('FAKE_ACP_USE_MCP', '1')
-    vi.stubEnv('FAKE_ACP_PROCESS_MCP', '1')
-    vi.stubEnv('FAKE_ACP_THREAD_CONTEXT', '1')
-    const running = await startCommonspaceServer({
-      root,
-      port: 0,
-      hermesAcpCommand: process.execPath,
-      hermesAcpArgs: [fixturePath],
-      dependencies: {
-        discoverAgents: async () => [{
-          id: 'default',
-          displayName: 'Default',
-          adapter: 'hermes',
-          model: 'gpt-test',
-          status: 'stopped',
-        }],
-        routeAgents: async input => ({ agentIds: [input.candidates[0]!.id], reason: 'Test inference selected the channel agent.' }),
-      },
-      logger: { info: () => undefined, warn: () => undefined },
-    })
-    runningServers.push(running)
-    await running.service.mutate({ action: 'add-discovered-agent', agentId: 'default' })
-    const channel = (await running.service.mutate({
-      action: 'create-channel',
-      name: 'engineering',
-      agentIds: ['default'],
-    })).channels[0]!
+	it("isolates MCP context between channel threads when the ACP adapter caches MCP servers per process", async () => {
+		const root = await mkdtemp(
+			join(tmpdir(), "commonspace-acp-mcp-thread-isolation-"),
+		);
+		roots.push(root);
+		vi.stubEnv("FAKE_ACP_USE_MCP", "1");
+		vi.stubEnv("FAKE_ACP_PROCESS_MCP", "1");
+		vi.stubEnv("FAKE_ACP_THREAD_CONTEXT", "1");
+		const running = await startCommonspaceServer({
+			root,
+			port: 0,
+			hermesAcpCommand: process.execPath,
+			hermesAcpArgs: [fixturePath],
+			dependencies: {
+				discoverAgents: async () => [
+					{
+						id: "default",
+						displayName: "Default",
+						adapter: "hermes",
+						model: "gpt-test",
+						status: "stopped",
+					},
+				],
+				routeAgents: async (input) => ({
+					agentIds: [mustExist(input.candidates[0]).id],
+					reason: "Test inference selected the channel agent.",
+				}),
+			},
+			logger: { info: () => undefined, warn: () => undefined },
+		});
+		runningServers.push(running);
+		await running.service.mutate({
+			action: "add-discovered-agent",
+			agentId: "default",
+		});
+		const channel = mustExist(
+			(
+				await running.service.mutate({
+					action: "create-channel",
+					name: "engineering",
+					agentIds: ["default"],
+				})
+			).channels[0],
+		);
 
-    const first = await running.service.send({
-      conversation: { kind: 'channel', id: channel.id },
-      text: 'First root task.',
-    })
-    await running.service.whenIdle()
-    const second = await running.service.send({
-      conversation: { kind: 'channel', id: channel.id },
-      text: 'Second unrelated root task.',
-    })
-    await running.service.whenIdle()
+		const first = await running.service.send({
+			conversation: { kind: "channel", id: channel.id },
+			text: "First root task.",
+		});
+		await running.service.whenIdle();
+		const second = await running.service.send({
+			conversation: { kind: "channel", id: channel.id },
+			text: "Second unrelated root task.",
+		});
+		await running.service.whenIdle();
 
-    const messages = running.service.snapshot().messages[`channel:${channel.id}`] ?? []
-    const secondReply = messages.find(message =>
-      message.authorType === 'agent' && message.threadId === second.thread?.id)
-    expect(first.thread?.id).not.toBe(second.thread?.id)
-    expect(secondReply?.text).toContain(`Context thread: ${second.thread?.id ?? ''}; root: Second unrelated root task.`)
-  })
-})
+		const messages =
+			running.service.snapshot().messages[`channel:${channel.id}`] ?? [];
+		const secondReply = messages.find(
+			(message) =>
+				message.authorType === "agent" &&
+				message.threadId === second.thread?.id,
+		);
+		expect(first.thread?.id).not.toBe(second.thread?.id);
+		expect(secondReply?.text).toContain(
+			`Context thread: ${second.thread?.id ?? ""}; root: Second unrelated root task.`,
+		);
+	});
+});
