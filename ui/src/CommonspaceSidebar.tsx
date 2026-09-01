@@ -855,7 +855,7 @@ export function CommonspaceSidebar({
 					>
 						<span aria-hidden="true">⌕</span>
 						<span className="truncate">Search everything</span>
-						<kbd aria-hidden="true">⌘K</kbd>
+						<kbd>⌘K</kbd>
 					</button>
 				</header>
 			)}
@@ -914,10 +914,9 @@ export function CommonspaceSidebar({
 										title="Inference source"
 										description="Use your own OpenAI-compatible endpoint or delegate utility inference to a native agent."
 									/>
-									<div
-										role="group"
+									<fieldset
 										aria-label="Routing engine"
-										className="grid grid-cols-2 gap-3 max-[640px]:grid-cols-1"
+										className="m-0 grid min-w-0 grid-cols-2 gap-3 border-0 p-0 max-[640px]:grid-cols-1"
 									>
 										<button
 											type="button"
@@ -984,7 +983,7 @@ export function CommonspaceSidebar({
 												</em>
 											)}
 										</button>
-									</div>
+									</fieldset>
 									{routingProvider === "harness" && (
 										<div className="mt-3 grid gap-2 rounded-md border bg-muted p-3">
 											{agents.map((agent) => (
@@ -1399,7 +1398,7 @@ export function CommonspaceSidebar({
 										/>
 									</label>
 									{importArchive !== null && (
-										<section role="region" aria-label="Import Project mappings">
+										<section aria-label="Import Project mappings">
 											<p>
 												Map every exported Project root to a local folder.
 												Import works only in an empty workspace.
@@ -1409,27 +1408,27 @@ export function CommonspaceSidebar({
 													<legend>{project.name}</legend>
 													{Array.from(
 														{ length: project.rootCount },
-														(_, rootIndex) => (
-															<div key={rootIndex}>
-																<span>
-																	{importMappings[project.id]?.[rootIndex] ||
-																		`Root ${String(rootIndex + 1)} not mapped`}
-																</span>
-																<button
-																	type="button"
-																	aria-label={`Choose root ${String(rootIndex + 1)} for ${project.name}`}
-																	onClick={() => {
-																		void chooseImportRoot(
-																			project.id,
-																			rootIndex,
-																		);
-																	}}
-																>
-																	Choose
-																</button>
-															</div>
-														),
-													)}
+														(_, rootIndex) => ({
+															key: `${project.id}:root:${String(rootIndex)}`,
+															rootIndex,
+														}),
+													).map(({ key, rootIndex }) => (
+														<div key={key}>
+															<span>
+																{importMappings[project.id]?.[rootIndex] ||
+																	`Root ${String(rootIndex + 1)} not mapped`}
+															</span>
+															<button
+																type="button"
+																aria-label={`Choose root ${String(rootIndex + 1)} for ${project.name}`}
+																onClick={() => {
+																	void chooseImportRoot(project.id, rootIndex);
+																}}
+															>
+																Choose
+															</button>
+														</div>
+													))}
 												</fieldset>
 											))}
 											<button
@@ -1492,7 +1491,7 @@ export function CommonspaceSidebar({
 											Preview retention
 										</button>
 										{retentionPreview !== null && (
-											<section role="region" aria-label="Retention impact">
+											<section aria-label="Retention impact">
 												<p>
 													{retentionPreview.messages} messages ·{" "}
 													{retentionPreview.threads} threads ·{" "}
@@ -1619,7 +1618,6 @@ export function CommonspaceSidebar({
 										onChange={(event) => {
 											setName(event.target.value);
 										}}
-										autoFocus
 									/>
 								</label>
 								<label className="grid gap-1.5 text-xs font-semibold text-muted-foreground">
@@ -1771,7 +1769,6 @@ export function CommonspaceSidebar({
 												onChange={(event) => {
 													setPathDraft(event.target.value);
 												}}
-												autoFocus
 											/>
 											<div>
 												<button type="submit">Add</button>
@@ -1838,7 +1835,6 @@ export function CommonspaceSidebar({
 										onChange={(event) => {
 											setName(event.target.value);
 										}}
-										autoFocus
 									/>
 								</label>
 								<fieldset className="rounded-md border p-3">
@@ -2420,7 +2416,6 @@ export function CommonspaceSidebar({
 												onChange={(event) => {
 													setAgentProfileName(event.target.value);
 												}}
-												autoFocus
 											/>
 										</label>
 										<label>

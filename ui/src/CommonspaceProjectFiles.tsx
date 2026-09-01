@@ -335,6 +335,7 @@ export function CommonspaceProjectFiles({
 										src={mediaUrl}
 										aria-label={`Preview ${selected.name}`}
 										controls
+										muted
 										playsInline
 										preload="metadata"
 									/>

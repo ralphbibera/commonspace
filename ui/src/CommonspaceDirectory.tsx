@@ -301,14 +301,13 @@ export function CommonspaceDirectory({
 							: `Filtered from ${String(allItems.length)} ${kind}`}
 					</span>
 				</div>
-				<div className="border-b" role="list">
+				<ul className="m-0 list-none border-b p-0">
 					{visibleItems.map((item) => {
 						const pinned = pinnedIds.has(item.id);
 						return (
-							<div
+							<li
 								key={item.id}
 								className="grid min-h-[72px] grid-cols-[minmax(0,1fr)_44px] items-stretch border-b last:border-b-0 hover:bg-muted"
-								role="listitem"
 							>
 								<button
 									type="button"
@@ -406,10 +405,10 @@ export function CommonspaceDirectory({
 									}}
 									onRemove={() => removeItem(item)}
 								/>
-							</div>
+							</li>
 						);
 					})}
-				</div>
+				</ul>
 				{filteredItems.length === 0 && (
 					<div className="px-4 py-16 text-center">
 						<h3 className="font-heading text-lg font-bold">

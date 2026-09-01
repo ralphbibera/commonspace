@@ -37,8 +37,8 @@ import {
 	AgentSettingsPane,
 	ChannelSettingsPane,
 } from "./CommonspaceContextSettings.tsx";
-import { MessageActionMenu } from "./design-system/MessageActionMenu.tsx";
 import type { CommonspaceStore } from "./commonspace-store.ts";
+import { MessageActionMenu } from "./design-system/MessageActionMenu.tsx";
 import {
 	type MessageSpeechControls,
 	useMessageSpeech,
@@ -183,7 +183,7 @@ function PendingImageStrip({
 					<img
 						className="h-16 w-24 rounded-sm border object-cover"
 						src={`data:${image.mimeType};base64,${image.data}`}
-					alt={`Pasted attachment ${image.name}`}
+						alt={`Pasted attachment ${image.name}`}
 					/>
 					<figcaption className="mt-1 truncate text-xs text-muted-foreground">
 						{image.name}

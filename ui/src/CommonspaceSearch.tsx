@@ -63,22 +63,34 @@ function HighlightedText({
 		)
 		.sort((left, right) => left.start - right.start);
 	if (ranges.length === 0) return <>{text}</>;
-	const parts: Array<{ text: string; highlighted: boolean }> = [];
+	const parts: Array<{ text: string; highlighted: boolean; start: number }> =
+		[];
 	let offset = 0;
 	for (const range of ranges) {
 		if (range.start < offset) continue;
 		if (range.start > offset)
-			parts.push({ text: text.slice(offset, range.start), highlighted: false });
-		parts.push({ text: text.slice(range.start, range.end), highlighted: true });
+			parts.push({
+				text: text.slice(offset, range.start),
+				highlighted: false,
+				start: offset,
+			});
+		parts.push({
+			text: text.slice(range.start, range.end),
+			highlighted: true,
+			start: range.start,
+		});
 		offset = range.end;
 	}
 	if (offset < text.length)
-		parts.push({ text: text.slice(offset), highlighted: false });
+		parts.push({ text: text.slice(offset), highlighted: false, start: offset });
 	return (
 		<>
-			{parts.map((part, index) =>
+			{parts.map((part) =>
 				part.highlighted ? (
-					<mark className="rounded-sm bg-primary/15 text-inherit" key={index}>
+					<mark
+						className="rounded-sm bg-primary/15 text-inherit"
+						key={part.start}
+					>
 						{part.text}
 					</mark>
 				) : (
@@ -217,14 +229,11 @@ export function CommonspaceSearchDialog({
 							}
 						}}
 					/>
-					<kbd
-						className="mr-9 rounded-sm border bg-muted px-1.5 py-1 font-mono text-xs text-muted-foreground"
-						aria-hidden="true"
-					>
+					<kbd className="mr-9 rounded-sm border bg-muted px-1.5 py-1 font-mono text-xs text-muted-foreground">
 						ESC
 					</kbd>
 				</div>
-				<div
+				<section
 					className="flex items-center gap-2 overflow-x-auto px-3.5 py-2"
 					aria-label="Search filters"
 				>
@@ -266,7 +275,7 @@ export function CommonspaceSearchDialog({
 							</ToggleGroupItem>
 						))}
 					</ToggleGroup>
-				</div>
+				</section>
 				<div className="flex items-center justify-between px-4 pt-1 pb-1.5 text-xs font-semibold tracking-[0.05em] text-muted-foreground uppercase">
 					<span>{query.trim() === "" ? "Browse" : "Results"}</span>
 					<span>
@@ -280,10 +289,20 @@ export function CommonspaceSearchDialog({
 				<div
 					id={resultsId}
 					className="min-h-24 overflow-y-auto px-2 pb-2"
-					role={results.length > 0 ? "listbox" : undefined}
+					role="listbox"
 					aria-label="Commonspace search results"
 					aria-busy={pending}
 				>
+					{results.length === 0 && (
+						<span
+							className="sr-only"
+							role="option"
+							aria-disabled="true"
+							tabIndex={-1}
+						>
+							No selectable search results
+						</span>
+					)}
 					{error !== null && (
 						<div
 							className="grid min-h-24 place-items-center text-sm text-destructive"

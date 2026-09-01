@@ -1,7 +1,6 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { CommonspaceTraceEntry } from "@commonspace/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	type AgentRunInput,

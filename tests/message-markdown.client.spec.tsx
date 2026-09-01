@@ -30,14 +30,14 @@ function renderAgentMessage(
 	runAttribution?: CommonspaceRunAttribution,
 ) {
 	const message: CommonspaceMessage = {
-			id: "message-1",
-			conversation: { kind: "dm" as const, id: "writer" },
-			authorType: "agent" as const,
-			authorId: "writer",
-			authorName: "Writer",
-			text,
-			createdAt: "2026-08-26T00:00:00.000Z",
-		};
+		id: "message-1",
+		conversation: { kind: "dm" as const, id: "writer" },
+		authorType: "agent" as const,
+		authorId: "writer",
+		authorName: "Writer",
+		text,
+		createdAt: "2026-08-26T00:00:00.000Z",
+	};
 	if (trace !== undefined) message.trace = trace;
 	if (runAttribution !== undefined) {
 		message.projectId = "project-1";

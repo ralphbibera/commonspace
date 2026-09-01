@@ -41,9 +41,8 @@ function Diff({ diff }: { diff: ProjectGitDiffResponse }) {
 			</div>
 		);
 	return (
-		<div
+		<section
 			className="overflow-hidden rounded-sm border font-mono text-xs"
-			role="region"
 			aria-label={`Diff ${diff.path}`}
 		>
 			{diff.patch.split("\n").map((line, index) => {
@@ -79,7 +78,7 @@ function Diff({ diff }: { diff: ProjectGitDiffResponse }) {
 					Patch truncated after 2,000 lines.
 				</div>
 			)}
-		</div>
+		</section>
 	);
 }
 
@@ -333,6 +332,7 @@ export function CommonspaceProjectChanges({
 											src={mediaUrl}
 											aria-label={`Preview ${selected.path}`}
 											controls
+											muted
 											playsInline
 											preload="metadata"
 										/>

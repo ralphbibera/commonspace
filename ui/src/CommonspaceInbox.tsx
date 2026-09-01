@@ -194,7 +194,7 @@ export function CommonspaceInbox({
 				}
 			/>
 
-			<div
+			<section
 				className="mx-auto flex min-h-[52px] w-full max-w-[1020px] items-center gap-4 border-b px-10 font-mono text-xs text-muted-foreground max-[640px]:gap-2 max-[640px]:px-4"
 				aria-label="Inbox summary"
 			>
@@ -219,7 +219,7 @@ export function CommonspaceInbox({
 					/>
 					{String(runningCount)} running
 				</span>
-			</div>
+			</section>
 
 			<div className="mx-auto flex min-h-[54px] w-full max-w-[1020px] items-center justify-between gap-3 border-b px-9 max-[640px]:overflow-x-auto max-[640px]:px-3">
 				<fieldset
