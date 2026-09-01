@@ -9,7 +9,6 @@ permissions:
 
 jobs:
   apply:
-    if: ${{ hashFiles('scripts/apply-hard-review-fixes.mjs') != '' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
