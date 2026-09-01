@@ -97,6 +97,18 @@ jobs:
           NODE
           node --check scripts/apply-settings-review-fixes.mjs
           node scripts/apply-settings-review-fixes.mjs
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = 'ui/src/storybook-fixtures.ts';
+          let source = fs.readFileSync(path, 'utf8');
+          const target = '\t\tupdateRoutingConfiguration: async () => undefined,\n';
+          if (!source.includes(target)) throw new Error('Missing Storybook routing fixture target');
+          source = source.replace(
+            target,
+            `${target}\t\tvalidateRoutingConfiguration: async () => ({\n\t\t\tprovider: "openai-compatible",\n\t\t\tlocation: "remote",\n\t\t\tconfigured: true,\n\t\t\tsends: [],\n\t\t}),\n\t\tupdateWorkspaceSettings: async () => undefined,\n`,
+          );
+          fs.writeFileSync(path, source);
+          NODE
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm check
