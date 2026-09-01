@@ -1,0 +1,50 @@
+import { describe, expect, it } from "vitest";
+import { applyMutation, createInitialState } from "../server/src/state.ts";
+
+describe("atomic channel configuration", () => {
+	it("updates every editable channel field in one revision", () => {
+		const dependencies = {
+			ids: () => "channel-id",
+			now: () => "2026-09-01T00:00:00.000Z",
+		};
+		const initial = applyMutation(
+			createInitialState(),
+			{ action: "create-channel", name: "engineering", agentIds: [] },
+			dependencies,
+		);
+
+		const updated = applyMutation(
+			initial,
+			{
+				action: "set-channel-configuration",
+				channelId: "channel-id",
+				agentIds: ["backend", "backend", ""],
+				instructions: "  Use explicit assignments.  ",
+				model: "  model-x  ",
+				reasoning: "high",
+				summary: "  Keep the release stable.  ",
+				decisions: [" One mutation ", "One mutation"],
+				openQuestions: [" Who verifies rollout? "],
+			},
+			{
+				...dependencies,
+				now: () => "2026-09-01T01:00:00.000Z",
+			},
+		);
+
+		expect(updated.revision).toBe(initial.revision + 1);
+		expect(updated.channels[0]).toMatchObject({
+			agentIds: ["backend"],
+			instructions: "Use explicit assignments.",
+			settings: { model: "model-x", reasoning: "high" },
+			memory: {
+				summary: "Keep the release stable.",
+				decisions: ["One mutation"],
+				openQuestions: ["Who verifies rollout?"],
+				updatedAt: "2026-09-01T01:00:00.000Z",
+				origin: "user",
+				status: "current",
+			},
+		});
+	});
+});

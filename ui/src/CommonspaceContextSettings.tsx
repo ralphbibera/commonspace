@@ -129,24 +129,12 @@ export function ChannelSettingsPane({
 		setSaving(true);
 		try {
 			await store.mutate({
-				action: "set-channel-agents",
+				action: "set-channel-configuration",
 				channelId: id,
 				agentIds,
-			});
-			await store.mutate({
-				action: "set-channel-context",
-				channelId: id,
 				instructions,
-			});
-			await store.mutate({
-				action: "set-channel-settings",
-				channelId: id,
 				model: model || null,
 				reasoning: reasoning || null,
-			});
-			await store.mutate({
-				action: "set-channel-memory",
-				channelId: id,
 				summary,
 				decisions: decisions
 					.split("\n")

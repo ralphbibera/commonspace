@@ -632,6 +632,71 @@ export function applyMutation(
 			if (!matched) throw new Error("unknown channel");
 			return { ...state, revision: nextRevision(state), channels };
 		}
+		case "set-channel-configuration": {
+			if (typeof mutation.instructions !== "string")
+				throw new Error("channel instructions are required");
+			if (typeof mutation.summary !== "string")
+				throw new Error("channel context summary is required");
+			const agentIds = [...new Set(mutation.agentIds.filter(Boolean))];
+			const instructions = mutation.instructions
+				.normalize("NFKC")
+				.trim()
+				.slice(0, 8_000);
+			const summary = mutation.summary
+				.normalize("NFKC")
+				.trim()
+				.slice(0, 16_000);
+			const decisions = normalizedContextEntries(
+				mutation.decisions,
+				"channel context decisions",
+			);
+			const openQuestions = normalizedContextEntries(
+				mutation.openQuestions,
+				"channel context open questions",
+			);
+			const reasoning =
+				mutation.reasoning === undefined
+					? undefined
+					: mutation.reasoning === null
+						? null
+						: requiredReasoning(mutation.reasoning);
+			const projection = projectChannelMemory(
+				state,
+				mutation.channelId,
+				state.defaults.memoryThreads,
+			);
+			const updatedAt = dependencies.now();
+			let matched = false;
+			const channels = state.channels.map((channel) => {
+				if (channel.id !== mutation.channelId) return channel;
+				matched = true;
+				return {
+					...channel,
+					agentIds,
+					instructions,
+					settings: {
+						model: optionalModel(mutation.model, channel.settings.model),
+						reasoning:
+							reasoning === undefined ? channel.settings.reasoning : reasoning,
+					},
+					memory: {
+						summary,
+						decisions,
+						openQuestions,
+						threadIds: projection.threadIds,
+						updatedAt,
+						origin: "user" as const,
+						status: "current" as const,
+						sourceMessageCount: projection.sourceMessageCount ?? 0,
+						estimatedTokens: projection.estimatedTokens ?? 0,
+						compactedThroughMessageId:
+							projection.compactedThroughMessageId ?? null,
+					},
+				};
+			});
+			if (!matched) throw new Error("unknown channel");
+			return { ...state, revision: nextRevision(state), channels };
+		}
 		case "set-defaults": {
 			const reasoning =
 				mutation.reasoning === undefined
