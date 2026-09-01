@@ -17,13 +17,6 @@ function replaceExactly(source, before, after, label) {
 	return `${source.slice(0, first)}${after}${source.slice(first + before.length)}`;
 }
 
-function replaceCount(source, before, after, count, label) {
-	const actual = source.split(before).length - 1;
-	if (actual !== count)
-		throw new Error(`Expected ${count} patch targets for ${label}, found ${actual}`);
-	return source.split(before).join(after);
-}
-
 await edit("ui/src/CommonspaceConversation.tsx", (initial) => {
 	let source = initial;
 	source = replaceExactly(
@@ -86,15 +79,22 @@ await edit("ui/src/CommonspaceConversation.tsx", (initial) => {
 	return source;
 });
 
-await edit("ui/src/CommonspaceContextSettings.tsx", (source) =>
-	replaceCount(
+await edit("ui/src/CommonspaceContextSettings.tsx", (initial) => {
+	let source = initial;
+	source = replaceExactly(
 		source,
 		'className="flex min-h-0 min-w-[340px] flex-col border-l bg-background"',
 		'className="commonspace-context-settings flex min-h-0 min-w-[340px] flex-col border-l bg-background"',
-		2,
-		"context settings pane classes",
-	),
-);
+		"channel settings pane class",
+	);
+	source = replaceExactly(
+		source,
+		'className="flex min-h-0 min-w-[420px] flex-col border-l bg-background"',
+		'className="commonspace-context-settings flex min-h-0 min-w-[420px] flex-col border-l bg-background"',
+		"agent settings pane class",
+	);
+	return source;
+});
 
 await edit("ui/src/index.css", (source) => {
 	const rules = `\n\n@media (max-width: 780px) {\n\t.commonspace-conversation-layout {\n\t\tgrid-template-columns: minmax(0, 1fr) !important;\n\t}\n\n\t.commonspace-conversation-layout:has(.commonspace-thread-panel)\n\t\t.commonspace-conversation-primary,\n\t.commonspace-conversation-layout:has(.commonspace-context-settings)\n\t\t.commonspace-conversation-primary {\n\t\tdisplay: none;\n\t}\n\n\t.commonspace-thread-resizer {\n\t\tdisplay: none;\n\t}\n\n\t.commonspace-thread-panel,\n\t.commonspace-context-settings {\n\t\twidth: 100%;\n\t\tmin-width: 0 !important;\n\t\tborder-left: 0;\n\t}\n}\n`;
@@ -108,7 +108,7 @@ await edit("server/src/app.ts", (initial) => {
 	source = replaceExactly(
 		source,
 		'function requestBrowserHost(\n\treq: Pick<IncomingMessage, "headers">,\n): string | undefined {\n\treturn firstHeaderValue(req.headers["x-forwarded-host"]) ?? req.headers.host;\n}',
-		'function requestBrowserHost(\n\treq: Pick<IncomingMessage, "headers">,\n): string | undefined {\n\treturn firstHeaderValue(req.headers.host);\n}\n\nfunction requestHostIsLoopback(host: string): boolean {\n\ttry {\n\t\tconst hostname = new URL(`http://${host}`).hostname.toLocaleLowerCase();\n\t\treturn (\n\t\t\thostname === "127.0.0.1" ||\n\t\t\thostname === "localhost" ||\n\t\t\thostname === "::1" ||\n\t\t\thostname === "[::1]"\n\t\t);\n\t} catch {\n\t\treturn false;\n\t}\n}',
+		'function requestBrowserHost(\n\treq: Pick<IncomingMessage, "headers">,\n): string | undefined {\n\treturn firstHeaderValue(req.headers.host);\n}\n\nfunction requestHostIsLoopback(host: string): boolean {\n\ttry {\n\t\tconst hostname = new URL(`http://${host}`).hostname.toLocaleLowerCase();\n\t\treturn hostname === "127.0.0.1" || hostname === "localhost" || hostname === "::1";\n\t} catch {\n\t\treturn false;\n\t}\n}',
 		"trusted browser host",
 	);
 	source = replaceExactly(
