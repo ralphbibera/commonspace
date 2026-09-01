@@ -28,18 +28,35 @@ jobs:
           node <<'NODE'
           const fs = require('node:fs');
           const path = 'scripts/apply-settings-review-fixes.mjs';
-          let source = fs.readFileSync(path, 'utf8');
-          const start = source.indexOf('\tconst pinFunctions = /');
-          const end = source.indexOf('\tsource = source.replace(/\\n', start);
+          let migration = fs.readFileSync(path, 'utf8');
+          const start = migration.indexOf('\tconst pinFunctions = /');
+          const end = migration.indexOf('\n\n\tsource = replaceExactly(', start);
           if (start < 0 || end < 0 || end <= start) {
-            throw new Error('Could not locate broken pin regex block');
+            throw new Error('Could not locate old fake-pin cleanup block');
           }
           const replacement = `\tconst pinStart = source.indexOf("\\n\\tconst collectionPinned = (");
           \tconst pinEnd = source.indexOf("\\n\\n\\tif (!wide) {", pinStart);
           \tif (pinStart < 0 || pinEnd < 0) throw new Error("Missing fake pin helper block");
-          \tsource = source.slice(0, pinStart) + source.slice(pinEnd);\n`;
-          source = source.slice(0, start) + replacement + source.slice(end);
-          fs.writeFileSync(path, source);
+          \tsource = source.slice(0, pinStart) + source.slice(pinEnd);
+          \tconst pinLines = source.split("\\n");
+          \tconst cleanedPinLines = [];
+          \tfor (let index = 0; index < pinLines.length; index += 1) {
+          \t\tconst line = pinLines[index];
+          \t\tif (line.includes("pinned={collectionPinned(")) continue;
+          \t\tif (
+          \t\t\tline.includes("onTogglePinned={() => {") &&
+          \t\t\tpinLines[index + 1]?.includes("toggleCollectionPinned(")
+          \t\t) {
+          \t\t\tindex += 2;
+          \t\t\tcontinue;
+          \t\t}
+          \t\tcleanedPinLines.push(line);
+          \t}
+          \tsource = cleanedPinLines.join("\\n");
+          \tif (source.includes("collectionPinned(") || source.includes("toggleCollectionPinned("))
+          \t\tthrow new Error("Fake pin references remain");`;
+          migration = migration.slice(0, start) + replacement + migration.slice(end);
+          fs.writeFileSync(path, migration);
           NODE
           node --check scripts/apply-settings-review-fixes.mjs
           node scripts/apply-settings-review-fixes.mjs
