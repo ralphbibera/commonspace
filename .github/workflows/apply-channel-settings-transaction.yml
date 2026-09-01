@@ -1,0 +1,323 @@
+name: Apply atomic channel settings
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.34.5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Apply atomic channel settings
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+
+          function read(path) {
+            return fs.readFileSync(path, "utf8");
+          }
+
+          function write(path, source) {
+            fs.writeFileSync(path, source);
+          }
+
+          function replaceOnce(path, before, after, label) {
+            const source = read(path);
+            const first = source.indexOf(before);
+            if (first < 0) throw new Error(`Missing patch target: ${label}`);
+            if (source.indexOf(before, first + before.length) >= 0) {
+              throw new Error(`Patch target is not unique: ${label}`);
+            }
+            write(path, source.slice(0, first) + after + source.slice(first + before.length));
+          }
+
+          function replaceBetween(path, startMarker, endMarker, replacement, label) {
+            const source = read(path);
+            const start = source.indexOf(startMarker);
+            const end = source.indexOf(endMarker, start + startMarker.length);
+            if (start < 0 || end < 0) throw new Error(`Missing patch range: ${label}`);
+            write(path, source.slice(0, start) + replacement + source.slice(end));
+          }
+
+          replaceOnce(
+            "packages/shared/src/contracts.ts",
+            `\t| {
+          \t\t\taction: "set-defaults";`,
+            `\t| {
+          \t\t\taction: "set-channel-configuration";
+          \t\t\tchannelId: string;
+          \t\t\tagentIds: string[];
+          \t\t\tinstructions: string;
+          \t\t\tmodel?: string | null;
+          \t\t\treasoning?: CommonspaceReasoning | null;
+          \t\t\tsummary: string;
+          \t\t\tdecisions?: string[];
+          \t\t\topenQuestions?: string[];
+          \t  }
+          \t| {
+          \t\t\taction: "set-defaults";`,
+            "shared channel configuration mutation",
+          );
+
+          replaceOnce(
+            "server/src/app.ts",
+            `\t\t\tz.object({
+          \t\t\t\taction: z.literal("set-defaults"),`,
+            `\t\t\tz.object({
+          \t\t\t\taction: z.literal("set-channel-configuration"),
+          \t\t\t\tchannelId: z.string(),
+          \t\t\t\tagentIds: z.array(z.string()),
+          \t\t\t\tinstructions: z.string(),
+          \t\t\t\tmodel: z.string().nullable().optional(),
+          \t\t\t\treasoning: reasoningSchema.nullable().optional(),
+          \t\t\t\tsummary: z.string(),
+          \t\t\t\tdecisions: z.array(z.string()).optional(),
+          \t\t\t\topenQuestions: z.array(z.string()).optional(),
+          \t\t\t}),
+          \t\t\tz.object({
+          \t\t\t\taction: z.literal("set-defaults"),`,
+            "channel configuration request schema",
+          );
+
+          replaceOnce(
+            "server/src/state.ts",
+            `\t\tcase "set-defaults": {`,
+            `\t\tcase "set-channel-configuration": {
+          \t\t\tif (typeof mutation.instructions !== "string")
+          \t\t\t\tthrow new Error("channel instructions are required");
+          \t\t\tif (typeof mutation.summary !== "string")
+          \t\t\t\tthrow new Error("channel context summary is required");
+          \t\t\tconst agentIds = [...new Set(mutation.agentIds.filter(Boolean))];
+          \t\t\tconst instructions = mutation.instructions
+          \t\t\t\t.normalize("NFKC")
+          \t\t\t\t.trim()
+          \t\t\t\t.slice(0, 8_000);
+          \t\t\tconst summary = mutation.summary
+          \t\t\t\t.normalize("NFKC")
+          \t\t\t\t.trim()
+          \t\t\t\t.slice(0, 16_000);
+          \t\t\tconst decisions = normalizedContextEntries(
+          \t\t\t\tmutation.decisions,
+          \t\t\t\t"channel context decisions",
+          \t\t\t);
+          \t\t\tconst openQuestions = normalizedContextEntries(
+          \t\t\t\tmutation.openQuestions,
+          \t\t\t\t"channel context open questions",
+          \t\t\t);
+          \t\t\tconst reasoning =
+          \t\t\t\tmutation.reasoning === undefined
+          \t\t\t\t\t? undefined
+          \t\t\t\t\t: mutation.reasoning === null
+          \t\t\t\t\t\t? null
+          \t\t\t\t\t\t: requiredReasoning(mutation.reasoning);
+          \t\t\tconst projection = projectChannelMemory(
+          \t\t\t\tstate,
+          \t\t\t\tmutation.channelId,
+          \t\t\t\tstate.defaults.memoryThreads,
+          \t\t\t);
+          \t\t\tconst updatedAt = dependencies.now();
+          \t\t\tlet matched = false;
+          \t\t\tconst channels = state.channels.map((channel) => {
+          \t\t\t\tif (channel.id !== mutation.channelId) return channel;
+          \t\t\t\tmatched = true;
+          \t\t\t\treturn {
+          \t\t\t\t\t...channel,
+          \t\t\t\t\tagentIds,
+          \t\t\t\t\tinstructions,
+          \t\t\t\t\tsettings: {
+          \t\t\t\t\t\tmodel: optionalModel(mutation.model, channel.settings.model),
+          \t\t\t\t\t\treasoning:
+          \t\t\t\t\t\t\treasoning === undefined ? channel.settings.reasoning : reasoning,
+          \t\t\t\t\t},
+          \t\t\t\t\tmemory: {
+          \t\t\t\t\t\tsummary,
+          \t\t\t\t\t\tdecisions,
+          \t\t\t\t\t\topenQuestions,
+          \t\t\t\t\t\tthreadIds: projection.threadIds,
+          \t\t\t\t\t\tupdatedAt,
+          \t\t\t\t\t\torigin: "user" as const,
+          \t\t\t\t\t\tstatus: "current" as const,
+          \t\t\t\t\t\tsourceMessageCount: projection.sourceMessageCount ?? 0,
+          \t\t\t\t\t\testimatedTokens: projection.estimatedTokens ?? 0,
+          \t\t\t\t\t\tcompactedThroughMessageId:
+          \t\t\t\t\t\t\tprojection.compactedThroughMessageId ?? null,
+          \t\t\t\t\t},
+          \t\t\t\t};
+          \t\t\t});
+          \t\t\tif (!matched) throw new Error("unknown channel");
+          \t\t\treturn { ...state, revision: nextRevision(state), channels };
+          \t\t}
+          \t\tcase "set-defaults": {`,
+            "atomic channel configuration state mutation",
+          );
+
+          replaceBetween(
+            "ui/src/CommonspaceContextSettings.tsx",
+            `\tconst save = async (event: FormEvent) => {`,
+            `\n\n\tconst updateVisible`,
+            `\tconst save = async (event: FormEvent) => {
+          \t\tevent.preventDefault();
+          \t\tif (saving) return;
+          \t\tsetSaving(true);
+          \t\ttry {
+          \t\t\tawait store.mutate({
+          \t\t\t\taction: "set-channel-configuration",
+          \t\t\t\tchannelId: id,
+          \t\t\t\tagentIds,
+          \t\t\t\tinstructions,
+          \t\t\t\tmodel: model || null,
+          \t\t\t\treasoning: reasoning || null,
+          \t\t\t\tsummary,
+          \t\t\t\tdecisions: decisions
+          \t\t\t\t\t.split("\\n")
+          \t\t\t\t\t.map((value) => value.trim())
+          \t\t\t\t\t.filter(Boolean),
+          \t\t\t\topenQuestions: questions
+          \t\t\t\t\t.split("\\n")
+          \t\t\t\t\t.map((value) => value.trim())
+          \t\t\t\t\t.filter(Boolean),
+          \t\t\t});
+          \t\t\tonClose();
+          \t\t} finally {
+          \t\t\tsetSaving(false);
+          \t\t}
+          \t};`,
+            "channel settings pane save",
+          );
+
+          replaceBetween(
+            "ui/src/CommonspaceSidebar.tsx",
+            `\tconst saveChannelAgents = async (event: FormEvent, channelId: string) => {`,
+            `\n\n\tconst compactChannelContext`,
+            `\tconst saveChannelAgents = async (event: FormEvent, channelId: string) => {
+          \t\tevent.preventDefault();
+          \t\tawait store.mutate({
+          \t\t\taction: "set-channel-configuration",
+          \t\t\tchannelId,
+          \t\t\tagentIds: channelAgentIds,
+          \t\t\tinstructions: channelInstructions,
+          \t\t\tmodel: channelModel || null,
+          \t\t\treasoning: channelReasoning || null,
+          \t\t\tsummary: channelSummary,
+          \t\t\tdecisions: channelDecisions
+          \t\t\t\t.split("\\n")
+          \t\t\t\t.map((value) => value.trim())
+          \t\t\t\t.filter(Boolean),
+          \t\t\topenQuestions: channelQuestions
+          \t\t\t\t.split("\\n")
+          \t\t\t\t.map((value) => value.trim())
+          \t\t\t\t.filter(Boolean),
+          \t\t});
+          \t\tsetEditingChannelId(null);
+          \t};`,
+            "sidebar channel settings save",
+          );
+
+          replaceOnce(
+            "tests/conversation-parity.client.spec.tsx",
+            `\t\tawait waitFor(() => {
+          \t\t\texpect(mutate).toHaveBeenCalledWith({
+          \t\t\t\taction: "set-channel-agents",
+          \t\t\t\tchannelId: "general",
+          \t\t\t\tagentIds: ["agentops", "backend"],
+          \t\t\t});
+          \t\t});`,
+            `\t\tawait waitFor(() => {
+          \t\t\texpect(mutate).toHaveBeenCalledTimes(1);
+          \t\t\texpect(mutate).toHaveBeenCalledWith({
+          \t\t\t\taction: "set-channel-configuration",
+          \t\t\t\tchannelId: "general",
+          \t\t\t\tagentIds: ["agentops", "backend"],
+          \t\t\t\tinstructions: "",
+          \t\t\t\tmodel: null,
+          \t\t\t\treasoning: null,
+          \t\t\t\tsummary: "",
+          \t\t\t\tdecisions: [],
+          \t\t\t\topenQuestions: [],
+          \t\t\t});
+          \t\t});`,
+            "channel settings UI expectation",
+          );
+
+          write(
+            "tests/channel-configuration.spec.ts",
+            `import { describe, expect, it } from "vitest";
+          import { applyMutation, createInitialState } from "../server/src/state.ts";
+
+          describe("atomic channel configuration", () => {
+          \tit("updates every editable channel field in one revision", () => {
+          \t\tconst dependencies = {
+          \t\t\tids: () => "channel-id",
+          \t\t\tnow: () => "2026-09-01T00:00:00.000Z",
+          \t\t};
+          \t\tconst initial = applyMutation(
+          \t\t\tcreateInitialState(),
+          \t\t\t{ action: "create-channel", name: "engineering", agentIds: [] },
+          \t\t\tdependencies,
+          \t\t);
+
+          \t\tconst updated = applyMutation(
+          \t\t\tinitial,
+          \t\t\t{
+          \t\t\t\taction: "set-channel-configuration",
+          \t\t\t\tchannelId: "channel-id",
+          \t\t\t\tagentIds: ["backend", "backend", ""],
+          \t\t\t\tinstructions: "  Use explicit assignments.  ",
+          \t\t\t\tmodel: "  model-x  ",
+          \t\t\t\treasoning: "high",
+          \t\t\t\tsummary: "  Keep the release stable.  ",
+          \t\t\t\tdecisions: [" One mutation ", "One mutation"],
+          \t\t\t\topenQuestions: [" Who verifies rollout? "],
+          \t\t\t},
+          \t\t\t{
+          \t\t\t\t...dependencies,
+          \t\t\t\tnow: () => "2026-09-01T01:00:00.000Z",
+          \t\t\t},
+          \t\t);
+
+          \t\texpect(updated.revision).toBe(initial.revision + 1);
+          \t\texpect(updated.channels[0]).toMatchObject({
+          \t\t\tagentIds: ["backend"],
+          \t\t\tinstructions: "Use explicit assignments.",
+          \t\t\tsettings: { model: "model-x", reasoning: "high" },
+          \t\t\tmemory: {
+          \t\t\t\tsummary: "Keep the release stable.",
+          \t\t\t\tdecisions: ["One mutation"],
+          \t\t\t\topenQuestions: ["Who verifies rollout?"],
+          \t\t\t\tupdatedAt: "2026-09-01T01:00:00.000Z",
+          \t\t\t\torigin: "user",
+          \t\t\t\tstatus: "current",
+          \t\t\t},
+          \t\t});
+          \t});
+          });
+          `,
+          );
+
+          fs.rmSync(".github/workflows/apply-channel-settings-transaction.yml", {
+            force: true,
+          });
+          NODE
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm check
+      - name: Commit verified source changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet && exit 0
+          git commit -m "fix: save channel configuration atomically"
+          git push origin HEAD:main
