@@ -29,12 +29,13 @@ jobs:
           const fs = require('node:fs');
           const path = 'scripts/apply-settings-review-fixes.mjs';
           let migration = fs.readFileSync(path, 'utf8');
-          const start = migration.indexOf('\tconst pinFunctions = /');
-          const end = migration.indexOf('\n\n\tsource = replaceExactly(', start);
-          if (start < 0 || end < 0 || end <= start) {
+
+          const pinStart = migration.indexOf('\tconst pinFunctions = /');
+          const pinEnd = migration.indexOf('\n\n\tsource = replaceExactly(', pinStart);
+          if (pinStart < 0 || pinEnd < 0 || pinEnd <= pinStart) {
             throw new Error('Could not locate old fake-pin cleanup block');
           }
-          const replacement = `\tconst pinStart = source.indexOf("\\n\\tconst collectionPinned = (");
+          const pinReplacement = `\tconst pinStart = source.indexOf("\\n\\tconst collectionPinned = (");
           \tconst pinEnd = source.indexOf("\\n\\n\\tif (!wide) {", pinStart);
           \tif (pinStart < 0 || pinEnd < 0) throw new Error("Missing fake pin helper block");
           \tsource = source.slice(0, pinStart) + source.slice(pinEnd);
@@ -55,7 +56,43 @@ jobs:
           \tsource = cleanedPinLines.join("\\n");
           \tif (source.includes("collectionPinned(") || source.includes("toggleCollectionPinned("))
           \t\tthrow new Error("Fake pin references remain");`;
-          migration = migration.slice(0, start) + replacement + migration.slice(end);
+          migration = migration.slice(0, pinStart) + pinReplacement + migration.slice(pinEnd);
+
+          function replaceCall(label, replacement) {
+            const labelIndex = migration.indexOf(`"${label}"`);
+            if (labelIndex < 0) throw new Error(`Missing migration label: ${label}`);
+            const start = migration.lastIndexOf('\tsource = replaceExactly(', labelIndex);
+            const endMarker = migration.indexOf('\n\t);', labelIndex);
+            if (start < 0 || endMarker < 0) throw new Error(`Could not isolate migration call: ${label}`);
+            migration = migration.slice(0, start) + replacement + migration.slice(endMarker + 4);
+          }
+
+          replaceCall(
+            'non-misleading saved settings badge',
+            `\tconst configuredLabel = "Configured";
+          \tconst configuredIndex = source.indexOf(configuredLabel);
+          \tif (configuredIndex < 0) throw new Error("Missing configured settings badge");
+          \tsource = source.slice(0, configuredIndex) + "Saved configuration" + source.slice(configuredIndex + configuredLabel.length);
+          \tconst successDotClass = 'className="size-[7px] rounded-full bg-[var(--status-success)]"';
+          \tconst successDotIndex = source.lastIndexOf(successDotClass, configuredIndex);
+          \tif (successDotIndex < 0) throw new Error("Missing settings badge status dot");
+          \tsource = source.slice(0, successDotIndex) + 'className="size-[7px] rounded-full bg-muted-foreground"' + source.slice(successDotIndex + successDotClass.length);`,
+          );
+
+          replaceCall(
+            'truthful validation status styling',
+            `\tconst oldStatusClass = 'className="mt-3 inline-flex items-center gap-2 text-xs text-[var(--status-success)]"';
+          \tconst statusClassIndex = source.indexOf(oldStatusClass);
+          \tif (statusClassIndex < 0) throw new Error("Missing inference status class");
+          \tconst newStatusClass = 'className={cn("mt-3 inline-flex items-center gap-2 text-xs", inferenceCheckOk === true ? "text-[var(--status-success)]" : inferenceCheckOk === false ? "text-destructive" : "text-muted-foreground")}';
+          \tsource = source.slice(0, statusClassIndex) + newStatusClass + source.slice(statusClassIndex + oldStatusClass.length);
+          \tconst oldStatusIcon = '<span aria-hidden="true">✓</span>';
+          \tconst statusIconIndex = source.indexOf(oldStatusIcon, statusClassIndex);
+          \tif (statusIconIndex < 0) throw new Error("Missing inference status icon");
+          \tconst newStatusIcon = '<span aria-hidden="true">{inferenceCheckOk === true ? "✓" : inferenceCheckOk === false ? "!" : "…"}</span>';
+          \tsource = source.slice(0, statusIconIndex) + newStatusIcon + source.slice(statusIconIndex + oldStatusIcon.length);`,
+          );
+
           fs.writeFileSync(path, migration);
           NODE
           node --check scripts/apply-settings-review-fixes.mjs
