@@ -4330,6 +4330,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 
 	async mutate(mutation: CommonspaceMutation): Promise<CommonspaceState> {
 		return this.withAdmission(async () => {
+			const previousState = this.state;
 			const resetScope =
 				mutation.action === "reset-dm" && typeof mutation.agentId === "string"
 					? `${mutation.agentId}\u0000${this.state.dmSessions[mutation.agentId] ?? "Bot Chat"}`
@@ -4384,6 +4385,12 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 				const normalized = await this.normalizeMutation(mutation);
 				this.state = applyMutation(this.state, normalized);
 			}
+			try {
+				await this.persist();
+			} catch (error) {
+				this.state = previousState;
+				throw error;
+			}
 			this.revokeInvalidMcpCredentials();
 			if (mutation.action === "remove-agent") {
 				const processEntries = [...this.acpProcesses.entries()].filter(
@@ -4430,7 +4437,6 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 					processEntries.map(([, processClient]) => processClient.close()),
 				);
 			}
-			await this.persist();
 			this.broadcastRevision();
 			return this.publicSnapshot();
 		});
@@ -4500,6 +4506,21 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 			if (editedProjectIds !== undefined)
 				editedRequest.projectIds = editedProjectIds;
 			const prepared = await this.prepareSend(editedRequest);
+			prepared.attachments = await Promise.all(
+				(currentSource.attachments ?? []).map(async (attachment) => {
+					const { data } = await this.readImageAttachment(attachment.id);
+					return {
+						metadata: { ...attachment, id: crypto.randomUUID() },
+						data,
+					};
+				}),
+			);
+			prepared.files = await Promise.all(
+				(currentSource.files ?? []).map(async (file) => {
+					const { data } = await this.readFileAttachment(file.id);
+					return { metadata: { ...file, id: crypto.randomUUID() }, data };
+				}),
+			);
 			prepared.version = {
 				versionRootMessageId:
 					currentSource.versionRootMessageId ?? currentSource.id,
@@ -4841,8 +4862,18 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 					threadId: updatedThread.id,
 				},
 				text: source.text,
-				attachments: [],
-				files: [],
+				attachments: await Promise.all(
+					(source.attachments ?? []).map(async (attachment) => {
+						const { data } = await this.readImageAttachment(attachment.id);
+						return { metadata: attachment, data };
+					}),
+				),
+				files: await Promise.all(
+					(source.files ?? []).map(async (file) => {
+						const { data } = await this.readFileAttachment(file.id);
+						return { metadata: file, data };
+					}),
+				),
 				agents,
 				agentIds: [target.id],
 				routing: {

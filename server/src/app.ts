@@ -301,7 +301,21 @@ function firstHeaderValue(
 function requestBrowserHost(
 	req: Pick<IncomingMessage, "headers">,
 ): string | undefined {
-	return firstHeaderValue(req.headers["x-forwarded-host"]) ?? req.headers.host;
+	const host = firstHeaderValue(req.headers.host);
+	if (host === undefined || !requestHostIsLoopback(host)) return undefined;
+	const forwardedHost = firstHeaderValue(req.headers["x-forwarded-host"]);
+	return forwardedHost !== undefined && requestHostIsLoopback(forwardedHost)
+		? forwardedHost
+		: host;
+}
+
+function requestHostIsLoopback(host: string): boolean {
+	try {
+		const hostname = new URL(`http://${host}`).hostname.toLocaleLowerCase();
+		return hostname === "127.0.0.1" || hostname === "localhost" || hostname === "::1";
+	} catch {
+		return false;
+	}
 }
 
 function urlMatchesRequestHost(

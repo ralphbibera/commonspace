@@ -179,7 +179,7 @@ export function ChannelSettingsPane({
 
 	return (
 		<aside
-			className="flex min-h-0 min-w-[340px] flex-col border-l bg-background"
+			className="commonspace-context-settings flex min-h-0 min-w-[340px] flex-col border-l bg-background"
 			aria-label="Channel settings"
 		>
 			<header className="flex min-h-[70px] items-center gap-3 border-b py-2.5 pr-3.5 pl-5">
@@ -624,7 +624,7 @@ export function AgentSettingsPane({
 
 	return (
 		<aside
-			className="flex min-h-0 min-w-[420px] flex-col border-l bg-background"
+			className="commonspace-context-settings flex min-h-0 min-w-[420px] flex-col border-l bg-background"
 			aria-label="Agent profile"
 		>
 			<header className="flex min-h-[76px] items-center gap-3 border-b bg-muted px-4 py-2.5">

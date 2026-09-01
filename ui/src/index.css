@@ -185,3 +185,27 @@
 		@apply font-heading;
 	}
 }
+
+@media (max-width: 780px) {
+	.commonspace-conversation-layout {
+		grid-template-columns: minmax(0, 1fr) !important;
+	}
+
+	.commonspace-conversation-layout:has(.commonspace-thread-panel)
+		.commonspace-conversation-primary,
+	.commonspace-conversation-layout:has(.commonspace-context-settings)
+		.commonspace-conversation-primary {
+		display: none;
+	}
+
+	.commonspace-thread-resizer {
+		display: none;
+	}
+
+	.commonspace-thread-panel,
+	.commonspace-context-settings {
+		width: 100%;
+		min-width: 0 !important;
+		border-left: 0;
+	}
+}
