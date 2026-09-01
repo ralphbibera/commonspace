@@ -1,0 +1,76 @@
+{
+	"$schema": "https://biomejs.dev/schemas/2.5.9/schema.json",
+	"extends": ["biome-anti-slop/recommended"],
+	"vcs": {
+		"enabled": true,
+		"clientKind": "git",
+		"useIgnoreFile": true
+	},
+	"files": {
+		"ignoreUnknown": false
+	},
+	"formatter": {
+		"enabled": true,
+		"indentStyle": "tab"
+	},
+	"linter": {
+		"enabled": true,
+		"rules": {
+			"preset": "recommended",
+			"complexity": {
+				"noExcessiveCognitiveComplexity": {
+					"level": "warn",
+					"options": { "maxAllowedComplexity": 15 }
+				},
+				"noExcessiveLinesPerFunction": {
+					"level": "warn",
+					"options": { "maxLines": 100 }
+				},
+				"noForEach": "warn",
+				"useMaxParams": {
+					"level": "warn",
+					"options": { "max": 4 }
+				}
+			},
+			"nursery": {
+				"noComponentHookFactories": "error",
+				"noFloatingPromises": "error",
+				"noMisusedPromises": "error",
+				"noUnsafeTypeAssertion": "error",
+				"useExhaustiveSwitchCases": "error"
+			},
+			"performance": {
+				"noBarrelFile": "warn",
+				"noReExportAll": "warn"
+			},
+			"style": {
+				"noNonNullAssertion": "error",
+				"noParameterAssign": "warn",
+				"noRestrictedImports": "error"
+			},
+			"suspicious": {
+				"noExplicitAny": "error",
+				"noImportCycles": "error",
+				"noConsole": "warn"
+			}
+		}
+	},
+	"javascript": {
+		"formatter": {
+			"quoteStyle": "double"
+		}
+	},
+	"css": {
+		"parser": {
+			"tailwindDirectives": true
+		}
+	},
+	"assist": {
+		"enabled": true,
+		"actions": {
+			"source": {
+				"organizeImports": "on"
+			}
+		}
+	}
+}
