@@ -16,6 +16,7 @@ import {
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CommonspaceSidebar } from "../ui/src/CommonspaceSidebar.tsx";
+import type { CommonspaceStore } from "../ui/src/commonspace-store.ts";
 import { tagReferenceParts, tagSuggestions } from "../ui/src/tagging.ts";
 
 afterEach(() => {
@@ -47,7 +48,7 @@ function state(overrides: Partial<CommonspaceState> = {}): CommonspaceState {
 
 function sidebarStore(
 	bootstrap: Partial<CommonspaceBootstrap> = {},
-	additions: Record<string, unknown> = {},
+	additions: Partial<CommonspaceStore> = {},
 ) {
 	const mutate = vi.fn(async () => undefined);
 	const snapshot = {
@@ -869,11 +870,11 @@ describe("Commonspace interface", () => {
 		);
 		await waitFor(() => {
 			expect(
-				(screen.getByLabelText("Project path") as HTMLInputElement).value,
+				screen.getByLabelText<HTMLInputElement>("Project path").value,
 			).toBe("/Users/example/Developer/storefront");
 		});
 		expect(
-			(screen.getByLabelText("Project name") as HTMLInputElement).value,
+			screen.getByLabelText<HTMLInputElement>("Project name").value,
 		).toBe("storefront");
 		fireEvent.click(screen.getByRole("button", { name: "Create project" }));
 

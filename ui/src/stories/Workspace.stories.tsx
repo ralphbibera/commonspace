@@ -49,3 +49,35 @@ export const DirectoryFlow: Story = {
 		).toBeInTheDocument();
 	},
 };
+export const AgentMenuFlow: Story = {
+	render: () => <CommonspaceApp store={createStoryStore()} />,
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		await userEvent.click(
+			canvas.getByRole("button", { name: /Open channel general/u }),
+		);
+		await userEvent.click(
+			canvas.getByRole("button", { name: "More actions for AgentOps" }),
+		);
+		let menu = await within(document.body).findByRole("menu");
+		await userEvent.click(
+			within(menu).getByRole("menuitem", { name: /Mention in #general/u }),
+		);
+		await expect(
+			canvas.getByRole("textbox", { name: "Post in general" }),
+		).toHaveValue("@AgentOps ");
+		await userEvent.click(
+			canvas.getByRole("button", { name: "More actions for AgentOps" }),
+		);
+		menu = await within(document.body).findByRole("menu");
+		await userEvent.click(
+			within(menu).getByRole("menuitem", { name: /View sessions/u }),
+		);
+		await expect(
+			canvas.getByRole("heading", { name: "Inbox" }),
+		).toBeInTheDocument();
+		await expect(
+			canvas.getByRole("button", { name: /Sessions/u }),
+		).toHaveAttribute("aria-pressed", "true");
+	},
+};

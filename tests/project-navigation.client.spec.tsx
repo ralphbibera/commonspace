@@ -15,6 +15,7 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CommonspaceProjectView } from "../ui/src/CommonspaceProjectView.tsx";
 import { CommonspaceSidebar } from "../ui/src/CommonspaceSidebar.tsx";
+import type { CommonspaceStore } from "../ui/src/commonspace-store.ts";
 
 afterEach(cleanup);
 
@@ -51,7 +52,7 @@ function projectBootstrap(): CommonspaceBootstrap {
 	};
 }
 
-function projectStore(additions: Record<string, unknown> = {}) {
+function projectStore(additions: Partial<CommonspaceStore> = {}) {
 	const snapshot = {
 		bootstrap: projectBootstrap(),
 		loading: false,
@@ -147,9 +148,9 @@ describe("project navigation", () => {
 			/>,
 		);
 
-		const addFolder = screen.getByRole("button", {
+		const addFolder = screen.getByRole<HTMLButtonElement>("button", {
 			name: "Add local folder",
-		}) as HTMLButtonElement;
+		});
 		fireEvent.click(addFolder);
 
 		await waitFor(() => {

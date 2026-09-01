@@ -119,11 +119,11 @@ export class CommonspaceClientStore {
 					activeProjectId: this.resolveActiveProject(merged),
 				});
 			})
-			.catch((error: unknown) => {
+			.catch((cause: unknown) => {
 				this.set({
 					...this.snapshot,
 					loading: false,
-					error: error instanceof Error ? error.message : String(error),
+					error: cause instanceof Error ? cause.message : String(cause),
 				});
 			})
 			.finally(() => {
@@ -173,13 +173,12 @@ export class CommonspaceClientStore {
 				const queuedFollowups = Array.isArray(value.queuedFollowups)
 					? value.queuedFollowups
 					: bootstrap.queuedFollowups;
+				const nextBootstrap = { ...bootstrap, liveActivities: activities };
+				if (queuedFollowups !== undefined)
+					nextBootstrap.queuedFollowups = queuedFollowups;
 				this.set({
 					...this.snapshot,
-					bootstrap: {
-						...bootstrap,
-						liveActivities: activities,
-						...(queuedFollowups === undefined ? {} : { queuedFollowups }),
-					},
+					bootstrap: nextBootstrap,
 				});
 			} catch {
 				// Ignore malformed event frames; EventSource will continue.
@@ -234,10 +233,10 @@ export class CommonspaceClientStore {
 				},
 			);
 			const bootstrap = this.snapshot.bootstrap;
+			const next = { ...this.snapshot, error: null };
+			if (bootstrap !== null) next.bootstrap = { ...bootstrap, routing };
 			this.set({
-				...this.snapshot,
-				...(bootstrap === null ? {} : { bootstrap: { ...bootstrap, routing } }),
-				error: null,
+				...next,
 			});
 		} catch (error) {
 			this.set({
@@ -630,12 +629,11 @@ export class CommonspaceClientStore {
 
 	async stopAgentRuns(messageId: string, agentId?: string): Promise<string[]> {
 		try {
+			const request: { messageId: string; agentId?: string } = { messageId };
+			if (agentId !== undefined) request.agentId = agentId;
 			const result = await requestJson<StopAgentRunsResponse>("/api/stop", {
 				method: "POST",
-				body: JSON.stringify({
-					messageId,
-					...(agentId === undefined ? {} : { agentId }),
-				}),
+				body: JSON.stringify(request),
 			});
 			this.set({ ...this.snapshot, error: null });
 			return result.stoppedAgentIds;
@@ -662,25 +660,25 @@ export class CommonspaceClientStore {
 		await this.updateFollowupQueue("/api/followups/remove", { messageId });
 	}
 
-	private async updateFollowupQueue(path: string, body: object): Promise<void> {
+	private async updateFollowupQueue(
+		path: string,
+		body:
+			| { messageId: string }
+			| { messageId: string; direction: "up" | "down" },
+	): Promise<void> {
 		try {
 			const result = await requestJson<FollowupQueueResponse>(path, {
 				method: "POST",
 				body: JSON.stringify(body),
 			});
 			const bootstrap = this.snapshot.bootstrap;
-			this.set({
-				...this.snapshot,
-				...(bootstrap === null
-					? {}
-					: {
-							bootstrap: {
-								...bootstrap,
-								queuedFollowups: result.queuedFollowups,
-							},
-						}),
-				error: null,
-			});
+			const next = { ...this.snapshot, error: null };
+			if (bootstrap !== null)
+				next.bootstrap = {
+					...bootstrap,
+					queuedFollowups: result.queuedFollowups,
+				};
+			this.set(next);
 		} catch (error) {
 			this.set({
 				...this.snapshot,
@@ -704,14 +702,13 @@ export class CommonspaceClientStore {
 		const request: SendMessageRequest = {
 			conversation,
 			text,
-			...(projectIds === undefined ? {} : { projectIds: [...projectIds] }),
-			...(threadId === undefined ? {} : { threadId }),
-			...(targetAgentId === undefined ? {} : { targetAgentId }),
-			...(attachments.length === 0 ? {} : { attachments: [...attachments] }),
-			...(files.length === 0 ? {} : { files: [...files] }),
-
-			...(delivery === undefined ? {} : { delivery }),
 		};
+		if (projectIds !== undefined) request.projectIds = [...projectIds];
+		if (threadId !== undefined) request.threadId = threadId;
+		if (targetAgentId !== undefined) request.targetAgentId = targetAgentId;
+		if (attachments.length > 0) request.attachments = [...attachments];
+		if (files.length > 0) request.files = [...files];
+		if (delivery !== undefined) request.delivery = delivery;
 		this.set({ ...this.snapshot, sending: true, error: null });
 		try {
 			const result = await requestJson<SendMessageResponse>("/api/send", {

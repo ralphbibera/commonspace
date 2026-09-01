@@ -59,6 +59,14 @@ export function CommonspaceApp({ store }: CommonspaceAppProps) {
 		id: string;
 		token: number;
 	} | null>(null);
+	const [inboxViewRequest, setInboxViewRequest] = useState<{
+		view: "attention" | "sessions";
+		token: number;
+	} | null>(null);
+	const [composerInsertRequest, setComposerInsertRequest] = useState<{
+		text: string;
+		token: number;
+	} | null>(null);
 	const [activeProjectViewId, setActiveProjectViewId] = useState<string | null>(
 		null,
 	);
@@ -186,11 +194,12 @@ export function CommonspaceApp({ store }: CommonspaceAppProps) {
 	};
 
 	const openSession = (session: CommonspaceSessionItem) => {
-		openTarget({
+		const target: ConversationTarget = {
 			messageId: session.sourceMessageId,
 			conversation: session.conversation,
-			...(session.threadId === undefined ? {} : { threadId: session.threadId }),
-		});
+		};
+		if (session.threadId !== undefined) target.threadId = session.threadId;
+		openTarget(target);
 	};
 
 	const openSearchResult = (result: CommonspaceSearchResult) => {
@@ -200,13 +209,13 @@ export function CommonspaceApp({ store }: CommonspaceAppProps) {
 				store.selectThread(result.target.threadId ?? null);
 				openConversation(result.target.conversation);
 			} else {
-				openTarget({
+				const target: ConversationTarget = {
 					messageId: result.target.messageId,
 					conversation: result.target.conversation,
-					...(result.target.threadId === undefined
-						? {}
-						: { threadId: result.target.threadId }),
-				});
+				};
+				if (result.target.threadId !== undefined)
+					target.threadId = result.target.threadId;
+				openTarget(target);
 			}
 		} else if (result.target.kind === "project-file") {
 			store.selectProject(result.target.projectId);
@@ -227,6 +236,15 @@ export function CommonspaceApp({ store }: CommonspaceAppProps) {
 		setTargetProjectFile(null);
 		setSettingsRequest(null);
 		setActiveDestination("directory");
+		setNavigationOpen(false);
+	};
+
+	const openInbox = (view: "attention" | "sessions" = "attention") => {
+		setActiveProjectViewId(null);
+		setTargetProjectFile(null);
+		setSettingsRequest(null);
+		setInboxViewRequest({ view, token: Date.now() });
+		setActiveDestination("inbox");
 		setNavigationOpen(false);
 	};
 
@@ -307,12 +325,7 @@ export function CommonspaceApp({ store }: CommonspaceAppProps) {
 						onOpenSearch={() => {
 							setSearchOpen(true);
 						}}
-						onOpenInbox={() => {
-							setActiveProjectViewId(null);
-							setTargetProjectFile(null);
-							setActiveDestination("inbox");
-							setNavigationOpen(false);
-						}}
+						onOpenInbox={() => openInbox()}
 						onOpenThreads={() => {
 							setActiveProjectViewId(null);
 							setTargetProjectFile(null);
@@ -321,6 +334,15 @@ export function CommonspaceApp({ store }: CommonspaceAppProps) {
 						}}
 						onOpenDirectory={openDirectory}
 						onOpenContextSettings={openContextSettings}
+						onOpenAgentSessions={() => openInbox("sessions")}
+						onMentionAgent={(agentName) => {
+							setComposerInsertRequest({
+								text: `@${agentName} `,
+								token: Date.now(),
+							});
+							setActiveDestination("conversation");
+							setNavigationOpen(false);
+						}}
 						onOpenProject={(projectId, file) => {
 							setActiveProjectViewId(projectId);
 							setTargetProjectFile(file ?? null);
@@ -386,9 +408,14 @@ export function CommonspaceApp({ store }: CommonspaceAppProps) {
 								openConversation(conversation);
 							}}
 							onOpenSettings={openContextSettings}
+							onOpenSessions={() => openInbox("sessions")}
 						/>
 					) : activeDestination === "inbox" ? (
-						<CommonspaceInbox store={store} onOpenItem={openTarget} />
+						<CommonspaceInbox
+							store={store}
+							onOpenItem={openTarget}
+							viewRequest={inboxViewRequest}
+						/>
 					) : activeDestination === "threads" ? (
 						<CommonspaceThreads
 							bootstrap={snapshot.bootstrap}
@@ -398,6 +425,7 @@ export function CommonspaceApp({ store }: CommonspaceAppProps) {
 					) : (
 						<CommonspaceConversation
 							store={store}
+							composerInsertRequest={composerInsertRequest}
 							settingsRequest={
 								settingsRequest?.kind === "channel" ||
 								settingsRequest?.kind === "agent"

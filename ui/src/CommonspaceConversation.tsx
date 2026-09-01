@@ -17,13 +17,13 @@ import {
 } from "@commonspace/shared";
 import { SettingsIcon } from "lucide-react";
 import {
-	type CSSProperties,
 	type Dispatch,
 	type FormEvent,
 	Fragment,
 	lazy,
 	type SetStateAction,
 	Suspense,
+	useCallback,
 	useEffect,
 	useId,
 	useRef,
@@ -37,6 +37,7 @@ import {
 	AgentSettingsPane,
 	ChannelSettingsPane,
 } from "./CommonspaceContextSettings.tsx";
+import { MessageActionMenu } from "./design-system/MessageActionMenu.tsx";
 import type { CommonspaceStore } from "./commonspace-store.ts";
 import {
 	type MessageSpeechControls,
@@ -78,6 +79,7 @@ export interface CommonspaceConversationProps {
 		id: string;
 		token: number;
 	} | null;
+	composerInsertRequest?: { text: string; token: number } | null;
 }
 
 interface CommandFeedback {
@@ -172,7 +174,7 @@ function PendingImageStrip({
 }) {
 	if (images.length === 0) return null;
 	return (
-		<div className="flex flex-wrap gap-2 py-2" aria-label="Attached images">
+		<section className="flex flex-wrap gap-2 py-2" aria-label="Attached images">
 			{images.map((image, index) => (
 				<figure
 					key={`${image.name}-${String(index)}`}
@@ -181,7 +183,7 @@ function PendingImageStrip({
 					<img
 						className="h-16 w-24 rounded-sm border object-cover"
 						src={`data:${image.mimeType};base64,${image.data}`}
-						alt={`Pasted image ${image.name}`}
+					alt={`Pasted attachment ${image.name}`}
 					/>
 					<figcaption className="mt-1 truncate text-xs text-muted-foreground">
 						{image.name}
@@ -198,7 +200,7 @@ function PendingImageStrip({
 					</button>
 				</figure>
 			))}
-		</div>
+		</section>
 	);
 }
 
@@ -211,7 +213,7 @@ function PendingFileStrip({
 }) {
 	if (files.length === 0) return null;
 	return (
-		<div className="grid gap-1 py-2" aria-label="Attached files">
+		<section className="grid gap-1 py-2" aria-label="Attached files">
 			{files.map((file, index) => (
 				<span
 					key={`${file.name}-${String(index)}`}
@@ -235,7 +237,7 @@ function PendingFileStrip({
 					</button>
 				</span>
 			))}
-		</div>
+		</section>
 	);
 }
 
@@ -519,6 +521,10 @@ function MessageRow({
 	onEdit,
 	onDelete,
 	onOpenVersion,
+	saved = false,
+	onReplyInThread,
+	onToggleSaved,
+	onCopyLink,
 	speech,
 }: {
 	message: CommonspaceMessage;
@@ -531,6 +537,13 @@ function MessageRow({
 	onEdit?: (message: CommonspaceMessage, text: string) => Promise<void>;
 	onDelete?: (message: CommonspaceMessage) => Promise<void>;
 	onOpenVersion?: (messageId: string) => void;
+	saved?: boolean;
+	onReplyInThread?: () => void;
+	onToggleSaved?: (
+		message: CommonspaceMessage,
+		saved: boolean,
+	) => Promise<void>;
+	onCopyLink?: (message: CommonspaceMessage) => void;
 	speech: MessageSpeechControls;
 }) {
 	const reading = speech.activeMessageId === message.id;
@@ -553,7 +566,7 @@ function MessageRow({
 		<article
 			id={elementId}
 			className={cn(
-				"mx-auto mb-6 grid w-full max-w-[780px] grid-cols-[36px_minmax(0,1fr)] gap-3 rounded-md",
+				"group/message mx-auto mb-6 grid w-full max-w-[780px] grid-cols-[36px_minmax(0,1fr)] gap-3 rounded-md",
 				compact && "mb-3",
 			)}
 			data-author={message.authorType}
@@ -580,7 +593,7 @@ function MessageRow({
 					{message.authorType === "agent" && onReplyToAgent !== undefined && (
 						<button
 							type="button"
-							className="min-h-8 rounded-sm border-0 bg-transparent px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+							className="min-h-8 rounded-sm border-0 bg-transparent px-2 text-xs text-muted-foreground opacity-0 hover:bg-muted hover:text-foreground group-hover/message:opacity-100 focus:opacity-100"
 							aria-label={`Reply directly to ${message.authorName}`}
 							onClick={() => {
 								onReplyToAgent(message);
@@ -592,7 +605,7 @@ function MessageRow({
 					{onPin !== undefined && (
 						<button
 							type="button"
-							className="min-h-8 rounded-sm border-0 bg-transparent px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+							className="min-h-8 rounded-sm border-0 bg-transparent px-2 text-xs text-muted-foreground opacity-0 hover:bg-muted hover:text-foreground group-hover/message:opacity-100 focus:opacity-100"
 							aria-label={`Pin message from ${message.authorName}`}
 							onClick={() => {
 								void onPin(message);
@@ -606,7 +619,7 @@ function MessageRow({
 						onEdit !== undefined && (
 							<button
 								type="button"
-								className="min-h-8 rounded-sm border-0 bg-transparent px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+								className="min-h-8 rounded-sm border-0 bg-transparent px-2 text-xs text-muted-foreground opacity-0 hover:bg-muted hover:text-foreground group-hover/message:opacity-100 focus:opacity-100"
 								aria-label={`Edit message from ${message.authorName}`}
 								onClick={() => {
 									setEditedText(message.text);
@@ -619,7 +632,7 @@ function MessageRow({
 					{message.deletedAt === undefined && onDelete !== undefined && (
 						<button
 							type="button"
-							className="min-h-8 rounded-sm border-0 bg-transparent px-2 text-xs text-muted-foreground hover:bg-destructive/5 hover:text-destructive"
+							className="min-h-8 rounded-sm border-0 bg-transparent px-2 text-xs text-muted-foreground opacity-0 hover:bg-destructive/5 hover:text-destructive group-hover/message:opacity-100 focus:opacity-100"
 							aria-label={`Delete message from ${message.authorName}`}
 							onClick={() => {
 								if (
@@ -632,6 +645,20 @@ function MessageRow({
 						>
 							Delete
 						</button>
+					)}
+					{onToggleSaved !== undefined && onCopyLink !== undefined && (
+						<MessageActionMenu
+							authorName={message.authorName}
+							summary={message.text}
+							saved={saved}
+							{...(onReplyInThread === undefined ? {} : { onReplyInThread })}
+							onToggleSaved={() => {
+								void onToggleSaved(message, !saved);
+							}}
+							onCopyLink={() => {
+								onCopyLink(message);
+							}}
+						/>
 					)}
 					{message.authorType === "agent" &&
 						message.text.trim() !== "" &&
@@ -805,7 +832,7 @@ function MessageRow({
 						</div>
 					)}
 				{message.files !== undefined && message.files.length > 0 && (
-					<div className="mt-3 grid gap-1" aria-label="Message files">
+					<section className="mt-3 grid gap-1" aria-label="Message files">
 						{message.files.map((file) => (
 							<span
 								key={file.id}
@@ -834,7 +861,7 @@ function MessageRow({
 								)}
 							</span>
 						))}
-					</div>
+					</section>
 				)}
 
 				{message.authorType === "agent" && message.trace !== undefined && (
@@ -1064,6 +1091,7 @@ function LiveAgentActivity({
 									>
 										<span
 											className="grid size-[34px] place-items-center rounded-full border border-primary/30 bg-primary text-xs font-semibold text-primary-foreground"
+											role="img"
 											aria-label={`${activity.agentName} is responding`}
 										>
 											{activity.agentName.slice(0, 1).toLocaleUpperCase()}
@@ -1104,7 +1132,6 @@ function LiveAgentActivity({
 									<section
 										id={panelId}
 										className="border-t bg-muted p-3"
-										role="region"
 										aria-label={`${activity.agentName} live activity`}
 									>
 										{activity.entries.length > 0 ? (
@@ -1128,6 +1155,7 @@ function LiveAgentActivity({
 							<div className="grid min-h-[62px] grid-cols-[34px_minmax(0,1fr)] items-center gap-2.5 px-3">
 								<span
 									className="grid size-[34px] place-items-center rounded-full border border-primary/30 bg-primary text-xs font-semibold text-primary-foreground"
+									role="img"
 									aria-label={`${agent.displayName} is ${phase === "queued" ? "queued" : "responding"}`}
 								>
 									{agent.displayName.slice(0, 1).toLocaleUpperCase()}
@@ -1172,6 +1200,7 @@ function ThreadAgentActivity({
 						key={agentId}
 						className="-ml-1 grid size-6 place-items-center rounded-full border border-background bg-primary font-mono text-[10px] text-primary-foreground first:ml-0"
 						data-runtime={agent?.adapter}
+						role="img"
 						aria-label={`${name} is responding`}
 						style={{ zIndex: respondingAgentIds.length - index }}
 					>
@@ -1207,6 +1236,7 @@ function ThreadReplyAgents({
 					data-runtime={
 						agents.find((agent) => agent.id === reply.authorId)?.adapter
 					}
+					role="img"
 					aria-label={`${reply.authorName} replied`}
 				>
 					{reply.authorName.slice(0, 1).toLocaleUpperCase()}
@@ -1235,7 +1265,6 @@ function PermissionRequests({
 					<section
 						key={permission.id}
 						className="mx-auto mb-3 w-[min(760px,calc(100%-48px))] rounded-md border border-[color-mix(in_oklch,var(--status-warning)_45%,var(--border))] bg-[color-mix(in_oklch,var(--status-warning)_7%,var(--background))] p-4"
-						role="region"
 						aria-label={`Permission request from ${agentName}`}
 					>
 						<header className="flex items-center justify-between gap-2 text-xs">
@@ -1272,6 +1301,7 @@ export function CommonspaceConversation({
 	targetMessageId = null,
 	onTargetMessageHandled,
 	settingsRequest = null,
+	composerInsertRequest = null,
 }: CommonspaceConversationProps) {
 	const suggestionListId = useId();
 	const threadSuggestionListId = useId();
@@ -1320,7 +1350,7 @@ export function CommonspaceConversation({
 	const [focusedRootMessageId, setFocusedRootMessageId] = useState<
 		string | null
 	>(targetMessageId ?? null);
-	const [threadWidth, setThreadWidth] = useState(50);
+	const [threadWidth, setThreadWidth] = useState(42);
 	const [resizingThread, setResizingThread] = useState(false);
 	const [contextSettingsOpen, setContextSettingsOpen] = useState(false);
 	const conversationLayout = useRef<HTMLDivElement>(null);
@@ -1338,6 +1368,7 @@ export function CommonspaceConversation({
 					.filter((item) => item.unread)
 					.map((item) => item.messageId),
 	);
+	const savedMessageIds = new Set(bootstrap?.state.inboxSavedItemIds ?? []);
 	const heading = conversationTitle(store, snapshot.activeConversation);
 	const isChannel = snapshot.activeConversation?.kind === "channel";
 	const activeChannel =
@@ -1534,18 +1565,23 @@ export function CommonspaceConversation({
 		pendingThreadFiles.length === 0 &&
 		threadDraft.startsWith("/");
 
-	const scrollThreadToBottom = () => {
+	const scrollThreadToBottom = useCallback(() => {
 		const messagesViewport = threadMessages.current;
 		if (messagesViewport === null) return;
 		const bottomOffset = messagesViewport.scrollHeight;
 		messagesViewport.scrollTop = bottomOffset;
 		messagesViewport.scrollTo?.({ top: bottomOffset, behavior: "auto" });
-	};
+	}, []);
 
 	useEffect(() => {
+		void messages.length;
+		void snapshot.sending;
+		void directMessagePhase;
 		bottom.current?.scrollIntoView({ block: "end" });
 	}, [messages.length, snapshot.sending, directMessagePhase]);
 	useEffect(() => {
+		void messages.length;
+		void snapshot.activeThreadId;
 		if (targetMessageId == null) return;
 		setFocusedRootMessageId(targetMessageId);
 		const target = document.getElementById(
@@ -1562,12 +1598,21 @@ export function CommonspaceConversation({
 		targetMessageId,
 	]);
 	useEffect(() => {
+		void snapshot.activeConversation;
 		composer.current?.focus();
 		setCommandFeedback(null);
 		setPendingImages([]);
 		setPendingFiles([]);
 		setContextSettingsOpen(false);
-	}, [snapshot.activeConversation?.id, snapshot.activeConversation?.kind]);
+	}, [snapshot.activeConversation]);
+	useEffect(() => {
+		if (composerInsertRequest === null || !isChannel) return;
+		setDraft(
+			(current) =>
+				`${current}${current !== "" && !/\s$/u.test(current) ? " " : ""}${composerInsertRequest.text}`,
+		);
+		composer.current?.focus();
+	}, [composerInsertRequest, isChannel]);
 	useEffect(() => {
 		const conversation = snapshot.activeConversation;
 		if (settingsRequest === null || conversation === null) return;
@@ -1579,11 +1624,14 @@ export function CommonspaceConversation({
 		if (!matches) return;
 		store.selectThread(null);
 		setContextSettingsOpen(true);
-	}, [settingsRequest?.token]);
+	}, [settingsRequest, snapshot.activeConversation, store.selectThread]);
 	useEffect(() => {
 		if (activeThread !== undefined) setContextSettingsOpen(false);
-	}, [activeThread?.id]);
+	}, [activeThread]);
 	useEffect(() => {
+		void snapshot.activeConversation?.id;
+		void snapshot.activeConversation?.kind;
+		void snapshot.activeThreadId;
 		setThreadReplyTarget(null);
 		setPendingThreadImages([]);
 		setPendingThreadFiles([]);
@@ -1600,15 +1648,16 @@ export function CommonspaceConversation({
 		setThreadContextSummary(memory.summary);
 		setThreadContextDecisions(memory.decisions.join("\n"));
 		setThreadContextQuestions(memory.openQuestions.join("\n"));
-	}, [activeThread?.context?.memory.updatedAt, activeThread?.id]);
+	}, [activeThread?.context?.memory]);
 	useEffect(() => {
+		void replies.length;
 		if (snapshot.activeThreadId === null) return;
 		if (suppressThreadAutoScroll.current) {
 			suppressThreadAutoScroll.current = false;
 			return;
 		}
 		scrollThreadToBottom();
-	}, [replies.length, snapshot.activeThreadId]);
+	}, [replies.length, snapshot.activeThreadId, scrollThreadToBottom]);
 	useEffect(() => {
 		if (!resizingThread) return;
 
@@ -2111,6 +2160,20 @@ export function CommonspaceConversation({
 	const deleteDeliveredMessage = async (message: CommonspaceMessage) => {
 		await store.deleteMessage(message.id);
 	};
+	const toggleSavedMessage = async (
+		message: CommonspaceMessage,
+		saved: boolean,
+	) => {
+		await store.mutate({
+			action: "set-inbox-item-saved",
+			messageId: message.id,
+			saved,
+		});
+	};
+	const copyMessageLink = (message: CommonspaceMessage) => {
+		const link = `commonspace://${message.conversation.kind}/${message.conversation.id}/message/${message.id}`;
+		void navigator.clipboard?.writeText(link).catch(() => undefined);
+	};
 
 	const openMessageVersion = (messageId: string) => {
 		const version = messages.find((message) => message.id === messageId);
@@ -2342,6 +2405,17 @@ export function CommonspaceConversation({
 														onEdit={editDeliveredMessage}
 														onDelete={deleteDeliveredMessage}
 														onOpenVersion={openMessageVersion}
+														saved={savedMessageIds.has(root.id)}
+														onToggleSaved={toggleSavedMessage}
+														onCopyLink={copyMessageLink}
+														{...(thread === undefined
+															? {}
+															: {
+																	onReplyInThread: () => {
+																		setContextSettingsOpen(false);
+																		store.selectThread(thread.id);
+																	},
+																})}
 														speech={speech}
 													/>
 													<button
@@ -2418,6 +2492,9 @@ export function CommonspaceConversation({
 											onEdit={editDeliveredMessage}
 											onDelete={deleteDeliveredMessage}
 											onOpenVersion={openMessageVersion}
+											saved={savedMessageIds.has(message.id)}
+											onToggleSaved={toggleSavedMessage}
+											onCopyLink={copyMessageLink}
 											speech={speech}
 										/>
 									))}
@@ -2444,7 +2521,6 @@ export function CommonspaceConversation({
 						{directMessageFollowups.length > 0 && (
 							<section
 								className="mx-auto mb-2 w-[min(760px,calc(100%-48px))] rounded-lg border bg-muted px-3 py-2.5"
-								role="region"
 								aria-label="Queued follow-ups"
 							>
 								<header>
@@ -2665,9 +2741,8 @@ export function CommonspaceConversation({
 							</div>
 							<div className="flex min-h-[52px] items-center gap-2 pt-1">
 								{directMessageActivities.length > 0 && !isChannel ? (
-									<div
-										className="flex flex-wrap items-center gap-1 [&_button]:min-h-9 [&_button]:rounded-sm [&_button]:border [&_button]:px-2 [&_button]:text-xs [&_button[aria-pressed=true]]:bg-muted"
-										role="group"
+									<fieldset
+										className="m-0 flex min-w-0 flex-wrap items-center gap-1 border-0 p-0 [&_button]:min-h-9 [&_button]:rounded-sm [&_button]:border [&_button]:px-2 [&_button]:text-xs [&_button[aria-pressed=true]]:bg-muted"
 										aria-label="Active run delivery"
 									>
 										<button
@@ -2698,7 +2773,7 @@ export function CommonspaceConversation({
 										>
 											Stop + send
 										</button>
-									</div>
+									</fieldset>
 								) : (
 									<div
 										className="flex items-center gap-1 text-xs text-muted-foreground"
@@ -2766,9 +2841,8 @@ export function CommonspaceConversation({
 					</section>
 
 					{activeThread !== undefined && (
-						<div
+						<hr
 							className="relative z-20 h-full w-2 cursor-col-resize border-0 bg-transparent after:absolute after:inset-y-0 after:left-[3px] after:w-px after:bg-border hover:after:w-0.5 hover:after:bg-primary"
-							role="separator"
 							aria-label="Resize thread"
 							aria-orientation="vertical"
 							aria-valuemin={25}
@@ -2776,7 +2850,7 @@ export function CommonspaceConversation({
 							aria-valuenow={threadWidth}
 							tabIndex={0}
 							onDoubleClick={() => {
-								setThreadWidth(50);
+								setThreadWidth(42);
 							}}
 							onPointerDown={(event) => {
 								event.preventDefault();
@@ -2855,7 +2929,6 @@ export function CommonspaceConversation({
 							{threadContextOpen && (
 								<section
 									className="max-h-[48%] overflow-y-auto border-b bg-muted p-4 text-xs [&_button]:min-h-10 [&_button]:rounded-sm [&_button]:border [&_button]:px-3 [&_details]:rounded-md [&_details]:border [&_details]:bg-background [&_details]:p-3 [&_form]:mt-3 [&_form]:grid [&_form]:gap-2 [&_input]:min-h-10 [&_input]:rounded-sm [&_input]:border [&_input]:bg-background [&_input]:px-2 [&_label]:grid [&_label]:gap-1 [&_textarea]:min-h-20 [&_textarea]:rounded-sm [&_textarea]:border [&_textarea]:bg-background [&_textarea]:p-2"
-									role="region"
 									aria-label="Thread context"
 								>
 									<details open>
@@ -3023,6 +3096,9 @@ export function CommonspaceConversation({
 										onEdit={editDeliveredMessage}
 										onDelete={deleteDeliveredMessage}
 										onOpenVersion={openMessageVersion}
+										saved={savedMessageIds.has(activeRoot.id)}
+										onToggleSaved={toggleSavedMessage}
+										onCopyLink={copyMessageLink}
 										speech={speech}
 									/>
 								)}
@@ -3041,6 +3117,9 @@ export function CommonspaceConversation({
 										onEdit={editDeliveredMessage}
 										onDelete={deleteDeliveredMessage}
 										onOpenVersion={openMessageVersion}
+										saved={savedMessageIds.has(reply.id)}
+										onToggleSaved={toggleSavedMessage}
+										onCopyLink={copyMessageLink}
 										speech={speech}
 									/>
 								))}
@@ -3065,7 +3144,6 @@ export function CommonspaceConversation({
 							{activeThreadFollowups.length > 0 && (
 								<section
 									className="mx-4 mb-2 rounded-lg border bg-muted px-3 py-2.5"
-									role="region"
 									aria-label="Queued thread follow-ups"
 								>
 									<header>
@@ -3257,9 +3335,8 @@ export function CommonspaceConversation({
 								</div>
 								{activeThreadActivities.length > 0 &&
 									threadReplyTarget === null && (
-										<div
-											className="flex flex-wrap items-center gap-1 [&_button]:min-h-9 [&_button]:rounded-sm [&_button]:border [&_button]:px-2 [&_button]:text-xs"
-											role="group"
+										<fieldset
+											className="m-0 flex min-w-0 flex-wrap items-center gap-1 border-0 p-0 [&_button]:min-h-9 [&_button]:rounded-sm [&_button]:border [&_button]:px-2 [&_button]:text-xs"
 											aria-label="Active thread run delivery"
 										>
 											<button
@@ -3290,7 +3367,7 @@ export function CommonspaceConversation({
 											>
 												Stop + send
 											</button>
-										</div>
+										</fieldset>
 									)}
 								<label className="relative inline-flex min-h-9 w-fit items-center rounded-sm border px-2 text-xs font-semibold">
 									Attach

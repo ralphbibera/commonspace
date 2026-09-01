@@ -87,19 +87,19 @@ export function tagSuggestions(
 					tagName.startsWith(query) ||
 					agent.displayName.toLocaleLowerCase().startsWith(query),
 			)
-			.map(({ agent, tagName }) => ({
-				kind: "agent" as const,
-				id: agent.id,
-				label: agent.displayName,
-				token: `@${tagName}`,
-				...(channelAgentIds === undefined
-					? {}
-					: {
-							channelMembership: channelAgentIds.includes(agent.id)
-								? ("member" as const)
-								: ("outside" as const),
-						}),
-			}))
+			.map(({ agent, tagName }): TagSuggestion => {
+				const suggestion: TagSuggestion = {
+					kind: "agent",
+					id: agent.id,
+					label: agent.displayName,
+					token: `@${tagName}`,
+				};
+				if (channelAgentIds !== undefined)
+					suggestion.channelMembership = channelAgentIds.includes(agent.id)
+						? "member"
+						: "outside";
+				return suggestion;
+			})
 			.sort((left, right) =>
 				left.channelMembership === right.channelMembership ||
 				left.channelMembership === undefined
@@ -108,19 +108,18 @@ export function tagSuggestions(
 						? -1
 						: 1,
 			);
-		const all = "all".startsWith(query)
-			? [
-					{
-						kind: "agent" as const,
-						id: "all",
-						label: "All agents",
-						token: "@all",
-						...(channelAgentIds === undefined
-							? {}
-							: { channelMembership: "member" as const }),
-					},
-				]
-			: [];
+		const all: TagSuggestion[] = [];
+		if ("all".startsWith(query)) {
+			const suggestion: TagSuggestion = {
+				kind: "agent",
+				id: "all",
+				label: "All agents",
+				token: "@all",
+			};
+			if (channelAgentIds !== undefined)
+				suggestion.channelMembership = "member";
+			all.push(suggestion);
+		}
 		return [...all, ...agents].slice(0, 6);
 	}
 	if (prefix === "@@") {

@@ -18,6 +18,7 @@ import {
 	EmptyTitle,
 } from "@/components/ui/empty";
 import { WorkspaceHeader } from "@/design-system/WorkspaceHeader";
+import { ResourceActionMenu } from "@/design-system/ResourceActionMenu";
 import type { CommonspaceStore } from "./commonspace-store.ts";
 
 interface ThreadRow {
@@ -32,6 +33,7 @@ interface ThreadRow {
 	updatedAt: string;
 	unread: boolean;
 	followed: boolean;
+	unreadMessageIds: string[];
 	sessionId?: string;
 }
 
@@ -48,8 +50,9 @@ export interface CommonspaceThreadsProps {
 function threadRows(bootstrap: CommonspaceBootstrap | null): ThreadRow[] {
 	if (bootstrap === null) return [];
 	const { state } = bootstrap;
+	const inboxItems = deriveCommonspaceInboxItems(state);
 	const unreadThreadIds = new Set(
-		deriveCommonspaceInboxItems(state).flatMap((item) =>
+		inboxItems.flatMap((item) =>
 			item.unread && item.threadId !== undefined ? [item.threadId] : [],
 		),
 	);
@@ -81,24 +84,27 @@ function threadRows(bootstrap: CommonspaceBootstrap | null): ThreadRow[] {
 			const session = sessions.find(
 				(candidate) => candidate.threadId === thread.id,
 			);
-			return [
-				{
-					id: thread.id,
-					messageId: root.id,
-					conversation,
-					channelName: channels.get(thread.channelId) ?? thread.channelId,
-					title: root.text,
-					detail: latest === root ? "No replies yet." : latest.text,
-					agentNames: thread.agentIds.flatMap(
-						(agentId) => agents.get(agentId) ?? [],
-					),
-					replyCount: replies.length,
-					updatedAt: latest.createdAt,
-					unread: unreadThreadIds.has(thread.id),
-					followed: session?.followed ?? false,
-					...(session === undefined ? {} : { sessionId: session.id }),
-				},
-			];
+			const unreadMessageIds = inboxItems
+				.filter((item) => item.unread && item.threadId === thread.id)
+				.map((item) => item.messageId);
+			const row: ThreadRow = {
+				id: thread.id,
+				messageId: root.id,
+				conversation,
+				channelName: channels.get(thread.channelId) ?? thread.channelId,
+				title: root.text,
+				detail: latest === root ? "No replies yet." : latest.text,
+				agentNames: thread.agentIds.flatMap(
+					(agentId) => agents.get(agentId) ?? [],
+				),
+				replyCount: replies.length,
+				updatedAt: latest.createdAt,
+				unread: unreadThreadIds.has(thread.id),
+				followed: session?.followed ?? false,
+				unreadMessageIds,
+			};
+			if (session !== undefined) row.sessionId = session.id;
+			return [row];
 		})
 		.toSorted(
 			(left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt),
@@ -164,10 +170,9 @@ export function CommonspaceThreads({
 			</div>
 
 			<div className="mx-auto flex min-h-[54px] w-full max-w-[1020px] items-center justify-end border-b px-9 max-[640px]:px-3">
-				<div
-					role="group"
+				<fieldset
 					aria-label="Thread filter"
-					className="flex items-center gap-0.5"
+					className="m-0 flex min-w-0 items-center gap-0.5 border-0 p-0"
 				>
 					<button
 						type="button"
@@ -199,7 +204,7 @@ export function CommonspaceThreads({
 					>
 						Following
 					</button>
-				</div>
+				</fieldset>
 			</div>
 
 			<div className="min-h-0 flex-1 overflow-y-auto" aria-live="polite">
@@ -220,7 +225,7 @@ export function CommonspaceThreads({
 						{visibleRows.map((row) => (
 							<li
 								key={row.id}
-								className="group relative grid min-h-[88px] grid-cols-[minmax(0,1fr)_44px] items-center border-b [contain-intrinsic-size:88px] [content-visibility:auto]"
+								className="group relative grid min-h-[88px] grid-cols-[minmax(0,1fr)_44px_44px] items-center border-b [contain-intrinsic-size:88px] [content-visibility:auto]"
 							>
 								<button
 									type="button"
@@ -299,6 +304,48 @@ export function CommonspaceThreads({
 								>
 									<BellPlusIcon className="size-[17px]" aria-hidden="true" />
 								</button>
+								<ResourceActionMenu
+									kind="thread"
+									label={row.title}
+									meta={`#${row.channelName}`}
+									following={row.followed}
+									unread={row.unread}
+									onOpen={() => {
+										onOpenThread({
+											messageId: row.messageId,
+											conversation: row.conversation,
+											threadId: row.id,
+										});
+									}}
+									{...(row.sessionId === undefined
+										? {}
+										: {
+												onToggleFollow: () => {
+													const sessionId = row.sessionId;
+													if (sessionId === undefined) return;
+													void store.mutate({
+														action: "set-session-followed",
+														sessionId,
+														followed: !row.followed,
+													});
+												},
+											})}
+									onMarkRead={() => {
+										for (const messageId of row.unreadMessageIds) {
+											void store.mutate({
+												action: "mark-inbox-item-read",
+												messageId,
+											});
+										}
+									}}
+									onCopy={() => {
+										void navigator.clipboard
+											?.writeText(
+												`commonspace://channel/${row.conversation.id}/thread/${row.id}`,
+											)
+											.catch(() => undefined);
+									}}
+								/>
 							</li>
 						))}
 					</ol>

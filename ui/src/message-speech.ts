@@ -111,6 +111,7 @@ export function useMessageSpeech(
 	);
 
 	useEffect(() => {
+		void scopeKey;
 		if (activeMessageRef.current !== null) stop();
 		return () => {
 			generation.current += 1;

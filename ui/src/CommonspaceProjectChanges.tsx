@@ -95,6 +95,7 @@ export function CommonspaceProjectChanges({
 	const [diffError, setDiffError] = useState<string | null>(null);
 
 	useEffect(() => {
+		void refresh;
 		const controller = new AbortController();
 		setStatus(null);
 		setStatusError(null);
@@ -110,10 +111,10 @@ export function CommonspaceProjectChanges({
 				if (result.available && result.files[0] !== undefined)
 					setSelected(result.files[0]);
 			})
-			.catch((error: unknown) => {
+			.catch((cause: unknown) => {
 				if (!controller.signal.aborted)
 					setStatusError(
-						error instanceof Error ? error.message : String(error),
+						cause instanceof Error ? cause.message : String(cause),
 					);
 			});
 		return () => {
@@ -132,9 +133,9 @@ export function CommonspaceProjectChanges({
 			fetcher,
 		)
 			.then(setDiff)
-			.catch((error: unknown) => {
+			.catch((cause: unknown) => {
 				if (!controller.signal.aborted)
-					setDiffError(error instanceof Error ? error.message : String(error));
+					setDiffError(cause instanceof Error ? cause.message : String(cause));
 			});
 		return () => {
 			controller.abort();

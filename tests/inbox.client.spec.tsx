@@ -17,6 +17,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { CommonspaceApp } from "../ui/src/CommonspaceApp.tsx";
+import type { CommonspaceClientSnapshot } from "../ui/src/commonspace-store.ts";
 import { mustExist } from "./test-helpers.ts";
 
 afterEach(() => {
@@ -132,7 +133,7 @@ function state(overrides: Partial<CommonspaceState> = {}): CommonspaceState {
 
 function appStore(initialState: CommonspaceState, includeLiveActivity = true) {
 	const listeners = new Set<() => void>();
-	let snapshot = {
+	let snapshot: CommonspaceClientSnapshot = {
 		bootstrap: {
 			agents: initialState.agents.map((agent) => ({
 				...agent,
@@ -168,9 +169,9 @@ function appStore(initialState: CommonspaceState, includeLiveActivity = true) {
 		loading: false,
 		sending: false,
 		error: null,
-		activeConversation: null as ConversationRef | null,
-		activeProjectId: null as string | null,
-		activeThreadId: null as string | null,
+		activeConversation: null,
+		activeProjectId: null,
+		activeThreadId: null,
 	};
 	const emit = () => {
 		for (const listener of listeners) listener();

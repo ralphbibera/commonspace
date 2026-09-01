@@ -3,6 +3,7 @@
 import {
 	COMMONSPACE_STATE_VERSION,
 	type CommonspaceAgentTrace,
+	type CommonspaceMessage,
 	type CommonspaceRunAttribution,
 } from "@commonspace/shared";
 import {
@@ -28,8 +29,7 @@ function renderAgentMessage(
 	trace?: CommonspaceAgentTrace,
 	runAttribution?: CommonspaceRunAttribution,
 ) {
-	const messages = [
-		{
+	const message: CommonspaceMessage = {
 			id: "message-1",
 			conversation: { kind: "dm" as const, id: "writer" },
 			authorType: "agent" as const,
@@ -37,12 +37,13 @@ function renderAgentMessage(
 			authorName: "Writer",
 			text,
 			createdAt: "2026-08-26T00:00:00.000Z",
-			...(trace === undefined ? {} : { trace }),
-			...(runAttribution === undefined
-				? {}
-				: { projectId: "project-1", runAttribution }),
-		},
-	];
+		};
+	if (trace !== undefined) message.trace = trace;
+	if (runAttribution !== undefined) {
+		message.projectId = "project-1";
+		message.runAttribution = runAttribution;
+	}
+	const messages = [message];
 	const snapshot = {
 		bootstrap: {
 			agents: [
@@ -161,7 +162,6 @@ describe("Commonspace message markdown", () => {
 	});
 
 	it("reads an agent message aloud as prose and exposes playback controls", () => {
-		const speak = vi.fn();
 		const cancel = vi.fn();
 		class TestUtterance {
 			readonly text: string;
@@ -172,6 +172,9 @@ describe("Commonspace message markdown", () => {
 				this.text = text;
 			}
 		}
+		const speak = vi.fn((utterance: TestUtterance) => {
+			void utterance.text;
+		});
 		vi.stubGlobal("SpeechSynthesisUtterance", TestUtterance);
 		vi.stubGlobal("speechSynthesis", { cancel, speak });
 		renderAgentMessage(
@@ -190,7 +193,7 @@ describe("Commonspace message markdown", () => {
 
 		expect(cancel).toHaveBeenCalledOnce();
 		expect(speak).toHaveBeenCalledOnce();
-		expect((speak.mock.calls[0]?.[0] as TestUtterance).text).toBe(
+		expect(speak.mock.calls[0]?.[0].text).toBe(
 			"Result. Commonspace is ready. See the notes. Code block omitted.",
 		);
 		const stop = screen.getByRole("button", { name: "Stop reading aloud" });

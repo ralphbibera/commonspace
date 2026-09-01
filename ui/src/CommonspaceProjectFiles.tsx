@@ -3,6 +3,7 @@ import type {
 	ProjectFileEntry,
 } from "@commonspace/shared";
 import { useEffect, useMemo, useState } from "react";
+import { ResourceActionMenu } from "@/design-system/ResourceActionMenu";
 import {
 	fetchProjectJson,
 	fetchProjectText,
@@ -62,10 +63,10 @@ export function CommonspaceProjectFiles({
 			fetcher,
 		)
 			.then(setListing)
-			.catch((error: unknown) => {
+			.catch((cause: unknown) => {
 				if (!controller.signal.aborted)
 					setListingError(
-						error instanceof Error ? error.message : String(error),
+						cause instanceof Error ? cause.message : String(cause),
 					);
 			});
 		return () => {
@@ -84,10 +85,10 @@ export function CommonspaceProjectFiles({
 			fetcher,
 		)
 			.then(setText)
-			.catch((error: unknown) => {
+			.catch((cause: unknown) => {
 				if (!controller.signal.aborted)
 					setPreviewError(
-						error instanceof Error ? error.message : String(error),
+						cause instanceof Error ? cause.message : String(cause),
 					);
 			});
 		return () => {
@@ -207,39 +208,54 @@ export function CommonspaceProjectFiles({
 					{listingError !== null && (
 						<div className="p-5 text-xs text-destructive">{listingError}</div>
 					)}
-					{listing?.entries.map((entry) => (
-						<button
-							key={entry.path}
-							type="button"
-							className="grid min-h-12 w-full grid-cols-[28px_minmax(0,1fr)_auto] items-center gap-2 border-0 border-b bg-transparent px-3 py-1 text-left hover:bg-muted aria-pressed:bg-muted"
-							aria-label={`${entry.kind === "directory" ? "Open folder" : "Open file"} ${entry.name}`}
-							aria-pressed={
-								entry.kind === "file" && selected?.path === entry.path
-							}
-							onClick={() => {
-								if (entry.kind === "directory") {
-									setDirectoryPath(entry.path);
-									return;
-								}
-								setSelected(entry);
-							}}
-						>
-							<span
-								className="grid size-7 place-items-center font-mono text-[10px] text-muted-foreground"
-								aria-hidden="true"
+					{listing?.entries.map((entry) => {
+						const openEntry = () => {
+							if (entry.kind === "directory") setDirectoryPath(entry.path);
+							else setSelected(entry);
+						};
+						return (
+							<div
+								key={entry.path}
+								className="group grid grid-cols-[minmax(0,1fr)_44px] items-center border-b"
 							>
-								{entryGlyph(entry)}
-							</span>
-							<span className="truncate text-xs font-semibold">
-								{entry.name}
-							</span>
-							<small className="text-xs text-muted-foreground">
-								{entry.kind === "directory"
-									? "Folder"
-									: formatFileSize(entry.size)}
-							</small>
-						</button>
-					))}
+								<button
+									type="button"
+									className="grid min-h-12 w-full grid-cols-[28px_minmax(0,1fr)_auto] items-center gap-2 border-0 bg-transparent px-3 py-1 text-left hover:bg-muted aria-pressed:bg-muted"
+									aria-label={`${entry.kind === "directory" ? "Open folder" : "Open file"} ${entry.name}`}
+									aria-pressed={
+										entry.kind === "file" && selected?.path === entry.path
+									}
+									onClick={openEntry}
+								>
+									<span
+										className="grid size-7 place-items-center font-mono text-[10px] text-muted-foreground"
+										aria-hidden="true"
+									>
+										{entryGlyph(entry)}
+									</span>
+									<span className="truncate text-xs font-semibold">
+										{entry.name}
+									</span>
+									<small className="text-xs text-muted-foreground">
+										{entry.kind === "directory"
+											? "Folder"
+											: formatFileSize(entry.size)}
+									</small>
+								</button>
+								<ResourceActionMenu
+									kind={entry.kind === "directory" ? "folder" : "file"}
+									label={entry.name}
+									meta={entry.kind === "directory" ? "Folder" : "File"}
+									onOpen={openEntry}
+									onCopy={() => {
+										void navigator.clipboard
+											?.writeText(entry.name)
+											.catch(() => undefined);
+									}}
+								/>
+							</div>
+						);
+					})}
 					{listing?.entries.length === 0 && (
 						<div className="p-5 text-xs text-muted-foreground">
 							Folder is empty.

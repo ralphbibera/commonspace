@@ -173,10 +173,9 @@ export function CommonspaceHome({
 						</span>
 					</header>
 
-					<div
-						role="group"
+					<fieldset
 						aria-label="Filter agent runs"
-						className="flex min-h-[46px] items-stretch gap-0.5 overflow-x-auto border-b bg-muted px-2.5 [scrollbar-width:none]"
+						className="m-0 flex min-h-[46px] min-w-0 items-stretch gap-0.5 overflow-x-auto border-0 border-b bg-muted px-2.5 py-0 [scrollbar-width:none]"
 					>
 						{RUN_FILTERS.map((item) => (
 							<button
@@ -200,7 +199,7 @@ export function CommonspaceHome({
 								</span>
 							</button>
 						))}
-					</div>
+					</fieldset>
 
 					{visibleSessions.length === 0 ? (
 						<Empty className="min-h-40 rounded-none border-0">

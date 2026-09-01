@@ -77,6 +77,8 @@ export interface CommonspaceSidebarProps {
 	onOpenThreads?: () => void;
 	onOpenDirectory?: (kind: CommonspaceDirectoryKind) => void;
 	onOpenContextSettings?: (kind: CommonspaceCollectionKind, id: string) => void;
+	onMentionAgent?: (agentName: string) => void;
+	onOpenAgentSessions?: () => void;
 	onOpenProject?: (
 		projectId: string,
 		file?: { rootIndex: number; path: string },
@@ -268,6 +270,10 @@ function AgentAvatar({ agent }: { agent: CommonspaceAgentProfile }) {
 	);
 }
 
+function copyText(value: string) {
+	void navigator.clipboard?.writeText(value).catch(() => undefined);
+}
+
 export function CommonspaceSidebar({
 	wide,
 	expandSidebar,
@@ -282,6 +288,8 @@ export function CommonspaceSidebar({
 	onOpenThreads,
 	onOpenDirectory,
 	onOpenContextSettings,
+	onMentionAgent,
+	onOpenAgentSessions,
 	onOpenProject,
 	onOpenConversation,
 }: CommonspaceSidebarProps) {
@@ -365,6 +373,11 @@ export function CommonspaceSidebar({
 		void store.refresh();
 	}, [store]);
 	useEffect(() => {
+		void homeActive;
+		void inboxActive;
+		void snapshot.activeConversation;
+		void snapshot.activeProjectId;
+		void threadsActive;
 		setSettingsOpen(false);
 	}, [
 		homeActive,
@@ -456,6 +469,12 @@ export function CommonspaceSidebar({
 	);
 	const projects = state?.projects ?? [];
 	const channels = state?.channels ?? [];
+	const activeMentionChannel =
+		snapshot.activeConversation?.kind === "channel"
+			? channels.find(
+					(channel) => channel.id === snapshot.activeConversation?.id,
+				)
+			: undefined;
 	const collectionPinned = (
 		kind: CommonspaceCollectionKind,
 		id: string,
@@ -804,8 +823,7 @@ export function CommonspaceSidebar({
 	};
 
 	return (
-		<div
-			role="region"
+		<section
 			className="flex h-full min-h-0 flex-col overflow-hidden bg-sidebar text-sidebar-foreground"
 			aria-label="Commonspace browser"
 		>
@@ -1301,7 +1319,6 @@ export function CommonspaceSidebar({
 								</fieldset>
 								<section
 									className="mt-8 rounded-md border bg-muted p-4"
-									role="region"
 									aria-label="Runtime diagnostics"
 								>
 									<header>
@@ -1708,7 +1725,6 @@ export function CommonspaceSidebar({
 											label={project.name}
 											meta={folderSummary}
 											pinned={collectionPinned("project", project.id, index)}
-											triggerLabel={`Add local folder to project ${project.name}`}
 											triggerClassName="rounded-r-sm text-sidebar-foreground/65 opacity-0 hover:bg-sidebar-accent hover:text-sidebar-foreground group-hover:opacity-100 focus:opacity-100"
 											onOpen={() => {
 												store.selectProject(project.id);
@@ -1725,6 +1741,8 @@ export function CommonspaceSidebar({
 												setPathProjectId(project.id);
 												setPathDraft("");
 											}}
+											onCopy={() => copyText(project.name)}
+											copyLabel="Copy project name"
 											onTogglePinned={() => {
 												toggleCollectionPinned("project", project.id, index);
 											}}
@@ -1989,8 +2007,8 @@ export function CommonspaceSidebar({
 											label={channel.name}
 											meta={`${String(channel.agentIds.length)} ${channel.agentIds.length === 1 ? "agent" : "agents"}`}
 											pinned={collectionPinned("channel", channel.id, index)}
-											triggerLabel={`Manage agents in channel ${channel.name}`}
 											triggerClassName="rounded-r-sm text-sidebar-foreground/65 opacity-0 hover:bg-sidebar-accent hover:text-sidebar-foreground group-hover:opacity-100 focus:opacity-100"
+											unread={unreadCount > 0}
 											onOpen={() => {
 												onOpenConversation?.();
 												store.selectConversation({
@@ -2016,6 +2034,20 @@ export function CommonspaceSidebar({
 													channel.memory.openQuestions.join("\n"),
 												);
 												setChannelPinNote("");
+											}}
+											onMarkRead={() => {
+												for (const item of inboxItems) {
+													if (
+														item.unread &&
+														item.conversation.kind === "channel" &&
+														item.conversation.id === channel.id
+													) {
+														void store.mutate({
+															action: "mark-inbox-item-read",
+															messageId: item.messageId,
+														});
+													}
+												}
 											}}
 											onTogglePinned={() => {
 												toggleCollectionPinned("channel", channel.id, index);
@@ -2351,6 +2383,13 @@ export function CommonspaceSidebar({
 								(agent) => agent.id === editingAgentId,
 							);
 							if (editingAgent === undefined) return null;
+							const previewAgent: CommonspaceAgentProfile = {
+								...editingAgent,
+								displayName: agentProfileName || editingAgent.displayName,
+								accentColor: agentAccentColor,
+							};
+							if (agentAvatarEmoji !== "")
+								previewAgent.avatarEmoji = agentAvatarEmoji;
 							return (
 								<SidebarDialog
 									title={`Customize ${editingAgent.displayName}`}
@@ -2365,17 +2404,7 @@ export function CommonspaceSidebar({
 										}}
 									>
 										<div className="flex items-center gap-3 rounded-md border bg-muted p-3">
-											<AgentAvatar
-												agent={{
-													...editingAgent,
-													displayName:
-														agentProfileName || editingAgent.displayName,
-													...(agentAvatarEmoji === ""
-														? {}
-														: { avatarEmoji: agentAvatarEmoji }),
-													accentColor: agentAccentColor,
-												}}
-											/>
+											<AgentAvatar agent={previewAgent} />
 											<span>
 												<strong>
 													{agentProfileName || editingAgent.displayName}
@@ -2525,7 +2554,6 @@ export function CommonspaceSidebar({
 											label={agent.displayName}
 											meta={`${runtimeLabel(agent.adapter)} · ${agentStatusLabel(effectiveStatus)}`}
 											pinned={collectionPinned("agent", agent.id, index)}
-											triggerLabel={`Customize agent ${agent.displayName}`}
 											triggerClassName="rounded-r-sm text-sidebar-foreground/65 opacity-0 hover:bg-sidebar-accent hover:text-sidebar-foreground group-hover:opacity-100 focus:opacity-100"
 											onOpen={() => {
 												startDirectMessage(agent.id);
@@ -2540,6 +2568,25 @@ export function CommonspaceSidebar({
 												setAgentAvatarEmoji(agent.avatarEmoji ?? "");
 												setAgentAccentColor(agent.accentColor ?? "#6d5dfc");
 											}}
+											onStartFreshChat={() => {
+												void store
+													.mutate({ action: "reset-dm", agentId: agent.id })
+													.then(() => {
+														startDirectMessage(agent.id);
+													});
+											}}
+											{...(activeMentionChannel !== undefined &&
+											onMentionAgent !== undefined
+												? {
+														onMention: () => onMentionAgent(agent.displayName),
+														mentionLabel: `Mention in #${activeMentionChannel.name}`,
+													}
+												: {})}
+											{...(onOpenAgentSessions === undefined
+												? {}
+												: { onViewSessions: onOpenAgentSessions })}
+											onCopy={() => copyText(`@${agent.displayName}`)}
+											copyLabel="Copy mention"
 											onTogglePinned={() => {
 												toggleCollectionPinned("agent", agent.id, index);
 											}}
@@ -2610,6 +2657,6 @@ export function CommonspaceSidebar({
 					<SettingsIcon className="size-[18px]" aria-hidden="true" />
 				</button>
 			</div>
-		</div>
+		</section>
 	);
 }

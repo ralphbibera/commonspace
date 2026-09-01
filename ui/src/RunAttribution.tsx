@@ -83,7 +83,6 @@ export function RunAttribution({
 				<section
 					id={panelId}
 					className="border-t bg-muted p-3"
-					role="region"
 					aria-label={`${authorName} run evidence`}
 				>
 					{attribution.roots.map((root) =>

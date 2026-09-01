@@ -23,6 +23,7 @@ export interface CommonspaceDirectoryProps {
 	onOpenProject: (projectId: string) => void;
 	onOpenConversation: (conversation: ConversationRef) => void;
 	onOpenSettings: (kind: CommonspaceCollectionKind, id: string) => void;
+	onOpenSessions?: () => void;
 }
 
 interface DirectoryItem {
@@ -32,6 +33,7 @@ interface DirectoryItem {
 	description: string;
 	meta: string;
 	mark: string;
+	unread: number;
 }
 
 const directoryConfig = {
@@ -84,6 +86,7 @@ function directoryItems(
 			description: project.paths[0] ?? "No local folder connected",
 			meta: `${String(project.paths.length)} ${project.paths.length === 1 ? "folder" : "folders"}`,
 			mark: project.name.slice(0, 1).toLocaleUpperCase(),
+			unread: 0,
 		}));
 	if (kind === "channels") {
 		const unreadCounts = new Map<string, number>();
@@ -104,6 +107,7 @@ function directoryItems(
 					? "Channel"
 					: `${String(unreadCounts.get(channel.id))} unread`,
 			mark: "#",
+			unread: unreadCounts.get(channel.id) ?? 0,
 		}));
 	}
 	return bootstrap.agents.map((agent) => ({
@@ -119,6 +123,7 @@ function directoryItems(
 					: "Available",
 		mark:
 			agent.avatarEmoji ?? agent.displayName.slice(0, 1).toLocaleUpperCase(),
+		unread: 0,
 	}));
 }
 
@@ -130,6 +135,7 @@ export function CommonspaceDirectory({
 	onOpenProject,
 	onOpenConversation,
 	onOpenSettings,
+	onOpenSessions,
 }: CommonspaceDirectoryProps) {
 	const config = directoryConfig[kind];
 	const allItems = useMemo(
@@ -150,7 +156,7 @@ export function CommonspaceDirectory({
 		setDirection("name-asc");
 		setPage(1);
 		setPinnedIds(new Set(allItems[0] === undefined ? [] : [allItems[0].id]));
-	}, [kind]);
+	}, [allItems]);
 
 	const filteredItems = useMemo(() => {
 		const normalized = query.trim().toLocaleLowerCase();
@@ -197,6 +203,27 @@ export function CommonspaceDirectory({
 		else if (item.kind === "channel")
 			await store.mutate({ action: "remove-channel", channelId: item.id });
 		else await store.mutate({ action: "remove-agent", agentId: item.id });
+	};
+
+	const markChannelRead = (channelId: string) => {
+		if (bootstrap === null) return;
+		for (const inboxItem of deriveCommonspaceInboxItems(bootstrap.state)) {
+			if (
+				inboxItem.unread &&
+				inboxItem.conversation.kind === "channel" &&
+				inboxItem.conversation.id === channelId
+			) {
+				void store.mutate({
+					action: "mark-inbox-item-read",
+					messageId: inboxItem.messageId,
+				});
+			}
+		}
+	};
+
+	const copyCollectionName = (item: DirectoryItem) => {
+		const value = item.kind === "agent" ? `@${item.name}` : item.name;
+		void navigator.clipboard?.writeText(value).catch(() => undefined);
 	};
 
 	return (
@@ -329,9 +356,36 @@ export function CommonspaceDirectory({
 									label={item.name}
 									meta={item.meta}
 									pinned={pinned}
+									unread={item.unread > 0}
 									onOpen={() => {
 										openItem(item);
 									}}
+									{...(item.kind === "channel" && item.unread > 0
+										? { onMarkRead: () => markChannelRead(item.id) }
+										: {})}
+									{...(item.kind === "agent"
+										? {
+												onStartFreshChat: () => {
+													void store
+														.mutate({ action: "reset-dm", agentId: item.id })
+														.then(() => {
+															openItem(item);
+														});
+												},
+											}
+										: {})}
+									{...(item.kind === "agent" && onOpenSessions !== undefined
+										? { onViewSessions: onOpenSessions }
+										: {})}
+									{...(item.kind === "project" || item.kind === "agent"
+										? {
+												onCopy: () => copyCollectionName(item),
+												copyLabel:
+													item.kind === "agent"
+														? "Copy mention"
+														: "Copy project name",
+											}
+										: {})}
 									onSettings={() => {
 										onOpenSettings(item.kind, item.id);
 									}}

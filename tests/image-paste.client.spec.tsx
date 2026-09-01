@@ -81,8 +81,10 @@ describe("chat image paste", () => {
 		fireEvent.change(input, { target: { files: [file] } });
 
 		expect(await screen.findByText("notes.txt")).toBeTruthy();
-		const sendButton = screen.getByRole("button", { name: "Send message" });
-		expect((sendButton as HTMLButtonElement).disabled).toBe(false);
+		const sendButton = screen.getByRole<HTMLButtonElement>("button", {
+			name: "Send message",
+		});
+		expect(sendButton.disabled).toBe(false);
 		fireEvent.click(sendButton);
 
 		await waitFor(() => {
@@ -117,10 +119,14 @@ describe("chat image paste", () => {
 		fireEvent.paste(composer, { clipboardData: { files: [image] } });
 
 		expect(
-			await screen.findByRole("img", { name: "Pasted image clipboard.png" }),
+			await screen.findByRole("img", {
+				name: "Pasted attachment clipboard.png",
+			}),
 		).toBeTruthy();
-		const sendButton = screen.getByRole("button", { name: "Send message" });
-		expect((sendButton as HTMLButtonElement).disabled).toBe(false);
+		const sendButton = screen.getByRole<HTMLButtonElement>("button", {
+			name: "Send message",
+		});
+		expect(sendButton.disabled).toBe(false);
 		fireEvent.click(sendButton);
 
 		await waitFor(() => {
@@ -180,7 +186,7 @@ describe("chat image paste", () => {
 					},
 				],
 			},
-		] as never);
+		]);
 
 		const download = screen.getByRole("link", { name: "Download notes.txt" });
 		expect(download.getAttribute("href")).toBe(
