@@ -174,7 +174,8 @@ try {
 	await page
 		.getByLabel("Commonspace conversation")
 		.waitFor({ state: "visible" });
-	await page.getByLabel("Post in verification").waitFor({ state: "visible" });
+	const composer = page.getByLabel("Post in verification");
+	await composer.waitFor({ state: "visible" });
 	for (const label of [
 		"Infer Projects",
 		"Use no Projects",
@@ -183,18 +184,18 @@ try {
 		if ((await page.getByRole("button", { name: label }).count()) !== 0)
 			throw new Error(`unexpected Project picker: ${label}`);
 	}
-	const taggingHelp = await page
-		.getByLabel("Tagging help")
-		.first()
-		.textContent();
-	if (!taggingHelp?.includes("@@"))
-		throw new Error("explicit @@project tagging help is unavailable");
+	await composer.fill("@@");
+	const projectSuggestion = page.getByRole("option", {
+		name: /@@verification-project.*Verification Project/iu,
+	});
+	await projectSuggestion.waitFor({ state: "visible" });
+	await composer.fill("");
 
 	await page.emulateMedia({ colorScheme: "light" });
 	const lightPalette = await page.evaluate(() =>
 		globalThis
 			.getComputedStyle(globalThis.document.documentElement)
-			.getPropertyValue("--csp-shell-bg")
+			.getPropertyValue("--background")
 			.trim(),
 	);
 	await page.emulateMedia({ colorScheme: "dark" });
@@ -202,15 +203,15 @@ try {
 		colorScheme: globalThis.getComputedStyle(
 			globalThis.document.documentElement,
 		).colorScheme,
-		shell: globalThis
+		background: globalThis
 			.getComputedStyle(globalThis.document.documentElement)
-			.getPropertyValue("--csp-shell-bg")
+			.getPropertyValue("--background")
 			.trim(),
 	}));
 	if (
 		darkPalette.colorScheme !== "dark" ||
 		lightPalette === "" ||
-		darkPalette.shell === lightPalette
+		darkPalette.background === lightPalette
 	) {
 		throw new Error("light/dark palette verification failed");
 	}
