@@ -165,6 +165,56 @@ function readAttachedFile(file: File): Promise<SendFileAttachment> {
 	});
 }
 
+
+function blobBase64(blob: Blob): Promise<string> {
+	return new Promise((resolve, reject) => {
+		const reader = new FileReader();
+		reader.onerror = () => reject(new Error("Could not read stored attachment."));
+		reader.onload = () => {
+			const result = reader.result;
+			const marker = ";base64,";
+			const markerIndex = typeof result === "string" ? result.indexOf(marker) : -1;
+			if (typeof result !== "string" || markerIndex < 0) {
+				reject(new Error("Could not read stored attachment."));
+				return;
+			}
+			resolve(result.slice(markerIndex + marker.length));
+		};
+		reader.readAsDataURL(blob);
+	});
+}
+
+async function replayAttachments(message: CommonspaceMessage): Promise<{
+	images: SendImageAttachment[];
+	files: SendFileAttachment[];
+}> {
+	const images = await Promise.all(
+		(message.attachments ?? []).map(async (attachment) => {
+			const response = await fetch(
+				`/api/attachments/${encodeURIComponent(attachment.id)}`,
+			);
+			if (!response.ok) throw new Error(`Could not reload ${attachment.name}.`);
+			return {
+				name: attachment.name,
+				mimeType: attachment.mimeType,
+				data: await blobBase64(await response.blob()),
+			};
+		}),
+	);
+	const files = await Promise.all(
+		(message.files ?? []).map(async (file) => {
+			const response = await fetch(`/api/files/${encodeURIComponent(file.id)}`);
+			if (!response.ok) throw new Error(`Could not reload ${file.name}.`);
+			return {
+				name: file.name,
+				mimeType: file.mimeType,
+				data: await blobBase64(await response.blob()),
+			};
+		}),
+	);
+	return { images, files };
+}
+
 function PendingImageStrip({
 	images,
 	onRemove,
@@ -1633,6 +1683,7 @@ export function CommonspaceConversation({
 		void snapshot.activeConversation?.kind;
 		void snapshot.activeThreadId;
 		setThreadReplyTarget(null);
+		setThreadDraft("");
 		setPendingThreadImages([]);
 		setPendingThreadFiles([]);
 		setThreadContextOpen(false);
@@ -1796,7 +1847,7 @@ export function CommonspaceConversation({
 				(activity) =>
 					activity.conversation.kind === conversation.kind &&
 					activity.conversation.id === conversation.id &&
-					(threadId === undefined || activity.threadId === threadId),
+					activity.threadId === threadId,
 			);
 			const targetMessageId =
 				matchingActivities.at(-1)?.sourceMessageId ??
@@ -1914,15 +1965,29 @@ export function CommonspaceConversation({
 				body: previous.text,
 			});
 			try {
-				if (threadId === undefined)
+				const replay = await replayAttachments(previous);
+				const projectIds = referencedProjectIds(previous);
+				if (replay.images.length === 0 && replay.files.length === 0) {
+					if (threadId === undefined)
+						await store.send(
+							previous.text,
+							undefined,
+							[],
+							undefined,
+							projectIds,
+						);
+					else if (projectIds.length === 0) await store.send(previous.text, threadId);
+					else await store.send(previous.text, threadId, [], undefined, projectIds);
+				} else {
 					await store.send(
 						previous.text,
+						threadId,
+						replay.images,
 						undefined,
-						[],
-						undefined,
-						referencedProjectIds(previous),
+						projectIds,
+						replay.files,
 					);
-				else await store.send(previous.text, threadId);
+				}
 			} catch (error) {
 				setCommandFeedback({
 					tone: "error",
@@ -2171,8 +2236,15 @@ export function CommonspaceConversation({
 		});
 	};
 	const copyMessageLink = (message: CommonspaceMessage) => {
-		const link = `commonspace://${message.conversation.kind}/${message.conversation.id}/message/${message.id}`;
-		void navigator.clipboard?.writeText(link).catch(() => undefined);
+		const link = new URL(window.location.href);
+		link.search = "";
+		link.hash = "";
+		link.searchParams.set("conversation", message.conversation.kind);
+		link.searchParams.set("conversationId", message.conversation.id);
+		link.searchParams.set("messageId", message.id);
+		if (message.threadId !== undefined)
+			link.searchParams.set("threadId", message.threadId);
+		void navigator.clipboard?.writeText(link.toString()).catch(() => undefined);
 	};
 
 	const openMessageVersion = (messageId: string) => {
@@ -2305,7 +2377,7 @@ export function CommonspaceConversation({
 				<div
 					ref={conversationLayout}
 					className={cn(
-						"relative grid min-h-0 flex-1 overflow-hidden",
+						"commonspace-conversation-layout relative grid min-h-0 flex-1 overflow-hidden",
 						resizingThread && "select-none",
 					)}
 					style={
@@ -2321,7 +2393,7 @@ export function CommonspaceConversation({
 					}
 				>
 					<section
-						className="flex min-h-0 min-w-0 flex-col bg-background"
+						className="commonspace-conversation-primary flex min-h-0 min-w-0 flex-col bg-background"
 						aria-label={
 							isChannel ? `${heading.title} posts` : `${heading.title} messages`
 						}
@@ -2842,7 +2914,7 @@ export function CommonspaceConversation({
 
 					{activeThread !== undefined && (
 						<hr
-							className="relative z-20 h-full w-2 cursor-col-resize border-0 bg-transparent after:absolute after:inset-y-0 after:left-[3px] after:w-px after:bg-border hover:after:w-0.5 hover:after:bg-primary"
+							className="commonspace-thread-resizer relative z-20 h-full w-2 cursor-col-resize border-0 bg-transparent after:absolute after:inset-y-0 after:left-[3px] after:w-px after:bg-border hover:after:w-0.5 hover:after:bg-primary"
 							aria-label="Resize thread"
 							aria-orientation="vertical"
 							aria-valuemin={25}
@@ -2875,7 +2947,7 @@ export function CommonspaceConversation({
 
 					{activeThread !== undefined && (
 						<aside
-							className="relative z-20 flex min-h-0 min-w-[360px] flex-col border-l bg-background"
+							className="commonspace-thread-panel relative z-20 flex min-h-0 min-w-[360px] flex-col border-l bg-background"
 							aria-label="Thread replies"
 						>
 							<header className="flex min-h-[68px] items-center gap-2.5 border-b px-3 py-2.5 pl-5">

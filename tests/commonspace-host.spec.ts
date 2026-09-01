@@ -246,6 +246,11 @@ describe("Commonspace host authority", () => {
 		).toBe(true);
 		expect(
 			requestIsSameOrigin(
+				request({ host: "attacker.example:3080", origin: "http://attacker.example:3080" }),
+			),
+		).toBe(false);
+		expect(
+			requestIsSameOrigin(
 				request({ host: "127.0.0.1:3080", origin: "https://127.0.0.1:3080" }),
 			),
 		).toBe(false);
