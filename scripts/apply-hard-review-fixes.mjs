@@ -62,8 +62,7 @@ await edit("ui/src/CommonspaceConversation.tsx", (initial) => {
 		"thread panel class",
 	);
 
-	const helperAnchor = 'function readAttachedFile(file: File): Promise<SendFileAttachment> {';
-	const helperIndex = source.indexOf(helperAnchor);
+	const helperIndex = source.indexOf('function readAttachedFile(file: File): Promise<SendFileAttachment> {');
 	if (helperIndex < 0) throw new Error("Missing retry attachment helper anchor");
 	const pendingStripIndex = source.indexOf("\nfunction PendingImageStrip", helperIndex);
 	if (pendingStripIndex < 0) throw new Error("Missing pending image strip anchor");
@@ -73,7 +72,7 @@ await edit("ui/src/CommonspaceConversation.tsx", (initial) => {
 	source = replaceExactly(
 		source,
 		'\t\t\ttry {\n\t\t\t\tif (threadId === undefined)\n\t\t\t\t\tawait store.send(\n\t\t\t\t\t\tprevious.text,\n\t\t\t\t\t\tundefined,\n\t\t\t\t\t\t[],\n\t\t\t\t\t\tundefined,\n\t\t\t\t\t\treferencedProjectIds(previous),\n\t\t\t\t\t);\n\t\t\t\telse await store.send(previous.text, threadId);',
-		'\t\t\ttry {\n\t\t\t\tconst replay = await replayAttachments(previous);\n\t\t\t\tawait store.send(\n\t\t\t\t\tprevious.text,\n\t\t\t\t\tthreadId,\n\t\t\t\t\treplay.images,\n\t\t\t\t\tundefined,\n\t\t\t\t\treferencedProjectIds(previous),\n\t\t\t\t\treplay.files,\n\t\t\t\t);',
+		'\t\t\ttry {\n\t\t\t\tconst replay = await replayAttachments(previous);\n\t\t\t\tconst projectIds = referencedProjectIds(previous);\n\t\t\t\tif (replay.images.length === 0 && replay.files.length === 0) {\n\t\t\t\t\tif (threadId === undefined)\n\t\t\t\t\t\tawait store.send(\n\t\t\t\t\t\t\tprevious.text,\n\t\t\t\t\t\t\tundefined,\n\t\t\t\t\t\t\t[],\n\t\t\t\t\t\t\tundefined,\n\t\t\t\t\t\t\tprojectIds,\n\t\t\t\t\t\t);\n\t\t\t\t\telse if (projectIds.length === 0) await store.send(previous.text, threadId);\n\t\t\t\t\telse await store.send(previous.text, threadId, [], undefined, projectIds);\n\t\t\t\t} else {\n\t\t\t\t\tawait store.send(\n\t\t\t\t\t\tprevious.text,\n\t\t\t\t\t\tthreadId,\n\t\t\t\t\t\treplay.images,\n\t\t\t\t\t\tundefined,\n\t\t\t\t\t\tprojectIds,\n\t\t\t\t\t\treplay.files,\n\t\t\t\t\t);\n\t\t\t\t}',
 		"retry attachments",
 	);
 	return source;
@@ -108,17 +107,26 @@ await edit("server/src/app.ts", (initial) => {
 	source = replaceExactly(
 		source,
 		'function requestBrowserHost(\n\treq: Pick<IncomingMessage, "headers">,\n): string | undefined {\n\treturn firstHeaderValue(req.headers["x-forwarded-host"]) ?? req.headers.host;\n}',
-		'function requestBrowserHost(\n\treq: Pick<IncomingMessage, "headers">,\n): string | undefined {\n\treturn firstHeaderValue(req.headers.host);\n}\n\nfunction requestHostIsLoopback(host: string): boolean {\n\ttry {\n\t\tconst hostname = new URL(`http://${host}`).hostname.toLocaleLowerCase();\n\t\treturn hostname === "127.0.0.1" || hostname === "localhost" || hostname === "::1";\n\t} catch {\n\t\treturn false;\n\t}\n}',
+		'function requestBrowserHost(\n\treq: Pick<IncomingMessage, "headers">,\n): string | undefined {\n\tconst host = firstHeaderValue(req.headers.host);\n\tif (host === undefined || !requestHostIsLoopback(host)) return undefined;\n\tconst forwardedHost = firstHeaderValue(req.headers["x-forwarded-host"]);\n\treturn forwardedHost !== undefined && requestHostIsLoopback(forwardedHost)\n\t\t? forwardedHost\n\t\t: host;\n}\n\nfunction requestHostIsLoopback(host: string): boolean {\n\ttry {\n\t\tconst hostname = new URL(`http://${host}`).hostname.toLocaleLowerCase();\n\t\treturn hostname === "127.0.0.1" || hostname === "localhost" || hostname === "::1";\n\t} catch {\n\t\treturn false;\n\t}\n}',
 		"trusted browser host",
 	);
 	source = replaceExactly(
 		source,
 		'\tconst host = requestBrowserHost(req);\n\tif (host === undefined) return false;',
-		'\tconst host = requestBrowserHost(req);\n\tif (host === undefined || !requestHostIsLoopback(host)) return false;',
-		"same-origin loopback host check",
+		'\tconst host = requestBrowserHost(req);\n\tif (host === undefined) return false;',
+		"same-origin trusted host check",
 	);
 	return source;
 });
+
+await edit("tests/commonspace-host.spec.ts", (source) =>
+	replaceExactly(
+		source,
+		'\t\texpect(\n\t\t\trequestIsSameOrigin(\n\t\t\t\trequest({ host: "127.0.0.1:3080", origin: "http://127.0.0.1:3080" }),\n\t\t\t),\n\t\t).toBe(true);',
+		'\t\texpect(\n\t\t\trequestIsSameOrigin(\n\t\t\t\trequest({ host: "127.0.0.1:3080", origin: "http://127.0.0.1:3080" }),\n\t\t\t),\n\t\t).toBe(true);\n\t\texpect(\n\t\t\trequestIsSameOrigin(\n\t\t\t\trequest({ host: "attacker.example:3080", origin: "http://attacker.example:3080" }),\n\t\t\t),\n\t\t).toBe(false);',
+		"DNS rebinding regression",
+	),
+);
 
 await edit("server/src/service.ts", (initial) => {
 	let source = initial;
