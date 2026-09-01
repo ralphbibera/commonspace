@@ -62,8 +62,17 @@ function toolResult<Value extends object>(value: Value) {
 	};
 }
 
-function exactOptionalTransport(
-	transport: StreamableHTTPServerTransport,
+interface InexactOptionalTransport {
+	start: Transport["start"];
+	send: Transport["send"];
+	close: Transport["close"];
+	onclose: Transport["onclose"];
+	onerror: Transport["onerror"];
+	onmessage: Transport["onmessage"];
+}
+
+export function exactOptionalTransport(
+	transport: InexactOptionalTransport,
 ): Transport {
 	const bridge: Transport = {
 		start: () => transport.start(),

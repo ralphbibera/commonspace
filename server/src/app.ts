@@ -78,7 +78,9 @@ const pinScopeSchema = z.object({
 });
 const imageAttachmentSchema = z.object({
 	name: z.string(),
-	mimeType: z.enum(["image/png", "image/jpeg", "image/gif", "image/webp"]),
+	mimeType: z.enum(["image/png", "image/jpeg", "image/gif", "image/webp"], {
+		error: "unsupported image type",
+	}),
 	data: z.string(),
 });
 const fileAttachmentSchema = z.object({
@@ -88,7 +90,7 @@ const fileAttachmentSchema = z.object({
 });
 
 function requestSchema<Output>(schema: z.ZodType): z.ZodType<Output> {
-	return z.custom<Output>((value) => schema.safeParse(value).success);
+	return schema.pipe(z.custom<Output>());
 }
 
 const importWorkspaceBodySchema = requestSchema<{
@@ -129,92 +131,96 @@ const discoverAgentsRequestSchema = requestSchema<DiscoverAgentsRequest>(
 	z.object({ adapter: z.enum(["hermes", "codex"]) }),
 );
 const mutationSchema = requestSchema<CommonspaceMutation>(
-	z.discriminatedUnion("action", [
-		z.object({ action: z.literal("mark-inbox-read") }),
-		z.object({
-			action: z.literal("mark-inbox-item-read"),
-			messageId: z.string(),
-		}),
-		z.object({
-			action: z.literal("set-inbox-item-saved"),
-			messageId: z.string(),
-			saved: z.boolean(),
-		}),
-		z.object({
-			action: z.literal("set-session-followed"),
-			sessionId: z.string(),
-			followed: z.boolean(),
-		}),
-		z.object({
-			action: z.literal("set-session-muted"),
-			sessionId: z.string(),
-			muted: z.boolean(),
-		}),
-		z.object({
-			action: z.literal("set-notifications"),
-			notifications: notificationSettingsSchema,
-		}),
-		z.object({
-			action: z.literal("create-project"),
-			name: z.string(),
-			paths: z.array(z.string()),
-		}),
-		z.object({
-			action: z.literal("add-project-path"),
-			projectId: z.string(),
-			path: z.string(),
-		}),
-		z.object({ action: z.literal("remove-project"), projectId: z.string() }),
-		z.object({
-			action: z.literal("create-channel"),
-			name: z.string(),
-			agentIds: z.array(z.string()),
-		}),
-		z.object({
-			action: z.literal("set-channel-agents"),
-			channelId: z.string(),
-			agentIds: z.array(z.string()),
-		}),
-		z.object({
-			action: z.literal("set-channel-context"),
-			channelId: z.string(),
-			instructions: z.string(),
-		}),
-		z.object({
-			action: z.literal("set-channel-memory"),
-			channelId: z.string(),
-			summary: z.string(),
-			decisions: z.array(z.string()).optional(),
-			openQuestions: z.array(z.string()).optional(),
-		}),
-		z.object({
-			action: z.literal("set-channel-settings"),
-			channelId: z.string(),
-			model: z.string().nullable().optional(),
-			reasoning: reasoningSchema.nullable().optional(),
-		}),
-		z.object({
-			action: z.literal("set-defaults"),
-			model: z.string().nullable().optional(),
-			reasoning: reasoningSchema.optional(),
-			maxAgentsPerTurn: z.number().optional(),
-			memoryThreads: z.number().optional(),
-		}),
-		z.object({
-			action: z.literal("add-discovered-agent"),
-			agentId: z.string(),
-		}),
-		z.object({
-			action: z.literal("update-agent-profile"),
-			agentId: z.string(),
-			displayName: z.string(),
-			avatarEmoji: z.string().optional(),
-			accentColor: z.string().optional(),
-		}),
-		z.object({ action: z.literal("remove-agent"), agentId: z.string() }),
-		z.object({ action: z.literal("reset-dm"), agentId: z.string() }),
-		z.object({ action: z.literal("remove-channel"), channelId: z.string() }),
-	]),
+	z.discriminatedUnion(
+		"action",
+		[
+			z.object({ action: z.literal("mark-inbox-read") }),
+			z.object({
+				action: z.literal("mark-inbox-item-read"),
+				messageId: z.string(),
+			}),
+			z.object({
+				action: z.literal("set-inbox-item-saved"),
+				messageId: z.string(),
+				saved: z.boolean(),
+			}),
+			z.object({
+				action: z.literal("set-session-followed"),
+				sessionId: z.string(),
+				followed: z.boolean(),
+			}),
+			z.object({
+				action: z.literal("set-session-muted"),
+				sessionId: z.string(),
+				muted: z.boolean(),
+			}),
+			z.object({
+				action: z.literal("set-notifications"),
+				notifications: notificationSettingsSchema,
+			}),
+			z.object({
+				action: z.literal("create-project"),
+				name: z.string(),
+				paths: z.array(z.string()),
+			}),
+			z.object({
+				action: z.literal("add-project-path"),
+				projectId: z.string(),
+				path: z.string(),
+			}),
+			z.object({ action: z.literal("remove-project"), projectId: z.string() }),
+			z.object({
+				action: z.literal("create-channel"),
+				name: z.string(),
+				agentIds: z.array(z.string()),
+			}),
+			z.object({
+				action: z.literal("set-channel-agents"),
+				channelId: z.string(),
+				agentIds: z.array(z.string()),
+			}),
+			z.object({
+				action: z.literal("set-channel-context"),
+				channelId: z.string(),
+				instructions: z.string(),
+			}),
+			z.object({
+				action: z.literal("set-channel-memory"),
+				channelId: z.string(),
+				summary: z.string(),
+				decisions: z.array(z.string()).optional(),
+				openQuestions: z.array(z.string()).optional(),
+			}),
+			z.object({
+				action: z.literal("set-channel-settings"),
+				channelId: z.string(),
+				model: z.string().nullable().optional(),
+				reasoning: reasoningSchema.nullable().optional(),
+			}),
+			z.object({
+				action: z.literal("set-defaults"),
+				model: z.string().nullable().optional(),
+				reasoning: reasoningSchema.optional(),
+				maxAgentsPerTurn: z.number().optional(),
+				memoryThreads: z.number().optional(),
+			}),
+			z.object({
+				action: z.literal("add-discovered-agent"),
+				agentId: z.string(),
+			}),
+			z.object({
+				action: z.literal("update-agent-profile"),
+				agentId: z.string(),
+				displayName: z.string(),
+				avatarEmoji: z.string().optional(),
+				accentColor: z.string().optional(),
+			}),
+			z.object({ action: z.literal("remove-agent"), agentId: z.string() }),
+			z.object({ action: z.literal("reset-dm"), agentId: z.string() }),
+			z.object({ action: z.literal("remove-channel"), channelId: z.string() }),
+		],
+		{ error: "unknown mutation" },
+	),
 );
 const sendMessageRequestSchema = requestSchema<SendMessageRequest>(
 	z.object({
@@ -278,6 +284,12 @@ const editorTargetSchema = z.object({
 const permissionResponseSchema = z.object({ optionId: z.string() });
 const searchKindSet: ReadonlySet<string> = new Set(COMMONSPACE_SEARCH_KINDS);
 
+function requestErrorMessage(cause: unknown): string {
+	if (cause instanceof z.ZodError)
+		return cause.issues[0]?.message ?? "invalid request";
+	return cause instanceof Error ? cause.message : String(cause);
+}
+
 function firstHeaderValue(
 	value: string | string[] | undefined,
 ): string | undefined {
@@ -286,7 +298,9 @@ function firstHeaderValue(
 	return trimmed === "" ? undefined : trimmed;
 }
 
-function requestBrowserHost(req: IncomingMessage): string | undefined {
+function requestBrowserHost(
+	req: Pick<IncomingMessage, "headers">,
+): string | undefined {
 	return firstHeaderValue(req.headers["x-forwarded-host"]) ?? req.headers.host;
 }
 
@@ -310,7 +324,9 @@ export interface CreateCommonspaceAppOptions {
 	uiRoot?: string;
 }
 
-export function requestIsSameOrigin(req: IncomingMessage): boolean {
+export function requestIsSameOrigin(
+	req: Pick<IncomingMessage, "headers">,
+): boolean {
 	const host = requestBrowserHost(req);
 	if (host === undefined) return false;
 	const origin = req.headers.origin;
@@ -324,7 +340,9 @@ export function requestIsSameOrigin(req: IncomingMessage): boolean {
 	return req.headers["sec-fetch-site"] === "same-origin";
 }
 
-export function requestIsLoopback(req: IncomingMessage): boolean {
+export function requestIsLoopback(req: {
+	socket: Pick<IncomingMessage["socket"], "remoteAddress">;
+}): boolean {
 	const address = req.socket.remoteAddress;
 	return (
 		address === "127.0.0.1" ||
@@ -445,7 +463,7 @@ export function createCommonspaceApp({
 		} catch (error) {
 			res.status(500).json({
 				code: "diagnostics_failed",
-				error: error instanceof Error ? error.message : String(error),
+				error: requestErrorMessage(error),
 			});
 		}
 	});
@@ -460,7 +478,7 @@ export function createCommonspaceApp({
 		} catch (error) {
 			res.status(500).json({
 				code: "workspace_export_failed",
-				error: error instanceof Error ? error.message : String(error),
+				error: requestErrorMessage(error),
 			});
 		}
 	});
@@ -474,7 +492,7 @@ export function createCommonspaceApp({
 		} catch (error) {
 			res.status(400).json({
 				code: "workspace_import_failed",
-				error: error instanceof Error ? error.message : String(error),
+				error: requestErrorMessage(error),
 			});
 		}
 	});
@@ -486,7 +504,7 @@ export function createCommonspaceApp({
 		} catch (error) {
 			res.status(400).json({
 				code: "retention_preview_failed",
-				error: error instanceof Error ? error.message : String(error),
+				error: requestErrorMessage(error),
 			});
 		}
 	});
@@ -501,7 +519,7 @@ export function createCommonspaceApp({
 		} catch (error) {
 			res.status(400).json({
 				code: "retention_apply_failed",
-				error: error instanceof Error ? error.message : String(error),
+				error: requestErrorMessage(error),
 			});
 		}
 	});
@@ -540,7 +558,7 @@ export function createCommonspaceApp({
 		} catch (error) {
 			res.status(400).json({
 				code: "search_failed",
-				error: error instanceof Error ? error.message : String(error),
+				error: requestErrorMessage(error),
 			});
 		}
 	});
@@ -559,7 +577,7 @@ export function createCommonspaceApp({
 		} catch (error) {
 			res.status(400).json({
 				code: "routing_configuration_failed",
-				error: error instanceof Error ? error.message : String(error),
+				error: requestErrorMessage(error),
 			});
 		}
 	});
@@ -573,7 +591,7 @@ export function createCommonspaceApp({
 		} catch (error) {
 			res.status(404).json({
 				code: "channel_context_not_found",
-				error: error instanceof Error ? error.message : String(error),
+				error: requestErrorMessage(error),
 			});
 		}
 	});
@@ -595,7 +613,7 @@ export function createCommonspaceApp({
 			} catch (error) {
 				res.status(400).json({
 					code: "channel_context_update_failed",
-					error: error instanceof Error ? error.message : String(error),
+					error: requestErrorMessage(error),
 				});
 			}
 		},
@@ -613,7 +631,7 @@ export function createCommonspaceApp({
 			} catch (error) {
 				res.status(400).json({
 					code: "channel_context_compaction_failed",
-					error: error instanceof Error ? error.message : String(error),
+					error: requestErrorMessage(error),
 				});
 			}
 		},
@@ -628,7 +646,7 @@ export function createCommonspaceApp({
 		} catch (error) {
 			res.status(404).json({
 				code: "thread_context_not_found",
-				error: error instanceof Error ? error.message : String(error),
+				error: requestErrorMessage(error),
 			});
 		}
 	});
@@ -650,7 +668,7 @@ export function createCommonspaceApp({
 			} catch (error) {
 				res.status(400).json({
 					code: "thread_context_update_failed",
-					error: error instanceof Error ? error.message : String(error),
+					error: requestErrorMessage(error),
 				});
 			}
 		},
@@ -668,7 +686,7 @@ export function createCommonspaceApp({
 			} catch (error) {
 				res.status(400).json({
 					code: "thread_context_compaction_failed",
-					error: error instanceof Error ? error.message : String(error),
+					error: requestErrorMessage(error),
 				});
 			}
 		},
@@ -780,7 +798,7 @@ export function createCommonspaceApp({
 		} catch (error) {
 			res.status(400).json({
 				code: "agent_discovery_failed",
-				error: error instanceof Error ? error.message : String(error),
+				error: requestErrorMessage(error),
 			});
 		}
 	});
@@ -819,7 +837,7 @@ export function createCommonspaceApp({
 		} catch (error) {
 			res.status(500).json({
 				code: "directory_picker_failed",
-				error: error instanceof Error ? error.message : String(error),
+				error: requestErrorMessage(error),
 			});
 		}
 	});
@@ -831,7 +849,7 @@ export function createCommonspaceApp({
 		} catch (error) {
 			res.status(400).json({
 				code: "invalid_mutation",
-				error: error instanceof Error ? error.message : String(error),
+				error: requestErrorMessage(error),
 			});
 		}
 	});
@@ -844,7 +862,7 @@ export function createCommonspaceApp({
 		} catch (error) {
 			res.status(400).json({
 				code: "send_failed",
-				error: error instanceof Error ? error.message : String(error),
+				error: requestErrorMessage(error),
 			});
 		}
 	});
@@ -861,7 +879,7 @@ export function createCommonspaceApp({
 		} catch (error) {
 			res.status(400).json({
 				code: "reroute_failed",
-				error: error instanceof Error ? error.message : String(error),
+				error: requestErrorMessage(error),
 			});
 		}
 	});
@@ -884,7 +902,7 @@ export function createCommonspaceApp({
 			} catch (error) {
 				res.status(400).json({
 					code: "message_edit_failed",
-					error: error instanceof Error ? error.message : String(error),
+					error: requestErrorMessage(error),
 				});
 			}
 		},
@@ -902,7 +920,7 @@ export function createCommonspaceApp({
 			} catch (error) {
 				res.status(400).json({
 					code: "message_delete_failed",
-					error: error instanceof Error ? error.message : String(error),
+					error: requestErrorMessage(error),
 				});
 			}
 		},
@@ -916,7 +934,7 @@ export function createCommonspaceApp({
 		} catch (error) {
 			res.status(400).json({
 				code: "pin_add_failed",
-				error: error instanceof Error ? error.message : String(error),
+				error: requestErrorMessage(error),
 			});
 		}
 	});
@@ -930,7 +948,7 @@ export function createCommonspaceApp({
 		} catch (error) {
 			res.status(400).json({
 				code: "pin_remove_failed",
-				error: error instanceof Error ? error.message : String(error),
+				error: requestErrorMessage(error),
 			});
 		}
 	});
@@ -950,7 +968,7 @@ export function createCommonspaceApp({
 			} catch (error) {
 				res.status(400).json({
 					code: "permission_response_failed",
-					error: error instanceof Error ? error.message : String(error),
+					error: requestErrorMessage(error),
 				});
 			}
 		},
@@ -964,7 +982,7 @@ export function createCommonspaceApp({
 		} catch (error) {
 			res.status(400).json({
 				code: "stop_failed",
-				error: error instanceof Error ? error.message : String(error),
+				error: requestErrorMessage(error),
 			});
 		}
 	});
@@ -977,7 +995,7 @@ export function createCommonspaceApp({
 		} catch (error) {
 			res.status(400).json({
 				code: "followup_reorder_failed",
-				error: error instanceof Error ? error.message : String(error),
+				error: requestErrorMessage(error),
 			});
 		}
 	});
@@ -990,7 +1008,7 @@ export function createCommonspaceApp({
 		} catch (error) {
 			res.status(400).json({
 				code: "followup_remove_failed",
-				error: error instanceof Error ? error.message : String(error),
+				error: requestErrorMessage(error),
 			});
 		}
 	});
@@ -1012,7 +1030,7 @@ export function createCommonspaceApp({
 			} catch (error) {
 				res.status(404).json({
 					code: "attachment_not_found",
-					error: error instanceof Error ? error.message : String(error),
+					error: requestErrorMessage(error),
 				});
 			}
 		},
@@ -1035,7 +1053,7 @@ export function createCommonspaceApp({
 		} catch (error) {
 			res.status(404).json({
 				code: "file_attachment_not_found",
-				error: error instanceof Error ? error.message : String(error),
+				error: requestErrorMessage(error),
 			});
 		}
 	});
@@ -1067,7 +1085,7 @@ export function createCommonspaceApp({
 
 	const errorHandler: ErrorRequestHandler = (error, _req, res, next) => {
 		void next;
-		const message = error instanceof Error ? error.message : String(error);
+		const message = requestErrorMessage(error);
 		const status =
 			error instanceof Error &&
 			"type" in error &&

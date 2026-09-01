@@ -1,29 +1,31 @@
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
-import tailwindcss from '@tailwindcss/vite'
-import { fileURLToPath } from 'node:url'
-import { apiProxy } from './vite-api-proxy.ts'
+import { fileURLToPath } from "node:url";
+import tailwindcss from "@tailwindcss/vite";
+import react from "@vitejs/plugin-react";
+import { defineConfig } from "vite";
+import { apiProxy } from "./vite-api-proxy.ts";
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
-  resolve: {
-    alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url)),
-      '@commonspace/shared': fileURLToPath(new URL('../packages/shared/src/index.ts', import.meta.url)),
-    },
-  },
-  server: {
-    host: '127.0.0.1',
-    port: 5173,
-    proxy: {
-      '/api': apiProxy(),
-    },
-  },
-  preview: {
-    host: '127.0.0.1',
-    port: 4173,
-    proxy: {
-      '/api': apiProxy(),
-    },
-  },
-})
+	plugins: [react(), tailwindcss()],
+	resolve: {
+		alias: {
+			"@": fileURLToPath(new URL("./src", import.meta.url)),
+			"@commonspace/shared": fileURLToPath(
+				new URL("../packages/shared/src/index.ts", import.meta.url),
+			),
+		},
+	},
+	server: {
+		host: "127.0.0.1",
+		port: 5173,
+		proxy: {
+			"/api": apiProxy(),
+		},
+	},
+	preview: {
+		host: "127.0.0.1",
+		port: 4173,
+		proxy: {
+			"/api": apiProxy(),
+		},
+	},
+});
