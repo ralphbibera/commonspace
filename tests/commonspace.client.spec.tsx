@@ -873,9 +873,9 @@ describe("Commonspace interface", () => {
 				screen.getByLabelText<HTMLInputElement>("Project path").value,
 			).toBe("/Users/example/Developer/storefront");
 		});
-		expect(
-			screen.getByLabelText<HTMLInputElement>("Project name").value,
-		).toBe("storefront");
+		expect(screen.getByLabelText<HTMLInputElement>("Project name").value).toBe(
+			"storefront",
+		);
 		fireEvent.click(screen.getByRole("button", { name: "Create project" }));
 
 		await waitFor(() => {

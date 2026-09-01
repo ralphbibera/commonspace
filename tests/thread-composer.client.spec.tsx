@@ -247,9 +247,7 @@ function renderChannelThread(
 							projectIds: ["project-1"],
 							projectId: "project-1",
 							createdAt: "2026-08-26T00:00:00.000Z",
-							deletedAt: rootDeleted
-								? "2026-08-26T00:05:00.000Z"
-								: undefined,
+							deletedAt: rootDeleted ? "2026-08-26T00:05:00.000Z" : undefined,
 							versionRootMessageId: rootVersioned ? "reply-1" : undefined,
 							supersedesMessageId: rootVersioned ? "reply-1" : undefined,
 							branchId: rootVersioned ? "branch-1" : undefined,

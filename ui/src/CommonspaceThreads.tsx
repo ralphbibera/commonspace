@@ -17,8 +17,8 @@ import {
 	EmptyMedia,
 	EmptyTitle,
 } from "@/components/ui/empty";
-import { WorkspaceHeader } from "@/design-system/WorkspaceHeader";
 import { ResourceActionMenu } from "@/design-system/ResourceActionMenu";
+import { WorkspaceHeader } from "@/design-system/WorkspaceHeader";
 import type { CommonspaceStore } from "./commonspace-store.ts";
 
 interface ThreadRow {

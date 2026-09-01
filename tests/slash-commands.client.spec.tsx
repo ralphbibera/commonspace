@@ -83,7 +83,8 @@ beforeEach(() => {
 describe("Commonspace composer commands", () => {
 	it("opens a command menu from slash and shows local status without messaging the agent", () => {
 		const { send } = renderDirectMessage();
-		const composer = screen.getByLabelText<HTMLTextAreaElement>("Message Review Bot");
+		const composer =
+			screen.getByLabelText<HTMLTextAreaElement>("Message Review Bot");
 
 		fireEvent.change(composer, { target: { value: "/" } });
 		const listbox = screen.getByRole("listbox", { name: "Slash commands" });
@@ -112,7 +113,8 @@ describe("Commonspace composer commands", () => {
 
 	it("retries the latest user turn without sending the slash command", async () => {
 		const { send } = renderDirectMessage();
-		const composer = screen.getByLabelText<HTMLTextAreaElement>("Message Review Bot");
+		const composer =
+			screen.getByLabelText<HTMLTextAreaElement>("Message Review Bot");
 
 		fireEvent.change(composer, { target: { value: "/retry" } });
 		fireEvent.submit(mustExist(composer.closest("form")));
@@ -131,7 +133,8 @@ describe("Commonspace composer commands", () => {
 
 	it("stops the work associated with the latest message", async () => {
 		const { stopAgentRuns, send } = renderDirectMessage();
-		const composer = screen.getByLabelText<HTMLTextAreaElement>("Message Review Bot");
+		const composer =
+			screen.getByLabelText<HTMLTextAreaElement>("Message Review Bot");
 
 		fireEvent.change(composer, { target: { value: "/stop" } });
 		fireEvent.submit(mustExist(composer.closest("form")));
@@ -144,7 +147,8 @@ describe("Commonspace composer commands", () => {
 
 	it("confirms before starting a fresh direct-message session", async () => {
 		const { mutate } = renderDirectMessage();
-		const composer = screen.getByLabelText<HTMLTextAreaElement>("Message Review Bot");
+		const composer =
+			screen.getByLabelText<HTMLTextAreaElement>("Message Review Bot");
 
 		fireEvent.change(composer, { target: { value: "/new" } });
 		fireEvent.submit(mustExist(composer.closest("form")));
