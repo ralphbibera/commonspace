@@ -1,5 +1,6 @@
 import { useId, useState } from 'react'
 import type { CommonspaceAgentTrace, CommonspaceTraceEntry } from '@commonspace/shared'
+import { cn } from '@/lib/utils'
 
 interface AgentTraceProps {
   authorName: string
@@ -36,11 +37,11 @@ function planStatusLabel(status: Extract<CommonspaceTraceEntry, { type: 'plan' }
 function TraceEntry({ entry }: { entry: CommonspaceTraceEntry }) {
   if (entry.type === 'reasoning') {
     return (
-      <li className="csp-trace-entry" data-trace-kind="reasoning">
-        <span className="csp-trace-node" aria-hidden="true">◇</span>
-        <div className="csp-trace-entry-main">
+      <li className="grid grid-cols-[28px_minmax(0,1fr)] gap-3 border-b py-3 last:border-b-0" data-trace-kind="reasoning">
+        <span className="grid size-7 place-items-center rounded-full border bg-background font-mono text-xs text-muted-foreground" aria-hidden="true">◇</span>
+        <div className="min-w-0 [&>header]:flex [&>header]:items-center [&>header]:justify-between [&>header]:gap-2 [&>header]:text-xs [&>header_span]:text-muted-foreground">
           <header><strong>Reasoning summary</strong><span>Emitted by harness</span></header>
-          <p className="csp-trace-text">{entry.text}</p>
+          <p className="mt-2 text-[13px] leading-5">{entry.text}</p>
         </div>
       </li>
     )
@@ -48,16 +49,16 @@ function TraceEntry({ entry }: { entry: CommonspaceTraceEntry }) {
 
   if (entry.type === 'plan') {
     return (
-      <li className="csp-trace-entry" data-trace-kind="plan">
-        <span className="csp-trace-node" aria-hidden="true">☷</span>
-        <div className="csp-trace-entry-main">
+      <li className="grid grid-cols-[28px_minmax(0,1fr)] gap-3 border-b py-3 last:border-b-0" data-trace-kind="plan">
+        <span className="grid size-7 place-items-center rounded-full border bg-background font-mono text-xs text-muted-foreground" aria-hidden="true">☷</span>
+        <div className="min-w-0 [&>header]:flex [&>header]:items-center [&>header]:justify-between [&>header]:gap-2 [&>header]:text-xs [&>header_span]:text-muted-foreground">
           <header><strong>Plan</strong><span>{String(entry.steps.length)} steps</span></header>
-          {entry.markdown !== undefined && <p className="csp-trace-text">{entry.markdown}</p>}
+          {entry.markdown !== undefined && <p className="mt-2 text-[13px] leading-5">{entry.markdown}</p>}
           {entry.steps.length > 0 && (
-            <ol className="csp-trace-plan">
+            <ol className="mt-2 grid gap-1">
               {entry.steps.map((step, index) => (
                 <li key={`${entry.id}-${String(index)}`} data-status={step.status}>
-                  <span className="csp-trace-plan-check" aria-hidden="true">{step.status === 'completed' ? '✓' : step.status === 'in_progress' ? '•' : '○'}</span>
+                  <span className="mr-2 inline-grid size-5 place-items-center rounded-full border font-mono text-[10px]" aria-hidden="true">{step.status === 'completed' ? '✓' : step.status === 'in_progress' ? '•' : '○'}</span>
                   <span>{step.text}</span>
                   <small>{planStatusLabel(step.status)}</small>
                 </li>
@@ -71,15 +72,15 @@ function TraceEntry({ entry }: { entry: CommonspaceTraceEntry }) {
 
   if (entry.type === 'tool') {
     return (
-      <li className="csp-trace-entry" data-trace-kind="tool">
-        <span className="csp-trace-node" aria-hidden="true">⌘</span>
-        <div className="csp-trace-entry-main">
+      <li className="grid grid-cols-[28px_minmax(0,1fr)] gap-3 border-b py-3 last:border-b-0" data-trace-kind="tool">
+        <span className="grid size-7 place-items-center rounded-full border bg-background font-mono text-xs text-muted-foreground" aria-hidden="true">⌘</span>
+        <div className="min-w-0 [&>header]:flex [&>header]:items-center [&>header]:justify-between [&>header]:gap-2 [&>header]:text-xs [&>header_span]:text-muted-foreground">
           <header>
             <strong>{entry.title}</strong>
-            <span className={`csp-trace-status csp-trace-status--${entry.status}`}>{statusLabel(entry.status)}</span>
+            <span className={cn('rounded-full border px-2 py-1 font-mono text-[10px]', entry.status === 'failed' && 'border-destructive/40 text-destructive', entry.status === 'completed' && 'text-[var(--status-success)]')}>{statusLabel(entry.status)}</span>
           </header>
           {(entry.toolName !== undefined || entry.toolKind !== undefined) && (
-            <div className="csp-trace-tool-meta">
+            <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
               {entry.toolKind !== undefined && <span>{entry.toolKind}</span>}
               {entry.toolName !== undefined && <code>{entry.toolName}</code>}
             </div>
@@ -92,11 +93,11 @@ function TraceEntry({ entry }: { entry: CommonspaceTraceEntry }) {
   }
 
   return (
-    <li className="csp-trace-entry csp-trace-entry--usage" data-trace-kind="usage">
-      <span className="csp-trace-node" aria-hidden="true">◴</span>
-      <div className="csp-trace-entry-main">
+    <li className="grid grid-cols-[28px_minmax(0,1fr)] gap-3 border-b py-3 last:border-b-0" data-trace-kind="usage">
+      <span className="grid size-7 place-items-center rounded-full border bg-background font-mono text-xs text-muted-foreground" aria-hidden="true">◴</span>
+      <div className="min-w-0 [&>header]:flex [&>header]:items-center [&>header]:justify-between [&>header]:gap-2 [&>header]:text-xs [&>header_span]:text-muted-foreground">
         <header><strong>Context usage</strong><span>{entry.usedTokens.toLocaleString()} / {entry.contextWindow.toLocaleString()} tokens</span></header>
-        {entry.costAmount !== undefined && <p className="csp-trace-cost">{entry.costAmount.toLocaleString(undefined, { maximumFractionDigits: 6 })} {entry.costCurrency ?? ''}</p>}
+        {entry.costAmount !== undefined && <p className="mt-2 font-mono text-xs text-muted-foreground">{entry.costAmount.toLocaleString(undefined, { maximumFractionDigits: 6 })} {entry.costCurrency ?? ''}</p>}
       </div>
     </li>
   )
@@ -104,16 +105,16 @@ function TraceEntry({ entry }: { entry: CommonspaceTraceEntry }) {
 
 function TracePayload({ label, value }: { label: string; value: string }) {
   return (
-    <div className="csp-trace-payload">
-      <span>{label}</span>
-      <pre><code>{value}</code></pre>
+    <div className="mt-2">
+      <span className="text-xs font-semibold text-muted-foreground">{label}</span>
+      <pre className="mt-1 max-h-60 overflow-auto rounded-sm border bg-muted p-2 font-mono text-xs"><code>{value}</code></pre>
     </div>
   )
 }
 
 export function AgentTraceTimeline({ entries }: { entries: readonly CommonspaceTraceEntry[] }) {
   return (
-    <ol className="csp-trace-timeline">
+    <ol className="grid">
       {entries.map(entry => <TraceEntry key={`${entry.type}-${entry.id}`} entry={entry} />)}
     </ol>
   )
@@ -128,23 +129,23 @@ export function AgentTrace({ authorName, trace }: AgentTraceProps) {
   const toolLabel = `${String(tools)} tool${tools === 1 ? '' : 's'}`
 
   return (
-    <div className={`csp-trace${open ? ' is-open' : ''}`}>
+    <div className="mt-3 overflow-hidden rounded-md border bg-background">
       <button
         type="button"
-        className="csp-trace-toggle"
+        className="grid min-h-12 w-full grid-cols-[24px_auto_minmax(0,1fr)_18px] items-center gap-2 border-0 bg-transparent px-3 text-left text-xs hover:bg-muted"
         aria-expanded={open}
         aria-controls={panelId}
         aria-label={`${open ? 'Hide' : 'Show'} ${runtime} activity for ${authorName}`}
         onClick={() => { setOpen(value => !value) }}
       >
-        <span className="csp-trace-toggle-mark" aria-hidden="true">⌁</span>
+        <span className="grid size-6 place-items-center rounded-full border font-mono" aria-hidden="true">⌁</span>
         <span>{runtime} activity</span>
-        <span className="csp-trace-summary">{String(trace.entries.length)} events · {toolLabel} · {durationLabel(trace.startedAt, trace.completedAt)}</span>
-        <span className="csp-trace-chevron" aria-hidden="true">⌄</span>
+        <span className="truncate text-muted-foreground">{String(trace.entries.length)} events · {toolLabel} · {durationLabel(trace.startedAt, trace.completedAt)}</span>
+        <span className={cn('transition-transform', open && 'rotate-180')} aria-hidden="true">⌄</span>
       </button>
       {open && (
-        <section id={panelId} className="csp-trace-panel" role="region" aria-label={`${authorName} activity trace`}>
-          <div className="csp-trace-intro">
+        <section id={panelId} className="border-t bg-muted p-3" role="region" aria-label={`${authorName} activity trace`}>
+          <div className="mb-2 grid gap-1 text-xs">
             <strong>Native harness trace</strong>
             <span>Reasoning summaries and tool activity reported by {runtime}.</span>
           </div>

@@ -99,15 +99,16 @@ try {
   const pageErrors = []
   page.on('pageerror', error => { pageErrors.push(error.message) })
   await page.goto(uiUrl, { waitUntil: 'domcontentloaded' })
-  await page.getByLabel('Commonspace application').waitFor({ state: 'visible' })
+  await page.getByRole('main', { name: 'Workspace home' }).waitFor({ state: 'visible' })
   await page.getByLabel('Commonspace browser').waitFor({ state: 'visible' })
-  await page.getByLabel('Commonspace conversation').waitFor({ state: 'visible' })
+  await page.getByLabel('Workspace home').waitFor({ state: 'visible' })
   if (pageErrors.length > 0) throw new Error(`browser errors: ${pageErrors.join(' | ')}`)
 
   const verificationChannel = page.getByRole('button', { name: 'Open channel verification' })
   await verificationChannel.waitFor({ state: 'visible' })
   await verificationChannel.focus()
   await page.keyboard.press('Enter')
+  await page.getByLabel('Commonspace conversation').waitFor({ state: 'visible' })
   await page.getByLabel('Post in verification').waitFor({ state: 'visible' })
   for (const label of ['Infer Projects', 'Use no Projects', 'Choose Projects']) {
     if (await page.getByRole('button', { name: label }).count() !== 0) throw new Error(`unexpected Project picker: ${label}`)
@@ -128,9 +129,9 @@ try {
   await page.emulateMedia({ colorScheme: 'light' })
 
   await page.keyboard.press('Control+K')
-  await page.getByRole('dialog', { name: 'Search everything' }).waitFor({ state: 'visible' })
+  await page.getByRole('dialog', { name: 'Search Commonspace' }).waitFor({ state: 'visible' })
   await page.keyboard.press('Escape')
-  await page.getByRole('dialog', { name: 'Search everything' }).waitFor({ state: 'detached' })
+  await page.getByRole('dialog', { name: 'Search Commonspace' }).waitFor({ state: 'detached' })
 
   await page.setViewportSize({ width: 390, height: 844 })
   const navigationToggle = page.getByRole('button', { name: 'Open navigation' })
@@ -165,9 +166,9 @@ try {
   const installedPageErrors = []
   installedPage.on('pageerror', error => { installedPageErrors.push(error.message) })
   await installedPage.goto(installedUrl, { waitUntil: 'domcontentloaded' })
-  await installedPage.getByLabel('Commonspace application').waitFor({ state: 'visible' })
+  await installedPage.getByRole('main', { name: 'Workspace home' }).waitFor({ state: 'visible' })
   await installedPage.getByLabel('Commonspace browser').waitFor({ state: 'visible' })
-  await installedPage.getByLabel('Commonspace conversation').waitFor({ state: 'visible' })
+  await installedPage.getByLabel('Workspace home').waitFor({ state: 'visible' })
   if (installedPageErrors.length > 0) throw new Error(`installed browser errors: ${installedPageErrors.join(' | ')}`)
 
   console.log(JSON.stringify({

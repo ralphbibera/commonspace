@@ -10,7 +10,7 @@ function MarkdownLink({ href, node, ...props }: ComponentProps<'a'> & { node?: u
 function MarkdownTable({ className, node, ...props }: ComponentProps<'table'> & { node?: unknown }) {
   void node
   return (
-    <div className="csp-markdown-table-wrap">
+    <div className="my-3 max-w-full overflow-x-auto rounded-md border">
       <table className={className} {...props} />
     </div>
   )
@@ -21,7 +21,7 @@ function MarkdownImage({ alt, node, src }: ComponentProps<'img'> & { node?: unkn
   const label = alt?.trim() || 'Untitled image'
   const externalSource = src !== undefined && /^https?:\/\//i.test(src) ? src : undefined
   return (
-    <span className="csp-markdown-image-placeholder" role="note">
+    <span className="my-2 inline-flex min-h-11 flex-wrap items-center gap-2 rounded-md border bg-muted px-3 text-xs text-muted-foreground" role="note">
       <span>Image withheld · {label}</span>
       {externalSource !== undefined
         ? <a href={externalSource} rel="noopener noreferrer" target="_blank" aria-label={`Open image: ${label}`}>Open image</a>
@@ -43,7 +43,7 @@ const markdownControls = {
 
 export const MessageMarkdown = memo(function MessageMarkdown({ text }: { text: string }) {
   return (
-    <div className="csp-message-content" data-selectable-text="true">
+    <div className="min-w-0 text-sm leading-6 break-words [&_a]:text-primary [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:pl-3 [&_code]:font-mono [&_li]:my-1 [&_ol]:my-2 [&_ol]:pl-6 [&_p]:my-2 [&_pre]:my-3 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:border [&_pre]:bg-muted [&_pre]:p-3 [&_table]:w-full [&_td]:border-t [&_td]:p-2 [&_th]:p-2 [&_ul]:my-2 [&_ul]:pl-6" data-selectable-text="true">
       <Streamdown
         components={components}
         controls={markdownControls}

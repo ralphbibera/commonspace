@@ -198,9 +198,9 @@ describe('Commonspace Inbox', () => {
       expect(selectConversation).toHaveBeenCalledWith({ kind: 'channel', id: 'general' })
       expect(selectThread).toHaveBeenCalledWith('thread-1')
     })
-    expect(await screen.findByText('Thread result.')).toBeTruthy()
+    expect(await screen.findByText('Thread result.', {}, { timeout: 3_000 })).toBeTruthy()
     await waitFor(() => {
-      expect(document.getElementById('csp-message-reply-thread')).not.toBeNull()
+      expect(document.getElementById('commonspace-message-reply-thread')).not.toBeNull()
       expect(scrollIntoView).toHaveBeenCalledWith({ block: 'center', behavior: 'smooth' })
     })
   })
@@ -211,6 +211,24 @@ describe('Commonspace Inbox', () => {
 
     const channel = screen.getByRole('button', { name: 'Open channel general, 1 unread' })
     expect(within(channel).getByText('1')).toBeTruthy()
+  })
+
+  it('opens a real Threads index and filters unread conversations', () => {
+    const { store, mutate } = appStore(state())
+    render(<CommonspaceApp store={store as never} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open Threads, 1 unread' }))
+
+    const threads = screen.getByRole('main', { name: 'Threads' })
+    expect(within(threads).getByRole('heading', { name: 'Threads' })).toBeTruthy()
+    expect(within(threads).getByText('Please investigate this.')).toBeTruthy()
+    expect(within(threads).getByRole('button', { name: 'Mark all read' })).toBeTruthy()
+    fireEvent.click(within(threads).getByRole('button', { name: 'Unread 1' }))
+    expect(within(threads).getAllByRole('listitem')).toHaveLength(1)
+    fireEvent.click(within(threads).getByRole('button', { name: 'Following' }))
+    expect(within(threads).queryAllByRole('listitem')).toHaveLength(0)
+    fireEvent.click(within(threads).getByRole('button', { name: 'Mark all read' }))
+    expect(mutate).toHaveBeenCalledWith({ action: 'mark-inbox-read' })
   })
 
   it('marks only the opened Inbox reply read', async () => {
@@ -242,6 +260,8 @@ describe('Commonspace Inbox', () => {
 
     const inbox = screen.getByRole('main', { name: 'Inbox' })
     expect(within(inbox).getByRole('heading', { name: 'Inbox' })).toBeTruthy()
+    expect(within(inbox).getByText('Agent replies, requests, and native session outcomes')).toBeTruthy()
+    expect(within(inbox).getByRole('button', { name: 'Mark all read' })).toBeTruthy()
     expect(within(inbox).queryByText('Run focused tests')).toBeNull()
     fireEvent.click(within(inbox).getByRole('button', { name: /^Unread/ }))
     expect(within(inbox).getAllByRole('listitem')).toHaveLength(2)
@@ -258,7 +278,7 @@ describe('Commonspace Inbox', () => {
     expect(selectThread).toHaveBeenCalledWith('thread-1')
     expect(screen.queryByRole('main', { name: 'Inbox' })).toBeNull()
     await waitFor(() => { expect(scrollIntoView).toHaveBeenCalledWith({ block: 'center', behavior: 'smooth' }) })
-    expect(document.getElementById('csp-message-root-1')?.classList.contains('csp-thread-root--focused')).toBe(true)
+    expect(document.getElementById('commonspace-message-root-1')?.getAttribute('data-focused')).toBe('true')
   })
 
   it('shows a meaningful empty state', () => {

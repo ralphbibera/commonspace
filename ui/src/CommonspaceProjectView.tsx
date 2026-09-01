@@ -1,6 +1,12 @@
 import { useState, useSyncExternalStore } from 'react'
 import type { CommonspaceBootstrap, CommonspaceProject, CommonspaceState, ConversationRef } from '@commonspace/shared'
 import { referencedProjectIds } from '@commonspace/shared'
+import { ArrowLeftIcon, FolderPlusIcon, SettingsIcon } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { CommonspaceLogo } from '@/design-system/CommonspaceLogo'
+import { WorkspaceHeader } from '@/design-system/WorkspaceHeader'
 import { CommonspaceProjectChanges } from './CommonspaceProjectChanges.tsx'
 import { CommonspaceProjectFiles } from './CommonspaceProjectFiles.tsx'
 import type { CommonspaceClientStore } from './commonspace-store.ts'
@@ -11,6 +17,7 @@ export interface CommonspaceProjectViewProps {
   store: CommonspaceClientStore
   onBack: () => void
   onOpenConversation: (conversation: ConversationRef) => void
+  fetcher?: typeof globalThis.fetch
 }
 
 type ProjectTab = 'conversations' | 'files' | 'changes'
@@ -34,29 +41,29 @@ function ProjectConversations({
   const directMessages = bootstrap.agents.filter(agent => conversationReferencesProject(state, { kind: 'dm', id: agent.id }, project.id))
   const conversationCount = channels.length + directMessages.length
   return (
-    <section className="csp-project-card" aria-labelledby="project-conversations-heading">
-      <header className="csp-project-card-head">
-        <strong id="project-conversations-heading">Conversations</strong>
-        <small>{project.name} · real workspace conversations</small>
+    <section className="mx-auto max-w-[920px] overflow-hidden rounded-md border bg-background" aria-labelledby="project-conversations-heading">
+      <header className="border-b px-[18px] py-3.5">
+        <strong id="project-conversations-heading" className="block text-[17px]">Conversations</strong>
+        <small className="mt-1 block text-xs text-muted-foreground">{project.name} · real workspace conversations</small>
       </header>
-      <div className="csp-project-conversation-list">
+      <div>
         {channels.map(channel => {
           const latest = state.messages[`channel:${channel.id}`]?.findLast(message => referencedProjectIds(message).includes(project.id))
           return (
             <button
               key={`channel:${channel.id}`}
               type="button"
-              className="csp-project-conversation-row"
+              className="grid min-h-[82px] w-full grid-cols-[34px_minmax(0,1fr)_20px] items-center gap-3 border-0 border-b bg-transparent px-4 py-2.5 text-left last:border-b-0 hover:bg-muted"
               aria-label={`Open channel ${channel.name}`}
               onClick={() => onOpenConversation({ kind: 'channel', id: channel.id })}
             >
-              <span className="csp-project-conversation-glyph" aria-hidden="true">#</span>
-              <span className="csp-project-conversation-main">
-                <strong># {channel.name}</strong>
-                <small>Global Channel · references {project.name}</small>
-                <p>{latest?.text ?? (channel.instructions.trim() || 'No messages yet.')}</p>
+              <span className="grid size-[34px] place-items-center rounded-sm border bg-muted font-mono" aria-hidden="true">#</span>
+              <span className="min-w-0">
+                <strong className="block truncate"># {channel.name}</strong>
+                <small className="block truncate text-xs text-muted-foreground">Global Channel · references {project.name}</small>
+                <p className="mt-1 truncate text-[13px]">{latest?.text ?? (channel.instructions.trim() || 'No messages yet.')}</p>
               </span>
-              <span className="csp-project-conversation-arrow" aria-hidden="true">→</span>
+              <span className="text-muted-foreground" aria-hidden="true">→</span>
             </button>
           )
         })}
@@ -66,23 +73,23 @@ function ProjectConversations({
             <button
               key={`dm:${agent.id}`}
               type="button"
-              className="csp-project-conversation-row"
+              className="grid min-h-[82px] w-full grid-cols-[34px_minmax(0,1fr)_20px] items-center gap-3 border-0 border-b bg-transparent px-4 py-2.5 text-left last:border-b-0 hover:bg-muted"
               aria-label={`Open direct message ${agent.displayName}`}
               onClick={() => onOpenConversation({ kind: 'dm', id: agent.id })}
             >
-              <span className="csp-project-conversation-avatar" aria-hidden="true">{agent.displayName.slice(0, 1).toLocaleUpperCase()}</span>
-              <span className="csp-project-conversation-main">
-                <strong>{agent.displayName}</strong>
-                <small>Agent DM · selected project context</small>
-                <p>{latest?.text ?? 'No messages yet.'}</p>
+              <span className="grid size-[34px] place-items-center rounded-full bg-primary font-mono text-primary-foreground" aria-hidden="true">{agent.displayName.slice(0, 1).toLocaleUpperCase()}</span>
+              <span className="min-w-0">
+                <strong className="block truncate">{agent.displayName}</strong>
+                <small className="block truncate text-xs text-muted-foreground">Agent DM · selected project context</small>
+                <p className="mt-1 truncate text-[13px]">{latest?.text ?? 'No messages yet.'}</p>
               </span>
-              <span className="csp-project-conversation-arrow" aria-hidden="true">→</span>
+              <span className="text-muted-foreground" aria-hidden="true">→</span>
             </button>
           )
         })}
-        {conversationCount === 0 && <div className="csp-project-empty">No conversations are connected to this project yet.</div>}
+        {conversationCount === 0 && <div className="p-10 text-center text-sm text-muted-foreground">No conversations are connected to this project yet.</div>}
       </div>
-      <footer className="csp-project-card-foot">{conversationCount} {conversationCount === 1 ? 'conversation' : 'conversations'} available in {project.name}</footer>
+      <div className="border-t px-4 py-3 text-xs text-muted-foreground">{conversationCount} {conversationCount === 1 ? 'conversation' : 'conversations'} available in {project.name}</div>
     </section>
   )
 }
@@ -93,9 +100,11 @@ export function CommonspaceProjectView({
   store,
   onBack,
   onOpenConversation,
+  fetcher = globalThis.fetch,
 }: CommonspaceProjectViewProps) {
   const [activeTab, setActiveTab] = useState<ProjectTab>('files')
   const [addingFolder, setAddingFolder] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot)
   const bootstrap = snapshot.bootstrap
   const state = bootstrap?.state
@@ -115,9 +124,9 @@ export function CommonspaceProjectView({
 
   if (project === undefined || state === undefined || bootstrap === null) {
     return (
-      <main className="csp-project-view" aria-label="Project unavailable">
-        <header className="csp-project-view-header"><div><h1>Project unavailable</h1><p>Selected local context could not be found.</p></div></header>
-        <div className="csp-project-view-empty"><button type="button" onClick={onBack}>Back to Workspace</button></div>
+      <main className="flex h-full min-h-0 flex-col bg-background" aria-label="Project unavailable">
+        <header className="flex min-h-16 items-center border-b px-6"><div><h1 className="font-heading text-lg font-bold">Project unavailable</h1><p className="mt-0.5 text-xs text-muted-foreground">Selected local context could not be found.</p></div></header>
+        <div className="grid flex-1 place-items-center"><Button variant="outline" onClick={onBack}><ArrowLeftIcon data-icon="inline-start" aria-hidden="true" />Back to Workspace</Button></div>
       </main>
     )
   }
@@ -127,40 +136,34 @@ export function CommonspaceProjectView({
   const conversationCount = channels.length + directMessageCount
   const folderCount = project.paths.length
   const folderSummary = folderCount === 1 ? '1 folder · working directory' : `${String(folderCount)} folders · working + references`
-  const workbench = activeTab === 'files' || activeTab === 'changes'
-
   return (
-    <main className="csp-project-view" aria-label={`Project ${project.name}`}>
-      <header className="csp-project-view-header">
-        <div><h1>{project.name}</h1><p>{conversationCount} {conversationCount === 1 ? 'conversation' : 'conversations'} · {folderSummary}</p></div>
-      </header>
-
-      <nav className="csp-project-toolbar" aria-label="Project views">
-        <button type="button" className="csp-project-back" onClick={onBack}><span aria-hidden="true">‹</span> Workspace</button>
-        <div className="csp-project-tabs" role="tablist" aria-label="Project views">
-          {(['conversations', 'files', 'changes'] as const).map(tab => (
-            <button key={tab} type="button" role="tab" aria-selected={activeTab === tab} onClick={() => { setActiveTab(tab) }}>
-              {tab.slice(0, 1).toLocaleUpperCase()}{tab.slice(1)}
-            </button>
-          ))}
-        </div>
-        <button
-          type="button"
-          className="csp-project-add-folder"
+    <main className="h-full min-h-0" aria-label={`Project ${project.name}`}>
+    <Tabs value={activeTab} onValueChange={value => { setActiveTab(value as ProjectTab) }} className="relative h-full min-h-0 gap-0 overflow-hidden bg-background">
+      <WorkspaceHeader title={project.name} subtitle={`${String(conversationCount)} ${conversationCount === 1 ? 'conversation' : 'conversations'} · ${folderSummary}`} mark={project.name.toLocaleLowerCase() === 'commonspace' ? <CommonspaceLogo decorative className="size-5" /> : project.name.slice(0, 1).toLocaleUpperCase()} actions={<button type="button" className="grid size-11 place-items-center rounded-full border-0 bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Open project settings" aria-expanded={settingsOpen} onClick={() => { setSettingsOpen(open => !open) }}><SettingsIcon className="size-[18px]" aria-hidden="true" /></button>} />
+      <nav className="flex min-h-16 flex-wrap items-center gap-2.5 border-b px-5 py-2 max-[640px]:px-3" aria-label="Project views">
+        <Button variant="ghost" onClick={onBack}><ArrowLeftIcon data-icon="inline-start" aria-hidden="true" />Workspace</Button>
+        <TabsList variant="project" aria-label="Project views">
+          {(['conversations', 'files', 'changes'] as const).map(tab => <TabsTrigger key={tab} value={tab}>{tab.slice(0, 1).toLocaleUpperCase()}{tab.slice(1)}</TabsTrigger>)}
+        </TabsList>
+        <span className="flex-1" />
+        <Button
+          variant="outline"
           aria-label="Add local folder"
           disabled={addingFolder}
           onClick={() => { void addLocalFolder() }}
         >
-          <span aria-hidden="true">+</span> {addingFolder ? 'Choosing…' : 'Add folder'}
-        </button>
-        <span className="csp-project-local-pill"><span aria-hidden="true">⌁</span> Read only</span>
+          <FolderPlusIcon data-icon="inline-start" aria-hidden="true" />{addingFolder ? 'Choosing…' : 'Add folder'}
+        </Button>
+        <Badge variant="outline">Read only</Badge>
       </nav>
-
-      <div className={`csp-project-content${workbench ? ' csp-project-content--workbench' : ''}`}>
-        {activeTab === 'files' && <CommonspaceProjectFiles projectId={project.id} roots={project.paths} targetFile={targetFile ?? null} />}
-        {activeTab === 'changes' && <CommonspaceProjectChanges projectId={project.id} />}
-        {activeTab === 'conversations' && <ProjectConversations bootstrap={bootstrap} state={state} project={project} onOpenConversation={onOpenConversation} />}
-      </div>
+      <TabsContent value="conversations" className="min-h-0 overflow-auto bg-muted p-6"><ProjectConversations bootstrap={bootstrap} state={state} project={project} onOpenConversation={onOpenConversation} /></TabsContent>
+      <TabsContent value="files" className="min-h-0 overflow-hidden bg-background"><CommonspaceProjectFiles projectId={project.id} roots={project.paths} targetFile={targetFile ?? null} fetcher={fetcher} /></TabsContent>
+      <TabsContent value="changes" className="min-h-0 overflow-hidden bg-background"><CommonspaceProjectChanges projectId={project.id} fetcher={fetcher} /></TabsContent>
+      {settingsOpen && <aside className="absolute top-16 right-0 bottom-0 z-20 flex w-[min(420px,100%)] flex-col border-l bg-background shadow-[-20px_0_48px_color-mix(in_oklch,var(--foreground)_9%,transparent)]" aria-label="Project settings">
+        <header className="flex min-h-[70px] items-center gap-3 border-b py-2.5 pr-3.5 pl-5"><div className="min-w-0 flex-1"><h2 className="truncate font-heading text-[17px] font-bold">{project.name}</h2><p className="mt-0.5 text-xs text-muted-foreground">{conversationCount} {conversationCount === 1 ? 'conversation' : 'conversations'} · {folderSummary}</p></div><button type="button" className="grid size-11 place-items-center rounded-full border-0 bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Close project settings" onClick={() => { setSettingsOpen(false) }}>×</button></header>
+        <div className="min-h-0 flex-1 overflow-y-auto p-5"><section><h3 className="mb-3 font-heading text-sm font-bold">Local context</h3><div className="rounded-md border bg-muted p-4"><strong className="block text-[13px]">{project.paths[0] === undefined ? 'No working folder' : `Working · ${project.paths[0].split('/').at(-1) ?? project.name}`}</strong><span className="mt-1 block text-xs text-muted-foreground">Read-only project browser</span></div><button type="button" className="mt-3 min-h-11 rounded-sm border bg-background px-4 font-semibold hover:bg-muted" onClick={() => { void addLocalFolder() }}>Add folder</button></section><section className="mt-7 border-t pt-6"><h3 className="mb-3 font-heading text-sm font-bold">Connected work</h3><div className="rounded-md border bg-muted p-4"><strong className="block text-[13px]">{conversationCount} {conversationCount === 1 ? 'conversation' : 'conversations'}</strong><span className="mt-1 block text-xs text-muted-foreground">Channels and direct sessions using this context</span></div></section><section className="mt-7 border-t pt-6"><h3 className="mb-3 font-heading text-sm font-bold">Danger zone</h3><button type="button" className="min-h-11 rounded-sm border border-destructive/40 bg-background px-4 font-semibold text-destructive hover:bg-destructive/5" onClick={() => { if (window.confirm(`Remove ${project.name}?`)) { void store.mutate({ action: 'remove-project', projectId: project.id }).then(onBack) } }}>Remove project</button></section></div>
+      </aside>}
+    </Tabs>
     </main>
   )
 }

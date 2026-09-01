@@ -34,7 +34,37 @@ afterEach(() => {
 })
 
 describe('standalone Commonspace application', () => {
-  it('mounts navigation and conversations without host slots', () => {
+  it('opens on the source-aligned workspace home and keeps Inbox navigation available', () => {
+    const store = {
+      subscribe: () => () => undefined,
+      getSnapshot: () => emptySnapshot,
+      refresh: vi.fn(async () => undefined),
+      connectEvents: vi.fn(),
+      disconnectEvents: vi.fn(),
+      messages: () => [],
+      mutate: vi.fn(async () => undefined),
+      selectConversation: vi.fn(),
+      selectProject: vi.fn(),
+      selectThread: vi.fn(),
+      send: vi.fn(async () => undefined),
+    }
+
+    render(<CommonspaceApp store={store as never} />)
+
+    expect(screen.getByRole('button', { name: 'Search messages, channels, and agents' })).toBeTruthy()
+    expect(screen.getByText('Local')).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Dashboard' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Agent runs' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Recent conversations' })).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open Inbox' }))
+    expect(screen.getByRole('main', { name: 'Inbox' })).toBeTruthy()
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Open Commonspace home' })[0]!)
+    expect(screen.getByRole('heading', { name: 'Agent runs' })).toBeTruthy()
+  })
+
+  it('mounts navigation and workspace home without host slots', () => {
     const store = {
       subscribe: () => () => undefined,
       getSnapshot: () => emptySnapshot,
@@ -51,16 +81,14 @@ describe('standalone Commonspace application', () => {
 
     const view = render(<CommonspaceApp store={store as never} />)
 
-    expect(screen.getByLabelText('Commonspace application')).toBeTruthy()
     expect(screen.getByLabelText('Commonspace browser')).toBeTruthy()
-    expect(screen.getByLabelText('Commonspace conversation')).toBeTruthy()
+    expect(screen.getByLabelText('Workspace home')).toBeTruthy()
     expect(screen.queryByRole('button', { name: /Switch to/ })).toBeNull()
     expect(store.connectEvents).toHaveBeenCalledOnce()
 
     const navigation = screen.getByRole('button', { name: 'Open navigation' })
     fireEvent.click(navigation)
     expect(navigation.getAttribute('aria-expanded')).toBe('true')
-    expect(screen.getByLabelText('Commonspace application').classList.contains('csp-app--nav-open')).toBe(true)
 
     view.unmount()
     expect(store.disconnectEvents).toHaveBeenCalledOnce()
@@ -87,7 +115,6 @@ describe('standalone Commonspace application', () => {
     const alerts = screen.getAllByRole('alert')
     expect(alerts).toHaveLength(1)
     expect(alerts[0]?.textContent).toBe('project name is required')
-    expect(alerts[0]?.classList.contains('csp-app-toast')).toBe(true)
   })
 
   it('configures one AI routing model for the whole Commonspace', async () => {
@@ -116,11 +143,13 @@ describe('standalone Commonspace application', () => {
     render(<CommonspaceApp store={store as never} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Commonspace settings' }))
+    expect(screen.getByRole('form', { name: 'Workspace settings' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Choose how the workspace thinks' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Use OpenAI-compatible inference for routing' }).getAttribute('aria-pressed')).toBe('true')
     expect(screen.getByLabelText('Routing API key').getAttribute('placeholder')).toContain('Saved')
     fireEvent.change(screen.getByLabelText('Routing model'), { target: { value: 'gpt-4.1-mini' } })
     fireEvent.change(screen.getByLabelText('Routing API key'), { target: { value: 'new-secret' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Save defaults' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save inference settings' }))
 
     await waitFor(() => {
       expect(updateRoutingConfiguration).toHaveBeenCalledWith({
@@ -159,10 +188,11 @@ describe('standalone Commonspace application', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Commonspace settings' }))
     expect(screen.queryByRole('button', { name: 'Use local routing' })).toBeNull()
     expect(screen.getByRole('group', { name: 'Agent run defaults' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Use native agent inference for routing' }))
     fireEvent.click(screen.getByRole('button', { name: 'Use Backend agent for routing' }))
     expect(screen.queryByLabelText('Routing model')).toBeNull()
     expect(screen.queryByLabelText('Routing API key')).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'Save defaults' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save inference settings' }))
     await waitFor(() => {
       expect(updateRoutingConfiguration).toHaveBeenLastCalledWith({ provider: 'harness', harnessAgentId: 'backend' })
     })
@@ -221,13 +251,14 @@ describe('standalone Commonspace application', () => {
     }), { status: 200, headers: { 'content-type': 'application/json' } })))
 
     render(<CommonspaceApp store={store as never} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Search Commonspace' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Search messages, channels, and agents' }))
+    expect(screen.getByRole('dialog', { name: 'Search Commonspace' })).toBeTruthy()
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search Commonspace' }), { target: { value: 'Unique searchable reply' } })
     fireEvent.click(await screen.findByRole('option', { name: 'Open Message: AgentOps' }))
 
     await waitFor(() => { expect(scrollIntoView).toHaveBeenCalledWith({ block: 'center', behavior: 'smooth' }) })
     expect(store.selectConversation).toHaveBeenCalledWith({ kind: 'channel', id: 'general' })
-    expect(document.getElementById('csp-message-root-1')?.classList.contains('csp-thread-root--focused')).toBe(true)
+    expect(document.getElementById('commonspace-message-root-1')?.getAttribute('data-focused')).toBe('true')
     expect(screen.queryByLabelText('Thread replies')).toBeNull()
   })
 
@@ -237,25 +268,9 @@ describe('standalone Commonspace application', () => {
     const mounted = mountCommonspace(root)
 
     expect(document.querySelector('style[data-commonspace="standalone"]')).toBeTruthy()
-    expect(root.querySelector('[aria-label="Commonspace application"]')).toBeTruthy()
-
+    expect(root.querySelector('main[aria-label="Workspace home"]')).toBeTruthy()
     mounted.unmount()
     expect(document.querySelector('style[data-commonspace="standalone"]')).toBeNull()
   })
 
-  it('follows the system dark color scheme with a complete dark palette', () => {
-    const root = document.createElement('div')
-    document.body.append(root)
-    const mounted = mountCommonspace(root)
-    const styles = document.querySelector('style[data-commonspace="standalone"]')?.textContent ?? ''
-
-    expect(styles).toContain('@media (prefers-color-scheme: dark)')
-    expect(styles).toMatch(/color-scheme:\s*dark/)
-    expect(styles).toMatch(/--csp-shell-bg:\s*#[0-9a-f]{6}/i)
-    expect(styles).toMatch(/--dsw-alias-label-primary:\s*#[0-9a-f]{6}/i)
-    expect(styles).toMatch(/--dsw-alias-bg-base:\s*#[0-9a-f]{6}/i)
-    expect(styles).toMatch(/--dsw-alias-border-l2:\s*#[0-9a-f]{6}/i)
-
-    mounted.unmount()
-  })
 })

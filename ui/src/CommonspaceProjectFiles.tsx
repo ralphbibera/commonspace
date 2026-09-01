@@ -6,6 +6,7 @@ export interface CommonspaceProjectFilesProps {
   projectId: string
   roots: readonly string[]
   targetFile?: { rootIndex: number; path: string } | null
+  fetcher?: typeof globalThis.fetch
 }
 
 function entryGlyph(entry: ProjectFileEntry): string {
@@ -17,7 +18,7 @@ function entryGlyph(entry: ProjectFileEntry): string {
   return 'BIN'
 }
 
-export function CommonspaceProjectFiles({ projectId, roots, targetFile = null }: CommonspaceProjectFilesProps) {
+export function CommonspaceProjectFiles({ projectId, roots, targetFile = null, fetcher = globalThis.fetch }: CommonspaceProjectFilesProps) {
   const [rootIndex, setRootIndex] = useState(targetFile?.rootIndex ?? 0)
   const [directoryPath, setDirectoryPath] = useState(targetFile?.path.split('/').slice(0, -1).join('/') ?? '')
   const [listing, setListing] = useState<ProjectDirectoryResponse | null>(null)
@@ -42,11 +43,12 @@ export function CommonspaceProjectFiles({ projectId, roots, targetFile = null }:
     void fetchProjectJson<ProjectDirectoryResponse>(
       projectApiUrl(projectId, 'files', rootIndex, directoryPath),
       controller.signal,
+      fetcher,
     ).then(setListing).catch((error: unknown) => {
       if (!controller.signal.aborted) setListingError(error instanceof Error ? error.message : String(error))
     })
     return () => { controller.abort() }
-  }, [directoryPath, projectId, rootIndex])
+  }, [directoryPath, fetcher, projectId, rootIndex])
 
   useEffect(() => {
     setText(null)
@@ -56,11 +58,12 @@ export function CommonspaceProjectFiles({ projectId, roots, targetFile = null }:
     void fetchProjectText(
       projectApiUrl(projectId, 'file', rootIndex, selected.path),
       controller.signal,
+      fetcher,
     ).then(setText).catch((error: unknown) => {
       if (!controller.signal.aborted) setPreviewError(error instanceof Error ? error.message : String(error))
     })
     return () => { controller.abort() }
-  }, [projectId, rootIndex, selected])
+  }, [fetcher, projectId, rootIndex, selected])
 
   useEffect(() => {
     if (targetFile === null || listing === null || listing.rootIndex !== targetFile.rootIndex) return
@@ -74,7 +77,7 @@ export function CommonspaceProjectFiles({ projectId, roots, targetFile = null }:
   }, [directoryPath])
 
   if (roots.length === 0) {
-    return <div className="csp-project-workbench-empty"><strong>No project folder</strong><p>Add a local folder to browse files.</p></div>
+    return <div className="grid h-full place-items-center text-center"><div><strong>No project folder</strong><p className="mt-1 text-xs text-muted-foreground">Add a local folder to browse files.</p></div></div>
   }
 
   const mediaUrl = selected?.kind === 'file'
@@ -82,11 +85,12 @@ export function CommonspaceProjectFiles({ projectId, roots, targetFile = null }:
     : null
 
   return (
-    <section className="csp-project-workbench" aria-label="Project files">
-      <aside className="csp-project-file-rail">
-        <header className="csp-project-pane-header">
-          <div><strong>Files</strong><small>Read-only project browser</small></div>
+    <section className="grid h-full min-h-0 min-w-0 grid-cols-[330px_minmax(0,1fr)] max-[780px]:grid-cols-1 max-[780px]:grid-rows-[minmax(300px,42dvh)_minmax(360px,1fr)]" aria-label="Project files">
+      <aside className="min-h-0 min-w-0 overflow-y-auto border-r bg-[color-mix(in_oklch,var(--background)_55%,var(--muted))] max-[780px]:border-r-0 max-[780px]:border-b">
+        <header className="grid min-h-16 grid-cols-[76px_minmax(0,1fr)] items-center gap-2 border-b px-3 py-2">
+          <div><strong className="block text-[13px]">Files</strong><small className="hidden">Read-only project browser</small></div>
           <select
+            className="min-h-11 min-w-0 rounded-md border bg-background px-3"
             aria-label="Project folder"
             value={rootIndex}
             onChange={event => {
@@ -100,26 +104,26 @@ export function CommonspaceProjectFiles({ projectId, roots, targetFile = null }:
           </select>
         </header>
 
-        <nav className="csp-project-breadcrumbs" aria-label="File path">
-          <button type="button" aria-current={directoryPath === '' ? 'page' : undefined} onClick={() => { setDirectoryPath('') }}>
+        <nav className="flex min-h-[54px] items-center gap-1 overflow-x-auto border-b px-3 text-xs" aria-label="File path">
+          <button className="min-h-10 rounded-sm border-0 bg-transparent px-2 hover:bg-muted aria-[current=page]:bg-muted" type="button" aria-current={directoryPath === '' ? 'page' : undefined} onClick={() => { setDirectoryPath('') }}>
             {folderName(roots[rootIndex] ?? '')}
           </button>
           {breadcrumbs.map(crumb => (
-            <span key={crumb.path}>
-              <i aria-hidden="true">/</i>
-              <button type="button" aria-current={crumb.path === directoryPath ? 'page' : undefined} onClick={() => { setDirectoryPath(crumb.path) }}>{crumb.name}</button>
+            <span key={crumb.path} className="flex items-center gap-1">
+              <i className="text-muted-foreground not-italic" aria-hidden="true">/</i>
+              <button className="min-h-10 rounded-sm border-0 bg-transparent px-2 hover:bg-muted aria-[current=page]:bg-muted" type="button" aria-current={crumb.path === directoryPath ? 'page' : undefined} onClick={() => { setDirectoryPath(crumb.path) }}>{crumb.name}</button>
             </span>
           ))}
         </nav>
 
-        <div className="csp-project-file-list" aria-live="polite">
-          {listing === null && listingError === null && <div className="csp-project-pane-state">Reading folder…</div>}
-          {listingError !== null && <div className="csp-project-pane-state csp-project-pane-state--error">{listingError}</div>}
+        <div aria-live="polite">
+          {listing === null && listingError === null && <div className="p-5 text-xs text-muted-foreground">Reading folder…</div>}
+          {listingError !== null && <div className="p-5 text-xs text-destructive">{listingError}</div>}
           {listing?.entries.map(entry => (
             <button
               key={entry.path}
               type="button"
-              className="csp-project-file-row"
+              className="grid min-h-12 w-full grid-cols-[28px_minmax(0,1fr)_auto] items-center gap-2 border-0 border-b bg-transparent px-3 py-1 text-left hover:bg-muted aria-pressed:bg-muted"
               aria-label={`${entry.kind === 'directory' ? 'Open folder' : 'Open file'} ${entry.name}`}
               aria-pressed={entry.kind === 'file' && selected?.path === entry.path}
               onClick={() => {
@@ -130,32 +134,32 @@ export function CommonspaceProjectFiles({ projectId, roots, targetFile = null }:
                 setSelected(entry)
               }}
             >
-              <span className={`csp-project-file-glyph csp-project-file-glyph--${entry.kind}`} aria-hidden="true">{entryGlyph(entry)}</span>
-              <span className="csp-project-file-name">{entry.name}</span>
-              <small>{entry.kind === 'directory' ? 'Folder' : formatFileSize(entry.size)}</small>
+              <span className="grid size-7 place-items-center font-mono text-[10px] text-muted-foreground" aria-hidden="true">{entryGlyph(entry)}</span>
+              <span className="truncate text-xs font-semibold">{entry.name}</span>
+              <small className="text-xs text-muted-foreground">{entry.kind === 'directory' ? 'Folder' : formatFileSize(entry.size)}</small>
             </button>
           ))}
-          {listing?.entries.length === 0 && <div className="csp-project-pane-state">Folder is empty.</div>}
-          {listing?.truncated === true && <div className="csp-project-limit-note">Showing first 500 entries.</div>}
+          {listing?.entries.length === 0 && <div className="p-5 text-xs text-muted-foreground">Folder is empty.</div>}
+          {listing?.truncated === true && <div className="px-3 py-2.5 text-xs text-muted-foreground">Showing first 500 entries.</div>}
         </div>
       </aside>
 
-      <div className="csp-project-preview-pane">
+      <div className="min-h-0 min-w-0 overflow-auto bg-background">
         {selected === null
-          ? <div className="csp-project-preview-empty"><span aria-hidden="true">⌁</span><strong>Select a file</strong><p>Text, images, and videos render here.</p></div>
+          ? <div className="grid min-h-full place-items-center text-center"><div><span className="font-mono text-muted-foreground" aria-hidden="true">⌁</span><strong className="mt-3 block text-[13px]">Select a file</strong><p className="mt-1 text-xs text-muted-foreground">Text, images, and videos render here.</p></div></div>
           : <>
-              <header className="csp-project-pane-header csp-project-preview-header">
-                <div><strong>{selected.name}</strong><small>{selected.path} · {formatFileSize(selected.size)}</small></div>
-                <span>{selected.preview ?? 'binary'}</span>
+              <header className="flex min-h-16 items-center justify-between gap-3 border-b px-3 py-2">
+                <div className="min-w-0"><strong className="block truncate text-[13px]">{selected.name}</strong><small className="block truncate text-xs text-muted-foreground">{selected.path} · {formatFileSize(selected.size)}</small></div>
+                <span className="text-xs text-muted-foreground">{selected.preview ?? 'binary'}</span>
               </header>
-              <div className="csp-project-preview-body">
-                {previewError !== null && <div className="csp-project-pane-state csp-project-pane-state--error">{previewError}</div>}
-                {previewError === null && selected.preview === 'text' && text === null && <div className="csp-project-pane-state">Reading file…</div>}
-                {previewError === null && selected.preview === 'text' && text !== null && <pre className="csp-project-text-preview"><code>{text}</code></pre>}
-                {previewError === null && selected.preview === 'image' && mediaUrl !== null && <img src={mediaUrl} alt={`Preview ${selected.name}`} />}
-                {previewError === null && selected.preview === 'video' && mediaUrl !== null && <video src={mediaUrl} aria-label={`Preview ${selected.name}`} controls playsInline preload="metadata" />}
-                {previewError === null && selected.preview === 'binary' && <div className="csp-project-preview-empty"><strong>Preview unavailable</strong><p>Commonspace renders text, raster images, and videos only.</p></div>}
-                {previewError === null && selected.preview === 'blocked' && <div className="csp-project-preview-empty"><strong>Sensitive file</strong><p>Commonspace does not render credential-bearing files.</p></div>}
+              <div className="p-5">
+                {previewError !== null && <div className="text-xs text-destructive">{previewError}</div>}
+                {previewError === null && selected.preview === 'text' && text === null && <div className="text-xs text-muted-foreground">Reading file…</div>}
+                {previewError === null && selected.preview === 'text' && text !== null && <pre className="overflow-auto rounded-md border bg-muted p-4 font-mono text-xs leading-[1.55]"><code>{text}</code></pre>}
+                {previewError === null && selected.preview === 'image' && mediaUrl !== null && <img className="mx-auto max-h-[70vh] rounded-sm border" src={mediaUrl} alt={`Preview ${selected.name}`} />}
+                {previewError === null && selected.preview === 'video' && mediaUrl !== null && <video className="mx-auto max-h-[70vh] rounded-sm border" src={mediaUrl} aria-label={`Preview ${selected.name}`} controls playsInline preload="metadata" />}
+                {previewError === null && selected.preview === 'binary' && <div className="py-12 text-center"><strong>Preview unavailable</strong><p className="mt-1 text-xs text-muted-foreground">Commonspace renders text, raster images, and videos only.</p></div>}
+                {previewError === null && selected.preview === 'blocked' && <div className="py-12 text-center"><strong>Sensitive file</strong><p className="mt-1 text-xs text-muted-foreground">Commonspace does not render credential-bearing files.</p></div>}
               </div>
             </>}
       </div>

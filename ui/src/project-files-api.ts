@@ -19,14 +19,14 @@ async function responseError(response: Response): Promise<string> {
   return `Request failed (${String(response.status)})`
 }
 
-export async function fetchProjectJson<T>(url: string, signal: AbortSignal): Promise<T> {
-  const response = await fetch(url, { headers: { accept: 'application/json' }, signal })
+export async function fetchProjectJson<T>(url: string, signal: AbortSignal, fetcher: typeof globalThis.fetch = globalThis.fetch): Promise<T> {
+  const response = await fetcher(url, { headers: { accept: 'application/json' }, signal })
   if (!response.ok) throw new Error(await responseError(response))
   return response.json() as Promise<T>
 }
 
-export async function fetchProjectText(url: string, signal: AbortSignal): Promise<string> {
-  const response = await fetch(url, { headers: { accept: 'text/plain' }, signal })
+export async function fetchProjectText(url: string, signal: AbortSignal, fetcher: typeof globalThis.fetch = globalThis.fetch): Promise<string> {
+  const response = await fetcher(url, { headers: { accept: 'text/plain' }, signal })
   if (!response.ok) throw new Error(await responseError(response))
   return response.text()
 }

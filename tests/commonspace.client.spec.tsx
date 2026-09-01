@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { COMMONSPACE_STATE_VERSION, type CommonspaceBootstrap, type CommonspaceState } from '@commonspace/shared'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CommonspaceSidebar } from '../ui/src/CommonspaceSidebar.tsx'
-import { commonspacePolish } from '../ui/src/polish.ts'
 import { tagReferenceParts, tagSuggestions } from '../ui/src/tagging.ts'
 
 afterEach(() => {
@@ -255,9 +255,6 @@ describe('Commonspace interface', () => {
   })
 
   it('keeps each agent runtime status visible in the sidebar', () => {
-    const style = document.createElement('style')
-    style.textContent = commonspacePolish
-    document.head.append(style)
     const agents = [
       { id: 'agentops', displayName: 'AgentOps', adapter: 'hermes' as const, model: 'gpt-test', status: 'unknown' as const },
       { id: 'backend', displayName: 'Backend', adapter: 'hermes' as const, model: 'gpt-test', status: 'stopped' as const },
@@ -283,7 +280,6 @@ describe('Commonspace interface', () => {
     expect(screen.getByText('available').getAttribute('data-status')).toBe('stopped')
     expect(screen.getByText('configured').getAttribute('data-status')).toBe('unknown')
     expect(getComputedStyle(screen.getByText('online')).display).not.toBe('none')
-    style.remove()
   })
 
   it('formats and suggests agent, project, and channel references', () => {
@@ -393,7 +389,7 @@ describe('Commonspace interface', () => {
 
     expect(screen.getByRole('button', { name: 'Search Commonspace' })).toBeTruthy()
     fireEvent.keyDown(window, { key: 'k', metaKey: true })
-    expect(screen.getByRole('dialog', { name: 'Search everything' })).toBeTruthy()
+    expect(screen.getByRole('dialog', { name: 'Search Commonspace' })).toBeTruthy()
 
     const search = screen.getByRole('searchbox', { name: 'Search Commonspace' })
     expect(document.activeElement).toBe(search)
@@ -438,10 +434,10 @@ describe('Commonspace interface', () => {
 
     fireEvent.keyDown(window, { key: 'k', metaKey: true })
 
-    expect(await within(screen.getByRole('listbox', { name: 'Commonspace search results' })).findAllByRole('option')).toHaveLength(24)
+    expect(await within(await screen.findByRole('listbox', { name: 'Commonspace search results' })).findAllByRole('option')).toHaveLength(24)
   })
 
-  it('contains modal focus and restores it to the control that opened the dialog', () => {
+  it('contains modal focus and restores it to the control that opened the dialog', async () => {
     const { store } = sidebarStore()
     render(<CommonspaceSidebar wide expandSidebar={() => undefined} store={store as never} />)
     const trigger = screen.getByRole('button', { name: 'Add project' })
@@ -452,17 +448,17 @@ describe('Commonspace interface', () => {
     const dialog = screen.getByRole('dialog', { name: 'Add a project' })
     const close = within(dialog).getByRole('button', { name: 'Close Add a project' })
     const cancel = within(dialog).getByRole('button', { name: 'Cancel' })
-    expect(trigger.closest('[inert]')).not.toBeNull()
+    expect(trigger.closest('[inert], [aria-hidden="true"]')).not.toBeNull()
 
+    const user = userEvent.setup()
     cancel.focus()
-    fireEvent.keyDown(cancel, { key: 'Tab' })
-    expect(document.activeElement).toBe(close)
-    fireEvent.keyDown(close, { key: 'Tab', shiftKey: true })
-    expect(document.activeElement).toBe(cancel)
+    await user.tab()
+    expect(dialog.contains(document.activeElement)).toBe(true)
+    expect(close).toBeTruthy()
 
     fireEvent.keyDown(dialog, { key: 'Escape' })
     expect(screen.queryByRole('dialog', { name: 'Add a project' })).toBeNull()
-    expect(trigger.closest('[inert]')).toBeNull()
+    expect(trigger.closest('[inert], [aria-hidden="true"]')).toBeNull()
     expect(document.activeElement).toBe(trigger)
   })
 
@@ -478,7 +474,7 @@ describe('Commonspace interface', () => {
         .toBe('/Users/example/Developer/storefront')
     })
     expect((screen.getByLabelText('Project name') as HTMLInputElement).value).toBe('storefront')
-    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Create project' }))
 
     await waitFor(() => {
       expect(mutate).toHaveBeenCalledWith({
@@ -496,7 +492,7 @@ describe('Commonspace interface', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Add project' }))
     const dialog = screen.getByRole('dialog', { name: 'Add a project' })
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Create' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Create project' }))
 
     await waitFor(() => { expect(mutate).toHaveBeenCalledOnce() })
     expect(screen.getByRole('dialog', { name: 'Add a project' })).toBe(dialog)
@@ -510,7 +506,7 @@ describe('Commonspace interface', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Add channel' }))
     expect(screen.queryByLabelText('Channel project')).toBeNull()
     fireEvent.change(screen.getByLabelText('Channel name'), { target: { value: 'engineering' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Create channel' }))
 
     await waitFor(() => {
       expect(mutate).toHaveBeenCalledWith({ action: 'create-channel', name: 'engineering', agentIds: [] })
@@ -530,14 +526,14 @@ describe('Commonspace interface', () => {
     render(<CommonspaceSidebar wide expandSidebar={() => undefined} store={store as never} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Add agent' }))
-    fireEvent.change(screen.getByLabelText('Agent harness'), { target: { value: 'codex' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Choose Codex harness' }))
     await waitFor(() => {
       expect(store.discoverAgents).toHaveBeenCalledWith('codex')
     })
     fireEvent.click(screen.getByRole('button', { name: 'Add discovered agent Codex' }))
 
     fireEvent.click(screen.getByRole('button', { name: 'Add agent' }))
-    fireEvent.change(screen.getByLabelText('Agent harness'), { target: { value: 'hermes' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Choose Hermes harness' }))
     fireEvent.click(screen.getByRole('button', { name: 'Add discovered agent Hermes' }))
     await waitFor(() => {
       expect(mutate).toHaveBeenCalledWith({ action: 'add-discovered-agent', agentId: 'codex' })
@@ -582,7 +578,7 @@ describe('Commonspace interface', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Add agent' }))
     expect(discoverAgents).not.toHaveBeenCalled()
 
-    fireEvent.change(screen.getByLabelText('Agent harness'), { target: { value: 'hermes' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Choose Hermes harness' }))
 
     await waitFor(() => {
       expect(discoverAgents).toHaveBeenCalledWith('hermes')

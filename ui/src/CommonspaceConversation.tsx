@@ -6,6 +6,8 @@ import { RunAttribution } from './RunAttribution.tsx'
 import { useMessageSpeech, type MessageSpeechControls } from './message-speech.ts'
 import { resolveSlashCommand, slashCommandSuggestions } from './slash-commands.ts'
 import { insertTag, tagReferenceParts, tagSuggestions, type TagSuggestion } from './tagging.ts'
+import { cn } from '@/lib/utils'
+import { WorkspaceHeader } from '@/design-system/WorkspaceHeader'
 
 const LazyMessageMarkdown = lazy(async () => {
   const module = await import('./MessageMarkdown.tsx')
@@ -13,7 +15,7 @@ const LazyMessageMarkdown = lazy(async () => {
 })
 
 const messageMarkdownFallback = (
-  <p className="csp-message-loading" role="status" aria-label="Formatting agent message">Formatting message…</p>
+  <p className="text-xs text-muted-foreground" role="status" aria-label="Formatting agent message">Formatting message…</p>
 )
 
 export interface CommonspaceConversationProps {
@@ -91,12 +93,9 @@ function PendingImageStrip({
 }) {
   if (images.length === 0) return null
   return (
-    <div className="csp-composer-attachments" aria-label="Attached images">
+    <div className="flex flex-wrap gap-2 py-2" aria-label="Attached images">
       {images.map((image, index) => (
-        <figure key={`${image.name}-${String(index)}`}>
-          <img src={`data:${image.mimeType};base64,${image.data}`} alt={`Pasted image ${image.name}`} />
-          <figcaption>{image.name}</figcaption>
-          <button type="button" aria-label={`Remove ${image.name}`} onClick={() => { onRemove(index) }}>×</button>
+        <figure key={`${image.name}-${String(index)}`} className="relative w-24"><img className="h-16 w-24 rounded-sm border object-cover" src={`data:${image.mimeType};base64,${image.data}`} alt={`Pasted image ${image.name}`} /><figcaption className="mt-1 truncate text-xs text-muted-foreground">{image.name}</figcaption><button className="absolute -top-1 -right-1 grid size-6 place-items-center rounded-full border bg-background" type="button" aria-label={`Remove ${image.name}`} onClick={() => { onRemove(index) }}>×</button>
         </figure>
       ))}
     </div>
@@ -105,8 +104,8 @@ function PendingImageStrip({
 
 function PendingFileStrip({ files, onRemove }: { files: readonly SendFileAttachment[]; onRemove: (index: number) => void }) {
   if (files.length === 0) return null
-  return <div className="csp-composer-files" aria-label="Attached files">{files.map((file, index) => (
-    <span key={`${file.name}-${String(index)}`}><strong>{file.name}</strong><small>{file.mimeType}</small><button type="button" aria-label={`Remove ${file.name}`} onClick={() => { onRemove(index) }}>×</button></span>
+  return <div className="grid gap-1 py-2" aria-label="Attached files">{files.map((file, index) => (
+    <span key={`${file.name}-${String(index)}`} className="grid min-h-10 grid-cols-[minmax(0,1fr)_auto] items-center rounded-sm border bg-muted px-3"><span className="min-w-0"><strong className="block truncate text-xs">{file.name}</strong><small className="block truncate text-[10px] text-muted-foreground">{file.mimeType}</small></span><button className="grid size-8 place-items-center rounded-full border-0 bg-transparent" type="button" aria-label={`Remove ${file.name}`} onClick={() => { onRemove(index) }}>×</button></span>
   ))}</div>
 }
 
@@ -136,7 +135,7 @@ function conversationTitle(store: CommonspaceClientStore, ref: ConversationRef |
 function renderMessageText(message: CommonspaceMessage, bootstrap?: CommonspaceBootstrap) {
   return tagReferenceParts(message.text, bootstrap).map((part, index) => part.kind === 'text'
     ? <span key={`${message.id}-${String(index)}`}>{part.text}</span>
-    : <mark key={`${message.id}-${String(index)}`} className={`csp-tag csp-tag--${part.kind}`}>{part.text}</mark>)
+    : <mark key={`${message.id}-${String(index)}`} className="rounded-sm bg-muted px-1 font-semibold text-foreground">{part.text}</mark>)
 }
 
 function fileSizeLabel(size: number): string {
@@ -202,7 +201,7 @@ function RoutingAssignments({
     }
   }
   return (
-    <ul className="csp-routing-assignments" aria-label="Routing assignments">
+    <ul className="mt-2 grid gap-2" aria-label="Routing assignments">
       {routing.assignments.map((assignment) => {
         const agent = bootstrap?.agents.find(candidate => candidate.id === assignment.agentId)
         const projects = assignment.projectIds.flatMap(projectId => {
@@ -214,21 +213,21 @@ function RoutingAssignments({
         const inferred = !corrected && assignment.projectIds.some(projectId =>
           (routing.inferredProjectIds ?? []).includes(projectId))
         return (
-          <li key={assignment.id} data-status={superseded ? 'superseded' : 'current'}>
+          <li key={assignment.id} className="relative rounded-sm border bg-background p-3 text-xs" data-status={superseded ? 'superseded' : 'current'}>
             <strong>@{agent?.displayName ?? assignment.agentId}{projects.length === 0 ? '' : ` · ${projects.join(', ')}`}{inferred ? ' · inferred' : ''}</strong>
-            {superseded && <span className="csp-routing-attempt-status">Superseded</span>}
-            {corrected && <span className="csp-routing-attempt-status">Correction</span>}
-            <p>{assignment.subRequest}</p>
+            {superseded && <span className="ml-2 rounded-full border px-2 py-0.5 font-mono text-[10px] text-muted-foreground">Superseded</span>}
+            {corrected && <span className="ml-2 rounded-full border px-2 py-0.5 font-mono text-[10px] text-primary">Correction</span>}
+            <p className="mt-1 text-[13px]">{assignment.subRequest}</p>
             {!superseded && onReroute !== undefined && (
               <button
                 type="button"
-                className="csp-routing-reroute"
+                className="mt-2 min-h-9 rounded-sm border bg-background px-3 text-xs hover:bg-muted"
                 aria-label={`Reroute assignment for ${agent?.displayName ?? assignment.agentId}`}
                 onClick={() => { beginReroute(assignment.id) }}
               >Reroute</button>
             )}
             {editingId === assignment.id && (
-              <form className="csp-routing-reroute-form" aria-label="Reroute assignment" onSubmit={(event) => { void submit(event) }}>
+              <form className="mt-3 grid gap-2 rounded-sm border bg-muted p-3 [&_button]:min-h-9 [&_button]:rounded-sm [&_button]:border [&_button]:px-3 [&_label]:grid [&_label]:gap-1 [&_select]:min-h-10 [&_select]:rounded-sm [&_select]:border [&_select]:bg-background [&_select]:px-2 [&_textarea]:min-h-20 [&_textarea]:rounded-sm [&_textarea]:border [&_textarea]:bg-background [&_textarea]:p-2" aria-label="Reroute assignment" onSubmit={(event) => { void submit(event) }}>
                 <label>Agent<select aria-label="Reroute agent" value={agentId} onChange={event => { setAgentId(event.target.value) }}>
                   {rerouteAgents.map(candidate => <option key={candidate.id} value={candidate.id}>{candidate.displayName}</option>)}
                 </select></label>
@@ -288,16 +287,16 @@ function MessageRow({
     }
   }
   return (
-    <article id={elementId} className={`csp-message csp-message--${message.authorType}${compact ? ' csp-message--compact' : ''}`} data-author={message.authorType}>
-      <div className="csp-message-avatar" aria-hidden="true">{message.authorName.slice(0, 1).toUpperCase()}</div>
-      <div className="csp-message-main">
-        <header>
+    <article id={elementId} className={cn('mx-auto mb-6 grid w-full max-w-[780px] grid-cols-[36px_minmax(0,1fr)] gap-3 rounded-md', compact && 'mb-3')} data-author={message.authorType}>
+      <div className={cn('grid size-9 place-items-center rounded-md border bg-background font-mono text-xs font-semibold', message.authorType === 'agent' && 'text-primary', message.authorType === 'system' && 'bg-muted text-muted-foreground')} aria-hidden="true">{message.authorName.slice(0, 1).toUpperCase()}</div>
+      <div className="min-w-0">
+        <header className="flex min-h-[22px] flex-wrap items-center gap-2 text-xs [&>strong]:text-sm">
           <strong>{message.authorName}</strong>
           <time>{new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time>
           {message.authorType === 'agent' && onReplyToAgent !== undefined && (
             <button
               type="button"
-              className="csp-message-direct-reply"
+              className="min-h-8 rounded-sm border-0 bg-transparent px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
               aria-label={`Reply directly to ${message.authorName}`}
               onClick={() => { onReplyToAgent(message) }}
             ><span aria-hidden="true">↩</span> Reply</button>
@@ -305,26 +304,26 @@ function MessageRow({
           {onPin !== undefined && (
             <button
               type="button"
-              className="csp-message-pin"
+              className="min-h-8 rounded-sm border-0 bg-transparent px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
               aria-label={`Pin message from ${message.authorName}`}
               onClick={() => { void onPin(message) }}
             >Pin</button>
           )}
           {message.authorType === 'user' && message.deletedAt === undefined && onEdit !== undefined && (
-            <button type="button" className="csp-message-version-action" aria-label={`Edit message from ${message.authorName}`} onClick={() => {
+            <button type="button" className="min-h-8 rounded-sm border-0 bg-transparent px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground" aria-label={`Edit message from ${message.authorName}`} onClick={() => {
               setEditedText(message.text)
               setEditing(true)
             }}>Edit</button>
           )}
           {message.deletedAt === undefined && onDelete !== undefined && (
-            <button type="button" className="csp-message-version-action csp-message-version-action--delete" aria-label={`Delete message from ${message.authorName}`} onClick={() => {
+            <button type="button" className="min-h-8 rounded-sm border-0 bg-transparent px-2 text-xs text-muted-foreground hover:bg-destructive/5 hover:text-destructive" aria-label={`Delete message from ${message.authorName}`} onClick={() => {
               if (window.confirm('Delete this delivered message content? The transcript marker and delivery history will remain.')) void onDelete(message)
             }}>Delete</button>
           )}
           {message.authorType === 'agent' && message.text.trim() !== '' && speech.supported && (
             <button
               type="button"
-              className="csp-message-speech"
+              className="ml-auto grid size-8 place-items-center rounded-sm border-0 bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground"
               aria-label={reading ? 'Stop reading aloud' : 'Read message aloud'}
               aria-pressed={reading}
               title={reading ? 'Stop reading aloud' : 'Read message aloud'}
@@ -333,30 +332,30 @@ function MessageRow({
           )}
         </header>
         {supersedesMessageId !== undefined && (
-          <div className="csp-message-version-link">
+          <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
             <span>Edited branch</span>
             {onOpenVersion !== undefined && <button type="button" aria-label="Open previous message version" onClick={() => { onOpenVersion(supersedesMessageId) }}>Previous version</button>}
           </div>
         )}
         {message.deletedAt !== undefined
-          ? <p className="csp-message-deleted" role="status">Message deleted · content was delivered at {new Date(message.createdAt).toLocaleString()}</p>
+          ? <p className="mt-2 rounded-sm border bg-muted p-2 text-xs text-muted-foreground" role="status">Message deleted · content was delivered at {new Date(message.createdAt).toLocaleString()}</p>
           : message.text !== '' && (message.authorType === 'agent'
           ? <Suspense fallback={messageMarkdownFallback}>
               <LazyMessageMarkdown text={message.text} />
             </Suspense>
-          : <p className="csp-message-plain-text">{renderMessageText(message, bootstrap ?? undefined)}</p>)}
+          : <p className="mt-1 whitespace-pre-wrap text-sm leading-6">{renderMessageText(message, bootstrap ?? undefined)}</p>)}
         {editing && (
-          <form className="csp-message-edit-form" aria-label="Edit delivered message" onSubmit={(event) => { void submitEdit(event) }}>
+          <form className="mt-3 grid gap-2 rounded-md border bg-muted p-3 [&_button]:min-h-9 [&_button]:rounded-sm [&_button]:border [&_button]:px-3 [&_label]:grid [&_label]:gap-1 [&_textarea]:min-h-24 [&_textarea]:rounded-sm [&_textarea]:border [&_textarea]:bg-background [&_textarea]:p-2" aria-label="Edit delivered message" onSubmit={(event) => { void submitEdit(event) }}>
             <label>Message<textarea aria-label="Edited message" value={editedText} onChange={event => { setEditedText(event.target.value) }} /></label>
             <div><button type="submit" disabled={savingEdit || editedText.trim() === ''}>{savingEdit ? 'Branching…' : 'Create branch'}</button><button type="button" onClick={() => { setEditing(false) }}>Cancel</button></div>
           </form>
         )}
         {message.routing !== undefined && (
           message.routing.status === 'pending'
-            ? <div className="csp-message-routing" role="status" aria-label="Routing message">Routing…</div>
+            ? <div className="mt-2 text-xs text-muted-foreground" role="status" aria-label="Routing message">Routing…</div>
             : message.routing.status === 'failed'
-              ? <div className="csp-message-routing" role="alert">Routing failed · {message.routing.reason}{routingDurationLabel(message.routing.durationMs) === null ? '' : ` · ${routingDurationLabel(message.routing.durationMs)}`}</div>
-              : <div className="csp-message-routing" title={message.routing.reason}>
+              ? <div className="mt-2 rounded-sm border border-destructive/30 bg-destructive/5 p-2 text-xs text-destructive" role="alert">Routing failed · {message.routing.reason}{routingDurationLabel(message.routing.durationMs) === null ? '' : ` · ${routingDurationLabel(message.routing.durationMs)}`}</div>
+              : <div className="mt-2 border-l-2 pl-2 text-xs text-muted-foreground" title={message.routing.reason}>
                   <span>{message.routing.source === 'ai' ? 'AI routed' : message.routing.source === 'explicit' ? 'Explicitly routed' : 'Local routing'} to {message.routing.agentIds.map((agentId) => {
                     const agent = bootstrap?.agents.find(candidate => candidate.id === agentId)
                     return `@${agent?.displayName ?? agentId}`
@@ -365,12 +364,13 @@ function MessageRow({
                 </div>
         )}
         {message.attachments !== undefined && message.attachments.length > 0 && (
-          <div className="csp-message-attachments">
+          <div className="mt-3 flex flex-wrap gap-2">
             {message.attachments.map(attachment => (
-              <figure key={attachment.id}>
+              <figure key={attachment.id} className="relative overflow-hidden rounded-md border">
                 <img
                   src={`/api/attachments/${encodeURIComponent(attachment.id)}`}
                   alt={attachment.name}
+                  className="max-h-72 max-w-full object-contain"
                   loading="lazy"
                 />
                 {onPin !== undefined && <button type="button" aria-label={`Pin attachment ${attachment.name}`} onClick={() => { void onPin(message, attachment.id) }}>Pin</button>}
@@ -379,9 +379,9 @@ function MessageRow({
           </div>
         )}
         {message.files !== undefined && message.files.length > 0 && (
-          <div className="csp-message-files" aria-label="Message files">
+          <div className="mt-3 grid gap-1" aria-label="Message files">
             {message.files.map(file => (
-              <span key={file.id}>
+              <span key={file.id} className="grid min-h-11 grid-cols-[minmax(0,1fr)_auto] items-center rounded-sm border bg-muted px-3 text-xs">
                 <a href={`/api/files/${encodeURIComponent(file.id)}`} download={file.name} aria-label={`Download ${file.name}`}><strong>{file.name}</strong><small>{file.mimeType} · {fileSizeLabel(file.size)}</small></a>
                 {onPin !== undefined && <button type="button" aria-label={`Pin attachment ${file.name}`} onClick={() => { void onPin(message, file.id) }}>Pin</button>}
               </span>
@@ -420,7 +420,7 @@ function SuggestionMenu({
   onSelectTag,
 }: SuggestionMenuProps) {
   return (
-    <div id={id} className="csp-tag-suggestions" role="listbox" aria-label={slashSuggestions.length > 0 ? 'Slash commands' : 'Tag suggestions'}>
+    <div id={id} className="absolute right-0 bottom-full left-0 z-20 mb-2 max-h-80 overflow-y-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-lg" role="listbox" aria-label={slashSuggestions.length > 0 ? 'Slash commands' : 'Tag suggestions'}>
       {slashSuggestions.map((command, index) => (
         <button
           key={command.id}
@@ -428,7 +428,7 @@ function SuggestionMenu({
           type="button"
           role="option"
           aria-selected={index === selectedSuggestion}
-          className={index === selectedSuggestion ? 'is-selected' : ''}
+          className={cn('grid min-h-11 w-full grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-sm px-3 text-left text-xs hover:bg-muted', index === selectedSuggestion && 'bg-muted')}
           onMouseDown={event => { event.preventDefault(); onSelectSlash(command.name) }}
         ><strong>{command.name}</strong><span>{command.description}</span></button>
       ))}
@@ -438,7 +438,7 @@ function SuggestionMenu({
         return (
           <Fragment key={`${suggestion.kind}-${suggestion.id}`}>
             {showMembershipHeading && (
-              <div className="csp-tag-suggestion-group" role="presentation">
+              <div className="border-t px-3 py-2 text-[10px] font-semibold tracking-[0.05em] text-muted-foreground uppercase" role="presentation">
                 {suggestion.channelMembership === 'member' ? 'In this channel' : 'Not in this channel · tagging adds them'}
               </div>
             )}
@@ -447,7 +447,7 @@ function SuggestionMenu({
               type="button"
               role="option"
               aria-selected={index + slashSuggestions.length === selectedSuggestion}
-              className={index + slashSuggestions.length === selectedSuggestion ? 'is-selected' : ''}
+              className={cn('grid min-h-11 w-full grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-sm px-3 text-left text-xs hover:bg-muted', index + slashSuggestions.length === selectedSuggestion && 'bg-muted')}
               onMouseDown={event => { event.preventDefault(); onSelectTag(suggestion) }}
             ><strong>{suggestion.token}</strong><span>{suggestionLabel(suggestion)}</span></button>
           </Fragment>
@@ -505,60 +505,60 @@ function LiveAgentActivity({
     ? selectedActivityId
     : null
   return (
-    <div className="csp-live-activity" role="status" aria-label="Live agent activity" aria-live="polite">
+    <div className="mx-auto mb-3 grid w-[min(760px,calc(100%-48px))] gap-2" role="status" aria-label="Live agent activity" aria-live="polite">
       {activities.length > 0
         ? activities.map((activity, index) => {
             const detail = liveActivityDetail(activity)
             const expanded = activity.id === expandedActivityId
             const panelId = `${panelIdPrefix}-${String(index)}`
             return (
-              <article key={activity.id} className={`csp-live-activity-row${expanded ? ' is-expanded' : ''}`} data-runtime={activity.adapter}>
-                <div className="csp-live-activity-header">
+              <article key={activity.id} className={cn('overflow-hidden rounded-md border bg-background', expanded && 'border-primary/30 shadow-[inset_2px_0_0_var(--primary)]')} data-runtime={activity.adapter}>
+                <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center">
                   <button
                     type="button"
-                    className="csp-live-activity-trigger"
+                    className="grid min-h-[62px] w-full grid-cols-[34px_minmax(0,1fr)_20px] items-center gap-2.5 border-0 bg-transparent px-3 text-left hover:bg-muted"
                     aria-label={`${activity.agentName} activity`}
                     aria-expanded={expanded}
                     aria-controls={panelId}
                     onClick={() => { setSelectedActivityId(expanded ? null : activity.id) }}
                   >
                     <span
-                      className="csp-thread-agent-avatar csp-thread-agent-avatar--responding"
+                      className="grid size-[34px] place-items-center rounded-full border border-primary/30 bg-primary text-xs font-semibold text-primary-foreground"
                       aria-label={`${activity.agentName} is responding`}
                     >{activity.agentName.slice(0, 1).toLocaleUpperCase()}</span>
-                    <span className="csp-live-activity-copy">
-                      <span className="csp-live-activity-heading"><strong>{activity.agentName}</strong><span>{runtimeLabel(activity.adapter)} · {detail.kind}</span></span>
-                      <span className="csp-live-activity-summary">{detail.text}</span>
+                    <span className="min-w-0">
+                      <span className="flex items-center justify-between gap-2 text-xs"><strong>{activity.agentName}</strong><span className="text-muted-foreground">{runtimeLabel(activity.adapter)} · {detail.kind}</span></span>
+                      <span className="mt-1 block truncate text-xs text-muted-foreground">{detail.text}</span>
                     </span>
-                    <span className="csp-live-activity-chevron" aria-hidden="true">⌄</span>
+                    <span className={cn('transition-transform', expanded && 'rotate-180')} aria-hidden="true">⌄</span>
                   </button>
                   <button
                     type="button"
-                    className="csp-live-activity-stop"
+                    className="mr-2 min-h-11 rounded-sm border border-destructive/40 bg-background px-3 text-xs font-semibold text-destructive hover:bg-destructive/5"
                     aria-label={`Stop ${activity.agentName}`}
                     onClick={() => { onStop(activity) }}
                   ><span aria-hidden="true">■</span> Stop</button>
                 </div>
                 {expanded && (
-                  <section id={panelId} className="csp-live-activity-panel" role="region" aria-label={`${activity.agentName} live activity`}>
+                  <section id={panelId} className="border-t bg-muted p-3" role="region" aria-label={`${activity.agentName} live activity`}>
                     {activity.entries.length > 0
                       ? <AgentTraceTimeline entries={activity.entries} />
-                      : <p className="csp-live-activity-empty">{waitingActivityText(activity.adapter)}</p>}
+                      : <p className="text-xs text-muted-foreground">{waitingActivityText(activity.adapter)}</p>}
                   </section>
                 )}
               </article>
             )
           })
         : fallbackAgents.map(agent => (
-            <div key={agent.id} className="csp-live-activity-row" data-runtime={agent.adapter}>
-              <div className="csp-live-activity-trigger">
+            <div key={agent.id} className="overflow-hidden rounded-md border bg-background" data-runtime={agent.adapter}>
+              <div className="grid min-h-[62px] grid-cols-[34px_minmax(0,1fr)] items-center gap-2.5 px-3">
                 <span
-                  className="csp-thread-agent-avatar csp-thread-agent-avatar--responding"
+                  className="grid size-[34px] place-items-center rounded-full border border-primary/30 bg-primary text-xs font-semibold text-primary-foreground"
                   aria-label={`${agent.displayName} is ${phase === 'queued' ? 'queued' : 'responding'}`}
                 >{agent.displayName.slice(0, 1).toLocaleUpperCase()}</span>
-                <span className="csp-live-activity-copy">
-                  <span className="csp-live-activity-heading"><strong>{agent.displayName}</strong><span>{runtimeLabel(agent.adapter)} · {phase === 'queued' ? 'Queued' : 'Waiting'}</span></span>
-                  <span className="csp-live-activity-summary">{phase === 'queued' ? 'Queued for provider run…' : waitingActivityText(agent.adapter)}</span>
+                <span className="min-w-0">
+                  <span className="flex items-center justify-between gap-2 text-xs"><strong>{agent.displayName}</strong><span className="text-muted-foreground">{runtimeLabel(agent.adapter)} · {phase === 'queued' ? 'Queued' : 'Waiting'}</span></span>
+                  <span className="mt-1 block truncate text-xs text-muted-foreground">{phase === 'queued' ? 'Queued for provider run…' : waitingActivityText(agent.adapter)}</span>
                 </span>
               </div>
             </div>
@@ -577,17 +577,17 @@ function ThreadAgentActivity({
   respondingAgentIds?: readonly string[]
 }) {
   return (
-    <span className="csp-thread-agent-activity">
+    <span className="inline-flex items-center pl-1">
       {respondingAgentIds.map((agentId, index) => {
         const agent = agents.find(candidate => candidate.id === agentId)
         const name = agent?.displayName ?? agentId
         return (
           <span
             key={agentId}
-            className="csp-thread-agent-avatar csp-thread-agent-avatar--responding"
+            className="-ml-1 grid size-6 place-items-center rounded-full border border-background bg-primary font-mono text-[10px] text-primary-foreground first:ml-0"
             data-runtime={agent?.adapter}
             aria-label={`${name} is responding`}
-            style={{ '--csp-thread-agent-index': index } as CSSProperties}
+            style={{ zIndex: respondingAgentIds.length - index }}
           >{name.slice(0, 1).toLocaleUpperCase()}</span>
         )
       })}
@@ -609,11 +609,11 @@ function ThreadReplyAgents({
   ).values()]
   if (replyingAgents.length === 0) return null
   return (
-    <span className="csp-thread-reply-agents">
+    <span className="inline-flex items-center pl-1">
       {replyingAgents.map(reply => (
         <span
           key={reply.authorId}
-          className="csp-thread-agent-avatar"
+          className="-ml-1 grid size-6 place-items-center rounded-full border border-background bg-muted font-mono text-[10px] first:ml-0"
           data-runtime={agents.find(agent => agent.id === reply.authorId)?.adapter}
           aria-label={`${reply.authorName} replied`}
         >{reply.authorName.slice(0, 1).toLocaleUpperCase()}</span>
@@ -634,11 +634,11 @@ function PermissionRequests({
   return <>{permissions.map((permission) => {
     const agentName = agents.find(agent => agent.id === permission.agentId)?.displayName ?? permission.agentId
     return (
-      <section key={permission.id} className="csp-permission-request" role="region" aria-label={`Permission request from ${agentName}`}>
-        <header><strong>{agentName} needs permission</strong><span>{permission.kind ?? 'native request'}</span></header>
-        <p>{permission.title}</p>
-        <div>{permission.options.map(option => (
-          <button key={option.optionId} type="button" data-kind={option.kind} onClick={() => { void onRespond(permission.id, option.optionId) }}>{option.name}</button>
+      <section key={permission.id} className="mx-auto mb-3 w-[min(760px,calc(100%-48px))] rounded-md border border-[color-mix(in_oklch,var(--status-warning)_45%,var(--border))] bg-[color-mix(in_oklch,var(--status-warning)_7%,var(--background))] p-4" role="region" aria-label={`Permission request from ${agentName}`}>
+        <header className="flex items-center justify-between gap-2 text-xs"><strong>{agentName} needs permission</strong><span className="text-muted-foreground">{permission.kind ?? 'native request'}</span></header>
+        <p className="mt-2 text-[13px]">{permission.title}</p>
+        <div className="mt-3 flex flex-wrap gap-2">{permission.options.map(option => (
+          <button className="min-h-10 rounded-sm border bg-background px-3 text-xs font-semibold hover:bg-muted" key={option.optionId} type="button" data-kind={option.kind} onClick={() => { void onRespond(permission.id, option.optionId) }}>{option.name}</button>
         ))}</div>
       </section>
     )
@@ -756,7 +756,7 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
   useEffect(() => {
     if (targetMessageId == null) return
     setFocusedRootMessageId(targetMessageId)
-    const target = document.getElementById(`csp-message-${targetMessageId}`)
+    const target = document.getElementById(`commonspace-message-${targetMessageId}`)
     if (target === null) return
     suppressThreadAutoScroll.current = true
     target.scrollIntoView({ block: 'center', behavior: 'smooth' })
@@ -1101,44 +1101,35 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
     if (version?.threadId !== undefined) store.selectThread(version.threadId)
     setFocusedRootMessageId(version?.parentMessageId ?? version?.id ?? messageId)
   }
+  const nextUnreadMessage = messages.find(message => unreadMessageIds.has(message.id))
 
   return (
-    <main className="csp-conversation" aria-label="Commonspace conversation">
-      <header className="csp-conversation-header">
-        <div className="csp-conversation-heading">
-          <span className="csp-conversation-kicker" aria-hidden="true">{snapshot.activeConversation === null ? '✦' : isChannel ? '#' : '@'}</span>
-          <div><h1>{heading.title}</h1><p>{heading.subtitle}</p></div>
-        </div>
-        <div className="csp-header-actions">
-          {isChannel && <span className="csp-header-roster"><span aria-hidden="true">♙</span>{activeChannel?.agentIds.length ?? 0}</span>}
-          <span className="csp-header-mode">{snapshot.activeConversation === null ? 'local-first' : isChannel ? 'shared room' : 'private session'}</span>
-        </div>
-      </header>
+    <main className="flex h-full min-h-0 flex-col overflow-hidden bg-background text-foreground" aria-label="Commonspace conversation">
+      <WorkspaceHeader title={heading.title} subtitle={heading.subtitle} mark={snapshot.activeConversation === null ? '✦' : isChannel ? '#' : '@'} actions={<div className="flex items-center gap-1">{nextUnreadMessage !== undefined && <button type="button" className="min-h-11 rounded-sm border-0 bg-transparent px-3 text-xs font-semibold text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Jump to next unread message" onClick={() => { openMessageVersion(nextUnreadMessage.id) }}>Next unread</button>}<span className="grid size-11 place-items-center rounded-full text-muted-foreground" title={snapshot.activeConversation === null ? 'local-first' : isChannel ? 'shared room' : 'private session'} aria-hidden="true">•••</span></div>} />
 
       {snapshot.activeConversation === null ? (
-        <div className="csp-conversation-hero">
-          <div className="csp-hero-constellation" aria-hidden="true"><span className="csp-mark csp-mark--large"><span /><span /><span /><span /></span><i /><i /></div>
-          <span className="csp-hero-eyebrow">YOUR LOCAL AGENT WORKSPACE</span>
-          <h2>Make space for the whole team.</h2>
-          <p>Projects set context. Channels gather agents. Threads keep work focused.</p>
-          <div className="csp-hero-flow" aria-hidden="true">
-            <span><b>01</b><span>Projects<small>Choose local context.</small></span></span>
-            <span><b>02</b><span>Channels<small>Seat agents together.</small></span></span>
-            <span><b>03</b><span>Threads<small>Keep native sessions exact.</small></span></span>
+        <div className="flex flex-1 flex-col items-start justify-start px-[clamp(24px,6vw,72px)] py-[clamp(44px,8vh,82px)]">
+          <div className="mb-5 grid size-12 place-items-center rounded-lg border bg-muted font-mono text-primary" aria-hidden="true">C</div>
+          <span className="mb-2 text-xs font-bold tracking-[0.075em] text-muted-foreground">YOUR LOCAL AGENT WORKSPACE</span>
+          <h2 className="max-w-[600px] font-heading text-[clamp(25px,3vw,38px)] leading-[1.08] font-bold tracking-[-0.038em]">Make space for the whole team.</h2>
+          <p className="mt-2 max-w-[560px] text-[13px] leading-6 text-muted-foreground">Projects set context. Channels gather agents. Threads keep work focused.</p>
+          <div className="mt-7 grid w-[min(100%,760px)] grid-cols-3 gap-2.5 max-[640px]:grid-cols-1" aria-hidden="true">
+            <span className="flex min-h-[88px] gap-2.5 rounded-lg border p-4"><b className="text-muted-foreground">01</b><span className="grid gap-1 text-xs font-semibold">Projects<small className="font-normal text-muted-foreground">Choose local context.</small></span></span>
+            <span className="flex min-h-[88px] gap-2.5 rounded-lg border p-4"><b className="text-muted-foreground">02</b><span className="grid gap-1 text-xs font-semibold">Channels<small className="font-normal text-muted-foreground">Seat agents together.</small></span></span>
+            <span className="flex min-h-[88px] gap-2.5 rounded-lg border p-4"><b className="text-muted-foreground">03</b><span className="grid gap-1 text-xs font-semibold">Threads<small className="font-normal text-muted-foreground">Keep native sessions exact.</small></span></span>
           </div>
         </div>
       ) : (
         <div
           ref={conversationLayout}
-          className={`csp-conversation-layout${activeThread === undefined ? '' : ' has-thread'}${resizingThread ? ' is-resizing' : ''}`}
+          className={cn('relative grid min-h-0 flex-1 overflow-hidden', resizingThread && 'select-none')}
           style={activeThread === undefined ? undefined : {
-            '--csp-channel-width': `${String(100 - threadWidth)}fr`,
-            '--csp-thread-width': `${String(threadWidth)}fr`,
+            gridTemplateColumns: `${String(100 - threadWidth)}fr 8px ${String(threadWidth)}fr`,
           } as CSSProperties}
         >
-          <section className="csp-channel-feed" aria-label={isChannel ? `${heading.title} posts` : `${heading.title} messages`}>
-            <div className="csp-message-list">
-              {roots.length === 0 && <div className="csp-conversation-empty">No messages yet. Start the conversation.</div>}
+          <section className="flex min-h-0 min-w-0 flex-col bg-background" aria-label={isChannel ? `${heading.title} posts` : `${heading.title} messages`}>
+            <div className="min-h-0 flex-1 overflow-y-auto px-6 pt-8 pb-3 max-[640px]:px-3">
+              {roots.length === 0 && <div className="p-10 text-center text-sm text-muted-foreground">No messages yet. Start the conversation.</div>}
               {isChannel
                 ? roots.map(root => {
                     const thread = channelThreads.find(candidate => candidate.rootMessageId === root.id)
@@ -1151,14 +1142,15 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
                     return (
                       <article
                         key={root.id}
-                        id={`csp-message-${root.id}`}
-                        className={`csp-thread-root${threadIsFocused ? ' csp-thread-root--focused' : ''}`}
+                        id={`commonspace-message-${root.id}`}
+                        className={cn('mx-auto mb-2 w-full max-w-[780px] rounded-md pb-1', threadIsFocused && 'bg-[color-mix(in_oklch,var(--primary)_7%,var(--background))] shadow-[inset_3px_0_0_var(--primary)]')}
                         aria-current={thread?.id === activeThread?.id ? 'true' : undefined}
+                        data-focused={threadIsFocused || undefined}
                       >
                         <MessageRow message={root} bootstrap={bootstrap} onReroute={request => store.rerouteAssignment(request)} onEdit={editDeliveredMessage} onDelete={deleteDeliveredMessage} onOpenVersion={openMessageVersion} speech={speech} />
                         <button
                           type="button"
-                          className={`csp-thread-open${unreadCount === 0 ? '' : ' csp-thread-open--unread'}`}
+                          className={cn('relative ml-12 inline-flex min-h-11 max-w-[calc(100%-48px)] items-center gap-2 rounded-md border-0 bg-[color-mix(in_oklch,var(--primary)_8%,var(--background))] px-2 text-xs font-semibold text-primary hover:bg-[color-mix(in_oklch,var(--primary)_14%,var(--background))]', unreadCount > 0 && 'text-primary')}
                           aria-label={`${String(replyCount)} ${replyCount === 1 ? 'reply' : 'replies'}${unreadCount === 0 ? '' : `, ${String(unreadCount)} unread`}`}
                           onClick={() => {
                             if (thread === undefined) return
@@ -1168,26 +1160,26 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
                             }
                           }}
                         >
-                          <span className="csp-thread-reply-summary">
+                          <span className="inline-flex min-w-0 items-center gap-2">
                             {bootstrap !== null && <ThreadReplyAgents replies={threadReplies} agents={bootstrap.agents} />}
                             <span>{unreadCount > 0
                               ? `${String(unreadCount)} new ${unreadCount === 1 ? 'reply' : 'replies'}`
                               : `${String(replyCount)} ${replyCount === 1 ? 'reply' : 'replies'}`}</span>
                           </span>
-                          {threadActivities.length > 0 && <span className="csp-thread-meta">
+                          {threadActivities.length > 0 && <span className="inline-flex items-center gap-2">
                             {thread !== undefined && bootstrap !== null && <ThreadAgentActivity
                               thread={thread}
                               agents={bootstrap.agents}
                               {...(threadActivities.length === 0 ? {} : { respondingAgentIds: threadActivities.map(activity => activity.agentId) })}
                             />}
-                            <span className="csp-thread-status csp-thread-status--running">Agents working</span>
+                            <span className="rounded-full bg-[color-mix(in_oklch,var(--status-warning)_11%,var(--background))] px-2 py-1 text-[10px] text-[var(--status-warning)]">Agents working</span>
                           </span>}
-                          {unreadCount > 0 && <span className="csp-thread-unread-indicator" aria-hidden="true" />}
+                          {unreadCount > 0 && <span className="absolute -top-1 -right-1 size-2.5 rounded-full border-2 border-background bg-destructive" aria-hidden="true" />}
                         </button>
                       </article>
                     )
                   })
-                : roots.map(message => <MessageRow key={message.id} elementId={`csp-message-${message.id}`} message={message} bootstrap={bootstrap} onReroute={request => store.rerouteAssignment(request)} onEdit={editDeliveredMessage} onDelete={deleteDeliveredMessage} onOpenVersion={openMessageVersion} speech={speech} />)}
+                : roots.map(message => <MessageRow key={message.id} elementId={`commonspace-message-${message.id}`} message={message} bootstrap={bootstrap} onReroute={request => store.rerouteAssignment(request)} onEdit={editDeliveredMessage} onDelete={deleteDeliveredMessage} onOpenVersion={openMessageVersion} speech={speech} />)}
               {directMessagePhase !== null && <LiveAgentActivity
                 activities={directMessageActivities}
                 fallbackAgents={directMessageAgents}
@@ -1199,10 +1191,10 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
             </div>
 
             {directMessageFollowups.length > 0 && (
-              <section className="csp-followup-queue" role="region" aria-label="Queued follow-ups">
+              <section className="mx-auto mb-2 w-[min(760px,calc(100%-48px))] rounded-lg border bg-muted px-3 py-2.5" role="region" aria-label="Queued follow-ups">
                 <header><strong>Up next</strong><span>{directMessageFollowups.length}</span></header>
                 {directMessageFollowups.map((followup, index) => (
-                  <div key={followup.messageId} className="csp-followup-item">
+                  <div key={followup.messageId} className="flex items-center gap-2 border-t py-1.5 text-xs">
                     <span>{followup.delivery === 'steer' ? 'Steer' : 'Queued'}</span>
                     <p>{followup.text}</p>
                     <div>
@@ -1217,7 +1209,7 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
 
             {commandFeedback !== null && (
               <section
-                className={`csp-command-result csp-command-result--${commandFeedback.tone}`}
+                className={cn('mx-4 mb-2 rounded-md border bg-muted px-3 py-2 text-xs', commandFeedback.tone === 'error' && 'border-destructive/30 bg-destructive/5 text-destructive', commandFeedback.tone === 'success' && 'border-[color-mix(in_oklch,var(--status-success)_32%,var(--border))]')}
                 role={commandFeedback.tone === 'error' ? 'alert' : 'status'}
                 aria-label="Command result"
               >
@@ -1229,15 +1221,15 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
               </section>
             )}
 
-            <form className="csp-message-composer" onSubmit={(event) => { void sendRoot(event) }}>
-              <div className="csp-composer-input-wrap">
+            <form className="mx-auto mb-[18px] flex w-[calc(100%-48px)] max-w-[940px] flex-col gap-1 rounded-xl border bg-background px-3 pt-3 pb-2 focus-within:border-primary focus-within:ring-3 focus-within:ring-primary/10 max-[640px]:mb-3 max-[640px]:w-[calc(100%-24px)]" onSubmit={(event) => { void sendRoot(event) }}>
+              <div className="relative w-full">
                 <textarea
                   ref={composer}
                   aria-label={isChannel ? `Post in ${heading.title}` : `Message ${heading.title}`}
                   aria-autocomplete="list"
-                  aria-expanded={suggestionCount > 0}
                   aria-controls={suggestionCount > 0 ? suggestionListId : undefined}
                   aria-activedescendant={activeSuggestionId}
+                  className="block min-h-11 max-h-40 w-full resize-none border-0 bg-transparent px-1 py-1 text-sm leading-6 outline-none"
                   placeholder={isChannel ? `Message #${heading.title}` : `Message ${heading.title}`}
                   value={draft}
                   disabled={snapshot.sending}
@@ -1271,7 +1263,6 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
                   onRemove={index => { setPendingImages(current => current.filter((_, candidate) => candidate !== index)) }}
                 />
                 <PendingFileStrip files={pendingFiles} onRemove={index => { setPendingFiles(current => current.filter((_, candidate) => candidate !== index)) }} />
-                <p className="csp-tag-hint" aria-label="Tagging help"><b>@</b> agent <b>@@</b> project context <b>#</b> channel</p>
                 {suggestionCount > 0 && <SuggestionMenu
                   id={suggestionListId}
                   selectedSuggestion={selectedSuggestion}
@@ -1281,33 +1272,34 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
                   onSelectTag={selectSuggestion}
                 />}
               </div>
-              <div className="csp-composer-footer">
+              <div className="flex min-h-[52px] items-center gap-2 pt-1">
                 {directMessageActivities.length > 0 && !isChannel
-                  ? <div className="csp-delivery-controls" role="group" aria-label="Active run delivery">
+                  ? <div className="flex flex-wrap items-center gap-1 [&_button]:min-h-9 [&_button]:rounded-sm [&_button]:border [&_button]:px-2 [&_button]:text-xs [&_button[aria-pressed=true]]:bg-muted" role="group" aria-label="Active run delivery">
                       <button type="button" aria-pressed={activeDelivery === 'queue'} onClick={() => { setActiveDelivery('queue') }}>Queue</button>
                       <button type="button" aria-pressed={activeDelivery === 'steer'} onClick={() => { setActiveDelivery('steer') }}>Steer</button>
                       <button type="button" aria-label="Stop and send" aria-pressed={activeDelivery === 'stop-and-send'} onClick={() => { setActiveDelivery('stop-and-send') }}>Stop + send</button>
                     </div>
-                  : <div className="csp-composer-tools" aria-hidden="true"><span>@</span><span>⌁</span><span>☺</span><span>Aa</span></div>}
-                <label className="csp-file-picker">Attach<input type="file" multiple aria-label="Attach files" onChange={event => {
+                  : <div className="flex items-center gap-1 text-xs text-muted-foreground" aria-hidden="true"><span>@</span><span>⌁</span><span>☺</span><span>Aa</span></div>}
+                <label className="relative inline-flex min-h-9 items-center rounded-sm border px-2 text-xs font-semibold">Attach<input className="absolute inset-0 opacity-0" type="file" multiple aria-label="Attach files" onChange={event => {
                   const files = Array.from(event.target.files ?? [])
                   if (files.length > 0) void attachFiles(files, setPendingFiles)
                   event.target.value = ''
                 }} /></label>
-                <span className="csp-composer-hint">{isChannel ? '@ agent · @@ project · # channel · files · / commands' : 'Enter to send · files · / commands'}</span>
+                <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{isChannel ? '@ agent · @@ project · # channel · files · / commands' : 'Enter to send · files · / commands'}</span>
                 <button
                   type="submit"
                   aria-label={rootIsCommand ? 'Run command' : isChannel ? 'Post message' : 'Send message'}
                   title={rootIsCommand ? 'Run command' : isChannel ? 'Post message' : 'Send message'}
+                  className="inline-flex min-h-11 min-w-[76px] items-center justify-center rounded-md border-0 bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-45"
                   disabled={snapshot.sending || (draft.trim() === '' && pendingImages.length === 0 && pendingFiles.length === 0)}
-                ><span aria-hidden="true">↑</span><span className="csp-send-label">{rootIsCommand ? 'Run' : isChannel ? 'Post' : 'Send'}</span></button>
+                ><span className="sr-only" aria-hidden="true">↑</span><span>{rootIsCommand ? 'Run' : isChannel ? 'Post' : 'Send'}</span></button>
               </div>
             </form>
           </section>
 
           {activeThread !== undefined && (
             <div
-              className="csp-thread-resizer"
+              className="relative z-20 h-full w-2 cursor-col-resize border-0 bg-transparent after:absolute after:inset-y-0 after:left-[3px] after:w-px after:bg-border hover:after:w-0.5 hover:after:bg-primary"
               role="separator"
               aria-label="Resize thread"
               aria-orientation="vertical"
@@ -1326,16 +1318,16 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
           )}
 
           {activeThread !== undefined && (
-            <aside className="csp-thread-panel" aria-label="Thread replies">
-              <header className="csp-thread-header">
-                <div><strong>Thread</strong>{activeThreadActivities.length > 0 && <span>Agents working</span>}</div>
-                <div className="csp-thread-header-actions">
+            <aside className="relative z-20 flex min-h-0 min-w-[360px] flex-col border-l bg-background" aria-label="Thread replies">
+              <header className="flex min-h-[68px] items-center gap-2.5 border-b px-3 py-2.5 pl-5">
+                <div className="min-w-0 flex-1"><strong className="font-heading text-xl">Thread</strong>{activeThreadActivities.length > 0 && <span className="ml-2 text-xs text-muted-foreground">Agents working</span>}</div>
+                <div className="flex items-center gap-1 [&_button]:min-h-10 [&_button]:rounded-sm [&_button]:border-0 [&_button]:bg-transparent [&_button]:px-2 [&_button]:text-xs [&_button]:text-muted-foreground [&_button]:hover:bg-muted">
                   <button type="button" aria-label="Open thread context" aria-pressed={threadContextOpen} onClick={() => { setThreadContextOpen(value => !value) }}>Context</button>
                   <button type="button" aria-label="Close thread" onClick={() => { store.selectThread(null) }}>×</button>
                 </div>
               </header>
               {threadContextOpen && (
-                <section className="csp-thread-context" role="region" aria-label="Thread context">
+                <section className="max-h-[48%] overflow-y-auto border-b bg-muted p-4 text-xs [&_button]:min-h-10 [&_button]:rounded-sm [&_button]:border [&_button]:px-3 [&_details]:rounded-md [&_details]:border [&_details]:bg-background [&_details]:p-3 [&_form]:mt-3 [&_form]:grid [&_form]:gap-2 [&_input]:min-h-10 [&_input]:rounded-sm [&_input]:border [&_input]:bg-background [&_input]:px-2 [&_label]:grid [&_label]:gap-1 [&_textarea]:min-h-20 [&_textarea]:rounded-sm [&_textarea]:border [&_textarea]:bg-background [&_textarea]:p-2" role="region" aria-label="Thread context">
                   <details open>
                     <summary>Inherited Channel snapshot</summary>
                     <p>{activeThread.context.channelSnapshot.summary || 'No Channel summary existed when this Thread started.'}</p>
@@ -1351,7 +1343,7 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
                       <button type="button" aria-label="Compact Thread context" disabled={threadContextCompacting} onClick={() => { void compactActiveThreadContext() }}>{threadContextCompacting ? 'Compacting…' : 'Compact'}</button>
                     </div>
                   </form>
-                  <section className="csp-thread-pins" aria-label="Thread pins">
+                  <section className="mt-3 grid gap-2 rounded-md border bg-background p-3" aria-label="Thread pins">
                     <header><strong>Pins</strong><span>{activeThreadPins.length}</span></header>
                     {activeThreadPins.map((pin) => {
                       const source = pin.messageId === undefined
@@ -1380,11 +1372,11 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
                   </section>
                 </section>
               )}
-              <div ref={threadMessages} className="csp-thread-messages">
+              <div ref={threadMessages} className="min-h-0 flex-1 overflow-y-auto bg-background p-5" role="log" aria-label="Thread messages">
                 {activeRoot !== undefined && <MessageRow message={activeRoot} bootstrap={bootstrap} onReroute={request => store.rerouteAssignment(request)} onPin={pinThreadMessage} onEdit={editDeliveredMessage} onDelete={deleteDeliveredMessage} onOpenVersion={openMessageVersion} speech={speech} />}
-                <div className="csp-thread-divider">Replies</div>
+                <div className="my-5 flex items-center gap-3 text-xs text-muted-foreground after:h-px after:flex-1 after:bg-border">Replies</div>
                 {replies.map(reply => (
-                  <MessageRow key={reply.id} elementId={`csp-message-${reply.id}`} message={reply} bootstrap={bootstrap} compact onReplyToAgent={replyDirectlyToAgent} onPin={pinThreadMessage} onEdit={editDeliveredMessage} onDelete={deleteDeliveredMessage} onOpenVersion={openMessageVersion} speech={speech} />
+                  <MessageRow key={reply.id} elementId={`commonspace-message-${reply.id}`} message={reply} bootstrap={bootstrap} compact onReplyToAgent={replyDirectlyToAgent} onPin={pinThreadMessage} onEdit={editDeliveredMessage} onDelete={deleteDeliveredMessage} onOpenVersion={openMessageVersion} speech={speech} />
                 ))}
                 {activeThreadActivities.length > 0 && (
                   <LiveAgentActivity
@@ -1397,10 +1389,10 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
                 <PermissionRequests permissions={activeThreadPermissions} agents={bootstrap?.agents ?? []} onRespond={(permissionId, optionId) => store.respondPermission(permissionId, optionId)} />
               </div>
               {activeThreadFollowups.length > 0 && (
-                <section className="csp-followup-queue csp-followup-queue--thread" role="region" aria-label="Queued thread follow-ups">
+                <section className="mx-4 mb-2 rounded-lg border bg-muted px-3 py-2.5" role="region" aria-label="Queued thread follow-ups">
                   <header><strong>Up next</strong><span>{activeThreadFollowups.length}</span></header>
                   {activeThreadFollowups.map((followup, index) => (
-                    <div key={followup.messageId} className="csp-followup-item">
+                    <div key={followup.messageId} className="flex items-center gap-2 border-t py-1.5 text-xs">
                       <span>{followup.delivery === 'steer' ? 'Steer' : 'Queued'}</span>
                       <p>{followup.text}</p>
                       <div>
@@ -1412,10 +1404,10 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
                   ))}
                 </section>
               )}
-              <form className="csp-thread-composer" onSubmit={(event) => { void sendThreadReply(event) }}>
-                <div className="csp-composer-input-wrap">
+              <form className="relative mx-4 mb-4 grid gap-2 rounded-xl border bg-background p-3 focus-within:border-primary focus-within:ring-3 focus-within:ring-primary/10" onSubmit={(event) => { void sendThreadReply(event) }}>
+                <div className="relative w-full">
                   {threadReplyTarget !== null && (
-                    <div className="csp-thread-reply-target" role="status">
+                    <div className="mb-2 grid grid-cols-[minmax(0,1fr)_auto] rounded-sm border bg-muted p-2 text-xs" role="status">
                       <span>Replying to {threadReplyTarget.agentName}</span>
                       <small>Only this agent will respond</small>
                       <button
@@ -1429,9 +1421,9 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
                     ref={threadComposer}
                     aria-label="Reply in thread"
                     aria-autocomplete="list"
-                    aria-expanded={threadSuggestionCount > 0}
                     aria-controls={threadSuggestionCount > 0 ? threadSuggestionListId : undefined}
                     aria-activedescendant={activeThreadSuggestionId}
+                    className="block min-h-[66px] max-h-40 w-full resize-none border-0 bg-transparent px-1 py-1 text-sm leading-6 outline-none"
                     placeholder="Reply in thread, tag context, or type /"
                     value={threadDraft}
                     disabled={snapshot.sending}
@@ -1465,7 +1457,6 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
                     onRemove={index => { setPendingThreadImages(current => current.filter((_, candidate) => candidate !== index)) }}
                   />
                   <PendingFileStrip files={pendingThreadFiles} onRemove={index => { setPendingThreadFiles(current => current.filter((_, candidate) => candidate !== index)) }} />
-                  <p className="csp-tag-hint" aria-label="Tagging help"><b>@</b> agent <b>@@</b> project context <b>#</b> channel</p>
                   {threadSuggestionCount > 0 && <SuggestionMenu
                     id={threadSuggestionListId}
                     selectedSuggestion={selectedThreadSuggestion}
@@ -1476,18 +1467,18 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
                   />}
                 </div>
                 {activeThreadActivities.length > 0 && threadReplyTarget === null && (
-                  <div className="csp-delivery-controls" role="group" aria-label="Active thread run delivery">
+                  <div className="flex flex-wrap items-center gap-1 [&_button]:min-h-9 [&_button]:rounded-sm [&_button]:border [&_button]:px-2 [&_button]:text-xs" role="group" aria-label="Active thread run delivery">
                     <button type="button" aria-pressed={threadDelivery === 'queue'} onClick={() => { setThreadDelivery('queue') }}>Queue</button>
                     <button type="button" aria-pressed={threadDelivery === 'steer'} onClick={() => { setThreadDelivery('steer') }}>Steer</button>
                     <button type="button" aria-label="Stop and send thread follow-up" aria-pressed={threadDelivery === 'stop-and-send'} onClick={() => { setThreadDelivery('stop-and-send') }}>Stop + send</button>
                   </div>
                 )}
-                <label className="csp-file-picker">Attach<input type="file" multiple aria-label="Attach files to Thread" onChange={event => {
+                <label className="relative inline-flex min-h-9 w-fit items-center rounded-sm border px-2 text-xs font-semibold">Attach<input className="absolute inset-0 opacity-0" type="file" multiple aria-label="Attach files to Thread" onChange={event => {
                   const files = Array.from(event.target.files ?? [])
                   if (files.length > 0) void attachFiles(files, setPendingThreadFiles)
                   event.target.value = ''
                 }} /></label>
-                <button type="submit" disabled={snapshot.sending || (threadDraft.trim() === '' && pendingThreadImages.length === 0 && pendingThreadFiles.length === 0)}>{threadIsCommand ? 'Run' : 'Reply'}</button>
+                <button className="min-h-11 justify-self-end rounded-md border-0 bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-45" type="submit" disabled={snapshot.sending || (threadDraft.trim() === '' && pendingThreadImages.length === 0 && pendingThreadFiles.length === 0)}>{threadIsCommand ? 'Run' : 'Reply'}</button>
               </form>
             </aside>
           )}
