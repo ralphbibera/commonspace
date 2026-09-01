@@ -1,13 +1,11 @@
 {
-  "extends": "../tsconfig.base.json",
-  "compilerOptions": {
-    "rootDir": "src",
-    "outDir": "dist",
-    "composite": true,
-    "types": ["node"]
-  },
-  "references": [
-    { "path": "../packages/shared" }
-  ],
-  "include": ["src/**/*.ts"]
+	"extends": "../tsconfig.base.json",
+	"compilerOptions": {
+		"rootDir": "src",
+		"outDir": "dist",
+		"composite": true,
+		"types": ["node"]
+	},
+	"references": [{ "path": "../packages/shared" }],
+	"include": ["src/**/*.ts"]
 }
