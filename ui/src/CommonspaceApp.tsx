@@ -296,10 +296,12 @@ export function CommonspaceApp({ store }: CommonspaceAppProps) {
 				<button
 					type="button"
 					className={cn(
-						"absolute inset-0 z-10 hidden border-0 bg-black/30 opacity-0 transition-opacity max-[780px]:block",
-						navigationOpen && "max-[780px]:opacity-100",
+						"pointer-events-none absolute inset-0 z-10 hidden border-0 bg-black/30 opacity-0 transition-opacity max-[780px]:block",
+						navigationOpen &&
+							"pointer-events-auto max-[780px]:opacity-100",
 					)}
 					aria-label="Close navigation"
+					aria-hidden={!navigationOpen}
 					tabIndex={navigationOpen ? 0 : -1}
 					onClick={() => {
 						setNavigationOpen(false);
