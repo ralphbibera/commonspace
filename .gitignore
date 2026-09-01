@@ -82,6 +82,8 @@ out
 .nuxt
 dist
 lib/
+!ui/src/lib/
+!ui/src/lib/**
 artifacts/
 playwright-report/
 test-results/
@@ -146,3 +148,6 @@ test-results/
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+*storybook.log
+storybook-static

@@ -1,5 +1,4 @@
-import { useDeferredValue, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
+import { useDeferredValue, useEffect, useId, useMemo, useState } from 'react'
 import {
   COMMONSPACE_SEARCH_KINDS,
   type CommonspaceProject,
@@ -8,52 +7,15 @@ import {
   type CommonspaceSearchResponse,
   type CommonspaceSearchResult,
 } from '@commonspace/shared'
+import { SearchIcon } from 'lucide-react'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 
 export interface CommonspaceSearchDialogProps {
   projects: readonly CommonspaceProject[]
   onClose: () => void
   onSelect: (result: CommonspaceSearchResult) => void
-}
-
-const FOCUSABLE = 'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
-
-function useSearchModal(onClose: () => void) {
-  const dialogRef = useRef<HTMLElement>(null)
-  const backdropRef = useRef<HTMLDivElement>(null)
-  const closeRef = useRef(onClose)
-  const restoreFocus = useRef<HTMLElement | null>(typeof document !== 'undefined' && document.activeElement instanceof HTMLElement ? document.activeElement : null)
-  useLayoutEffect(() => { closeRef.current = onClose }, [onClose])
-  useLayoutEffect(() => {
-    const dialog = dialogRef.current
-    const backdrop = backdropRef.current
-    if (dialog === null || backdrop === null) return
-    const background = Array.from(document.body.children)
-      .filter((element): element is HTMLElement => element instanceof HTMLElement && element !== dialog && element !== backdrop)
-      .map(element => ({ element, inert: element.inert, hadInert: element.hasAttribute('inert') }))
-    for (const { element } of background) { element.inert = true; element.setAttribute('inert', '') }
-    ;(dialog.querySelector<HTMLElement>(FOCUSABLE) ?? dialog).focus()
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeRef.current(); return }
-      if (event.key !== 'Tab') return
-      const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(element => !element.hidden)
-      const first = focusable[0]
-      const last = focusable.at(-1)
-      if (first === undefined || last === undefined) { event.preventDefault(); dialog.focus(); return }
-      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
-      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
-    }
-    dialog.addEventListener('keydown', handleKeyDown)
-    return () => {
-      dialog.removeEventListener('keydown', handleKeyDown)
-      for (const item of background) {
-        item.element.inert = item.inert
-        if (item.hadInert) item.element.setAttribute('inert', '')
-        else item.element.removeAttribute('inert')
-      }
-      if (restoreFocus.current?.isConnected === true) restoreFocus.current.focus()
-    }
-  }, [])
-  return { backdropRef, dialogRef }
+  fetcher?: typeof globalThis.fetch
 }
 
 function searchUrl(query: string, kinds: readonly CommonspaceSearchKind[], projectId: string): string {
@@ -91,11 +53,11 @@ function HighlightedText({ text, field, highlights }: {
     offset = range.end
   }
   if (offset < text.length) parts.push({ text: text.slice(offset), highlighted: false })
-  return <>{parts.map((part, index) => part.highlighted ? <mark key={index}>{part.text}</mark> : part.text)}</>
+  return <>{parts.map((part, index) => part.highlighted ? <mark className="rounded-sm bg-primary/15 text-inherit" key={index}>{part.text}</mark> : part.text)}</>
 }
 
 function kindLabel(kind: CommonspaceSearchKind): string {
-  if (kind === 'dm') return 'DM'
+  if (kind === 'dm') return 'Agent conversation'
   return `${kind.slice(0, 1).toLocaleUpperCase()}${kind.slice(1)}`
 }
 
@@ -110,8 +72,7 @@ function resultGlyph(kind: CommonspaceSearchKind): string {
   return '↳'
 }
 
-export function CommonspaceSearchDialog({ projects, onClose, onSelect }: CommonspaceSearchDialogProps) {
-  const titleId = useId()
+export function CommonspaceSearchDialog({ projects, onClose, onSelect, fetcher = globalThis.fetch }: CommonspaceSearchDialogProps) {
   const resultsId = useId()
   const [query, setQuery] = useState('')
   const [selectedKinds, setSelectedKinds] = useState<CommonspaceSearchKind[]>([])
@@ -127,38 +88,30 @@ export function CommonspaceSearchDialog({ projects, onClose, onSelect }: Commons
   const results = response?.results ?? []
   const boundedActiveIndex = results.length === 0 ? 0 : Math.min(activeIndex, results.length - 1)
   const activeResult = results[boundedActiveIndex]
-  const { backdropRef, dialogRef } = useSearchModal(onClose)
 
   useEffect(() => {
     const controller = new AbortController()
     setError(null)
-    void fetch(requestUrl, { headers: { accept: 'application/json' }, signal: controller.signal }).then(async result => {
+    void fetcher(requestUrl, { headers: { accept: 'application/json' }, signal: controller.signal }).then(async result => {
       if (!result.ok) throw new Error(await responseError(result))
       return result.json() as Promise<CommonspaceSearchResponse>
     }).then(setResponse).catch((reason: unknown) => {
       if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : String(reason))
     })
     return () => { controller.abort() }
-  }, [requestUrl])
-
-  if (typeof document === 'undefined') return null
+  }, [fetcher, requestUrl])
 
   const moveSelection = (offset: number) => {
     if (results.length === 0) return
     setActiveIndex(current => (Math.min(current, results.length - 1) + offset + results.length) % results.length)
   }
-  const toggleKind = (kind: CommonspaceSearchKind) => {
-    setSelectedKinds(current => current.includes(kind) ? current.filter(item => item !== kind) : [...current, kind])
-    setActiveIndex(0)
-  }
 
-  return createPortal(
-    <>
-      <div ref={backdropRef} className="csp-dialog-backdrop csp-search-backdrop" aria-hidden="true" onMouseDown={onClose} />
-      <section ref={dialogRef} className="csp-dialog csp-search-dialog" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}>
-        <header className="csp-search-header">
-          <h2 id={titleId} className="csp-visually-hidden">Search everything</h2>
-          <span className="csp-search-icon" aria-hidden="true" />
+  return (
+    <Dialog open onOpenChange={open => { if (!open) onClose() }}>
+      <DialogContent showCloseButton aria-describedby={undefined} className="top-[10vh] max-h-[80vh] -translate-y-0 sm:max-w-[640px]">
+        <DialogHeader className="sr-only"><DialogTitle>Search Commonspace</DialogTitle></DialogHeader>
+        <div className="grid min-h-[68px] grid-cols-[20px_minmax(0,1fr)_auto] items-center gap-2.5 border-b px-3.5 py-2">
+          <SearchIcon aria-hidden="true" />
           <input
             autoFocus
             type="search"
@@ -167,6 +120,7 @@ export function CommonspaceSearchDialog({ projects, onClose, onSelect }: Commons
             aria-activedescendant={activeResult === undefined ? undefined : `${resultsId}-${String(boundedActiveIndex)}`}
             placeholder="Search messages, files, runs, traces…"
             value={query}
+            className="h-11 min-w-0 border-0 bg-transparent text-[17px] tracking-[-0.01em] outline-none placeholder:text-muted-foreground"
             onChange={event => { setQuery(event.target.value); setActiveIndex(0) }}
             onKeyDown={event => {
               if (event.key === 'ArrowDown') { event.preventDefault(); moveSelection(1) }
@@ -174,26 +128,21 @@ export function CommonspaceSearchDialog({ projects, onClose, onSelect }: Commons
               else if (event.key === 'Enter' && activeResult !== undefined) { event.preventDefault(); onSelect(activeResult) }
             }}
           />
-          <kbd aria-hidden="true">ESC</kbd>
-        </header>
-        <div className="csp-search-filters" aria-label="Search filters">
-          <select aria-label="Filter search by project" value={projectId} onChange={event => { setProjectId(event.target.value); setActiveIndex(0) }}>
+          <kbd className="mr-9 rounded-sm border bg-muted px-1.5 py-1 font-mono text-xs text-muted-foreground" aria-hidden="true">ESC</kbd>
+        </div>
+        <div className="flex items-center gap-2 overflow-x-auto px-3.5 py-2" aria-label="Search filters">
+          <select className="h-9 max-w-40 rounded-sm border bg-background px-2 text-xs text-muted-foreground" aria-label="Filter search by project" value={projectId} onChange={event => { setProjectId(event.target.value); setActiveIndex(0) }}>
             <option value="">All projects</option>
             {projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}
           </select>
-          <div className="csp-search-kind-filters">
-            {COMMONSPACE_SEARCH_KINDS.map(kind => (
-              <button key={kind} type="button" aria-pressed={selectedKinds.includes(kind)} onClick={() => { toggleKind(kind) }}>{kindLabel(kind)}</button>
-            ))}
-          </div>
+          <ToggleGroup multiple value={selectedKinds} onValueChange={values => { setSelectedKinds(values as CommonspaceSearchKind[]); setActiveIndex(0) }} aria-label="Search result types">
+            {COMMONSPACE_SEARCH_KINDS.map(kind => <ToggleGroupItem key={kind} value={kind}>{kindLabel(kind)}</ToggleGroupItem>)}
+          </ToggleGroup>
         </div>
-        <div className="csp-search-result-head">
-          <span>{query.trim() === '' ? 'Browse' : 'Results'}</span>
-          <span>{pending ? 'Searching…' : response?.truncated === true ? `${String(results.length)}+` : results.length}</span>
-        </div>
-        <div id={resultsId} className="csp-search-results" role="listbox" aria-label="Commonspace search results" aria-busy={pending}>
-          {error !== null && <div className="csp-search-empty" role="alert">{error}</div>}
-          {error === null && !pending && results.length === 0 && <div className="csp-search-empty">No results for “{query.trim()}”.</div>}
+        <div className="flex items-center justify-between px-4 pt-1 pb-1.5 text-xs font-semibold tracking-[0.05em] text-muted-foreground uppercase"><span>{query.trim() === '' ? 'Browse' : 'Results'}</span><span>{pending ? 'Searching…' : response?.truncated === true ? `${String(results.length)}+` : results.length}</span></div>
+        <div id={resultsId} className="min-h-24 overflow-y-auto px-2 pb-2" role={results.length > 0 ? 'listbox' : undefined} aria-label="Commonspace search results" aria-busy={pending}>
+          {error !== null && <div className="grid min-h-24 place-items-center text-sm text-destructive" role="alert">{error}</div>}
+          {error === null && !pending && results.length === 0 && <div className="grid min-h-24 place-items-center text-sm text-muted-foreground">No results for “{query.trim()}”.</div>}
           {results.map((result, index) => (
             <button
               id={`${resultsId}-${String(index)}`}
@@ -202,27 +151,18 @@ export function CommonspaceSearchDialog({ projects, onClose, onSelect }: Commons
               role="option"
               aria-label={`Open ${kindLabel(result.kind)}: ${result.title}`}
               aria-selected={index === boundedActiveIndex}
-              className="csp-search-result"
+              className="grid min-h-14 w-full grid-cols-[32px_minmax(0,1fr)_auto] items-center gap-2.5 rounded-sm px-2.5 py-2 text-left hover:bg-muted aria-selected:bg-muted"
               onMouseEnter={() => { setActiveIndex(index) }}
               onClick={() => { onSelect(result) }}
             >
-              <span className="csp-search-result-glyph" aria-hidden="true">{resultGlyph(result.kind)}</span>
-              <span className="csp-search-result-main">
-                <strong><HighlightedText text={result.title} field="title" highlights={result.highlights} /></strong>
-                <small><HighlightedText text={result.detail} field="detail" highlights={result.highlights} /></small>
-                <small className="csp-search-result-receipt">{result.receipt}</small>
-              </span>
-              <span className="csp-search-result-meta">{kindLabel(result.kind)}</span>
+              <span className="grid size-8 place-items-center rounded-sm border bg-background font-semibold text-muted-foreground" aria-hidden="true">{resultGlyph(result.kind)}</span>
+              <span className="min-w-0"><strong className="block truncate text-[13px]"><HighlightedText text={result.title} field="title" highlights={result.highlights} /></strong><small className="block truncate text-xs text-muted-foreground"><HighlightedText text={result.detail} field="detail" highlights={result.highlights} /></small><small className="block truncate font-mono text-xs text-muted-foreground/80">{result.receipt}</small></span>
+              <span className="max-w-32 truncate text-xs text-muted-foreground">{kindLabel(result.kind)}</span>
             </button>
           ))}
         </div>
-        <footer className="csp-search-footer" aria-hidden="true">
-          <span><kbd>↑</kbd><kbd>↓</kbd> Navigate</span>
-          <span><kbd>↵</kbd> Open</span>
-          <span><kbd>esc</kbd> Close</span>
-        </footer>
-      </section>
-    </>,
-    document.body,
+        <footer className="flex min-h-10 items-center justify-end gap-3 border-t px-3.5 py-1.5 text-xs text-muted-foreground" aria-hidden="true"><span><kbd>↑</kbd><kbd>↓</kbd> Navigate</span><span><kbd>↵</kbd> Open</span><span><kbd>esc</kbd> Close</span></footer>
+      </DialogContent>
+    </Dialog>
   )
 }

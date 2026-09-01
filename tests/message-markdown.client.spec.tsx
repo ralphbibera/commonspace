@@ -83,7 +83,7 @@ describe('Commonspace message markdown', () => {
 
     expect(await screen.findByRole('heading', { level: 2, name: 'Result' }, { timeout: 5_000 })).toBeTruthy()
     expect(container.querySelector('[data-streamdown="strong"]')?.textContent).toBe('important')
-    expect(container.querySelector('.csp-message-content code')?.textContent).toBe('inline()')
+    expect(container.querySelector('[data-selectable-text="true"] code')?.textContent).toBe('inline()')
     expect(screen.getByRole('list').children).toHaveLength(2)
     expect(screen.getByRole('table')).toBeTruthy()
     expect(screen.getByRole('link', { name: 'Hermes' }).getAttribute('href')).toBe('https://hermes-agent.nousresearch.com/docs')

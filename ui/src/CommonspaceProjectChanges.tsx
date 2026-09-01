@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
 import type { ProjectGitDiffResponse, ProjectGitFileChange, ProjectGitStatusResponse } from '@commonspace/shared'
 import { fetchProjectJson, projectApiUrl } from './project-files-api.ts'
+import { cn } from '@/lib/utils'
 
 export interface CommonspaceProjectChangesProps {
   projectId: string
+  fetcher?: typeof globalThis.fetch
 }
 
 function statusMark(change: ProjectGitFileChange): string {
@@ -16,10 +18,10 @@ function statusMark(change: ProjectGitFileChange): string {
 }
 
 function Diff({ diff }: { diff: ProjectGitDiffResponse }) {
-  if (diff.binary) return <div className="csp-project-preview-empty"><strong>Binary change</strong><p>Git cannot produce a text patch for this file.</p></div>
-  if (diff.patch === '') return <div className="csp-project-preview-empty"><strong>No text difference</strong><p>Working file matches HEAD.</p></div>
+  if (diff.binary) return <div className="py-12 text-center"><strong>Binary change</strong><p className="mt-1 text-xs text-muted-foreground">Git cannot produce a text patch for this file.</p></div>
+  if (diff.patch === '') return <div className="py-12 text-center"><strong>No text difference</strong><p className="mt-1 text-xs text-muted-foreground">Working file matches HEAD.</p></div>
   return (
-    <div className="csp-project-diff" role="region" aria-label={`Diff ${diff.path}`}>
+    <div className="overflow-hidden rounded-sm border font-mono text-xs" role="region" aria-label={`Diff ${diff.path}`}>
       {diff.patch.split('\n').map((line, index) => {
         const kind = line.startsWith('+++') || line.startsWith('---')
           ? 'meta'
@@ -30,14 +32,14 @@ function Diff({ diff }: { diff: ProjectGitDiffResponse }) {
               : line.startsWith('@@')
                 ? 'hunk'
                 : 'context'
-        return <code key={`${String(index)}:${line}`} className={`csp-project-diff-line csp-project-diff-line--${kind}`}>{line === '' ? ' ' : line}</code>
+        return <code key={`${String(index)}:${line}`} className={cn('block min-h-6 whitespace-pre-wrap px-3 py-1', kind === 'add' && 'bg-[color-mix(in_oklch,var(--status-success)_10%,var(--background))]', kind === 'remove' && 'bg-[color-mix(in_oklch,var(--destructive)_10%,var(--background))]', kind === 'meta' && 'text-muted-foreground', kind === 'hunk' && 'bg-muted text-primary')}>{line === '' ? ' ' : line}</code>
       })}
-      {diff.truncated && <div className="csp-project-limit-note">Patch truncated after 2,000 lines.</div>}
+      {diff.truncated && <div className="px-3 py-2.5 text-xs text-muted-foreground">Patch truncated after 2,000 lines.</div>}
     </div>
   )
 }
 
-export function CommonspaceProjectChanges({ projectId }: CommonspaceProjectChangesProps) {
+export function CommonspaceProjectChanges({ projectId, fetcher = globalThis.fetch }: CommonspaceProjectChangesProps) {
   const [refresh, setRefresh] = useState(0)
   const [status, setStatus] = useState<ProjectGitStatusResponse | null>(null)
   const [selected, setSelected] = useState<ProjectGitFileChange | null>(null)
@@ -54,11 +56,12 @@ export function CommonspaceProjectChanges({ projectId }: CommonspaceProjectChang
     void fetchProjectJson<ProjectGitStatusResponse>(
       projectApiUrl(projectId, 'changes', 0),
       controller.signal,
-    ).then(setStatus).catch((error: unknown) => {
+      fetcher,
+    ).then(result => { setStatus(result); if (result.available && result.files[0] !== undefined) setSelected(result.files[0]) }).catch((error: unknown) => {
       if (!controller.signal.aborted) setStatusError(error instanceof Error ? error.message : String(error))
     })
     return () => { controller.abort() }
-  }, [projectId, refresh])
+  }, [fetcher, projectId, refresh])
 
   useEffect(() => {
     setDiff(null)
@@ -68,66 +71,67 @@ export function CommonspaceProjectChanges({ projectId }: CommonspaceProjectChang
     void fetchProjectJson<ProjectGitDiffResponse>(
       projectApiUrl(projectId, 'diff', 0, selected.path),
       controller.signal,
+      fetcher,
     ).then(setDiff).catch((error: unknown) => {
       if (!controller.signal.aborted) setDiffError(error instanceof Error ? error.message : String(error))
     })
     return () => { controller.abort() }
-  }, [projectId, selected])
+  }, [fetcher, projectId, selected])
 
   const mediaUrl = selected === null ? null : projectApiUrl(projectId, 'file', 0, selected.path)
 
   return (
-    <section className="csp-project-workbench" aria-label="Project changes">
-      <aside className="csp-project-file-rail">
-        <header className="csp-project-pane-header">
-          <div>
-            <strong>Working changes</strong>
-            <small>{status?.available === true ? `${status.branch ?? 'Detached HEAD'} · ${status.head ?? 'No commit'}` : 'Compared with HEAD'}</small>
+    <section className="grid h-full min-h-0 min-w-0 grid-cols-[330px_minmax(0,1fr)] max-[780px]:grid-cols-1 max-[780px]:grid-rows-[minmax(300px,42dvh)_minmax(360px,1fr)]" aria-label="Project changes">
+      <aside className="min-h-0 min-w-0 overflow-y-auto border-r bg-[color-mix(in_oklch,var(--background)_55%,var(--muted))] max-[780px]:border-r-0 max-[780px]:border-b">
+        <header className="flex min-h-16 items-center gap-3 border-b px-3 py-2">
+          <div className="min-w-0 flex-1">
+            <strong className="block truncate text-[13px]">Working changes</strong>
+            <small className="block truncate text-xs text-muted-foreground">{status?.available === true ? <><span>{status.branch ?? 'Detached HEAD'}</span> · <span>{status.head ?? 'No commit'}</span></> : 'Compared with HEAD'}</small>
           </div>
-          <button type="button" className="csp-project-refresh" aria-label="Refresh changes" onClick={() => { setRefresh(value => value + 1) }}>↻</button>
+          <button type="button" className="grid size-11 place-items-center rounded-full border-0 bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Refresh changes" onClick={() => { setRefresh(value => value + 1) }}>↻</button>
         </header>
-        <div className="csp-project-change-summary">
-          {status?.available === true && <><strong>{status.clean ? 'Clean' : `${String(status.files.length)} changed`}</strong><span>{status.branch ?? 'Detached'}</span></>}
-          {status === null && statusError === null && <span>Reading Git status…</span>}
+        <div className="m-2.5 rounded-md border bg-muted px-4 py-3.5">
+          {status?.available === true && <><strong className="block text-[13px]">{status.clean ? 'Clean' : `${String(status.files.length)} changed`}</strong><span className="mt-1 block text-xs text-muted-foreground">Working tree compared with HEAD</span></>}
+          {status === null && statusError === null && <span className="text-xs text-muted-foreground">Reading Git status…</span>}
         </div>
-        <div className="csp-project-file-list" aria-live="polite">
-          {statusError !== null && <div className="csp-project-pane-state csp-project-pane-state--error">{statusError}</div>}
-          {status?.available === false && <div className="csp-project-pane-state"><strong>Git unavailable</strong><p>{status.reason}</p></div>}
-          {status?.available === true && status.clean && <div className="csp-project-pane-state"><strong>Working tree clean</strong><p>No differences from HEAD.</p></div>}
+        <div aria-live="polite">
+          {statusError !== null && <div className="p-5 text-xs text-destructive">{statusError}</div>}
+          {status?.available === false && <div className="p-5"><strong>Git unavailable</strong><p className="mt-1 text-xs text-muted-foreground">{status.reason}</p></div>}
+          {status?.available === true && status.clean && <div className="p-5"><strong>Working tree clean</strong><p className="mt-1 text-xs text-muted-foreground">No differences from HEAD.</p></div>}
           {status?.available === true && status.files.map(change => (
             <button
               key={`${change.oldPath ?? ''}:${change.path}`}
               type="button"
-              className="csp-project-file-row csp-project-change-row"
+              className="grid min-h-12 w-full grid-cols-[28px_minmax(0,1fr)_auto] items-center gap-2 border-0 border-b bg-transparent px-3 py-1 text-left hover:bg-muted aria-pressed:bg-muted"
               aria-label={`Open change ${change.path}`}
               aria-pressed={selected?.path === change.path}
               onClick={() => { setSelected(change) }}
             >
-              <span className={`csp-project-change-mark csp-project-change-mark--${change.status}`} aria-hidden="true">{statusMark(change)}</span>
-              <span className="csp-project-file-name"><strong>{change.path.split('/').at(-1)}</strong><small>{change.oldPath === undefined ? change.path : `${change.oldPath} → ${change.path}`}</small></span>
-              <span className="csp-project-change-counts">
-                {change.additions === null ? <i>—</i> : <b>+{change.additions}</b>}
-                {change.deletions === null ? <i>—</i> : <em>−{change.deletions}</em>}
+              <span className="grid size-7 place-items-center font-mono text-xs text-muted-foreground" aria-hidden="true">{statusMark(change)}</span>
+              <span className="min-w-0"><strong className="block truncate text-xs">{change.path.split('/').at(-1)}</strong><small className="block truncate text-xs text-muted-foreground">{change.oldPath === undefined ? change.path : `${change.oldPath} → ${change.path}`}</small></span>
+              <span className="flex gap-1 font-mono text-xs">
+                {change.additions === null ? <i className="text-muted-foreground not-italic">—</i> : <b className="text-[var(--status-success)]">+{change.additions}</b>}
+                {change.deletions === null ? <i className="text-muted-foreground not-italic">—</i> : <em className="text-destructive not-italic">−{change.deletions}</em>}
               </span>
             </button>
           ))}
-          {status?.available === true && status.truncated && <div className="csp-project-limit-note">Showing first 500 changed files.</div>}
+          {status?.available === true && status.truncated && <div className="px-3 py-2.5 text-xs text-muted-foreground">Showing first 500 changed files.</div>}
         </div>
       </aside>
 
-      <div className="csp-project-preview-pane">
+      <div className="min-h-0 min-w-0 overflow-auto bg-background">
         {selected === null
-          ? <div className="csp-project-preview-empty"><span aria-hidden="true">±</span><strong>Select a change</strong><p>Review exact working-tree differences from HEAD.</p></div>
+          ? <div className="grid min-h-full place-items-center text-center"><div><span className="font-mono text-muted-foreground" aria-hidden="true">±</span><strong className="mt-3 block text-[13px]">Select a change</strong><p className="mt-1 text-xs text-muted-foreground">Review exact working-tree differences from HEAD.</p></div></div>
           : <>
-              <header className="csp-project-pane-header csp-project-preview-header">
-                <div><strong>{selected.path}</strong><small>{selected.status} · working tree vs HEAD</small></div>
-                <span>{statusMark(selected)}</span>
+              <header className="flex min-h-16 items-center justify-between gap-3 border-b px-3 py-2">
+                <div className="min-w-0"><strong className="block truncate text-[13px]">{selected.path}</strong><small className="block truncate text-xs text-muted-foreground">{selected.status} · working tree vs HEAD</small></div>
+                <span className="font-mono text-xs text-muted-foreground">{statusMark(selected)}</span>
               </header>
-              <div className="csp-project-preview-body csp-project-preview-body--diff">
-                {selected.status !== 'deleted' && selected.preview === 'image' && mediaUrl !== null && <div className="csp-project-media-change"><small>Current image</small><img src={mediaUrl} alt={`Preview ${selected.path}`} /></div>}
-                {selected.status !== 'deleted' && selected.preview === 'video' && mediaUrl !== null && <div className="csp-project-media-change"><small>Current video</small><video src={mediaUrl} aria-label={`Preview ${selected.path}`} controls playsInline preload="metadata" /></div>}
-                {diffError !== null && <div className="csp-project-pane-state csp-project-pane-state--error">{diffError}</div>}
-                {diffError === null && diff === null && <div className="csp-project-pane-state">Reading diff…</div>}
+              <div className="p-5">
+                {selected.status !== 'deleted' && selected.preview === 'image' && mediaUrl !== null && <div className="mb-4"><small className="text-xs text-muted-foreground">Current image</small><img className="mt-2 max-h-[50vh] rounded-sm border" src={mediaUrl} alt={`Preview ${selected.path}`} /></div>}
+                {selected.status !== 'deleted' && selected.preview === 'video' && mediaUrl !== null && <div className="mb-4"><small className="text-xs text-muted-foreground">Current video</small><video className="mt-2 max-h-[50vh] rounded-sm border" src={mediaUrl} aria-label={`Preview ${selected.path}`} controls playsInline preload="metadata" /></div>}
+                {diffError !== null && <div className="text-xs text-destructive">{diffError}</div>}
+                {diffError === null && diff === null && <div className="text-xs text-muted-foreground">Reading diff…</div>}
                 {diffError === null && diff !== null && <Diff diff={diff} />}
               </div>
             </>}

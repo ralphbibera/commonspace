@@ -2,8 +2,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CommonspaceConversation } from '../ui/src/CommonspaceConversation.tsx'
-import { commonspacePolish } from '../ui/src/polish.ts'
-import { commonspaceStyles } from '../ui/src/styles.ts'
 
 function renderChannelThread(
   threadStatus: 'complete' | 'queued' | 'running' = 'complete',
@@ -468,17 +466,11 @@ describe('Commonspace reply-thread composer', () => {
   })
 
   it('opens at an equal split and lets the thread be widened by dragging', () => {
-    const style = document.createElement('style')
-    style.textContent = `${commonspaceStyles}\n${commonspacePolish}`
-    document.head.append(style)
     renderChannelThread()
 
     const separator = screen.getByRole('separator', { name: 'Resize thread' })
     const layout = separator.parentElement as HTMLElement
-    expect(layout.style.getPropertyValue('--csp-channel-width')).toBe('50fr')
-    expect(layout.style.getPropertyValue('--csp-thread-width')).toBe('50fr')
-    expect(getComputedStyle(layout).gridTemplateColumns)
-      .toBe('minmax(0, var(--csp-channel-width, 50fr)) 6px minmax(0, var(--csp-thread-width, 50fr))')
+    expect(layout.style.gridTemplateColumns).toBe('50fr 8px 50fr')
     layout.getBoundingClientRect = vi.fn(() => ({
       bottom: 800,
       height: 800,
@@ -495,15 +487,14 @@ describe('Commonspace reply-thread composer', () => {
     fireEvent.pointerMove(window, { clientX: 400, pointerId: 1 })
     fireEvent.pointerUp(window, { pointerId: 1 })
 
-    expect(layout.style.getPropertyValue('--csp-channel-width')).toBe('40fr')
-    expect(layout.style.getPropertyValue('--csp-thread-width')).toBe('60fr')
+    expect(layout.style.gridTemplateColumns).toBe('40fr 8px 60fr')
   })
 
   it('highlights the channel message for the thread currently in focus', () => {
     renderChannelThread()
 
-    const root = document.getElementById('csp-message-root-1')
-    expect(root?.classList.contains('csp-thread-root--focused')).toBe(true)
+    const root = document.getElementById('commonspace-message-root-1')
+    expect(root?.getAttribute('data-focused')).toBe('true')
     expect(root?.getAttribute('aria-current')).toBe('true')
   })
 
@@ -513,7 +504,7 @@ describe('Commonspace reply-thread composer', () => {
     const threadSummary = screen.getByRole('button', { name: /3 replies/i })
     expect(threadSummary.querySelector('[aria-label="Frontend replied"]')).toBeTruthy()
     expect(threadSummary.querySelector('[aria-label="Backend replied"]')).toBeTruthy()
-    expect(threadSummary.querySelectorAll('.csp-thread-agent-avatar')).toHaveLength(2)
+    expect(threadSummary.querySelectorAll('[aria-label$="replied"]')).toHaveLength(2)
   })
 
   it('shows a notification dot for unseen agent replies and marks them read when the thread opens', () => {
@@ -522,9 +513,7 @@ describe('Commonspace reply-thread composer', () => {
     const scrollCallsBeforeOpen = scrollTo.mock.calls.length
 
     const threadSummary = screen.getByRole('button', { name: '3 replies, 2 unread' })
-    expect(threadSummary.classList.contains('csp-thread-open--unread')).toBe(true)
     expect(within(threadSummary).getByText('2 new replies')).toBeTruthy()
-    expect(threadSummary.querySelector('.csp-thread-unread-indicator')).toBeTruthy()
 
     fireEvent.click(threadSummary)
 
@@ -542,7 +531,6 @@ describe('Commonspace reply-thread composer', () => {
 
     const activity = screen.getAllByLabelText('Frontend is responding')
     expect(activity).toHaveLength(2)
-    expect(activity.every(icon => icon.classList.contains('csp-thread-agent-avatar--responding'))).toBe(true)
     expect(screen.queryByLabelText('Backend is responding')).toBeNull()
     const liveActivity = screen.getByRole('status', { name: 'Live agent activity' })
     expect(liveActivity.textContent).toContain('Frontend')
@@ -640,7 +628,7 @@ describe('Commonspace reply-thread composer', () => {
   it('scrolls the thread to the bottom when the Reply button sends a message', async () => {
     const { send } = renderChannelThread()
     const composer = screen.getByRole('textbox', { name: 'Reply in thread' })
-    const messagesViewport = document.querySelector<HTMLElement>('.csp-thread-messages')!
+    const messagesViewport = screen.getByRole('log', { name: 'Thread messages' })
     const scrollTo = vi.mocked(HTMLElement.prototype.scrollTo)
     const scrollCallsBeforeReply = scrollTo.mock.calls.length
     Object.defineProperty(messagesViewport, 'scrollHeight', { configurable: true, value: 500 })

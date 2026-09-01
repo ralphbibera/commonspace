@@ -73,6 +73,7 @@ describe('project navigation', () => {
 
     expect(store.selectProject).toHaveBeenCalledWith('storefront')
     expect(onOpenProject).toHaveBeenCalledWith('storefront')
+    expect(screen.getByRole('button', { name: 'Browse all projects' })).toBeTruthy()
     expect(screen.queryByRole('menu', { name: 'Project Storefront' })).toBeNull()
   })
 
@@ -92,6 +93,7 @@ describe('project navigation', () => {
     const addFolder = screen.queryByRole('button', { name: 'Add local folder' })
     expect(addFolder).not.toBeNull()
     if (addFolder === null) return
+    expect(screen.getByRole('tablist', { name: 'Project views' })).toBeTruthy()
     fireEvent.click(addFolder)
 
     await waitFor(() => {

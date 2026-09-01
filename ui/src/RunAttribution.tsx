@@ -35,10 +35,10 @@ export function RunAttribution({ attribution, authorName, messageId, projectId }
   const fileLabel = `${String(observedCount)} file${observedCount === 1 ? '' : 's'} changed`
 
   return (
-    <div className={`csp-run-evidence${open ? ' is-open' : ''}`}>
+    <div className="mt-3 overflow-hidden rounded-md border bg-background">
       <button
         type="button"
-        className="csp-run-evidence-toggle"
+        className="grid min-h-12 w-full grid-cols-[24px_auto_minmax(0,1fr)_18px] items-center gap-2 border-0 bg-transparent px-3 text-left text-xs hover:bg-muted"
         aria-expanded={open}
         aria-controls={panelId}
         aria-label={`${open ? 'Hide' : 'Show'} run evidence for ${authorName}`}
@@ -50,26 +50,26 @@ export function RunAttribution({ attribution, authorName, messageId, projectId }
         <span aria-hidden="true">⌄</span>
       </button>
       {open && (
-        <section id={panelId} className="csp-run-evidence-panel" role="region" aria-label={`${authorName} run evidence`}>
+        <section id={panelId} className="border-t bg-muted p-3" role="region" aria-label={`${authorName} run evidence`}>
           {attribution.roots.map(root => root.available
             ? (
-                <div key={root.rootIndex} className="csp-run-root">
-                  <header><strong>Folder {String(root.rootIndex + 1)}</strong><span>{root.branch ?? 'detached HEAD'}</span></header>
+                <div key={root.rootIndex} className="rounded-md border bg-background p-3 [&+&]:mt-2">
+                  <header className="flex items-center justify-between gap-2 text-xs"><strong>Folder {String(root.rootIndex + 1)}</strong><span className="font-mono text-muted-foreground">{root.branch ?? 'detached HEAD'}</span></header>
                   {root.preExisting.length > 0 && (
-                    <div className="csp-run-preexisting">
+                    <div className="mt-3 rounded-sm border bg-muted p-2 text-xs">
                       <strong>Present before run</strong>
                       <span>{root.preExisting.map(change => change.path).join(', ')}</span>
                     </div>
                   )}
                   {root.observed.length === 0
-                    ? <p className="csp-run-empty">No repository changes observed during this run.</p>
-                    : <ul className="csp-run-files">
+                    ? <p className="mt-3 text-xs text-muted-foreground">No repository changes observed during this run.</p>
+                    : <ul className="mt-3 grid gap-1">
                         {root.observed.map(change => {
                           const anchor = fileAnchor(messageId, root.rootIndex, change.path)
                           const expanded = selected === anchor
                           return (
                             <li key={anchor} id={anchor}>
-                              <div className="csp-run-file-row">
+                              <div className="grid min-h-11 grid-cols-[minmax(0,1fr)_auto_auto_auto] items-center gap-2 rounded-sm px-2 text-xs hover:bg-muted">
                                 <a href={`#${anchor}`} onClick={() => { setSelected(expanded ? null : anchor) }}>{change.path}</a>
                                 <span>{change.status}{change.preExisting ? ' · also pre-existing' : ''}</span>
                                 <small>+{change.additions ?? '–'} / −{change.deletions ?? '–'}</small>
@@ -77,14 +77,14 @@ export function RunAttribution({ attribution, authorName, messageId, projectId }
                                   void openInEditor(root.projectId ?? projectId, root.projectRootIndex ?? root.rootIndex, change)
                                 }}>Open in editor</button>
                               </div>
-                              {expanded && change.patch !== undefined && <pre className="csp-run-patch"><code>{change.patch}</code></pre>}
+                              {expanded && change.patch !== undefined && <pre className="overflow-x-auto rounded-sm border bg-muted p-3 font-mono text-xs"><code>{change.patch}</code></pre>}
                             </li>
                           )
                         })}
                       </ul>}
                 </div>
               )
-            : <p key={root.rootIndex} className="csp-run-empty">Folder {String(root.rootIndex + 1)}: {root.reason}</p>)}
+            : <p key={root.rootIndex} className="text-xs text-muted-foreground">Folder {String(root.rootIndex + 1)}: {root.reason}</p>)}
         </section>
       )}
     </div>
