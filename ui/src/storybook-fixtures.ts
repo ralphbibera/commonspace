@@ -414,6 +414,13 @@ export function createStoryStore(
 		compactThreadContext: async () => undefined,
 		stopAgentRuns: async () => [],
 		updateRoutingConfiguration: async () => undefined,
+		validateRoutingConfiguration: async () => ({
+			provider: "openai-compatible",
+			location: "remote",
+			configured: true,
+			sends: [],
+		}),
+		updateWorkspaceSettings: async () => undefined,
 		diagnostics: async () => ({
 			service: {
 				status: "ready",

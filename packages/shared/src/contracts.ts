@@ -140,6 +140,11 @@ export type UpdateRoutingConfigurationRequest =
 			apiKey?: string | null;
 	  };
 
+export interface UpdateWorkspaceSettingsRequest {
+	routing: UpdateRoutingConfigurationRequest;
+	defaults: CommonspaceDefaults;
+}
+
 export interface CommonspaceRoutingAssignment {
 	id: string;
 	agentId: string;

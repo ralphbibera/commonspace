@@ -64,6 +64,7 @@ import type {
 	UpdateChannelContextRequest,
 	UpdateRoutingConfigurationRequest,
 	UpdateThreadContextRequest,
+	UpdateWorkspaceSettingsRequest,
 } from "@commonspace/shared";
 import {
 	COMMONSPACE_EXPORT_VERSION,
@@ -3481,9 +3482,9 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 		return this.publicRoutingConfiguration();
 	}
 
-	async updateRoutingConfiguration(
+	private prepareRoutingConfiguration(
 		request: UpdateRoutingConfigurationRequest,
-	): Promise<CommonspaceRoutingConfiguration> {
+	): PrivateRoutingConfiguration {
 		if (
 			request.provider !== "harness" &&
 			request.provider !== "openai-compatible"
@@ -3529,9 +3530,79 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 			baseUrl,
 		};
 		if (apiKey !== undefined) next.apiKey = apiKey;
+		return next;
+	}
+
+	validateRoutingConfiguration(
+		request: UpdateRoutingConfigurationRequest,
+	): CommonspaceDiagnostics["inference"] {
+		const candidate = this.prepareRoutingConfiguration(request);
+		const routingUrl = new URL(candidate.baseUrl);
+		const localRoutingHost =
+			routingUrl.hostname === "localhost" ||
+			routingUrl.hostname === "127.0.0.1" ||
+			routingUrl.hostname === "::1";
+		return {
+			provider: candidate.provider,
+			location:
+				candidate.provider === "harness" || localRoutingHost ? "local" : "remote",
+			configured:
+				candidate.provider === "harness"
+					? this.state.agents.some((agent) => agent.id === candidate.harnessAgentId)
+					: candidate.model !== "",
+			sends: [
+				"message text",
+				"Agent labels",
+				"Project labels",
+				"shared context",
+				"routing corrections",
+			],
+		};
+	}
+
+	async updateRoutingConfiguration(
+		request: UpdateRoutingConfigurationRequest,
+	): Promise<CommonspaceRoutingConfiguration> {
+		const next = this.prepareRoutingConfiguration(request);
 		await this.persistRoutingConfiguration(next);
 		this.routingConfiguration = next;
 		return this.publicRoutingConfiguration();
+	}
+
+	async updateWorkspaceSettings(
+		request: UpdateWorkspaceSettingsRequest,
+	): Promise<CommonspaceBootstrap> {
+		return this.withAdmission(async () => {
+			const previousState = this.state;
+			const previousRouting = this.routingConfiguration;
+			const nextRouting = this.prepareRoutingConfiguration(request.routing);
+			const defaultsMutation: Extract<
+				CommonspaceMutation,
+				{ action: "set-defaults" }
+			> = { action: "set-defaults", ...request.defaults };
+			const normalizedDefaults = await this.normalizeMutation(defaultsMutation);
+			const nextState = applyMutation(this.state, normalizedDefaults);
+
+			await this.persistRoutingConfiguration(nextRouting);
+			this.state = nextState;
+			try {
+				await this.persist();
+			} catch (error) {
+				this.state = previousState;
+				try {
+					await this.persistRoutingConfiguration(previousRouting);
+				} catch (rollbackError) {
+					throw new AggregateError(
+						[error, rollbackError],
+						"workspace settings failed and routing rollback also failed",
+					);
+				}
+				throw error;
+			}
+			this.routingConfiguration = nextRouting;
+			this.broadcastRevision();
+			return this.bootstrap();
+		});
 	}
 
 	channelContext(channelId: string): CommonspaceChannelMemory {
