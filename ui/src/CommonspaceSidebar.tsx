@@ -17,11 +17,13 @@ import {
 import { ArrowRightIcon, ChevronDownIcon, InboxIcon, MessagesSquareIcon, MoreHorizontalIcon, RefreshCwIcon, SettingsIcon } from 'lucide-react'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
+import { CollectionActionMenu, type CommonspaceCollectionKind } from '@/design-system/CollectionActionMenu'
 import { WorkspaceHeader } from '@/design-system/WorkspaceHeader'
 import { CommonspaceLogo } from '@/design-system/CommonspaceLogo'
 import type { CommonspaceClientStore } from './commonspace-store.ts'
 import { CommonspaceSearchDialog } from './CommonspaceSearch.tsx'
 import { folderName } from './project-files-api.ts'
+import type { CommonspaceDirectoryKind } from './CommonspaceDirectory.tsx'
 
 export interface CommonspaceSidebarProps {
   wide: boolean
@@ -30,10 +32,13 @@ export interface CommonspaceSidebarProps {
   homeActive?: boolean
   inboxActive?: boolean
   threadsActive?: boolean
+  createRequest?: { kind: CommonspaceCollectionKind; token: number } | null
   onOpenHome?: () => void
   onOpenSearch?: () => void
   onOpenInbox?: () => void
   onOpenThreads?: () => void
+  onOpenDirectory?: (kind: CommonspaceDirectoryKind) => void
+  onOpenContextSettings?: (kind: CommonspaceCollectionKind, id: string) => void
   onOpenProject?: (projectId: string, file?: { rootIndex: number; path: string }) => void
   onOpenConversation?: (messageId?: string) => void
 }
@@ -126,7 +131,7 @@ function AgentAvatar({ agent }: { agent: CommonspaceAgentProfile }) {
   )
 }
 
-export function CommonspaceSidebar({ wide, expandSidebar, store, homeActive = false, inboxActive = false, threadsActive = false, onOpenHome, onOpenSearch, onOpenInbox, onOpenThreads, onOpenProject, onOpenConversation }: CommonspaceSidebarProps) {
+export function CommonspaceSidebar({ wide, expandSidebar, store, homeActive = false, inboxActive = false, threadsActive = false, createRequest = null, onOpenHome, onOpenSearch, onOpenInbox, onOpenThreads, onOpenDirectory, onOpenContextSettings, onOpenProject, onOpenConversation }: CommonspaceSidebarProps) {
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot)
   const [form, setForm] = useState<'project' | 'channel' | 'agent' | null>(null)
   const [name, setName] = useState('')
@@ -165,6 +170,8 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, homeActive = fa
   const [searchOpen, setSearchOpen] = useState(false)
   const [diagnostics, setDiagnostics] = useState<CommonspaceDiagnostics | null>(null)
   const [diagnosticsLoading, setDiagnosticsLoading] = useState(false)
+  const [inferenceChecking, setInferenceChecking] = useState(false)
+  const [inferenceCheckStatus, setInferenceCheckStatus] = useState<string | null>(null)
   const [importArchive, setImportArchive] = useState<CommonspaceWorkspaceArchive | null>(null)
   const [importMappings, setImportMappings] = useState<Record<string, string[]>>({})
   const [importingWorkspace, setImportingWorkspace] = useState(false)
@@ -172,9 +179,18 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, homeActive = fa
   const [retentionPreview, setRetentionPreview] = useState<CommonspaceRetentionPreview | null>(null)
   const [notificationSettings, setNotificationSettings] = useState<CommonspaceNotificationSettings>({ ...DEFAULT_COMMONSPACE_NOTIFICATION_SETTINGS })
   const [savingNotifications, setSavingNotifications] = useState(false)
+  const [pinOverrides, setPinOverrides] = useState<Record<string, boolean>>({})
 
   useEffect(() => { void store.refresh() }, [store])
   useEffect(() => { setSettingsOpen(false) }, [homeActive, inboxActive, snapshot.activeConversation, snapshot.activeProjectId, threadsActive])
+  useEffect(() => {
+    if (createRequest === null) return
+    setForm(createRequest.kind)
+    setName('')
+    if (createRequest.kind === 'project') setPath('')
+    if (createRequest.kind === 'channel') { setAgentIds([]); setChannelAgentQuery('') }
+    if (createRequest.kind === 'agent') setAgentAdapter(null)
+  }, [createRequest])
   useEffect(() => {
     const openSearch = (event: KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey) || event.key.toLocaleLowerCase() !== 'k') return
@@ -211,6 +227,11 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, homeActive = fa
   const models = useMemo(() => [...new Set(agents.map(agent => agent.model).filter((model): model is string => model !== null && model !== ''))], [agents])
   const projects = state?.projects ?? []
   const channels = state?.channels ?? []
+  const collectionPinned = (kind: CommonspaceCollectionKind, id: string, index: number) => pinOverrides[`${kind}:${id}`] ?? index === 0
+  const toggleCollectionPinned = (kind: CommonspaceCollectionKind, id: string, index: number) => {
+    const key = `${kind}:${id}`
+    setPinOverrides(current => ({ ...current, [key]: !(current[key] ?? index === 0) }))
+  }
 
   if (!wide) {
     return (
@@ -336,6 +357,22 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, homeActive = fa
       setDiagnostics(await store.diagnostics())
     } finally {
       setDiagnosticsLoading(false)
+    }
+  }
+
+  const checkInferenceConfiguration = async () => {
+    if (inferenceChecking) return
+    setInferenceChecking(true)
+    setInferenceCheckStatus('Checking configuration…')
+    try {
+      const result = await store.diagnostics()
+      setInferenceCheckStatus(result.inference.configured
+        ? `Configuration verified · ${result.inference.provider}`
+        : 'Configuration needs attention')
+    } catch {
+      setInferenceCheckStatus('Configuration check failed')
+    } finally {
+      setInferenceChecking(false)
     }
   }
 
@@ -486,6 +523,8 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, homeActive = fa
             <div className="grid grid-cols-2 gap-3 max-[640px]:grid-cols-1"><label><span className="text-xs font-semibold text-muted-foreground">Model ID</span><input aria-label="Routing model" placeholder="gpt-4.1-mini" value={routingModel} onChange={event => { setRoutingModel(event.target.value) }} /></label><label><span className="text-xs font-semibold text-muted-foreground">API base URL</span><input aria-label="Routing API base URL" type="url" value={routingBaseUrl} onChange={event => { setRoutingBaseUrl(event.target.value) }} /></label></div>
             <label className="mt-3"><span className="text-xs font-semibold text-muted-foreground">API key</span><input aria-label="Routing API key" type="password" autoComplete="new-password" placeholder={bootstrap?.routing?.apiKeyConfigured === true ? 'Saved — leave blank to keep' : 'Optional for local compatible APIs'} value={routingApiKey} onChange={event => { setRoutingApiKey(event.target.value); setClearRoutingApiKey(false) }} /></label>
             {bootstrap?.routing?.apiKeyConfigured === true && <label className="mt-3 flex min-h-11 grid-cols-none flex-row items-center gap-2 text-xs text-muted-foreground"><input aria-label="Clear routing API key" type="checkbox" checked={clearRoutingApiKey} onChange={event => { setClearRoutingApiKey(event.target.checked) }} /> Clear saved API key</label>}
+            <div className="mt-4 flex min-h-[72px] items-center justify-between gap-4 rounded-md border bg-muted p-4"><div><strong className="block text-[13px]">Used by Commonspace</strong><p className="mt-1 text-xs text-muted-foreground">Message routing · context compaction · workspace utilities</p></div><button type="button" disabled={inferenceChecking} onClick={() => { void checkInferenceConfiguration() }}>{inferenceChecking ? 'Checking…' : 'Check configuration'}</button></div>
+            {inferenceCheckStatus !== null && <p className="mt-3 inline-flex items-center gap-2 text-xs text-[var(--status-success)]" role="status" aria-label="Inference configuration status"><span aria-hidden="true">✓</span>{inferenceCheckStatus}</p>}
           </section>}
 
           <fieldset className="mt-8 border-t pt-8">
@@ -618,16 +657,27 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, homeActive = fa
                     <span className="grid size-[22px] place-items-center rounded-sm bg-sidebar-accent font-mono text-xs" aria-hidden="true">{project.name.slice(0, 1).toLocaleUpperCase()}</span>
                     <span className="min-w-0"><strong className="block truncate text-[13px] font-semibold">{project.name}</strong><small className="hidden">{folderSummary}</small></span>
                   </button>
-                  <button
+                  {onOpenContextSettings === undefined ? <button
                     type="button"
                     className="grid size-11 place-items-center rounded-r-sm border-0 bg-transparent text-sidebar-foreground/65 opacity-0 hover:bg-sidebar-accent hover:text-sidebar-foreground group-hover:opacity-100 focus:opacity-100"
                     aria-label={`Add local folder to project ${project.name}`}
-                    onClick={() => {
-                      store.selectProject(project.id)
-                      setPathProjectId(project.id)
-                      setPathDraft('')
+                    onClick={() => { store.selectProject(project.id); setPathProjectId(project.id); setPathDraft('') }}
+                  ><MoreHorizontalIcon className="size-4" aria-hidden="true" /></button> : <CollectionActionMenu
+                    kind="project"
+                    label={project.name}
+                    meta={folderSummary}
+                    pinned={collectionPinned('project', project.id, index)}
+                    triggerLabel={`Add local folder to project ${project.name}`}
+                    triggerClassName="rounded-r-sm text-sidebar-foreground/65 opacity-0 hover:bg-sidebar-accent hover:text-sidebar-foreground group-hover:opacity-100 focus:opacity-100"
+                    onOpen={() => { store.selectProject(project.id); onOpenProject?.(project.id) }}
+                    onSettings={() => {
+                      if (onOpenContextSettings === undefined) { store.selectProject(project.id); onOpenProject?.(project.id) }
+                      else onOpenContextSettings('project', project.id)
                     }}
-                  ><MoreHorizontalIcon className="size-4" aria-hidden="true" /></button>
+                    onAddFolder={() => { store.selectProject(project.id); setPathProjectId(project.id); setPathDraft('') }}
+                    onTogglePinned={() => { toggleCollectionPinned('project', project.id, index) }}
+                    onRemove={() => store.mutate({ action: 'remove-project', projectId: project.id })}
+                  />}
                 </div>
 
                 {pathProjectId === project.id && (
@@ -643,7 +693,7 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, homeActive = fa
           })}
           {projects.length < 2 && <NavGroupLabel label="Recent" count={0} />}
           {projects.length === 0 && form !== 'project' && <div className="px-2 py-4 text-xs text-sidebar-foreground/60">Add a local filesystem project.</div>}
-          <BrowseButton label="Browse all projects" onClick={() => { if (onOpenSearch === undefined) setSearchOpen(true); else onOpenSearch() }} />
+          <BrowseButton label="Browse all projects" onClick={() => { if (onOpenDirectory !== undefined) onOpenDirectory('projects'); else if (onOpenSearch === undefined) setSearchOpen(true); else onOpenSearch() }} />
         </Section>
 
         <Section title="Channels" count={channels.length} onAdd={() => { setForm('channel'); setAgentIds([]); setChannelAgentQuery('') }}>
@@ -673,7 +723,7 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, homeActive = fa
                   aria-pressed={snapshot.activeConversation?.kind === 'channel' && snapshot.activeConversation.id === channel.id}
                   onClick={() => { onOpenConversation?.(); store.selectConversation({ kind: 'channel', id: channel.id }) }}
                 ><span className="grid size-[22px] place-items-center rounded-sm bg-sidebar-accent font-mono text-base" aria-hidden="true">#</span><span className="min-w-0"><strong className="block truncate text-[13px] font-semibold">{channel.name}</strong><small className="hidden">{channel.agentIds.length} agent{channel.agentIds.length === 1 ? '' : 's'}</small></span>{unreadCount > 0 && <span className="grid size-5 min-w-5 place-items-center rounded-full bg-destructive px-1 font-mono text-xs text-white" aria-hidden="true">{unreadCount > 99 ? '99+' : unreadCount}</span>}</button>
-                <button
+                {onOpenContextSettings === undefined ? <button
                   type="button"
                   className="grid size-11 place-items-center rounded-r-sm border-0 bg-transparent text-sidebar-foreground/65 opacity-0 hover:bg-sidebar-accent hover:text-sidebar-foreground group-hover:opacity-100 focus:opacity-100"
                   aria-label={`Manage agents in channel ${channel.name}`}
@@ -688,7 +738,29 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, homeActive = fa
                     setChannelQuestions(channel.memory.openQuestions.join('\n'))
                     setChannelPinNote('')
                   }}
-                ><MoreHorizontalIcon className="size-4" aria-hidden="true" /></button>
+                ><MoreHorizontalIcon className="size-4" aria-hidden="true" /></button> : <CollectionActionMenu
+                  kind="channel"
+                  label={channel.name}
+                  meta={`${String(channel.agentIds.length)} ${channel.agentIds.length === 1 ? 'agent' : 'agents'}`}
+                  pinned={collectionPinned('channel', channel.id, index)}
+                  triggerLabel={`Manage agents in channel ${channel.name}`}
+                  triggerClassName="rounded-r-sm text-sidebar-foreground/65 opacity-0 hover:bg-sidebar-accent hover:text-sidebar-foreground group-hover:opacity-100 focus:opacity-100"
+                  onOpen={() => { onOpenConversation?.(); store.selectConversation({ kind: 'channel', id: channel.id }) }}
+                  onSettings={() => {
+                    if (onOpenContextSettings !== undefined) { onOpenContextSettings('channel', channel.id); return }
+                    setEditingChannelId(channel.id)
+                    setChannelAgentIds(channel.agentIds)
+                    setChannelInstructions(channel.instructions)
+                    setChannelModel(channel.settings.model ?? '')
+                    setChannelReasoning(channel.settings.reasoning ?? '')
+                    setChannelSummary(channel.memory.summary)
+                    setChannelDecisions(channel.memory.decisions.join('\n'))
+                    setChannelQuestions(channel.memory.openQuestions.join('\n'))
+                    setChannelPinNote('')
+                  }}
+                  onTogglePinned={() => { toggleCollectionPinned('channel', channel.id, index) }}
+                  onRemove={() => store.mutate({ action: 'remove-channel', channelId: channel.id })}
+                />}
               </div>
               {editingChannelId === channel.id && (
                 <form className="grid gap-3 rounded-md bg-sidebar-deep p-3 text-sidebar-foreground [&_button]:min-h-10 [&_button]:rounded-sm [&_button]:border [&_button]:px-3 [&_fieldset]:grid [&_fieldset]:gap-2 [&_input]:min-h-10 [&_input]:rounded-sm [&_input]:border [&_input]:bg-background [&_input]:px-3 [&_select]:min-h-10 [&_select]:rounded-sm [&_select]:border [&_select]:bg-background [&_select]:px-3 [&_textarea]:min-h-24 [&_textarea]:rounded-sm [&_textarea]:border [&_textarea]:bg-background [&_textarea]:p-3" onSubmit={(event) => { void saveChannelAgents(event, channel.id) }}>
@@ -723,7 +795,7 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, homeActive = fa
           })}
           {channels.length < 2 && <NavGroupLabel label="Recent" count={0} />}
           {channels.length === 0 && form !== 'channel' && <div className="px-2 py-4 text-xs text-sidebar-foreground/60">Create a channel and seat agents.</div>}
-          <BrowseButton label="Browse all channels" onClick={() => { if (onOpenSearch === undefined) setSearchOpen(true); else onOpenSearch() }} />
+          <BrowseButton label="Browse all channels" onClick={() => { if (onOpenDirectory !== undefined) onOpenDirectory('channels'); else if (onOpenSearch === undefined) setSearchOpen(true); else onOpenSearch() }} />
         </Section>
 
         <Section title="Agents" count={agents.length} onAdd={() => { setForm('agent'); setName(''); setAgentAdapter(null) }}>
@@ -784,18 +856,35 @@ export function CommonspaceSidebar({ wide, expandSidebar, store, homeActive = fa
                   <small className="sr-only">{runtimeLabel(agent.adapter)} · {agent.model ?? 'default model'} · <span data-status={effectiveStatus}>{agentStatusLabel(effectiveStatus)}</span></small>
                 </span>
               </button>
-              <button type="button" className="grid size-11 place-items-center rounded-r-sm border-0 bg-transparent text-sidebar-foreground/65 opacity-0 hover:bg-sidebar-accent hover:text-sidebar-foreground group-hover:opacity-100 focus:opacity-100" aria-label={`Customize agent ${agent.displayName}`} onClick={() => {
+              {onOpenContextSettings === undefined ? <button type="button" className="grid size-11 place-items-center rounded-r-sm border-0 bg-transparent text-sidebar-foreground/65 opacity-0 hover:bg-sidebar-accent hover:text-sidebar-foreground group-hover:opacity-100 focus:opacity-100" aria-label={`Customize agent ${agent.displayName}`} onClick={() => {
                 setEditingAgentId(agent.id)
                 setAgentProfileName(agent.displayName)
                 setAgentAvatarEmoji(agent.avatarEmoji ?? '')
                 setAgentAccentColor(agent.accentColor ?? '#6d5dfc')
-              }}><MoreHorizontalIcon className="size-4" aria-hidden="true" /></button>
+              }}><MoreHorizontalIcon className="size-4" aria-hidden="true" /></button> : <CollectionActionMenu
+                kind="agent"
+                label={agent.displayName}
+                meta={`${runtimeLabel(agent.adapter)} · ${agentStatusLabel(effectiveStatus)}`}
+                pinned={collectionPinned('agent', agent.id, index)}
+                triggerLabel={`Customize agent ${agent.displayName}`}
+                triggerClassName="rounded-r-sm text-sidebar-foreground/65 opacity-0 hover:bg-sidebar-accent hover:text-sidebar-foreground group-hover:opacity-100 focus:opacity-100"
+                onOpen={() => { startDirectMessage(agent.id) }}
+                onSettings={() => {
+                  if (onOpenContextSettings !== undefined) { onOpenContextSettings('agent', agent.id); return }
+                  setEditingAgentId(agent.id)
+                  setAgentProfileName(agent.displayName)
+                  setAgentAvatarEmoji(agent.avatarEmoji ?? '')
+                  setAgentAccentColor(agent.accentColor ?? '#6d5dfc')
+                }}
+                onTogglePinned={() => { toggleCollectionPinned('agent', agent.id, index) }}
+                onRemove={() => store.mutate({ action: 'remove-agent', agentId: agent.id })}
+              />}
               </div>
             </div>
             )
           })}
           {agents.length < 2 && <NavGroupLabel label="Recent" count={0} />}
-          <BrowseButton label="Browse all agents" onClick={() => { if (onOpenSearch === undefined) setSearchOpen(true); else onOpenSearch() }} />
+          <BrowseButton label="Browse all agents" onClick={() => { if (onOpenDirectory !== undefined) onOpenDirectory('agents'); else if (onOpenSearch === undefined) setSearchOpen(true); else onOpenSearch() }} />
         </Section>
       </div>
       <div className="flex min-h-[60px] items-center gap-1.5 border-t border-sidebar-border bg-sidebar-deep py-2 pr-2.5 pl-[18px]">

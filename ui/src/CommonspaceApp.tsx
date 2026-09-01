@@ -4,6 +4,7 @@ import { MenuIcon, XIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { CommonspaceClientStore } from './commonspace-store.ts'
 import { CommonspaceConversation } from './CommonspaceConversation.tsx'
+import { CommonspaceDirectory, type CommonspaceDirectoryKind } from './CommonspaceDirectory.tsx'
 import { CommonspaceHome } from './CommonspaceHome.tsx'
 import { CommonspaceInbox } from './CommonspaceInbox.tsx'
 import { CommonspaceProjectView } from './CommonspaceProjectView.tsx'
@@ -11,12 +12,13 @@ import { CommonspaceSearchDialog } from './CommonspaceSearch.tsx'
 import { CommonspaceSidebar } from './CommonspaceSidebar.tsx'
 import { CommonspaceThreads } from './CommonspaceThreads.tsx'
 import { CommonspaceTopbar } from './CommonspaceTopbar.tsx'
+import type { CommonspaceCollectionKind } from './design-system/CollectionActionMenu.tsx'
 
 export interface CommonspaceAppProps {
   store: CommonspaceClientStore
 }
 
-type CommonspaceDestination = 'home' | 'conversation' | 'inbox' | 'threads'
+type CommonspaceDestination = 'home' | 'conversation' | 'directory' | 'inbox' | 'threads'
 
 interface ConversationTarget {
   messageId: string
@@ -29,6 +31,9 @@ export function CommonspaceApp({ store }: CommonspaceAppProps) {
   const [navigationOpen, setNavigationOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const [activeDestination, setActiveDestination] = useState<CommonspaceDestination>('home')
+  const [directoryKind, setDirectoryKind] = useState<CommonspaceDirectoryKind>('projects')
+  const [createRequest, setCreateRequest] = useState<{ kind: CommonspaceCollectionKind; token: number } | null>(null)
+  const [settingsRequest, setSettingsRequest] = useState<{ kind: CommonspaceCollectionKind; id: string; token: number } | null>(null)
   const [activeProjectViewId, setActiveProjectViewId] = useState<string | null>(null)
   const [targetProjectFile, setTargetProjectFile] = useState<{ rootIndex: number; path: string } | null>(null)
   const [targetMessageId, setTargetMessageId] = useState<string | null>(null)
@@ -90,6 +95,7 @@ export function CommonspaceApp({ store }: CommonspaceAppProps) {
     setActiveProjectViewId(null)
     setTargetProjectFile(null)
     setActiveDestination('home')
+    setSettingsRequest(null)
     setNavigationOpen(false)
   }
 
@@ -99,6 +105,7 @@ export function CommonspaceApp({ store }: CommonspaceAppProps) {
     setTargetProjectFile(null)
     setActiveDestination('conversation')
     setTargetMessageId(messageId ?? null)
+    setSettingsRequest(null)
     setNavigationOpen(false)
   }
 
@@ -145,6 +152,30 @@ export function CommonspaceApp({ store }: CommonspaceAppProps) {
     }
   }
 
+  const openDirectory = (kind: CommonspaceDirectoryKind) => {
+    setDirectoryKind(kind)
+    setActiveProjectViewId(null)
+    setTargetProjectFile(null)
+    setSettingsRequest(null)
+    setActiveDestination('directory')
+    setNavigationOpen(false)
+  }
+
+  const openContextSettings = (kind: CommonspaceCollectionKind, id: string) => {
+    setSettingsRequest({ kind, id, token: Date.now() })
+    if (kind === 'project') {
+      store.selectProject(id)
+      setActiveProjectViewId(id)
+      setTargetProjectFile(null)
+    } else {
+      store.selectConversation({ kind: kind === 'channel' ? 'channel' : 'dm', id })
+      setActiveProjectViewId(null)
+      setTargetProjectFile(null)
+    }
+    setActiveDestination('conversation')
+    setNavigationOpen(false)
+  }
+
   return (
     <div className="relative flex h-dvh min-h-0 min-w-0 flex-col overflow-hidden bg-sidebar">
       <CommonspaceTopbar homeActive={activeDestination === 'home' && activeProjectViewId === null} onOpenHome={openHome} onOpenSearch={() => { setSearchOpen(true) }} />
@@ -173,6 +204,7 @@ export function CommonspaceApp({ store }: CommonspaceAppProps) {
             homeActive={activeDestination === 'home' && activeProjectViewId === null}
             inboxActive={activeDestination === 'inbox'}
             threadsActive={activeDestination === 'threads'}
+            createRequest={createRequest}
             onOpenHome={openHome}
             onOpenSearch={() => { setSearchOpen(true) }}
             onOpenInbox={() => {
@@ -187,10 +219,13 @@ export function CommonspaceApp({ store }: CommonspaceAppProps) {
               setActiveDestination('threads')
               setNavigationOpen(false)
             }}
+            onOpenDirectory={openDirectory}
+            onOpenContextSettings={openContextSettings}
             onOpenProject={(projectId, file) => {
               setActiveProjectViewId(projectId)
               setTargetProjectFile(file ?? null)
               setActiveDestination('conversation')
+              setSettingsRequest(null)
               setNavigationOpen(false)
             }}
             onOpenConversation={messageId => { openConversation(undefined, messageId) }}
@@ -202,6 +237,7 @@ export function CommonspaceApp({ store }: CommonspaceAppProps) {
                 projectId={activeProjectViewId}
                 targetFile={targetProjectFile}
                 store={store}
+                {...(settingsRequest?.kind === 'project' && settingsRequest.id === activeProjectViewId ? { settingsRequest: settingsRequest.token } : {})}
                 onBack={openHome}
                 onOpenConversation={conversation => { openConversation(conversation) }}
               />
@@ -212,12 +248,33 @@ export function CommonspaceApp({ store }: CommonspaceAppProps) {
                   onOpenConversation={conversation => { openConversation(conversation) }}
                   onStopSession={async session => { await store.stopAgentRuns(session.sourceMessageId, session.agentId) }}
                 />
-              : activeDestination === 'inbox'
+              : activeDestination === 'directory'
+                ? <CommonspaceDirectory
+                    kind={directoryKind}
+                    bootstrap={snapshot.bootstrap}
+                    store={store}
+                    onAdd={kind => {
+                      const singular = kind === 'projects' ? 'project' : kind === 'channels' ? 'channel' : 'agent'
+                      setCreateRequest({ kind: singular, token: Date.now() })
+                    }}
+                    onOpenProject={projectId => {
+                      setActiveProjectViewId(projectId)
+                      setTargetProjectFile(null)
+                      setSettingsRequest(null)
+                      setActiveDestination('conversation')
+                    }}
+                    onOpenConversation={conversation => { openConversation(conversation) }}
+                    onOpenSettings={openContextSettings}
+                  />
+                : activeDestination === 'inbox'
                 ? <CommonspaceInbox store={store} onOpenItem={openTarget} />
                 : activeDestination === 'threads'
                   ? <CommonspaceThreads bootstrap={snapshot.bootstrap} store={store} onOpenThread={openTarget} />
                 : <CommonspaceConversation
                     store={store}
+                    settingsRequest={settingsRequest?.kind === 'channel' || settingsRequest?.kind === 'agent'
+                      ? { kind: settingsRequest.kind, id: settingsRequest.id, token: settingsRequest.token }
+                      : null}
                     targetMessageId={targetMessageId}
                     onTargetMessageHandled={() => { setTargetMessageId(null) }}
                   />}

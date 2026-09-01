@@ -64,6 +64,25 @@ function sidebarStore(
 }
 
 describe('Commonspace interface', () => {
+  it('checks and reads back the configured inference source', async () => {
+    const diagnostics = vi.fn(async () => ({
+      service: { status: 'ready', stateVersion: 2, storage: 'ready', projectlessWorkspace: 'ready' },
+      inference: { provider: 'openai-compatible', location: 'remote', configured: true, sends: ['routing'] },
+      harnesses: [],
+    }))
+    const { store } = sidebarStore({
+      routing: { provider: 'openai-compatible', model: 'gpt-test', baseUrl: 'https://example.test/v1', apiKeyConfigured: true },
+    }, { diagnostics })
+    render(<CommonspaceSidebar wide expandSidebar={() => undefined} store={store as never} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Commonspace settings' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Check configuration' }))
+
+    await waitFor(() => {
+      expect(diagnostics).toHaveBeenCalledOnce()
+      expect(screen.getByRole('status', { name: 'Inference configuration status' }).textContent).toContain('Configuration verified')
+    })
+  })
+
   it('configures OS notifications without changing durable Inbox behavior', async () => {
     const updateRoutingConfiguration = vi.fn(async () => undefined)
     const { store, mutate } = sidebarStore({

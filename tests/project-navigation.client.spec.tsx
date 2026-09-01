@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { COMMONSPACE_STATE_VERSION, type CommonspaceBootstrap } from '@commonspace/shared'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CommonspaceProjectView } from '../ui/src/CommonspaceProjectView.tsx'
@@ -124,5 +124,31 @@ describe('project navigation', () => {
 
     await waitFor(() => { expect(addFolder.disabled).toBe(false) })
     expect(mutate).not.toHaveBeenCalled()
+  })
+
+  it('opens requested project settings and confirms removal in-app', async () => {
+    const mutate = vi.fn(async () => undefined)
+    const onBack = vi.fn()
+    const store = projectStore({ mutate })
+    render(
+      <CommonspaceProjectView
+        projectId="storefront"
+        settingsRequest={1}
+        store={store as never}
+        onBack={onBack}
+        onOpenConversation={() => undefined}
+      />,
+    )
+
+    const settings = screen.getByRole('complementary', { name: 'Project settings' })
+    fireEvent.click(within(settings).getByRole('button', { name: 'Remove project' }))
+    const confirmation = await screen.findByRole('alertdialog', { name: 'Remove Storefront?' })
+    expect(mutate).not.toHaveBeenCalled()
+    fireEvent.click(within(confirmation).getByRole('button', { name: 'Remove' }))
+
+    await waitFor(() => {
+      expect(mutate).toHaveBeenCalledWith({ action: 'remove-project', projectId: 'storefront' })
+      expect(onBack).toHaveBeenCalledOnce()
+    })
   })
 })
