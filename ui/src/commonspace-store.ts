@@ -26,6 +26,7 @@ import type {
 	StopAgentRunsResponse,
 	UpdateRoutingConfigurationRequest,
 	UpdateThreadContextRequest,
+	UpdateWorkspaceSettingsRequest,
 } from "@commonspace/shared";
 import { conversationKey } from "@commonspace/shared";
 
@@ -237,6 +238,39 @@ export class CommonspaceClientStore {
 			if (bootstrap !== null) next.bootstrap = { ...bootstrap, routing };
 			this.set({
 				...next,
+			});
+		} catch (error) {
+			this.set({
+				...this.snapshot,
+				error: error instanceof Error ? error.message : String(error),
+			});
+			throw error;
+		}
+	}
+
+	async validateRoutingConfiguration(
+		request: UpdateRoutingConfigurationRequest,
+	): Promise<CommonspaceDiagnostics["inference"]> {
+		return requestJson<CommonspaceDiagnostics["inference"]>(
+			"/api/routing/validate",
+			{ method: "POST", body: JSON.stringify(request) },
+		);
+	}
+
+	async updateWorkspaceSettings(
+		request: UpdateWorkspaceSettingsRequest,
+	): Promise<void> {
+		try {
+			const result = await requestJson<CommonspaceBootstrap>("/api/settings", {
+				method: "PUT",
+				body: JSON.stringify(request),
+			});
+			const merged = this.mergeBootstrap(result);
+			this.set({
+				...this.snapshot,
+				bootstrap: merged,
+				activeProjectId: this.resolveActiveProject(merged),
+				error: null,
 			});
 		} catch (error) {
 			this.set({

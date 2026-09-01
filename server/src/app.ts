@@ -18,6 +18,7 @@ import {
 	type UpdateChannelContextRequest,
 	type UpdateRoutingConfigurationRequest,
 	type UpdateThreadContextRequest,
+	type UpdateWorkspaceSettingsRequest,
 } from "@commonspace/shared";
 import express, {
 	type ErrorRequestHandler,
@@ -123,6 +124,17 @@ const routingConfigurationSchema =
 			}),
 		]),
 	);
+const workspaceSettingsSchema = requestSchema<UpdateWorkspaceSettingsRequest>(
+	z.object({
+		routing: routingConfigurationSchema,
+		defaults: z.object({
+			model: z.string().nullable(),
+			reasoning: reasoningSchema,
+			maxAgentsPerTurn: z.number(),
+			memoryThreads: z.number(),
+		}),
+	}),
+);
 const contextRequestSchema =
 	requestSchema<UpdateChannelContextRequest>(contextRequestShape);
 const threadContextRequestSchema =
@@ -591,6 +603,36 @@ export function createCommonspaceApp({
 		} catch (error) {
 			res.status(400).json({
 				code: "routing_configuration_failed",
+				error: requestErrorMessage(error),
+			});
+		}
+	});
+
+	app.post("/api/routing/validate", requireSameOrigin, (req, res) => {
+		try {
+			res.json(
+				service.validateRoutingConfiguration(
+					routingConfigurationSchema.parse(req.body),
+				),
+			);
+		} catch (error) {
+			res.status(400).json({
+				code: "routing_validation_failed",
+				error: requestErrorMessage(error),
+			});
+		}
+	});
+
+	app.put("/api/settings", requireSameOrigin, async (req, res) => {
+		try {
+			res.json(
+				await service.updateWorkspaceSettings(
+					workspaceSettingsSchema.parse(req.body),
+				),
+			);
+		} catch (error) {
+			res.status(400).json({
+				code: "workspace_settings_failed",
 				error: requestErrorMessage(error),
 			});
 		}

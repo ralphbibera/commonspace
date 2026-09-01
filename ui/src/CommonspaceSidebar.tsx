@@ -9,6 +9,7 @@ import {
 	type CommonspaceRoutingProvider,
 	type CommonspaceSearchResult,
 	type CommonspaceWorkspaceArchive,
+	type UpdateRoutingConfigurationRequest,
 	DEFAULT_COMMONSPACE_NOTIFICATION_SETTINGS,
 	deriveCommonspaceInboxItems,
 } from "@commonspace/shared";
@@ -353,6 +354,7 @@ export function CommonspaceSidebar({
 	const [inferenceCheckStatus, setInferenceCheckStatus] = useState<
 		string | null
 	>(null);
+	const [inferenceCheckOk, setInferenceCheckOk] = useState<boolean | null>(null);
 	const [importArchive, setImportArchive] =
 		useState<CommonspaceWorkspaceArchive | null>(null);
 	const [importMappings, setImportMappings] = useState<
@@ -367,11 +369,21 @@ export function CommonspaceSidebar({
 			...DEFAULT_COMMONSPACE_NOTIFICATION_SETTINGS,
 		});
 	const [savingNotifications, setSavingNotifications] = useState(false);
-	const [pinOverrides, setPinOverrides] = useState<Record<string, boolean>>({});
 
 	useEffect(() => {
 		void store.refresh();
 	}, [store]);
+	useEffect(() => {
+		setInferenceCheckStatus(null);
+		setInferenceCheckOk(null);
+	}, [
+		routingProvider,
+		routingHarnessAgentId,
+		routingModel,
+		routingBaseUrl,
+		routingApiKey,
+		clearRoutingApiKey,
+	]);
 	useEffect(() => {
 		void homeActive;
 		void inboxActive;
@@ -475,22 +487,6 @@ export function CommonspaceSidebar({
 					(channel) => channel.id === snapshot.activeConversation?.id,
 				)
 			: undefined;
-	const collectionPinned = (
-		kind: CommonspaceCollectionKind,
-		id: string,
-		index: number,
-	) => pinOverrides[`${kind}:${id}`] ?? index === 0;
-	const toggleCollectionPinned = (
-		kind: CommonspaceCollectionKind,
-		id: string,
-		index: number,
-	) => {
-		const key = `${kind}:${id}`;
-		setPinOverrides((current) => ({
-			...current,
-			[key]: !(current[key] ?? index === 0),
-		}));
-	};
 
 	if (!wide) {
 		return (
@@ -618,32 +614,37 @@ export function CommonspaceSidebar({
 		setChannelPinNote("");
 	};
 
+	const routingUpdateRequest = (): UpdateRoutingConfigurationRequest =>
+		routingProvider === "harness"
+			? { provider: "harness", harnessAgentId: routingHarnessAgentId }
+			: {
+					provider: "openai-compatible",
+					model: routingModel,
+					baseUrl: routingBaseUrl,
+					...(clearRoutingApiKey
+						? { apiKey: null }
+						: routingApiKey.trim() === ""
+							? {}
+							: { apiKey: routingApiKey }),
+				};
+
 	const saveDefaults = async (event: FormEvent) => {
 		event.preventDefault();
-		const routingUpdate =
-			routingProvider === "harness"
-				? {
-						provider: "harness" as const,
-						harnessAgentId: routingHarnessAgentId,
-					}
-				: {
-						provider: "openai-compatible" as const,
-						model: routingModel,
-						baseUrl: routingBaseUrl,
-						...(clearRoutingApiKey
-							? { apiKey: null }
-							: routingApiKey.trim() === ""
-								? {}
-								: { apiKey: routingApiKey }),
-					};
-		await store.updateRoutingConfiguration(routingUpdate);
-		await store.mutate({
-			action: "set-defaults",
-			model: defaultModel || null,
-			reasoning: defaultReasoning,
-			maxAgentsPerTurn: defaultMaxAgents,
-			memoryThreads: defaultMemoryThreads,
-		});
+		const request = {
+			routing: routingUpdateRequest(),
+			defaults: {
+				model: defaultModel || null,
+				reasoning: defaultReasoning,
+				maxAgentsPerTurn: defaultMaxAgents,
+				memoryThreads: defaultMemoryThreads,
+			},
+		};
+		if (typeof store.updateWorkspaceSettings === "function") {
+			await store.updateWorkspaceSettings(request);
+		} else {
+			await store.updateRoutingConfiguration(request.routing);
+			await store.mutate({ action: "set-defaults", ...request.defaults });
+		}
 		setSettingsOpen(false);
 	};
 
@@ -673,15 +674,21 @@ export function CommonspaceSidebar({
 	const checkInferenceConfiguration = async () => {
 		if (inferenceChecking) return;
 		setInferenceChecking(true);
-		setInferenceCheckStatus("Checking configuration…");
+		setInferenceCheckOk(null);
+		setInferenceCheckStatus("Checking unsaved configuration…");
 		try {
-			const result = await store.diagnostics();
+			const result =
+				typeof store.validateRoutingConfiguration === "function"
+					? await store.validateRoutingConfiguration(routingUpdateRequest())
+					: (await store.diagnostics()).inference;
+			setInferenceCheckOk(result.configured);
 			setInferenceCheckStatus(
-				result.inference.configured
-					? `Configuration verified · ${result.inference.provider}`
+				result.configured
+					? `Configuration verified · ${result.provider}`
 					: "Configuration needs attention",
 			);
 		} catch {
+			setInferenceCheckOk(false);
 			setInferenceCheckStatus("Configuration check failed");
 		} finally {
 			setInferenceChecking(false);
@@ -894,10 +901,10 @@ export function CommonspaceSidebar({
 									</span>
 									<span className="absolute top-0 right-0 inline-flex min-h-[30px] items-center gap-2 rounded-full border px-2.5 font-mono text-xs text-muted-foreground">
 										<i
-											className="size-[7px] rounded-full bg-[var(--status-success)]"
+											className="size-[7px] rounded-full bg-muted-foreground"
 											aria-hidden="true"
 										/>
-										Configured
+										Saved configuration
 									</span>
 									<h2 className="mt-2 max-w-[700px] font-heading text-[36px] leading-[1.12] font-bold tracking-[-0.025em]">
 										Choose how the workspace thinks
@@ -1105,11 +1112,11 @@ export function CommonspaceSidebar({
 										</div>
 										{inferenceCheckStatus !== null && (
 											<p
-												className="mt-3 inline-flex items-center gap-2 text-xs text-[var(--status-success)]"
+												className={cn("mt-3 inline-flex items-center gap-2 text-xs", inferenceCheckOk === true ? "text-[var(--status-success)]" : inferenceCheckOk === false ? "text-destructive" : "text-muted-foreground")}
 												role="status"
 												aria-label="Inference configuration status"
 											>
-												<span aria-hidden="true">✓</span>
+												<span aria-hidden="true">{inferenceCheckOk === true ? "✓" : inferenceCheckOk === false ? "!" : "…"}</span>
 												{inferenceCheckStatus}
 											</p>
 										)}
@@ -1722,7 +1729,6 @@ export function CommonspaceSidebar({
 											kind="project"
 											label={project.name}
 											meta={folderSummary}
-											pinned={collectionPinned("project", project.id, index)}
 											triggerClassName="rounded-r-sm text-sidebar-foreground/65 opacity-0 hover:bg-sidebar-accent hover:text-sidebar-foreground group-hover:opacity-100 focus:opacity-100"
 											onOpen={() => {
 												store.selectProject(project.id);
@@ -1741,9 +1747,6 @@ export function CommonspaceSidebar({
 											}}
 											onCopy={() => copyText(project.name)}
 											copyLabel="Copy project name"
-											onTogglePinned={() => {
-												toggleCollectionPinned("project", project.id, index);
-											}}
 											onRemove={() =>
 												store.mutate({
 													action: "remove-project",
@@ -2002,7 +2005,6 @@ export function CommonspaceSidebar({
 											kind="channel"
 											label={channel.name}
 											meta={`${String(channel.agentIds.length)} ${channel.agentIds.length === 1 ? "agent" : "agents"}`}
-											pinned={collectionPinned("channel", channel.id, index)}
 											triggerClassName="rounded-r-sm text-sidebar-foreground/65 opacity-0 hover:bg-sidebar-accent hover:text-sidebar-foreground group-hover:opacity-100 focus:opacity-100"
 											unread={unreadCount > 0}
 											onOpen={() => {
@@ -2044,9 +2046,6 @@ export function CommonspaceSidebar({
 														});
 													}
 												}
-											}}
-											onTogglePinned={() => {
-												toggleCollectionPinned("channel", channel.id, index);
 											}}
 											onRemove={() =>
 												store.mutate({
@@ -2548,7 +2547,6 @@ export function CommonspaceSidebar({
 											kind="agent"
 											label={agent.displayName}
 											meta={`${runtimeLabel(agent.adapter)} · ${agentStatusLabel(effectiveStatus)}`}
-											pinned={collectionPinned("agent", agent.id, index)}
 											triggerClassName="rounded-r-sm text-sidebar-foreground/65 opacity-0 hover:bg-sidebar-accent hover:text-sidebar-foreground group-hover:opacity-100 focus:opacity-100"
 											onOpen={() => {
 												startDirectMessage(agent.id);
@@ -2582,9 +2580,6 @@ export function CommonspaceSidebar({
 												: { onViewSessions: onOpenAgentSessions })}
 											onCopy={() => copyText(`@${agent.displayName}`)}
 											copyLabel="Copy mention"
-											onTogglePinned={() => {
-												toggleCollectionPinned("agent", agent.id, index);
-											}}
 											onRemove={() =>
 												store.mutate({
 													action: "remove-agent",
