@@ -1,6 +1,8 @@
 import { Fragment, lazy, Suspense, useEffect, useId, useRef, useState, useSyncExternalStore, type CSSProperties, type Dispatch, type FormEvent, type SetStateAction } from 'react'
-import { deriveCommonspaceInboxItems, referencedProjectIds, type AgentAdapterKind, type CommonspaceAgentProfile, type CommonspaceBootstrap, type CommonspaceLiveAgentActivity, type CommonspacePermissionRequest, type CommonspaceTraceEntry, type ConversationRef, type CommonspaceMessage, type CommonspaceThread, type RerouteAssignmentRequest, type SendFileAttachment, type SendImageAttachment } from '@commonspace/shared'
+import { deriveCommonspaceInboxItems, deriveCommonspaceSessions, referencedProjectIds, type AgentAdapterKind, type CommonspaceAgentProfile, type CommonspaceBootstrap, type CommonspaceLiveAgentActivity, type CommonspacePermissionRequest, type CommonspaceTraceEntry, type ConversationRef, type CommonspaceMessage, type CommonspaceThread, type RerouteAssignmentRequest, type SendFileAttachment, type SendImageAttachment } from '@commonspace/shared'
+import { SettingsIcon } from 'lucide-react'
 import type { CommonspaceClientStore } from './commonspace-store.ts'
+import { AgentSettingsPane, ChannelSettingsPane } from './CommonspaceContextSettings.tsx'
 import { AgentTrace, AgentTraceTimeline } from './AgentTrace.tsx'
 import { RunAttribution } from './RunAttribution.tsx'
 import { useMessageSpeech, type MessageSpeechControls } from './message-speech.ts'
@@ -22,6 +24,7 @@ export interface CommonspaceConversationProps {
   store: CommonspaceClientStore
   targetMessageId?: string | null
   onTargetMessageHandled?: () => void
+  settingsRequest?: { kind: 'channel' | 'agent'; id: string; token: number } | null
 }
 
 interface CommandFeedback {
@@ -148,6 +151,16 @@ function routingDurationLabel(durationMs: number | undefined): string | null {
   if (durationMs === undefined) return null
   if (durationMs < 1_000) return `routed in ${String(durationMs)}ms`
   return `routed in ${(durationMs / 1_000).toFixed(durationMs < 10_000 ? 1 : 0)}s`
+}
+
+function conversationDateLabel(messages: readonly CommonspaceMessage[]): string | null {
+  const timestamp = messages[0]?.createdAt
+  if (timestamp === undefined) return null
+  const date = new Date(timestamp)
+  if (Number.isNaN(date.valueOf())) return null
+  const today = new Date()
+  const prefix = date.toDateString() === today.toDateString() ? 'Today' : date.toLocaleDateString([], { month: 'short', day: 'numeric' })
+  return `${prefix} · ${date.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })}`
 }
 
 function RoutingAssignments({
@@ -645,7 +658,7 @@ function PermissionRequests({
   })}</>
 }
 
-export function CommonspaceConversation({ store, targetMessageId = null, onTargetMessageHandled }: CommonspaceConversationProps) {
+export function CommonspaceConversation({ store, targetMessageId = null, onTargetMessageHandled, settingsRequest = null }: CommonspaceConversationProps) {
   const suggestionListId = useId()
   const threadSuggestionListId = useId()
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot)
@@ -675,6 +688,7 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
   const [focusedRootMessageId, setFocusedRootMessageId] = useState<string | null>(targetMessageId ?? null)
   const [threadWidth, setThreadWidth] = useState(50)
   const [resizingThread, setResizingThread] = useState(false)
+  const [contextSettingsOpen, setContextSettingsOpen] = useState(false)
   const conversationLayout = useRef<HTMLDivElement>(null)
   const bottom = useRef<HTMLDivElement>(null)
   const threadMessages = useRef<HTMLDivElement>(null)
@@ -700,6 +714,10 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
     ? bootstrap.state.threads.filter(thread => thread.channelId === snapshot.activeConversation?.id)
     : []
   const activeThread = channelThreads.find(thread => thread.id === snapshot.activeThreadId)
+  const activeThreadProject = activeThread === undefined || bootstrap === null ? undefined : bootstrap.state.projects.find(project => project.id === activeThread.projectId)
+  const sessions = bootstrap === null ? [] : deriveCommonspaceSessions(bootstrap.state, bootstrap.liveActivities ?? [])
+  const activeThreadSessions = activeThread === undefined ? [] : sessions.filter(session => session.threadId === activeThread.id)
+  const threadFollowing = activeThreadSessions.some(session => session.followed)
 
   const threadSlashSuggestions = activeThread === undefined || pendingThreadImages.length > 0 || pendingThreadFiles.length > 0 ? [] : slashCommandSuggestions(threadDraft, 'channel')
   const resolvedThreadCommand = activeThread === undefined || pendingThreadImages.length > 0 || pendingThreadFiles.length > 0 ? null : resolveSlashCommand(threadDraft, 'channel')
@@ -709,6 +727,10 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
   const roots = isChannel
     ? messages.filter(message => message.authorType === 'user' && message.parentMessageId === undefined)
     : messages
+  const conversationUnreadMessages = messages.filter(message => unreadMessageIds.has(message.id))
+  const firstUnreadRootId = isChannel
+    ? roots.find(root => unreadMessageIds.has(root.id) || messages.some(message => message.parentMessageId === root.id && unreadMessageIds.has(message.id)))?.id
+    : undefined
   const pendingDirectMessage = isChannel
     ? undefined
     : messages.findLast(message => message.authorType === 'user' && (message.replyStatus === 'queued' || message.replyStatus === 'running'))
@@ -767,7 +789,21 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
     setCommandFeedback(null)
     setPendingImages([])
     setPendingFiles([])
+    setContextSettingsOpen(false)
   }, [snapshot.activeConversation?.id, snapshot.activeConversation?.kind])
+  useEffect(() => {
+    const conversation = snapshot.activeConversation
+    if (settingsRequest === null || conversation === null) return
+    const matches = settingsRequest.kind === 'channel'
+      ? conversation.kind === 'channel' && conversation.id === settingsRequest.id
+      : conversation.kind === 'dm' && conversation.id === settingsRequest.id
+    if (!matches) return
+    store.selectThread(null)
+    setContextSettingsOpen(true)
+  }, [settingsRequest?.token])
+  useEffect(() => {
+    if (activeThread !== undefined) setContextSettingsOpen(false)
+  }, [activeThread?.id])
   useEffect(() => {
     setThreadReplyTarget(null)
     setPendingThreadImages([])
@@ -1101,11 +1137,23 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
     if (version?.threadId !== undefined) store.selectThread(version.threadId)
     setFocusedRootMessageId(version?.parentMessageId ?? version?.id ?? messageId)
   }
+  const markConversationRead = () => {
+    for (const message of conversationUnreadMessages) {
+      void store.mutate({ action: 'mark-inbox-item-read', messageId: message.id })
+    }
+  }
+  const toggleThreadFollowing = () => {
+    const followed = !threadFollowing
+    for (const session of activeThreadSessions) {
+      void store.mutate({ action: 'set-session-followed', sessionId: session.id, followed })
+    }
+  }
   const nextUnreadMessage = messages.find(message => unreadMessageIds.has(message.id))
+  const dateLabel = conversationDateLabel(roots)
 
   return (
     <main className="flex h-full min-h-0 flex-col overflow-hidden bg-background text-foreground" aria-label="Commonspace conversation">
-      <WorkspaceHeader title={heading.title} subtitle={heading.subtitle} mark={snapshot.activeConversation === null ? '✦' : isChannel ? '#' : '@'} actions={<div className="flex items-center gap-1">{nextUnreadMessage !== undefined && <button type="button" className="min-h-11 rounded-sm border-0 bg-transparent px-3 text-xs font-semibold text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Jump to next unread message" onClick={() => { openMessageVersion(nextUnreadMessage.id) }}>Next unread</button>}<span className="grid size-11 place-items-center rounded-full text-muted-foreground" title={snapshot.activeConversation === null ? 'local-first' : isChannel ? 'shared room' : 'private session'} aria-hidden="true">•••</span></div>} />
+      <WorkspaceHeader title={heading.title} subtitle={heading.subtitle} mark={snapshot.activeConversation === null ? '✦' : isChannel ? '#' : '@'} actions={<div className="flex items-center gap-1">{nextUnreadMessage !== undefined && <button type="button" className="min-h-11 rounded-sm border-0 bg-transparent px-3 text-xs font-semibold text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Jump to next unread message" onClick={() => { openMessageVersion(nextUnreadMessage.id) }}>Next unread</button>}{snapshot.activeConversation !== null && <button type="button" className="grid size-11 place-items-center rounded-full border-0 bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground aria-pressed:bg-muted aria-pressed:text-foreground" aria-label={isChannel ? 'Open channel settings' : 'Open agent profile'} aria-pressed={contextSettingsOpen} onClick={() => { if (activeThread !== undefined) store.selectThread(null); setContextSettingsOpen(open => !open) }}><SettingsIcon className="size-[18px]" aria-hidden="true" /></button>}</div>} />
 
       {snapshot.activeConversation === null ? (
         <div className="flex flex-1 flex-col items-start justify-start px-[clamp(24px,6vw,72px)] py-[clamp(44px,8vh,82px)]">
@@ -1123,13 +1171,16 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
         <div
           ref={conversationLayout}
           className={cn('relative grid min-h-0 flex-1 overflow-hidden', resizingThread && 'select-none')}
-          style={activeThread === undefined ? undefined : {
-            gridTemplateColumns: `${String(100 - threadWidth)}fr 8px ${String(threadWidth)}fr`,
-          } as CSSProperties}
+          style={activeThread !== undefined
+            ? { gridTemplateColumns: `${String(100 - threadWidth)}fr 8px ${String(threadWidth)}fr` } as CSSProperties
+            : contextSettingsOpen
+              ? { gridTemplateColumns: 'minmax(0,1fr) minmax(340px,420px)' } as CSSProperties
+              : undefined}
         >
           <section className="flex min-h-0 min-w-0 flex-col bg-background" aria-label={isChannel ? `${heading.title} posts` : `${heading.title} messages`}>
             <div className="min-h-0 flex-1 overflow-y-auto px-6 pt-8 pb-3 max-[640px]:px-3">
               {roots.length === 0 && <div className="p-10 text-center text-sm text-muted-foreground">No messages yet. Start the conversation.</div>}
+              {dateLabel !== null && <div className="mx-auto mb-7 flex w-full max-w-[780px] items-center gap-3 text-xs text-muted-foreground before:h-px before:flex-1 before:bg-border after:h-px after:flex-1 after:bg-border"><span>{dateLabel}</span></div>}
               {isChannel
                 ? roots.map(root => {
                     const thread = channelThreads.find(candidate => candidate.rootMessageId === root.id)
@@ -1140,8 +1191,16 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
                     const unreadCount = unreadReplies.length
                     const threadActivities = liveActivitiesFor(bootstrap?.liveActivities, snapshot.activeConversation, thread?.id)
                     return (
+                      <Fragment key={root.id}>
+                      {root.id === firstUnreadRootId && conversationUnreadMessages.length > 0 && (
+                        <button
+                          type="button"
+                          className="mx-auto mb-3 grid min-h-11 w-[calc(100%+32px)] max-w-[812px] grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 border-0 bg-transparent px-4 text-xs font-semibold text-primary before:h-px before:bg-primary hover:[&>span:last-child]:text-foreground hover:[&>span:last-child]:underline"
+                          aria-label={`${String(conversationUnreadMessages.length)} new messages, mark read`}
+                          onClick={markConversationRead}
+                        ><span>{String(conversationUnreadMessages.length)} new {conversationUnreadMessages.length === 1 ? 'message' : 'messages'}</span><span className="text-muted-foreground">Mark read</span></button>
+                      )}
                       <article
-                        key={root.id}
                         id={`commonspace-message-${root.id}`}
                         className={cn('mx-auto mb-2 w-full max-w-[780px] rounded-md pb-1', threadIsFocused && 'bg-[color-mix(in_oklch,var(--primary)_7%,var(--background))] shadow-[inset_3px_0_0_var(--primary)]')}
                         aria-current={thread?.id === activeThread?.id ? 'true' : undefined}
@@ -1154,6 +1213,7 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
                           aria-label={`${String(replyCount)} ${replyCount === 1 ? 'reply' : 'replies'}${unreadCount === 0 ? '' : `, ${String(unreadCount)} unread`}`}
                           onClick={() => {
                             if (thread === undefined) return
+                            setContextSettingsOpen(false)
                             store.selectThread(thread.id)
                             for (const reply of unreadReplies) {
                               void store.mutate({ action: 'mark-inbox-item-read', messageId: reply.id })
@@ -1177,6 +1237,7 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
                           {unreadCount > 0 && <span className="absolute -top-1 -right-1 size-2.5 rounded-full border-2 border-background bg-destructive" aria-hidden="true" />}
                         </button>
                       </article>
+                      </Fragment>
                     )
                   })
                 : roots.map(message => <MessageRow key={message.id} elementId={`commonspace-message-${message.id}`} message={message} bootstrap={bootstrap} onReroute={request => store.rerouteAssignment(request)} onEdit={editDeliveredMessage} onDelete={deleteDeliveredMessage} onOpenVersion={openMessageVersion} speech={speech} />)}
@@ -1320,7 +1381,8 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
           {activeThread !== undefined && (
             <aside className="relative z-20 flex min-h-0 min-w-[360px] flex-col border-l bg-background" aria-label="Thread replies">
               <header className="flex min-h-[68px] items-center gap-2.5 border-b px-3 py-2.5 pl-5">
-                <div className="min-w-0 flex-1"><strong className="font-heading text-xl">Thread</strong>{activeThreadActivities.length > 0 && <span className="ml-2 text-xs text-muted-foreground">Agents working</span>}</div>
+                <div className="min-w-0 flex-1"><strong className="font-heading text-xl">Thread</strong><p className="mt-0.5 flex gap-2 text-xs text-muted-foreground"><span>{activeThreadProject?.name ?? 'No project'}</span><span>·</span><span>#{activeChannel?.name ?? activeThread.channelId}</span>{activeThreadActivities.length > 0 && <span>· Agents working</span>}</p></div>
+                <button type="button" className="min-h-10 min-w-[88px] rounded-sm border bg-background px-3 text-xs font-semibold hover:bg-muted disabled:opacity-50" aria-label={threadFollowing ? 'Unfollow thread' : 'Follow thread'} aria-pressed={threadFollowing} disabled={activeThreadSessions.length === 0} onClick={toggleThreadFollowing}>{threadFollowing ? 'Following' : 'Follow'}</button>
                 <div className="flex items-center gap-1 [&_button]:min-h-10 [&_button]:rounded-sm [&_button]:border-0 [&_button]:bg-transparent [&_button]:px-2 [&_button]:text-xs [&_button]:text-muted-foreground [&_button]:hover:bg-muted">
                   <button type="button" aria-label="Open thread context" aria-pressed={threadContextOpen} onClick={() => { setThreadContextOpen(value => !value) }}>Context</button>
                   <button type="button" aria-label="Close thread" onClick={() => { store.selectThread(null) }}>×</button>
@@ -1481,6 +1543,12 @@ export function CommonspaceConversation({ store, targetMessageId = null, onTarge
                 <button className="min-h-11 justify-self-end rounded-md border-0 bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-45" type="submit" disabled={snapshot.sending || (threadDraft.trim() === '' && pendingThreadImages.length === 0 && pendingThreadFiles.length === 0)}>{threadIsCommand ? 'Run' : 'Reply'}</button>
               </form>
             </aside>
+          )}
+          {contextSettingsOpen && bootstrap !== null && snapshot.activeConversation?.kind === 'channel' && (
+            <ChannelSettingsPane bootstrap={bootstrap} id={snapshot.activeConversation.id} store={store} onClose={() => { setContextSettingsOpen(false) }} />
+          )}
+          {contextSettingsOpen && bootstrap !== null && snapshot.activeConversation?.kind === 'dm' && (
+            <AgentSettingsPane bootstrap={bootstrap} id={snapshot.activeConversation.id} store={store} onClose={() => { setContextSettingsOpen(false) }} />
           )}
         </div>
       )}

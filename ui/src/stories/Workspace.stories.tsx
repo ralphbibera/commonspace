@@ -17,3 +17,13 @@ export const NavigationFlow: Story = {
     await expect(canvas.getByRole('heading', { name: 'Inbox' })).toBeInTheDocument()
   },
 }
+export const DirectoryFlow: Story = {
+  render: () => <CommonspaceApp store={createStoryStore() as never} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole('button', { name: 'Browse all projects' }))
+    await expect(canvas.getByRole('heading', { name: 'All projects' })).toBeInTheDocument()
+    await userEvent.click(within(canvas.getByRole('main', { name: 'Projects directory' })).getByRole('button', { name: 'Add project' }))
+    await expect(within(document.body).getByRole('dialog', { name: 'Add a project' })).toBeInTheDocument()
+  },
+}

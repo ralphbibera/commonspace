@@ -1,4 +1,4 @@
-import { useState, useSyncExternalStore } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import type { CommonspaceBootstrap, CommonspaceProject, CommonspaceState, ConversationRef } from '@commonspace/shared'
 import { referencedProjectIds } from '@commonspace/shared'
 import { ArrowLeftIcon, FolderPlusIcon, SettingsIcon } from 'lucide-react'
@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { CommonspaceLogo } from '@/design-system/CommonspaceLogo'
+import { ConfirmActionDialog } from '@/design-system/ConfirmActionDialog'
 import { WorkspaceHeader } from '@/design-system/WorkspaceHeader'
 import { CommonspaceProjectChanges } from './CommonspaceProjectChanges.tsx'
 import { CommonspaceProjectFiles } from './CommonspaceProjectFiles.tsx'
@@ -14,6 +15,7 @@ import type { CommonspaceClientStore } from './commonspace-store.ts'
 export interface CommonspaceProjectViewProps {
   projectId: string
   targetFile?: { rootIndex: number; path: string } | null
+  settingsRequest?: number
   store: CommonspaceClientStore
   onBack: () => void
   onOpenConversation: (conversation: ConversationRef) => void
@@ -97,6 +99,7 @@ function ProjectConversations({
 export function CommonspaceProjectView({
   projectId,
   targetFile,
+  settingsRequest,
   store,
   onBack,
   onOpenConversation,
@@ -105,10 +108,15 @@ export function CommonspaceProjectView({
   const [activeTab, setActiveTab] = useState<ProjectTab>('files')
   const [addingFolder, setAddingFolder] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [removeConfirmOpen, setRemoveConfirmOpen] = useState(false)
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot)
   const bootstrap = snapshot.bootstrap
   const state = bootstrap?.state
   const project = state?.projects.find(candidate => candidate.id === projectId)
+
+  useEffect(() => {
+    if (settingsRequest !== undefined) setSettingsOpen(true)
+  }, [settingsRequest])
 
   const addLocalFolder = async () => {
     setAddingFolder(true)
@@ -161,8 +169,15 @@ export function CommonspaceProjectView({
       <TabsContent value="changes" className="min-h-0 overflow-hidden bg-background"><CommonspaceProjectChanges projectId={project.id} fetcher={fetcher} /></TabsContent>
       {settingsOpen && <aside className="absolute top-16 right-0 bottom-0 z-20 flex w-[min(420px,100%)] flex-col border-l bg-background shadow-[-20px_0_48px_color-mix(in_oklch,var(--foreground)_9%,transparent)]" aria-label="Project settings">
         <header className="flex min-h-[70px] items-center gap-3 border-b py-2.5 pr-3.5 pl-5"><div className="min-w-0 flex-1"><h2 className="truncate font-heading text-[17px] font-bold">{project.name}</h2><p className="mt-0.5 text-xs text-muted-foreground">{conversationCount} {conversationCount === 1 ? 'conversation' : 'conversations'} · {folderSummary}</p></div><button type="button" className="grid size-11 place-items-center rounded-full border-0 bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Close project settings" onClick={() => { setSettingsOpen(false) }}>×</button></header>
-        <div className="min-h-0 flex-1 overflow-y-auto p-5"><section><h3 className="mb-3 font-heading text-sm font-bold">Local context</h3><div className="rounded-md border bg-muted p-4"><strong className="block text-[13px]">{project.paths[0] === undefined ? 'No working folder' : `Working · ${project.paths[0].split('/').at(-1) ?? project.name}`}</strong><span className="mt-1 block text-xs text-muted-foreground">Read-only project browser</span></div><button type="button" className="mt-3 min-h-11 rounded-sm border bg-background px-4 font-semibold hover:bg-muted" onClick={() => { void addLocalFolder() }}>Add folder</button></section><section className="mt-7 border-t pt-6"><h3 className="mb-3 font-heading text-sm font-bold">Connected work</h3><div className="rounded-md border bg-muted p-4"><strong className="block text-[13px]">{conversationCount} {conversationCount === 1 ? 'conversation' : 'conversations'}</strong><span className="mt-1 block text-xs text-muted-foreground">Channels and direct sessions using this context</span></div></section><section className="mt-7 border-t pt-6"><h3 className="mb-3 font-heading text-sm font-bold">Danger zone</h3><button type="button" className="min-h-11 rounded-sm border border-destructive/40 bg-background px-4 font-semibold text-destructive hover:bg-destructive/5" onClick={() => { if (window.confirm(`Remove ${project.name}?`)) { void store.mutate({ action: 'remove-project', projectId: project.id }).then(onBack) } }}>Remove project</button></section></div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-5"><section><h3 className="mb-3 font-heading text-sm font-bold">Local context</h3><div className="rounded-md border bg-muted p-4"><strong className="block text-[13px]">{project.paths[0] === undefined ? 'No working folder' : `Working · ${project.paths[0].split('/').at(-1) ?? project.name}`}</strong><span className="mt-1 block text-xs text-muted-foreground">Read-only project browser</span></div><button type="button" className="mt-3 min-h-11 rounded-sm border bg-background px-4 font-semibold hover:bg-muted" onClick={() => { void addLocalFolder() }}>Add folder</button></section><section className="mt-7 border-t pt-6"><h3 className="mb-3 font-heading text-sm font-bold">Connected work</h3><div className="rounded-md border bg-muted p-4"><strong className="block text-[13px]">{conversationCount} {conversationCount === 1 ? 'conversation' : 'conversations'}</strong><span className="mt-1 block text-xs text-muted-foreground">Channels and direct sessions using this context</span></div></section><section className="mt-7 border-t pt-6"><h3 className="mb-3 font-heading text-sm font-bold">Danger zone</h3><button type="button" className="min-h-11 rounded-sm border border-destructive/40 bg-background px-4 font-semibold text-destructive hover:bg-destructive/5" onClick={() => { setRemoveConfirmOpen(true) }}>Remove project</button></section></div>
       </aside>}
+      <ConfirmActionDialog
+        open={removeConfirmOpen}
+        title={`Remove ${project.name}?`}
+        description="This can be added again later. Conversations keep their transcript while this local folder context is removed."
+        onOpenChange={setRemoveConfirmOpen}
+        onConfirm={async () => { await store.mutate({ action: 'remove-project', projectId: project.id }); onBack() }}
+      />
     </Tabs>
     </main>
   )
