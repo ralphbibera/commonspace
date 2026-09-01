@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect, within } from "storybook/test";
+import { expect, userEvent, within } from "storybook/test";
 import { CommonspaceConversation } from "@/CommonspaceConversation";
 import { createStoryStore } from "@/storybook-fixtures";
 
@@ -69,6 +69,22 @@ export const AgentProfile: Story = {
 			within(canvasElement).getByRole("complementary", {
 				name: "Agent profile",
 			}),
+		).toBeInTheDocument();
+	},
+};
+export const MessageActions: Story = {
+	args: { view: "channel" },
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		const first = canvas.getAllByRole("button", {
+			name: "More actions for message from Ralph",
+		})[0];
+		await expect(first).toBeDefined();
+		if (first === undefined) return;
+		await userEvent.click(first);
+		const menu = await within(document.body).findByRole("menu");
+		await expect(
+			within(menu).getByRole("menuitem", { name: "Save for later" }),
 		).toBeInTheDocument();
 	},
 };

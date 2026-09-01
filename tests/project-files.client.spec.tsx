@@ -61,7 +61,7 @@ function projectStore() {
 	};
 }
 
-function responseJson(body: unknown): Response {
+function responseJson<Body>(body: Body): Response {
 	return new Response(JSON.stringify(body), {
 		headers: { "content-type": "application/json" },
 	});

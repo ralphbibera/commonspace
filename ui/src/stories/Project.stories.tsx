@@ -13,7 +13,7 @@ const projectWithoutFolders = {
 	},
 };
 
-function json(body: unknown) {
+function json<Body>(body: Body) {
 	return new Response(JSON.stringify(body), {
 		headers: { "content-type": "application/json" },
 	});
@@ -106,6 +106,13 @@ export const Files: Story = {
 		);
 		await expect(
 			await canvas.findByText(/^# Commonspace/u),
+		).toBeInTheDocument();
+		await userEvent.click(
+			canvas.getByRole("button", { name: "More actions for README.md" }),
+		);
+		const menu = await within(document.body).findByRole("menu");
+		await expect(
+			within(menu).getByRole("menuitem", { name: "Copy name" }),
 		).toBeInTheDocument();
 	},
 };

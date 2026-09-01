@@ -152,9 +152,9 @@ export function CommonspaceSearchDialog({
 				return data;
 			})
 			.then(setResponse)
-			.catch((reason: unknown) => {
+			.catch((cause: unknown) => {
 				if (!controller.signal.aborted)
-					setError(reason instanceof Error ? reason.message : String(reason));
+					setError(cause instanceof Error ? cause.message : String(cause));
 			});
 		return () => {
 			controller.abort();

@@ -114,4 +114,40 @@ describe("desktop conversation parity", () => {
 			});
 		});
 	});
+
+	it("offers the reference message context actions from each delivered post", async () => {
+		const base = createStoryStore();
+		const mutate = vi.fn(async () => undefined);
+		const store = { ...base, mutate };
+		store.selectConversation({ kind: "channel", id: "general" });
+		render(<CommonspaceConversation store={store} />);
+
+		const more = screen.getAllByRole("button", {
+			name: "More actions for message from Ralph",
+		})[0];
+		expect(more).toBeDefined();
+		if (more === undefined) return;
+		fireEvent.click(more);
+		const menu = await screen.findByRole("menu");
+		expect(
+			within(menu).getByRole("menuitem", { name: "Reply in thread" }),
+		).toBeTruthy();
+		expect(
+			within(menu).getByRole("menuitem", { name: "Save for later" }),
+		).toBeTruthy();
+		expect(
+			within(menu).getByRole("menuitem", { name: "Copy link" }),
+		).toBeTruthy();
+		fireEvent.click(
+			within(menu).getByRole("menuitem", { name: "Save for later" }),
+		);
+
+		await waitFor(() => {
+			expect(mutate).toHaveBeenCalledWith({
+				action: "set-inbox-item-saved",
+				messageId: "root-running",
+				saved: true,
+			});
+		});
+	});
 });

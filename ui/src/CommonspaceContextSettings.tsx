@@ -99,7 +99,7 @@ export function ChannelSettingsPane({
 		setSummary(channel.memory.summary);
 		setDecisions(channel.memory.decisions.join("\n"));
 		setQuestions(channel.memory.openQuestions.join("\n"));
-	}, [channel?.id]);
+	}, [channel]);
 
 	const visibleAgents = useMemo(() => {
 		const normalized = query.trim().toLocaleLowerCase();
@@ -240,9 +240,8 @@ export function ChannelSettingsPane({
 										}}
 									/>
 								</label>
-								<div
-									className="mt-2 flex gap-1"
-									role="group"
+								<fieldset
+									className="mt-2 flex min-w-0 gap-1 border-0 p-0"
 									aria-label="Filter channel members"
 								>
 									{(["all", "included", "available"] as const).map((value) => (
@@ -258,7 +257,7 @@ export function ChannelSettingsPane({
 											{value}
 										</button>
 									))}
-								</div>
+								</fieldset>
 							</div>
 							<div className="flex min-h-11 items-center justify-between gap-3 border-b px-3 text-xs text-muted-foreground">
 								<span>
@@ -594,15 +593,15 @@ export function AgentSettingsPane({
 		setDisplayName(agent.displayName);
 		setAvatarEmoji(agent.avatarEmoji ?? "");
 		setAccentColor(agent.accentColor ?? "#4a154b");
-	}, [agent?.id]);
+	}, [agent]);
 
 	if (agent === undefined) return null;
 	const previewAgent: CommonspaceAgentProfile = {
 		...agent,
 		displayName: displayName || agent.displayName,
-		...(avatarEmoji === "" ? {} : { avatarEmoji }),
 		accentColor,
 	};
+	if (avatarEmoji !== "") previewAgent.avatarEmoji = avatarEmoji;
 
 	const save = async () => {
 		if (saving || displayName.trim() === "") return;

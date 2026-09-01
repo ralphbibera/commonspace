@@ -247,14 +247,12 @@ function renderChannelThread(
 							projectIds: ["project-1"],
 							projectId: "project-1",
 							createdAt: "2026-08-26T00:00:00.000Z",
-							...(rootDeleted ? { deletedAt: "2026-08-26T00:05:00.000Z" } : {}),
-							...(rootVersioned
-								? {
-										versionRootMessageId: "reply-1",
-										supersedesMessageId: "reply-1",
-										branchId: "branch-1",
-									}
-								: {}),
+							deletedAt: rootDeleted
+								? "2026-08-26T00:05:00.000Z"
+								: undefined,
+							versionRootMessageId: rootVersioned ? "reply-1" : undefined,
+							supersedesMessageId: rootVersioned ? "reply-1" : undefined,
+							branchId: rootVersioned ? "branch-1" : undefined,
 							threadId: "thread-1",
 							...(routingPending
 								? {
@@ -688,11 +686,9 @@ describe("Commonspace reply-thread composer", () => {
 				.map((button) => button.textContent),
 		).toEqual(["Allow once", "Reject once"]);
 		expect(
-			(
-				screen.getByRole("textbox", {
-					name: "Reply in thread",
-				}) as HTMLTextAreaElement
-			).disabled,
+			screen.getByRole<HTMLTextAreaElement>("textbox", {
+				name: "Reply in thread",
+			}).disabled,
 		).toBe(false);
 		fireEvent.click(
 			within(request).getByRole("button", { name: "Allow once" }),
@@ -703,12 +699,12 @@ describe("Commonspace reply-thread composer", () => {
 		});
 	});
 
-	it("opens at an equal split and lets the thread be widened by dragging", () => {
+	it("opens at the reference desktop width and lets the thread be widened by dragging", () => {
 		renderChannelThread();
 
 		const separator = screen.getByRole("separator", { name: "Resize thread" });
-		const layout = separator.parentElement as HTMLElement;
-		expect(layout.style.gridTemplateColumns).toBe("50fr 8px 50fr");
+		const layout = mustExist(separator.parentElement);
+		expect(layout.style.gridTemplateColumns).toBe("58fr 8px 42fr");
 		layout.getBoundingClientRect = vi.fn(() => ({
 			bottom: 800,
 			height: 800,
@@ -855,7 +851,9 @@ describe("Commonspace reply-thread composer", () => {
 
 	it("offers tag autocomplete and sends the selected tag in the active thread", async () => {
 		const { send } = renderChannelThread();
-		const composer = screen.getByRole("textbox", { name: "Reply in thread" });
+		const composer = screen.getByRole<HTMLTextAreaElement>("textbox", {
+			name: "Reply in thread",
+		});
 
 		fireEvent.change(composer, { target: { value: "@ba" } });
 		const listbox = screen.getByRole("listbox", { name: "Tag suggestions" });
@@ -863,7 +861,7 @@ describe("Commonspace reply-thread composer", () => {
 		expect(screen.getByRole("option", { name: /@backend/i })).toBeTruthy();
 
 		fireEvent.keyDown(composer, { key: "Enter" });
-		expect((composer as HTMLTextAreaElement).value).toBe("@backend ");
+		expect(composer.value).toBe("@backend ");
 		fireEvent.keyDown(composer, { key: "Enter" });
 
 		await waitFor(() => {
@@ -873,7 +871,9 @@ describe("Commonspace reply-thread composer", () => {
 
 	it("separates agents outside the channel and explains that tagging adds them", () => {
 		renderChannelThread();
-		const composer = screen.getByRole("textbox", { name: "Reply in thread" });
+		const composer = screen.getByRole<HTMLTextAreaElement>("textbox", {
+			name: "Reply in thread",
+		});
 
 		fireEvent.change(composer, { target: { value: "@" } });
 
@@ -953,7 +953,7 @@ describe("Commonspace reply-thread composer", () => {
 
 		fireEvent.change(composer, { target: { value: "/ret" } });
 		fireEvent.keyDown(composer, { key: "Enter" });
-		expect((composer as HTMLTextAreaElement).value).toBe("/retry");
+		expect(composer.value).toBe("/retry");
 		fireEvent.keyDown(composer, { key: "Enter" });
 
 		await waitFor(() => {

@@ -1,9 +1,14 @@
 import {
+	ActivityIcon,
+	AtSignIcon,
+	CheckCheckIcon,
+	CopyIcon,
 	FolderPlusIcon,
 	MessageSquareIcon,
 	MoreHorizontalIcon,
 	PinIcon,
 	SettingsIcon,
+	SquarePenIcon,
 	Trash2Icon,
 } from "lucide-react";
 import { useState } from "react";
@@ -32,6 +37,14 @@ export interface CollectionActionMenuProps {
 	onTogglePinned?: () => void;
 	onSettings?: () => void;
 	onAddFolder?: () => void;
+	unread?: boolean;
+	onMarkRead?: () => void;
+	onStartFreshChat?: () => void;
+	onMention?: () => void;
+	mentionLabel?: string;
+	onViewSessions?: () => void;
+	onCopy?: () => void;
+	copyLabel?: string;
 	onRemove?: () => void | Promise<void>;
 }
 
@@ -42,6 +55,25 @@ function openLabel(kind: CommonspaceCollectionKind): string {
 function settingsLabel(kind: CommonspaceCollectionKind): string {
 	if (kind === "agent") return "Profile & capabilities";
 	return `${kind.slice(0, 1).toLocaleUpperCase()}${kind.slice(1)} settings`;
+}
+
+function ActionCopy({
+	label,
+	description,
+}: {
+	label: string;
+	description: string | undefined;
+}) {
+	return (
+		<span className="grid min-w-0 gap-0.5">
+			<strong className="truncate text-[13px] font-semibold">{label}</strong>
+			{description === undefined ? null : (
+				<small className="truncate text-xs font-normal text-muted-foreground">
+					{description}
+				</small>
+			)}
+		</span>
+	);
 }
 
 export function CollectionActionMenu({
@@ -55,9 +87,18 @@ export function CollectionActionMenu({
 	onTogglePinned,
 	onSettings,
 	onAddFolder,
+	unread = false,
+	onMarkRead,
+	onStartFreshChat,
+	onMention,
+	mentionLabel,
+	onViewSessions,
+	onCopy,
+	copyLabel,
 	onRemove,
 }: CollectionActionMenuProps) {
 	const [confirmOpen, setConfirmOpen] = useState(false);
+	const [freshConfirmOpen, setFreshConfirmOpen] = useState(false);
 
 	return (
 		<>
@@ -73,7 +114,10 @@ export function CollectionActionMenu({
 				</DropdownMenuTrigger>
 				<DropdownMenuContent
 					align="end"
-					className="w-[272px] rounded-md border p-1.5 shadow-[var(--shadow-high)] ring-0"
+					className={cn(
+						"w-[272px] rounded-md border p-1.5 shadow-[var(--shadow-high)] ring-0",
+						kind === "agent" && "w-[336px]",
+					)}
 				>
 					<DropdownMenuGroup>
 						<DropdownMenuLabel className="grid gap-0.5 border-b px-2.5 py-2.5">
@@ -91,15 +135,50 @@ export function CollectionActionMenu({
 							onClick={onOpen}
 						>
 							<MessageSquareIcon aria-hidden="true" />
-							{openLabel(kind)}
+							<ActionCopy
+								label={openLabel(kind)}
+								description={
+									kind === "agent"
+										? "Continue the private native session"
+										: undefined
+								}
+							/>
 						</DropdownMenuItem>
-						{onSettings !== undefined && (
+						{kind === "agent" && onStartFreshChat !== undefined && (
 							<DropdownMenuItem
 								className="min-h-10 gap-2.5 px-2.5 text-[13px]"
-								onClick={onSettings}
+								onClick={() => {
+									setFreshConfirmOpen(true);
+								}}
 							>
-								<SettingsIcon aria-hidden="true" />
-								{settingsLabel(kind)}
+								<SquarePenIcon aria-hidden="true" />
+								<ActionCopy
+									label="Start fresh chat"
+									description="Keep history, reset agent context"
+								/>
+							</DropdownMenuItem>
+						)}
+						{kind === "agent" &&
+							onMention !== undefined &&
+							mentionLabel !== undefined && (
+								<DropdownMenuItem
+									className="min-h-10 gap-2.5 px-2.5 text-[13px]"
+									onClick={onMention}
+								>
+									<AtSignIcon aria-hidden="true" />
+									<ActionCopy
+										label={mentionLabel}
+										description="Add this agent to the composer"
+									/>
+								</DropdownMenuItem>
+							)}
+						{kind === "channel" && unread && onMarkRead !== undefined && (
+							<DropdownMenuItem
+								className="min-h-10 gap-2.5 px-2.5 text-[13px]"
+								onClick={onMarkRead}
+							>
+								<CheckCheckIcon aria-hidden="true" />
+								Mark read
 							</DropdownMenuItem>
 						)}
 						{kind === "project" && onAddFolder !== undefined && (
@@ -111,13 +190,70 @@ export function CollectionActionMenu({
 								Add local folder
 							</DropdownMenuItem>
 						)}
+						{kind === "agent" && onViewSessions !== undefined && (
+							<>
+								<DropdownMenuSeparator />
+								<DropdownMenuItem
+									className="min-h-10 gap-2.5 px-2.5 text-[13px]"
+									onClick={onViewSessions}
+								>
+									<ActivityIcon aria-hidden="true" />
+									<ActionCopy
+										label="View sessions"
+										description="Running, blocked, and completed work"
+									/>
+								</DropdownMenuItem>
+							</>
+						)}
 						{onTogglePinned !== undefined && (
 							<DropdownMenuItem
 								className="min-h-10 gap-2.5 px-2.5 text-[13px]"
 								onClick={onTogglePinned}
 							>
 								<PinIcon aria-hidden="true" />
-								{pinned ? "Unpin from sidebar" : "Pin to sidebar"}
+								<ActionCopy
+									label={pinned ? "Unpin from sidebar" : "Pin to sidebar"}
+									description={
+										kind === "agent"
+											? pinned
+												? "Remove from your quick access"
+												: "Keep this agent in quick access"
+											: undefined
+									}
+								/>
+							</DropdownMenuItem>
+						)}
+						{onCopy !== undefined && copyLabel !== undefined && (
+							<>
+								<DropdownMenuSeparator />
+								<DropdownMenuItem
+									className="min-h-10 gap-2.5 px-2.5 text-[13px]"
+									onClick={onCopy}
+								>
+									<CopyIcon aria-hidden="true" />
+									<ActionCopy
+										label={copyLabel}
+										description={
+											kind === "agent" ? `Copy @${label}` : undefined
+										}
+									/>
+								</DropdownMenuItem>
+							</>
+						)}
+						{onSettings !== undefined && (
+							<DropdownMenuItem
+								className="min-h-10 gap-2.5 px-2.5 text-[13px]"
+								onClick={onSettings}
+							>
+								<SettingsIcon aria-hidden="true" />
+								<ActionCopy
+									label={settingsLabel(kind)}
+									description={
+										kind === "agent"
+											? "Identity, runtime, tools, and skills"
+											: undefined
+									}
+								/>
 							</DropdownMenuItem>
 						)}
 					</DropdownMenuGroup>
@@ -132,7 +268,18 @@ export function CollectionActionMenu({
 								}}
 							>
 								<Trash2Icon aria-hidden="true" />
-								Remove {kind}
+								<ActionCopy
+									label={
+										kind === "agent"
+											? "Remove from Commonspace"
+											: `Remove ${kind}`
+									}
+									description={
+										kind === "agent"
+											? "Leave the native harness profile untouched"
+											: undefined
+									}
+								/>
 							</DropdownMenuItem>
 						</>
 					)}
@@ -145,6 +292,16 @@ export function CollectionActionMenu({
 					description="This can be added again later. Existing local agent credentials stay untouched."
 					onOpenChange={setConfirmOpen}
 					onConfirm={onRemove}
+				/>
+			)}
+			{onStartFreshChat !== undefined && (
+				<ConfirmActionDialog
+					open={freshConfirmOpen}
+					title={`Start a new chat with ${label}?`}
+					description="Earlier messages stay visible. Your next message starts with fresh native agent context."
+					actionLabel="Start fresh"
+					onOpenChange={setFreshConfirmOpen}
+					onConfirm={onStartFreshChat}
 				/>
 			)}
 		</>

@@ -15,6 +15,10 @@ function SidebarPreview() {
 				onOpenSearch={fn()}
 				onOpenInbox={fn()}
 				onOpenThreads={fn()}
+				onOpenDirectory={fn()}
+				onOpenContextSettings={fn()}
+				onMentionAgent={fn()}
+				onOpenAgentSessions={fn()}
 				onOpenProject={fn()}
 				onOpenConversation={fn()}
 			/>
@@ -68,6 +72,21 @@ export const WorkspaceSettings: Story = {
 			within(document.body).getByRole("heading", {
 				name: "Choose how the workspace thinks",
 			}),
+		).toBeInTheDocument();
+	},
+};
+export const CollectionActions: Story = {
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		await userEvent.click(
+			canvas.getByRole("button", { name: "More actions for AgentOps" }),
+		);
+		const menu = await within(document.body).findByRole("menu");
+		await expect(
+			within(menu).getByRole("menuitem", { name: /Start fresh chat/u }),
+		).toBeInTheDocument();
+		await expect(
+			within(menu).getByRole("menuitem", { name: /View sessions/u }),
 		).toBeInTheDocument();
 	},
 };

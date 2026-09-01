@@ -261,7 +261,6 @@ export function AgentTrace({ authorName, trace }: AgentTraceProps) {
 				<section
 					id={panelId}
 					className="border-t bg-muted p-3"
-					role="region"
 					aria-label={`${authorName} activity trace`}
 				>
 					<div className="mb-2 grid gap-1 text-xs">

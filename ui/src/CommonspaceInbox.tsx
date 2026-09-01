@@ -11,7 +11,7 @@ import {
 	Clock3Icon,
 	InboxIcon,
 } from "lucide-react";
-import { useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import {
 	Empty,
 	EmptyDescription,
@@ -32,6 +32,7 @@ export interface CommonspaceInboxTarget {
 export interface CommonspaceInboxProps {
 	store: CommonspaceStore;
 	onOpenItem: (item: CommonspaceInboxTarget) => void;
+	viewRequest?: { view: "attention" | "sessions"; token: number } | null;
 }
 
 function kindLabel(item: CommonspaceInboxItem): string {
@@ -88,7 +89,11 @@ function statusClass(label: string): string {
 	return "text-muted-foreground";
 }
 
-export function CommonspaceInbox({ store, onOpenItem }: CommonspaceInboxProps) {
+export function CommonspaceInbox({
+	store,
+	onOpenItem,
+	viewRequest = null,
+}: CommonspaceInboxProps) {
 	const snapshot = useSyncExternalStore(
 		store.subscribe,
 		store.getSnapshot,
@@ -100,6 +105,9 @@ export function CommonspaceInbox({ store, onOpenItem }: CommonspaceInboxProps) {
 		"all" | CommonspaceSessionItem["status"]
 	>("all");
 	const [markingRead, setMarkingRead] = useState(false);
+	useEffect(() => {
+		if (viewRequest !== null) setView(viewRequest.view);
+	}, [viewRequest]);
 	const state = snapshot.bootstrap?.state;
 	const items = useMemo(
 		() => (state === undefined ? [] : deriveCommonspaceInboxItems(state)),
@@ -152,11 +160,12 @@ export function CommonspaceInbox({ store, onOpenItem }: CommonspaceInboxProps) {
 	};
 
 	const openSession = (session: CommonspaceSessionItem) => {
-		onOpenItem({
+		const target: CommonspaceInboxTarget = {
 			messageId: session.messageId,
 			conversation: session.conversation,
-			...(session.threadId === undefined ? {} : { threadId: session.threadId }),
-		});
+		};
+		if (session.threadId !== undefined) target.threadId = session.threadId;
+		onOpenItem(target);
 	};
 
 	return (
@@ -213,10 +222,9 @@ export function CommonspaceInbox({ store, onOpenItem }: CommonspaceInboxProps) {
 			</div>
 
 			<div className="mx-auto flex min-h-[54px] w-full max-w-[1020px] items-center justify-between gap-3 border-b px-9 max-[640px]:overflow-x-auto max-[640px]:px-3">
-				<div
-					role="group"
+				<fieldset
 					aria-label="Inbox view"
-					className="flex items-center gap-0.5"
+					className="m-0 flex min-w-0 items-center gap-0.5 border-0 p-0"
 				>
 					<button
 						type="button"
@@ -246,12 +254,11 @@ export function CommonspaceInbox({ store, onOpenItem }: CommonspaceInboxProps) {
 							{String(sessions.length)}
 						</span>
 					</button>
-				</div>
+				</fieldset>
 				{view === "attention" ? (
-					<div
-						role="group"
+					<fieldset
 						aria-label="Inbox filter"
-						className="flex items-center gap-0.5"
+						className="m-0 flex min-w-0 items-center gap-0.5 border-0 p-0"
 					>
 						{(["all", "unread", "saved"] as const).map((value) => (
 							<button
@@ -275,12 +282,11 @@ export function CommonspaceInbox({ store, onOpenItem }: CommonspaceInboxProps) {
 								)}
 							</button>
 						))}
-					</div>
+					</fieldset>
 				) : (
-					<div
-						role="group"
+					<fieldset
 						aria-label="Session status filter"
-						className="flex items-center gap-0.5"
+						className="m-0 flex min-w-0 items-center gap-0.5 border-0 p-0"
 					>
 						{(["all", "running", "needs-attention", "completed"] as const).map(
 							(value) => (
@@ -301,7 +307,7 @@ export function CommonspaceInbox({ store, onOpenItem }: CommonspaceInboxProps) {
 								</button>
 							),
 						)}
-					</div>
+					</fieldset>
 				)}
 			</div>
 
