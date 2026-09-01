@@ -1,0 +1,56 @@
+name: Apply settings review fixes
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.34.5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Restore and correct migration
+        run: |
+          git show be8dbce9865b935f3f62cab0c4f435aa46d03795:scripts/apply-settings-review-fixes.mjs > scripts/apply-settings-review-fixes.mjs
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = 'scripts/apply-settings-review-fixes.mjs';
+          let source = fs.readFileSync(path, 'utf8');
+          const start = source.indexOf('\tconst pinFunctions = /');
+          const end = source.indexOf('\tsource = source.replace(/\\n', start);
+          if (start < 0 || end < 0 || end <= start) {
+            throw new Error('Could not locate broken pin regex block');
+          }
+          const replacement = `\tconst pinStart = source.indexOf("\\n\\tconst collectionPinned = (");
+          \tconst pinEnd = source.indexOf("\\n\\n\\tif (!wide) {", pinStart);
+          \tif (pinStart < 0 || pinEnd < 0) throw new Error("Missing fake pin helper block");
+          \tsource = source.slice(0, pinStart) + source.slice(pinEnd);\n`;
+          source = source.slice(0, start) + replacement + source.slice(end);
+          fs.writeFileSync(path, source);
+          NODE
+          node --check scripts/apply-settings-review-fixes.mjs
+          node scripts/apply-settings-review-fixes.mjs
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm check
+      - name: Commit verified fixes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet && exit 0
+          git commit -m "fix: make workspace settings truthful and transactional"
+          git push origin HEAD:main
