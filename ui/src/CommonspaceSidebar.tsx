@@ -480,9 +480,9 @@ export function CommonspaceSidebar({
 	);
 	const [routingApiKey, setRoutingApiKey] = useState("");
 	const [clearRoutingApiKey, setClearRoutingApiKey] = useState(false);
+	const [savingInference, setSavingInference] = useState(false);
 	const [searchOpen, setSearchOpen] = useState(false);
 	const [diagnostics, setDiagnostics] = useState<CommonspaceDiagnostics | null>(
-	const [savingInference, setSavingInference] = useState(false);
 		null,
 	);
 	const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
@@ -505,9 +505,9 @@ export function CommonspaceSidebar({
 			...DEFAULT_COMMONSPACE_NOTIFICATION_SETTINGS,
 		});
 	const [savingNotifications, setSavingNotifications] = useState(false);
+	const [notificationsSaved, setNotificationsSaved] = useState(false);
 
 	useEffect(() => {
-	const [notificationsSaved, setNotificationsSaved] = useState(false);
 		void store.refresh();
 	}, [store]);
 	useEffect(() => {
@@ -833,12 +833,12 @@ export function CommonspaceSidebar({
 
 	const saveDefaults = async (event: FormEvent) => {
 		event.preventDefault();
+		if (savingInference) return;
 		const routingUpdate =
 			routingProvider === "harness"
 				? {
 						provider: "harness" as const,
 						harnessAgentId: routingHarnessAgentId,
-		if (savingInference) return;
 					}
 				: {
 						provider: "openai-compatible" as const,
@@ -874,12 +874,12 @@ export function CommonspaceSidebar({
 				action: "set-notifications",
 				notifications: notificationSettings,
 			});
+			setNotificationsSaved(true);
 		} finally {
 			setSavingNotifications(false);
 		}
 	};
 
-			setNotificationsSaved(true);
 	const runDiagnostics = async () => {
 		if (diagnosticsLoading) return;
 		setDiagnosticsLoading(true);
@@ -1340,17 +1340,17 @@ export function CommonspaceSidebar({
 															{agent.model ?? "harness default"}
 														</small>
 													</span>
+													{routingHarnessAgentId === agent.id && (
+														<span className="text-xs font-semibold text-primary">
+															Routing agent
+														</span>
+													)}
 												</label>
 											))}
 										</fieldset>
 									)}
 								</section>
 
-													{routingHarnessAgentId === agent.id && (
-														<span className="text-xs font-semibold text-primary">
-															Routing agent
-														</span>
-													)}
 								{routingProvider === "openai-compatible" && (
 									<section className="mt-8 border-t pt-8">
 										<SettingsSectionHeading
@@ -3104,6 +3104,8 @@ export function CommonspaceSidebar({
 						setRoutingBaseUrl(routing?.baseUrl ?? "https://api.openai.com/v1");
 						setRoutingApiKey("");
 						setClearRoutingApiKey(false);
+						setInferenceCheckStatus(null);
+						setNotificationsSaved(false);
 						setNotificationSettings({
 							...(state?.notifications ??
 								DEFAULT_COMMONSPACE_NOTIFICATION_SETTINGS),
