@@ -37,6 +37,12 @@ interface ConversationTarget {
 	threadId?: string;
 }
 
+interface StoredNavigation {
+	kind: "channel" | "dm";
+	id: string;
+	threadId?: string;
+}
+
 function storedUiValue(key: string): string | null {
 	if (typeof window === "undefined") return null;
 	try {
@@ -46,11 +52,7 @@ function storedUiValue(key: string): string | null {
 	}
 }
 
-function storedNavigation(raw: string | null): {
-	kind: "channel" | "dm";
-	id: string;
-	threadId?: string;
-} | null {
+function storedNavigation(raw: string | null): StoredNavigation | null {
 	if (raw === null) return null;
 	try {
 		const value: unknown = JSON.parse(raw);
@@ -64,11 +66,12 @@ function storedNavigation(raw: string | null): {
 		)
 			return null;
 		const threadId = "threadId" in value ? value.threadId : undefined;
-		return {
+		const navigation: StoredNavigation = {
 			kind: value.kind,
 			id: value.id,
-			...(typeof threadId === "string" ? { threadId } : {}),
 		};
+		if (typeof threadId === "string") navigation.threadId = threadId;
+		return navigation;
 	} catch {
 		return null;
 	}
@@ -531,6 +534,7 @@ export function CommonspaceApp({ store }: CommonspaceAppProps) {
 						/>
 					) : activeDestination === "directory" ? (
 						<CommonspaceDirectory
+							key={directoryKind}
 							kind={directoryKind}
 							bootstrap={snapshot.bootstrap}
 							store={store}
@@ -571,6 +575,9 @@ export function CommonspaceApp({ store }: CommonspaceAppProps) {
 						<CommonspaceConversation
 							store={store}
 							composerInsertRequest={composerInsertRequest}
+							onSettingsClosed={() => {
+								setSettingsRequest(null);
+							}}
 							settingsRequest={
 								settingsRequest?.kind === "channel" ||
 								settingsRequest?.kind === "agent"

@@ -1,5 +1,6 @@
 import {
 	BookmarkIcon,
+	CheckCheckIcon,
 	CopyIcon,
 	MessageCircleReplyIcon,
 	MoreHorizontalIcon,
@@ -17,6 +18,7 @@ import {
 export interface MessageActionMenuProps {
 	authorName: string;
 	summary: string;
+	defaultOpen?: boolean;
 	saved: boolean;
 	onReplyInThread?: () => void;
 	onToggleSaved: () => void;
@@ -27,6 +29,7 @@ export interface MessageActionMenuProps {
 export function MessageActionMenu({
 	authorName,
 	summary,
+	defaultOpen = false,
 	saved,
 	onReplyInThread,
 	onToggleSaved,
@@ -34,9 +37,9 @@ export function MessageActionMenu({
 	onCopyLink,
 }: MessageActionMenuProps) {
 	return (
-		<DropdownMenu>
+		<DropdownMenu defaultOpen={defaultOpen}>
 			<DropdownMenuTrigger
-				className="grid size-11 place-items-center rounded-sm border-0 bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/30"
+				className="grid size-7 place-items-center rounded-sm border-0 bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/30"
 				aria-label={`More actions for message from ${authorName}`}
 			>
 				<MoreHorizontalIcon className="size-4" aria-hidden="true" />
@@ -77,6 +80,7 @@ export function MessageActionMenu({
 							className="min-h-10 px-2.5 text-[13px]"
 							onClick={onMarkUnread}
 						>
+							<CheckCheckIcon aria-hidden="true" />
 							Mark unread
 						</DropdownMenuItem>
 					)}

@@ -136,9 +136,8 @@ function AvatarEmojiPicker({
 				/>
 			</button>
 			{open && (
-				<div
+				<section
 					className="absolute top-[calc(100%+6px)] left-0 z-30 w-full min-w-[240px] rounded-md border bg-popover p-2 text-popover-foreground shadow-lg"
-					role="region"
 					aria-label="Avatar emoji picker"
 				>
 					<input
@@ -168,7 +167,7 @@ function AvatarEmojiPicker({
 							</button>
 						))}
 					</div>
-				</div>
+				</section>
 			)}
 		</div>
 	);
@@ -295,7 +294,7 @@ export function ChannelSettingsPane({
 				</div>
 				<button
 					type="button"
-					className="grid size-11 place-items-center rounded-full border-0 bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground"
+					className="grid size-8 shrink-0 place-items-center rounded-sm border-0 bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
 					aria-label="Close channel settings"
 					onClick={onClose}
 				>
@@ -749,7 +748,7 @@ export function AgentSettingsPane({
 				</span>
 				<button
 					type="button"
-					className="grid size-11 place-items-center rounded-full border-0 bg-transparent text-muted-foreground hover:bg-background hover:text-foreground"
+					className="grid size-8 shrink-0 place-items-center rounded-sm border-0 bg-transparent text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
 					aria-label="Close agent profile"
 					onClick={onClose}
 				>

@@ -14,15 +14,15 @@ export function WorkspaceHeader({
 	actions,
 }: WorkspaceHeaderProps) {
 	return (
-		<header className="flex min-h-16 items-center gap-3 border-b bg-background py-2 pr-[14px] pl-[18px] max-[780px]:pl-[60px]">
+		<header className="flex min-h-14 items-center gap-2.5 border-b bg-background py-2 pr-3 pl-4 max-[780px]:pl-[60px]">
 			<span
-				className="grid size-7 shrink-0 place-items-center rounded-sm border bg-muted font-mono text-sm font-semibold text-muted-foreground"
+				className="grid size-6 shrink-0 place-items-center rounded-sm border-0 bg-transparent font-mono text-sm font-semibold text-muted-foreground"
 				aria-hidden="true"
 			>
 				{mark}
 			</span>
 			<div className="min-w-0 flex-1">
-				<h1 className="truncate font-heading text-[17px] font-semibold leading-tight tracking-[-0.01em]">
+				<h1 className="truncate font-heading text-[15px] font-semibold leading-tight tracking-[-0.01em]">
 					{title}
 				</h1>
 				{subtitle === undefined ? null : (

@@ -1,4 +1,5 @@
 import {
+	type CommonspaceAgentProfile,
 	type CommonspaceBootstrap,
 	type ConversationRef,
 	deriveCommonspaceInboxItems,
@@ -8,10 +9,12 @@ import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
 	CollectionActionMenu,
+	type CollectionActionMenuProps,
 	type CommonspaceCollectionKind,
 } from "@/design-system/CollectionActionMenu";
 import { WorkspaceHeader } from "@/design-system/WorkspaceHeader";
 import type { CommonspaceStore } from "./commonspace-store.ts";
+import { AgentAvatar } from "./design-system/AgentAvatar.tsx";
 import {
 	collectionKey,
 	sidebarPreferencesStore,
@@ -39,7 +42,18 @@ interface DirectoryItem {
 	meta: string;
 	mark: string;
 	unread: number;
+	agent?: CommonspaceAgentProfile;
 }
+
+type DirectoryItemActions = Pick<
+	CollectionActionMenuProps,
+	| "copyLabel"
+	| "onCopy"
+	| "onMarkRead"
+	| "onMarkUnread"
+	| "onStartFreshChat"
+	| "onViewSessions"
+>;
 
 const directoryConfig = {
 	projects: {
@@ -129,6 +143,7 @@ function directoryItems(
 		mark:
 			agent.avatarEmoji ?? agent.displayName.slice(0, 1).toLocaleUpperCase(),
 		unread: 0,
+		agent,
 	}));
 }
 
@@ -164,11 +179,6 @@ export function CommonspaceDirectory({
 	);
 	const [page, setPage] = useState(1);
 
-	useEffect(() => {
-		setQuery("");
-		setDirection("name-asc");
-		setPage(1);
-	}, [allItems]);
 	useEffect(() => {
 		sidebarPreferencesStore.ensurePinnedDefaults(defaultPinnedKeys);
 	}, [defaultPinnedKeys]);
@@ -210,9 +220,13 @@ export function CommonspaceDirectory({
 	};
 
 	const addProjectFolder = async (projectId: string) => {
-		const path = await store.selectDirectory();
-		if (path !== null)
-			await store.mutate({ action: "add-project-path", projectId, path });
+		try {
+			const path = await store.selectDirectory();
+			if (path !== null)
+				await store.mutate({ action: "add-project-path", projectId, path });
+		} catch {
+			// The application-level toast renders the store error once.
+		}
 	};
 
 	const removeItem = async (item: DirectoryItem) => {
@@ -241,7 +255,8 @@ export function CommonspaceDirectory({
 
 	const markChannelUnread = (channelId: string) => {
 		if (bootstrap === null) return;
-		const latestMessage = bootstrap.state.messages[`channel:${channelId}`]?.at(-1);
+		const latestMessage =
+			bootstrap.state.messages[`channel:${channelId}`]?.at(-1);
 		if (latestMessage === undefined) return;
 		void store.mutate({
 			action: "set-inbox-item-unread",
@@ -335,6 +350,28 @@ export function CommonspaceDirectory({
 						const pinned = effectivePinnedKeys.includes(
 							collectionKey(item.kind, item.id),
 						);
+						const actions: DirectoryItemActions = {};
+						if (item.kind === "channel") {
+							if (item.unread > 0)
+								actions.onMarkRead = () => markChannelRead(item.id);
+							actions.onMarkUnread = () => markChannelUnread(item.id);
+						}
+						if (item.kind === "agent") {
+							actions.onStartFreshChat = () => {
+								void store
+									.mutate({ action: "reset-dm", agentId: item.id })
+									.then(() => {
+										openItem(item);
+									});
+							};
+							if (onOpenSessions !== undefined)
+								actions.onViewSessions = onOpenSessions;
+						}
+						if (item.kind === "project" || item.kind === "agent") {
+							actions.onCopy = () => copyCollectionName(item);
+							actions.copyLabel =
+								item.kind === "agent" ? "Copy mention" : "Copy project name";
+						}
 						return (
 							<li
 								key={item.id}
@@ -348,16 +385,20 @@ export function CommonspaceDirectory({
 										openItem(item);
 									}}
 								>
-									<span
-										className={
-											item.kind === "agent"
-												? "grid size-9 place-items-center rounded-full border bg-background font-mono text-[13px] font-semibold"
-												: "grid size-9 place-items-center rounded-sm border bg-muted font-mono text-[13px] font-semibold"
-										}
-										aria-hidden="true"
-									>
-										{item.mark}
-									</span>
+									{item.kind === "agent" ? (
+										<AgentAvatar
+											agent={item.agent}
+											size="md"
+											className="rounded-full text-[13px]"
+										/>
+									) : (
+										<span
+											className="grid size-9 place-items-center rounded-sm border bg-muted font-mono text-[13px] font-semibold"
+											aria-hidden="true"
+										>
+											{item.mark}
+										</span>
+									)}
 									<span className="min-w-0">
 										<strong className="block truncate text-[13px]">
 											{item.name}
@@ -385,43 +426,12 @@ export function CommonspaceDirectory({
 									kind={item.kind}
 									label={item.name}
 									meta={item.meta}
-									triggerClassName="opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 max-[780px]:opacity-100"
 									pinned={pinned}
 									unread={item.unread > 0}
 									onOpen={() => {
 										openItem(item);
 									}}
-									{...(item.kind === "channel"
-										? {
-												...(item.unread > 0
-													? { onMarkRead: () => markChannelRead(item.id) }
-													: {}),
-												onMarkUnread: () => markChannelUnread(item.id),
-											}
-										: {})}
-									{...(item.kind === "agent"
-										? {
-												onStartFreshChat: () => {
-													void store
-														.mutate({ action: "reset-dm", agentId: item.id })
-														.then(() => {
-															openItem(item);
-														});
-												},
-											}
-										: {})}
-									{...(item.kind === "agent" && onOpenSessions !== undefined
-										? { onViewSessions: onOpenSessions }
-										: {})}
-									{...(item.kind === "project" || item.kind === "agent"
-										? {
-												onCopy: () => copyCollectionName(item),
-												copyLabel:
-													item.kind === "agent"
-														? "Copy mention"
-														: "Copy project name",
-											}
-										: {})}
+									{...actions}
 									onSettings={() => {
 										onOpenSettings(item.kind, item.id);
 									}}

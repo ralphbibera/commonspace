@@ -14,7 +14,13 @@ import {
 	type SendFileAttachment,
 	type SendImageAttachment,
 } from "@commonspace/shared";
-import { SettingsIcon } from "lucide-react";
+import {
+	MessageCircleReplyIcon,
+	PencilIcon,
+	PinIcon,
+	SettingsIcon,
+	Trash2Icon,
+} from "lucide-react";
 import {
 	type Dispatch,
 	type FormEvent,
@@ -37,6 +43,7 @@ import {
 	ChannelSettingsPane,
 } from "./CommonspaceContextSettings.tsx";
 import type { CommonspaceStore } from "./commonspace-store.ts";
+import { AgentAvatar } from "./design-system/AgentAvatar.tsx";
 import { MessageActionMenu } from "./design-system/MessageActionMenu.tsx";
 import { RunAttribution } from "./RunAttribution.tsx";
 import {
@@ -65,6 +72,9 @@ const messageMarkdownFallback = (
 	</p>
 );
 
+const messageActionButtonClassName =
+	"grid size-7 place-items-center rounded-sm border-0 bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40";
+
 export interface CommonspaceConversationProps {
 	store: CommonspaceStore;
 	targetMessageId?: string | null;
@@ -75,6 +85,21 @@ export interface CommonspaceConversationProps {
 		token: number;
 	} | null;
 	composerInsertRequest?: { text: string; token: number } | null;
+	onSettingsClosed?: () => void;
+}
+
+export function matchesContextSettingsRequest(
+	settingsRequest: {
+		kind: "channel" | "agent";
+		id: string;
+		token: number;
+	} | null,
+	conversation: ConversationRef | null,
+): boolean {
+	if (settingsRequest === null || conversation === null) return false;
+	return settingsRequest.kind === "channel"
+		? conversation.kind === "channel" && conversation.id === settingsRequest.id
+		: conversation.kind === "dm" && conversation.id === settingsRequest.id;
 }
 
 interface CommandFeedback {
@@ -234,7 +259,7 @@ function PendingImageStrip({
 						{image.name}
 					</figcaption>
 					<button
-						className="absolute -top-1 -right-1 grid size-6 place-items-center rounded-full border bg-background"
+						className="absolute -top-1 -right-1 grid size-7 place-items-center rounded-sm border bg-background text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
 						type="button"
 						aria-label={`Remove ${image.name}`}
 						onClick={() => {
@@ -271,7 +296,7 @@ function PendingFileStrip({
 						</small>
 					</span>
 					<button
-						className="grid size-8 place-items-center rounded-full border-0 bg-transparent"
+						className="grid size-8 place-items-center rounded-sm border-0 bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
 						type="button"
 						aria-label={`Remove ${file.name}`}
 						onClick={() => {
@@ -437,113 +462,134 @@ function MessageRow({
 			setSavingEdit(false);
 		}
 	};
+	const messageAgent =
+		message.authorType === "agent"
+			? bootstrap?.agents.find((agent) => agent.id === message.authorId)
+			: undefined;
 	return (
 		<article
 			id={elementId}
 			className={cn(
-				"group/message relative mx-auto mb-0 grid w-full max-w-[780px] grid-cols-[36px_minmax(0,1fr)] gap-3 rounded-none px-4 py-2 hover:bg-muted focus-within:bg-muted",
+				"group/message relative mx-auto mb-0 grid w-full max-w-[920px] grid-cols-[36px_minmax(0,1fr)] gap-3 rounded-none px-3 py-2 hover:bg-muted/50 focus-within:bg-muted/50",
 				flush && "px-0 py-0",
-				highlighted && "rounded-md bg-muted/60 ring-1 ring-border",
+				highlighted && "bg-muted/40",
 			)}
 			data-author={message.authorType}
 			aria-current={highlighted ? "true" : undefined}
 		>
-			<div
-				className={cn(
-					"grid size-9 place-items-center rounded-md border bg-background font-mono text-xs font-semibold",
-					message.authorType === "agent" && "text-primary",
-					message.authorType === "system" && "bg-muted text-muted-foreground",
+			<div className="pointer-events-none absolute top-1 right-2 z-10 flex items-center gap-0.5 rounded-sm border bg-background p-0.5 opacity-0 shadow-[var(--shadow-low)] transition-opacity group-hover/message:pointer-events-auto group-hover/message:opacity-100 group-focus-within/message:pointer-events-auto group-focus-within/message:opacity-100">
+				{message.authorType === "agent" && onReplyToAgent !== undefined && (
+					<button
+						type="button"
+						className={messageActionButtonClassName}
+						aria-label={`Reply directly to ${message.authorName}`}
+						title={`Reply directly to ${message.authorName}`}
+						onClick={() => {
+							onReplyToAgent(message);
+						}}
+					>
+						<MessageCircleReplyIcon className="size-4" aria-hidden="true" />
+					</button>
 				)}
-				aria-hidden="true"
-			>
-				{message.authorName.slice(0, 1).toUpperCase()}
+				{onPin !== undefined && (
+					<button
+						type="button"
+						className={messageActionButtonClassName}
+						aria-label={`Pin message from ${message.authorName}`}
+						title={`Pin message from ${message.authorName}`}
+						onClick={() => {
+							void onPin(message);
+						}}
+					>
+						<PinIcon className="size-4" aria-hidden="true" />
+					</button>
+				)}
+				{message.authorType === "user" &&
+					message.deletedAt === undefined &&
+					onEdit !== undefined && (
+						<button
+							type="button"
+							className={messageActionButtonClassName}
+							aria-label={`Edit message from ${message.authorName}`}
+							title={`Edit message from ${message.authorName}`}
+							onClick={() => {
+								setEditedText(message.text);
+								setEditing(true);
+							}}
+						>
+							<PencilIcon className="size-4" aria-hidden="true" />
+						</button>
+					)}
+				{message.deletedAt === undefined && onDelete !== undefined && (
+					<button
+						type="button"
+						className={cn(
+							messageActionButtonClassName,
+							"hover:bg-destructive/10 hover:text-destructive",
+						)}
+						aria-label={`Delete message from ${message.authorName}`}
+						title={`Delete message from ${message.authorName}`}
+						onClick={() => {
+							if (
+								window.confirm(
+									"Delete this delivered message content? The transcript marker and delivery history will remain.",
+								)
+							)
+								void onDelete(message);
+						}}
+					>
+						<Trash2Icon className="size-4" aria-hidden="true" />
+					</button>
+				)}
+				{onToggleSaved !== undefined && onCopyLink !== undefined && (
+					<MessageActionMenu
+						authorName={message.authorName}
+						summary={message.text}
+						saved={saved}
+						{...(onReplyInThread === undefined ? {} : { onReplyInThread })}
+						onToggleSaved={() => {
+							void onToggleSaved(message, !saved);
+						}}
+						{...(onMarkUnread === undefined
+							? {}
+							: {
+									onMarkUnread: () => {
+										void onMarkUnread(message);
+									},
+								})}
+						onCopyLink={() => {
+							onCopyLink(message);
+						}}
+					/>
+				)}
 			</div>
+			{message.authorType === "agent" ? (
+				<AgentAvatar
+					agent={messageAgent}
+					fallbackName={message.authorName}
+					size="md"
+					className="rounded-md text-primary"
+				/>
+			) : (
+				<div
+					className={cn(
+						"grid size-9 place-items-center rounded-md border bg-background font-mono text-xs font-semibold",
+						message.authorType === "system" && "bg-muted text-muted-foreground",
+					)}
+					aria-hidden="true"
+				>
+					{message.authorName.slice(0, 1).toUpperCase()}
+				</div>
+			)}
 			<div className="min-w-0">
 				<header className="flex min-h-5 flex-wrap items-baseline gap-[7px] text-xs [&>strong]:font-heading [&>strong]:text-sm">
 					<strong>{message.authorName}</strong>
-					<time className="text-muted-foreground opacity-0 transition-opacity group-hover/message:opacity-100 group-focus-within/message:opacity-100">
+					<time className="text-muted-foreground text-[11px]">
 						{new Date(message.createdAt).toLocaleTimeString([], {
 							hour: "2-digit",
 							minute: "2-digit",
 						})}
 					</time>
-					{message.authorType === "agent" && onReplyToAgent !== undefined && (
-						<button
-							type="button"
-							className="min-h-8 rounded-sm border-0 bg-transparent px-2 text-xs text-muted-foreground opacity-0 hover:bg-muted hover:text-foreground group-hover/message:opacity-100 focus:opacity-100"
-							aria-label={`Reply directly to ${message.authorName}`}
-							onClick={() => {
-								onReplyToAgent(message);
-							}}
-						>
-							<span aria-hidden="true">↩</span> Reply
-						</button>
-					)}
-					{onPin !== undefined && (
-						<button
-							type="button"
-							className="min-h-8 rounded-sm border-0 bg-transparent px-2 text-xs text-muted-foreground opacity-0 hover:bg-muted hover:text-foreground group-hover/message:opacity-100 focus:opacity-100"
-							aria-label={`Pin message from ${message.authorName}`}
-							onClick={() => {
-								void onPin(message);
-							}}
-						>
-							Pin
-						</button>
-					)}
-					{message.authorType === "user" &&
-						message.deletedAt === undefined &&
-						onEdit !== undefined && (
-							<button
-								type="button"
-								className="min-h-8 rounded-sm border-0 bg-transparent px-2 text-xs text-muted-foreground opacity-0 hover:bg-muted hover:text-foreground group-hover/message:opacity-100 focus:opacity-100"
-								aria-label={`Edit message from ${message.authorName}`}
-								onClick={() => {
-									setEditedText(message.text);
-									setEditing(true);
-								}}
-							>
-								Edit
-							</button>
-						)}
-					{message.deletedAt === undefined && onDelete !== undefined && (
-						<button
-							type="button"
-							className="min-h-8 rounded-sm border-0 bg-transparent px-2 text-xs text-muted-foreground opacity-0 hover:bg-destructive/5 hover:text-destructive group-hover/message:opacity-100 focus:opacity-100"
-							aria-label={`Delete message from ${message.authorName}`}
-							onClick={() => {
-								if (
-									window.confirm(
-										"Delete this delivered message content? The transcript marker and delivery history will remain.",
-									)
-								)
-									void onDelete(message);
-							}}
-						>
-							Delete
-						</button>
-					)}
-					{onToggleSaved !== undefined && onCopyLink !== undefined && (
-						<MessageActionMenu
-							authorName={message.authorName}
-							summary={message.text}
-							saved={saved}
-							{...(onReplyInThread === undefined ? {} : { onReplyInThread })}
-							onToggleSaved={() => {
-								void onToggleSaved(message, !saved);
-							}}
-							{...(onMarkUnread === undefined
-								? {}
-								: {
-										onMarkUnread: () => {
-											void onMarkUnread(message);
-										},
-									})}
-							onCopyLink={() => {
-								onCopyLink(message);
-							}}
-						/>
-					)}
 				</header>
 				{supersedesMessageId !== undefined && (
 					<div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
@@ -873,11 +919,13 @@ function liveActivityDetail(activity: CommonspaceLiveAgentActivity): {
 function LiveAgentActivity({
 	activities,
 	fallbackAgents,
+	agents,
 	phase,
 	onStop,
 }: {
 	activities: readonly CommonspaceLiveAgentActivity[];
 	fallbackAgents: readonly CommonspaceAgentProfile[];
+	agents: readonly CommonspaceAgentProfile[];
 	phase: "queued" | "running";
 	onStop: (activity: CommonspaceLiveAgentActivity) => void;
 }) {
@@ -900,6 +948,9 @@ function LiveAgentActivity({
 		>
 			{activities.length > 0
 				? activities.map((activity, index) => {
+						const agent = agents.find(
+							(candidate) => candidate.id === activity.agentId,
+						);
 						const detail = liveActivityDetail(activity);
 						const expanded = activity.id === expandedActivityId;
 						const panelId = `${panelIdPrefix}-${String(index)}`;
@@ -924,13 +975,13 @@ function LiveAgentActivity({
 											setSelectedActivityId(expanded ? null : activity.id);
 										}}
 									>
-										<span
-											className="grid size-[34px] place-items-center rounded-full border border-primary/30 bg-primary text-xs font-semibold text-primary-foreground"
-											role="img"
-											aria-label={`${activity.agentName} is responding`}
-										>
-											{activity.agentName.slice(0, 1).toLocaleUpperCase()}
-										</span>
+										<AgentAvatar
+											agent={agent}
+											fallbackName={activity.agentName}
+											size="activity"
+											ariaLabel={`${activity.agentName} is responding`}
+											className="rounded-full border-primary/30 bg-primary text-primary-foreground"
+										/>
 										<span className="min-w-0">
 											<span className="flex items-center justify-between gap-2 text-xs">
 												<strong>{activity.agentName}</strong>
@@ -988,13 +1039,12 @@ function LiveAgentActivity({
 							data-runtime={agent.adapter}
 						>
 							<div className="grid min-h-[62px] grid-cols-[34px_minmax(0,1fr)] items-center gap-2.5 px-3">
-								<span
-									className="grid size-[34px] place-items-center rounded-full border border-primary/30 bg-primary text-xs font-semibold text-primary-foreground"
-									role="img"
-									aria-label={`${agent.displayName} is ${phase === "queued" ? "queued" : "responding"}`}
-								>
-									{agent.displayName.slice(0, 1).toLocaleUpperCase()}
-								</span>
+								<AgentAvatar
+									agent={agent}
+									size="activity"
+									ariaLabel={`${agent.displayName} is ${phase === "queued" ? "queued" : "responding"}`}
+									className="rounded-full border-primary/30 bg-primary text-primary-foreground"
+								/>
 								<span className="min-w-0">
 									<span className="flex items-center justify-between gap-2 text-xs">
 										<strong>{agent.displayName}</strong>
@@ -1031,16 +1081,16 @@ function ThreadAgentActivity({
 				const agent = agents.find((candidate) => candidate.id === agentId);
 				const name = agent?.displayName ?? agentId;
 				return (
-					<span
+					<AgentAvatar
 						key={agentId}
-						className="-ml-1 grid size-6 place-items-center rounded-full border border-background bg-primary font-mono text-[10px] text-primary-foreground first:ml-0"
+						agent={agent}
+						fallbackName={name}
+						size="stack"
+						className="-ml-1 rounded-full border-background bg-primary text-primary-foreground first:ml-0"
 						data-runtime={agent?.adapter}
-						role="img"
-						aria-label={`${name} is responding`}
+						ariaLabel={`${name} is responding`}
 						style={{ zIndex: respondingAgentIds.length - index }}
-					>
-						{name.slice(0, 1).toLocaleUpperCase()}
-					</span>
+					/>
 				);
 			})}
 		</span>
@@ -1064,19 +1114,22 @@ function ThreadReplyAgents({
 	if (replyingAgents.length === 0) return null;
 	return (
 		<span className="inline-flex items-center pl-1">
-			{replyingAgents.map((reply) => (
-				<span
-					key={reply.authorId}
-					className="-ml-1 grid size-6 place-items-center rounded-full border border-background bg-muted font-mono text-[10px] first:ml-0"
-					data-runtime={
-						agents.find((agent) => agent.id === reply.authorId)?.adapter
-					}
-					role="img"
-					aria-label={`${reply.authorName} replied`}
-				>
-					{reply.authorName.slice(0, 1).toLocaleUpperCase()}
-				</span>
-			))}
+			{replyingAgents.map((reply) => {
+				const agent = agents.find(
+					(candidate) => candidate.id === reply.authorId,
+				);
+				return (
+					<AgentAvatar
+						key={reply.authorId}
+						agent={agent}
+						fallbackName={reply.authorName}
+						size="stack"
+						className="-ml-1 rounded-full border-background bg-muted text-foreground first:ml-0"
+						data-runtime={agent?.adapter}
+						ariaLabel={`${reply.authorName} replied`}
+					/>
+				);
+			})}
 		</span>
 	);
 }
@@ -1137,6 +1190,7 @@ export function CommonspaceConversation({
 	onTargetMessageHandled,
 	settingsRequest = null,
 	composerInsertRequest = null,
+	onSettingsClosed,
 }: CommonspaceConversationProps) {
 	const suggestionListId = useId();
 	const threadSuggestionListId = useId();
@@ -1437,16 +1491,22 @@ export function CommonspaceConversation({
 		targetMessageId,
 	]);
 	useEffect(() => {
-		void snapshot.activeConversation;
 		composer.current?.focus();
 		setCommandFeedback(null);
 		setPendingImages([]);
 		setPendingFiles([]);
-		setContextSettingsOpen(false);
+		if (
+			!matchesContextSettingsRequest(
+				settingsRequest,
+				snapshot.activeConversation,
+			)
+		) {
+			setContextSettingsOpen(false);
+		}
 		if (targetMessageId !== null) return;
 		setFocusedMessageId(null);
 		setFocusedRootMessageId(null);
-	}, [snapshot.activeConversation, targetMessageId]);
+	}, [settingsRequest, snapshot.activeConversation, targetMessageId]);
 	useEffect(() => {
 		if (composerInsertRequest === null || !isChannel) return;
 		setDraft(
@@ -1456,17 +1516,21 @@ export function CommonspaceConversation({
 		composer.current?.focus();
 	}, [composerInsertRequest, isChannel]);
 	useEffect(() => {
-		const conversation = snapshot.activeConversation;
-		if (settingsRequest === null || conversation === null) return;
-		const matches =
-			settingsRequest.kind === "channel"
-				? conversation.kind === "channel" &&
-					conversation.id === settingsRequest.id
-				: conversation.kind === "dm" && conversation.id === settingsRequest.id;
-		if (!matches) return;
-		store.selectThread(null);
+		if (
+			!matchesContextSettingsRequest(
+				settingsRequest,
+				snapshot.activeConversation,
+			)
+		)
+			return;
+		if (snapshot.activeThreadId !== null) store.selectThread(null);
 		setContextSettingsOpen(true);
-	}, [settingsRequest, snapshot.activeConversation, store.selectThread]);
+	}, [
+		settingsRequest,
+		snapshot.activeConversation,
+		snapshot.activeThreadId,
+		store.selectThread,
+	]);
 	useEffect(() => {
 		if (activeThread !== undefined) setContextSettingsOpen(false);
 	}, [activeThread]);
@@ -2102,7 +2166,7 @@ export function CommonspaceConversation({
 						{nextUnreadMessage !== undefined && (
 							<button
 								type="button"
-								className="min-h-11 rounded-sm border-0 bg-transparent px-3 text-xs font-semibold text-muted-foreground hover:bg-muted hover:text-foreground"
+								className="min-h-8 rounded-sm border-0 bg-transparent px-3 text-xs font-semibold text-muted-foreground hover:bg-muted hover:text-foreground"
 								aria-label="Jump to next unread message"
 								onClick={() => {
 									openMessageVersion(nextUnreadMessage.id);
@@ -2114,13 +2178,14 @@ export function CommonspaceConversation({
 						{snapshot.activeConversation !== null && (
 							<button
 								type="button"
-								className="grid size-11 place-items-center rounded-full border-0 bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground aria-pressed:bg-muted aria-pressed:text-foreground"
+								className="grid size-8 place-items-center rounded-full border-0 bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground aria-pressed:bg-muted aria-pressed:text-foreground"
 								aria-label={
 									isChannel ? "Open channel settings" : "Open agent profile"
 								}
 								aria-pressed={contextSettingsOpen}
 								onClick={() => {
 									if (activeThread !== undefined) store.selectThread(null);
+									if (contextSettingsOpen) onSettingsClosed?.();
 									setContextSettingsOpen((open) => !open);
 								}}
 							>
@@ -2138,48 +2203,6 @@ export function CommonspaceConversation({
 						aria-hidden="true"
 					>
 						C
-					</div>
-					<span className="mb-2 text-xs font-bold tracking-[0.075em] text-muted-foreground">
-						YOUR LOCAL AGENT WORKSPACE
-					</span>
-					<h2 className="max-w-[600px] font-heading text-[clamp(25px,3vw,38px)] leading-[1.08] font-bold tracking-[-0.038em]">
-						Make space for the whole team.
-					</h2>
-					<p className="mt-2 max-w-[560px] text-[13px] leading-6 text-muted-foreground">
-						Projects set context. Channels gather agents. Threads keep work
-						focused.
-					</p>
-					<div
-						className="mt-7 grid w-[min(100%,760px)] grid-cols-3 gap-2.5 max-[640px]:grid-cols-1"
-						aria-hidden="true"
-					>
-						<span className="flex min-h-[88px] gap-2.5 rounded-md border p-4">
-							<b className="text-muted-foreground">01</b>
-							<span className="grid gap-1 text-xs font-semibold">
-								Projects
-								<small className="font-normal text-muted-foreground">
-									Choose local context.
-								</small>
-							</span>
-						</span>
-						<span className="flex min-h-[88px] gap-2.5 rounded-md border p-4">
-							<b className="text-muted-foreground">02</b>
-							<span className="grid gap-1 text-xs font-semibold">
-								Channels
-								<small className="font-normal text-muted-foreground">
-									Seat agents together.
-								</small>
-							</span>
-						</span>
-						<span className="flex min-h-[88px] gap-2.5 rounded-md border p-4">
-							<b className="text-muted-foreground">03</b>
-							<span className="grid gap-1 text-xs font-semibold">
-								Threads
-								<small className="font-normal text-muted-foreground">
-									Keep native sessions exact.
-								</small>
-							</span>
-						</span>
 					</div>
 				</div>
 			) : (
@@ -2207,14 +2230,14 @@ export function CommonspaceConversation({
 							isChannel ? `${heading.title} posts` : `${heading.title} messages`
 						}
 					>
-						<div className="min-h-0 flex-1 overflow-y-auto px-6 pt-8 pb-3 max-[640px]:px-3">
+						<div className="min-h-0 flex-1 overflow-y-auto px-3 pt-4 pb-3 max-[640px]:px-2">
 							{roots.length === 0 && (
 								<div className="p-10 text-center text-sm text-muted-foreground">
 									No messages yet. Start the conversation.
 								</div>
 							)}
 							{dateLabel !== null && (
-								<div className="mx-auto mb-7 flex w-full max-w-[780px] items-center gap-3 text-xs text-muted-foreground before:h-px before:flex-1 before:bg-border after:h-px after:flex-1 after:bg-border">
+								<div className="mx-auto mb-4 flex w-full max-w-[920px] items-center gap-3 text-xs text-muted-foreground before:h-px before:flex-1 before:bg-border after:h-px after:flex-1 after:bg-border">
 									<span>{dateLabel}</span>
 								</div>
 							)}
@@ -2268,8 +2291,8 @@ export function CommonspaceConversation({
 												<article
 													id={`commonspace-message-${root.id}`}
 													className={cn(
-														"mx-auto mb-2 w-full max-w-[780px] rounded-md pb-1",
-														threadIsFocused && "bg-muted/60 ring-1 ring-border",
+														"mx-auto mb-1 w-full max-w-[920px] rounded-sm pb-1",
+														threadIsFocused && "bg-muted/40",
 													)}
 													aria-current={threadIsFocused ? "true" : undefined}
 												>
@@ -2296,7 +2319,7 @@ export function CommonspaceConversation({
 													<button
 														type="button"
 														className={cn(
-															"relative ml-12 mt-0.5 inline-flex min-h-10 w-fit items-center gap-2 rounded-md border-0 bg-transparent py-1 pr-2 pl-0.5 text-xs font-semibold text-muted-foreground hover:bg-muted hover:text-foreground",
+															"relative ml-12 mt-0.5 inline-flex min-h-8 w-fit items-center gap-2 rounded-sm border-0 bg-transparent py-0.5 pr-2 pl-0.5 text-xs font-semibold text-muted-foreground hover:bg-muted hover:text-foreground",
 															unreadCount > 0 && "text-primary",
 														)}
 														aria-label={`${String(replyCount)} ${replyCount === 1 ? "reply" : "replies"}${unreadCount === 0 ? "" : `, ${String(unreadCount)} unread`}`}
@@ -2377,6 +2400,7 @@ export function CommonspaceConversation({
 								<LiveAgentActivity
 									activities={directMessageActivities}
 									fallbackAgents={directMessageAgents}
+									agents={bootstrap?.agents ?? []}
 									phase={directMessagePhase}
 									onStop={(activity) => {
 										void stopActivity(activity);
@@ -2437,6 +2461,7 @@ export function CommonspaceConversation({
 											</button>
 											<button
 												type="button"
+												className="grid size-8 place-items-center rounded-sm border-0 bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
 												aria-label="Remove queued follow-up"
 												onClick={() => {
 													void store.removeFollowup(followup.messageId);
@@ -2466,6 +2491,7 @@ export function CommonspaceConversation({
 									<strong>{commandFeedback.title}</strong>
 									<button
 										type="button"
+										className="grid size-7 place-items-center rounded-sm border-0 bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
 										aria-label="Dismiss command result"
 										onClick={() => {
 											setCommandFeedback(null);
@@ -2501,7 +2527,7 @@ export function CommonspaceConversation({
 						)}
 
 						<form
-							className="mx-auto mb-[18px] flex w-[calc(100%-48px)] max-w-[780px] flex-col gap-1 rounded-md border bg-background px-3 pt-3 pb-2 focus-within:border-primary focus-within:ring-3 focus-within:ring-primary/10 max-[640px]:mb-3 max-[640px]:w-[calc(100%-24px)]"
+							className="mx-auto mb-3 flex w-[calc(100%-32px)] max-w-[920px] flex-col gap-1 rounded-sm border bg-background p-2 transition-colors focus-within:border-foreground/25 focus-within:ring-2 focus-within:ring-foreground/10 max-[640px]:mb-3 max-[640px]:w-[calc(100%-16px)]"
 							onSubmit={(event) => {
 								void sendRoot(event);
 							}}
@@ -2615,7 +2641,7 @@ export function CommonspaceConversation({
 								)}
 							</div>
 							<div className="flex min-h-[52px] items-center gap-2 pt-1">
-								{directMessageActivities.length > 0 && !isChannel ? (
+								{directMessageActivities.length > 0 && !isChannel && (
 									<fieldset
 										className="m-0 flex min-w-0 flex-wrap items-center gap-1 border-0 p-0 [&_button]:min-h-9 [&_button]:rounded-sm [&_button]:border [&_button]:px-2 [&_button]:text-xs [&_button[aria-pressed=true]]:bg-muted"
 										aria-label="Active run delivery"
@@ -2649,16 +2675,6 @@ export function CommonspaceConversation({
 											Stop + send
 										</button>
 									</fieldset>
-								) : (
-									<div
-										className="flex items-center gap-1 text-xs text-muted-foreground"
-										aria-hidden="true"
-									>
-										<span>@</span>
-										<span>⌁</span>
-										<span>☺</span>
-										<span>Aa</span>
-									</div>
 								)}
 								<label className="relative inline-flex min-h-9 items-center rounded-sm border px-2 text-xs font-semibold">
 									Attach
@@ -2696,7 +2712,7 @@ export function CommonspaceConversation({
 												? "Post message"
 												: "Send message"
 									}
-									className="inline-flex min-h-11 min-w-[76px] items-center justify-center rounded-md border-0 bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-45"
+									className="inline-flex min-h-9 min-w-[72px] items-center justify-center rounded-sm border-0 bg-primary px-3 text-sm font-semibold text-primary-foreground disabled:opacity-45"
 									disabled={
 										snapshot.sending ||
 										(draft.trim() === "" &&
@@ -2753,9 +2769,11 @@ export function CommonspaceConversation({
 							className="commonspace-thread-panel relative z-20 flex min-h-0 min-w-[360px] flex-col border-l bg-background"
 							aria-label="Thread replies"
 						>
-							<header className="flex min-h-[68px] items-center gap-2.5 border-b px-3 py-2.5 pl-5">
+							<header className="flex min-h-14 items-center gap-2 border-b px-3 py-2.5">
 								<div className="min-w-0 flex-1">
-									<strong className="font-heading text-xl">Thread</strong>
+									<strong className="font-heading text-base font-semibold">
+										Thread
+									</strong>
 									<p className="mt-0.5 flex gap-2 text-xs text-muted-foreground">
 										<span>{activeThreadProject?.name ?? "No project"}</span>
 										<span>·</span>
@@ -2769,7 +2787,7 @@ export function CommonspaceConversation({
 								</div>
 								<button
 									type="button"
-									className="min-h-10 min-w-[88px] rounded-sm border bg-background px-3 text-xs font-semibold hover:bg-muted disabled:opacity-50"
+									className="min-h-8 min-w-[80px] rounded-sm border bg-background px-2.5 text-xs font-semibold hover:bg-muted disabled:opacity-50"
 									aria-label={
 										threadFollowing ? "Unfollow thread" : "Follow thread"
 									}
@@ -2779,9 +2797,10 @@ export function CommonspaceConversation({
 								>
 									{threadFollowing ? "Following" : "Follow"}
 								</button>
-								<div className="flex items-center gap-1 [&_button]:min-h-10 [&_button]:rounded-sm [&_button]:border-0 [&_button]:bg-transparent [&_button]:px-2 [&_button]:text-xs [&_button]:text-muted-foreground [&_button]:hover:bg-muted">
+								<div className="flex items-center gap-1">
 									<button
 										type="button"
+										className="inline-flex min-h-8 items-center rounded-sm border-0 bg-transparent px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
 										aria-label="Open thread context"
 										aria-pressed={threadContextOpen}
 										onClick={() => {
@@ -2792,6 +2811,7 @@ export function CommonspaceConversation({
 									</button>
 									<button
 										type="button"
+										className="grid size-8 shrink-0 place-items-center rounded-sm border-0 bg-transparent text-base leading-none text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
 										aria-label="Close thread"
 										onClick={() => {
 											store.selectThread(null);
@@ -2958,7 +2978,7 @@ export function CommonspaceConversation({
 							)}
 							<div
 								ref={threadMessages}
-								className="min-h-0 flex-1 overflow-y-auto bg-background p-5"
+								className="min-h-0 flex-1 overflow-y-auto bg-background p-3"
 								role="log"
 								aria-label="Thread messages"
 							>
@@ -2978,7 +2998,7 @@ export function CommonspaceConversation({
 										onCopyLink={copyMessageLink}
 									/>
 								)}
-								<div className="my-5 flex items-center gap-3 text-xs text-muted-foreground after:h-px after:flex-1 after:bg-border">
+								<div className="my-3 flex items-center gap-3 text-xs text-muted-foreground after:h-px after:flex-1 after:bg-border">
 									Replies
 								</div>
 								{replies.map((reply) => (
@@ -3003,6 +3023,7 @@ export function CommonspaceConversation({
 									<LiveAgentActivity
 										activities={activeThreadActivities}
 										fallbackAgents={[]}
+										agents={bootstrap?.agents ?? []}
 										phase="running"
 										onStop={(activity) => {
 											void stopActivity(activity);
@@ -3064,6 +3085,7 @@ export function CommonspaceConversation({
 												</button>
 												<button
 													type="button"
+													className="grid size-8 place-items-center rounded-sm border-0 bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
 													aria-label="Remove queued thread follow-up"
 													onClick={() => {
 														void store.removeFollowup(followup.messageId);
@@ -3077,7 +3099,7 @@ export function CommonspaceConversation({
 								</section>
 							)}
 							<form
-								className="relative mx-4 mb-4 grid gap-2 rounded-md border bg-background p-3 focus-within:border-primary focus-within:ring-3 focus-within:ring-primary/10"
+								className="relative mx-3 mb-3 grid gap-2 rounded-sm border bg-background p-2 transition-colors focus-within:border-foreground/25 focus-within:ring-2 focus-within:ring-foreground/10"
 								onSubmit={(event) => {
 									void sendThreadReply(event);
 								}}
@@ -3112,7 +3134,7 @@ export function CommonspaceConversation({
 												: undefined
 										}
 										aria-activedescendant={activeThreadSuggestionId}
-										className="block min-h-[66px] max-h-40 w-full resize-none border-0 bg-transparent px-1 py-1 text-sm leading-6 outline-none"
+										className="block min-h-11 max-h-40 w-full resize-none border-0 bg-transparent px-1 py-1 text-sm leading-6 outline-none"
 										placeholder="Reply in thread, tag context, or type /"
 										value={threadDraft}
 										disabled={snapshot.sending}
@@ -3261,7 +3283,7 @@ export function CommonspaceConversation({
 									/>
 								</label>
 								<button
-									className="min-h-11 justify-self-end rounded-md border-0 bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-45"
+									className="min-h-9 justify-self-end rounded-sm border-0 bg-primary px-3 text-sm font-semibold text-primary-foreground disabled:opacity-45"
 									type="submit"
 									disabled={
 										snapshot.sending ||
@@ -3284,6 +3306,7 @@ export function CommonspaceConversation({
 								store={store}
 								onClose={() => {
 									setContextSettingsOpen(false);
+									onSettingsClosed?.();
 								}}
 							/>
 						)}
@@ -3296,6 +3319,7 @@ export function CommonspaceConversation({
 								store={store}
 								onClose={() => {
 									setContextSettingsOpen(false);
+									onSettingsClosed?.();
 								}}
 							/>
 						)}

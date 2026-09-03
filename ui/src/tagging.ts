@@ -2,6 +2,7 @@ import type { CommonspaceBootstrap } from "@commonspace/shared";
 import { agentMentionName, projectTagName } from "@commonspace/shared";
 
 export type TagKind = "agent" | "project" | "channel" | "text";
+type TagMarker = "@@" | "@" | "#";
 
 export interface TagReferencePart {
 	text: string;
@@ -20,6 +21,21 @@ const referencePattern =
 	/(^|[^\p{L}\p{N}_@])(@@|@|#)([\p{L}\p{N}][\p{L}\p{N}_-]*)/gu;
 const activeTokenPattern = /(^|\s)(@@|@|#)([\p{L}\p{N}][\p{L}\p{N}_-]*)?$/u;
 
+function isTagMarker(value: string | undefined): value is TagMarker {
+	return value === "@@" || value === "@" || value === "#";
+}
+
+function tagKindForMarker(marker: TagMarker): Exclude<TagKind, "text"> {
+	switch (marker) {
+		case "@@":
+			return "project";
+		case "@":
+			return "agent";
+		case "#":
+			return "channel";
+	}
+}
+
 export function tagReferenceParts(
 	text: string,
 	bootstrap?: CommonspaceBootstrap,
@@ -33,15 +49,20 @@ export function tagReferenceParts(
 	};
 	let cursor = 0;
 	for (const match of text.matchAll(referencePattern)) {
-		const lead = match[1] ?? "";
-		const marker = match[2] ?? "";
-		const value = match[3] ?? "";
-		if (match.index === undefined) continue;
+		const lead = match[1];
+		const marker = match[2];
+		const value = match[3];
+		if (
+			lead === undefined ||
+			!isTagMarker(marker) ||
+			value === undefined ||
+			match.index === undefined
+		)
+			continue;
 		const start = match.index + lead.length;
 		if (start > cursor)
 			pushPart({ text: text.slice(cursor, start), kind: "text" });
-		const kind: Exclude<TagKind, "text"> =
-			marker === "@@" ? "project" : marker === "@" ? "agent" : "channel";
+		const kind = tagKindForMarker(marker);
 		const normalizedValue = value.toLocaleLowerCase();
 		const known =
 			bootstrap === undefined ||
@@ -78,6 +99,7 @@ export function tagSuggestions(
 	const match = text.match(activeTokenPattern);
 	if (match === null) return [];
 	const prefix = match[2];
+	if (!isTagMarker(prefix)) return [];
 	const query = (match[3] ?? "").toLocaleLowerCase();
 	if (prefix === "@") {
 		const agents = bootstrap.agents

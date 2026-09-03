@@ -16,6 +16,7 @@ import { WorkspaceHeader } from "@/design-system/WorkspaceHeader";
 import { CommonspaceProjectChanges } from "./CommonspaceProjectChanges.tsx";
 import { CommonspaceProjectFiles } from "./CommonspaceProjectFiles.tsx";
 import type { CommonspaceStore } from "./commonspace-store.ts";
+import { AgentAvatar } from "./design-system/AgentAvatar.tsx";
 
 export interface CommonspaceProjectViewProps {
 	projectId: string;
@@ -130,12 +131,11 @@ function ProjectConversations({
 							aria-label={`Open direct message ${agent.displayName}`}
 							onClick={() => onOpenConversation({ kind: "dm", id: agent.id })}
 						>
-							<span
-								className="grid size-[34px] place-items-center rounded-full bg-primary font-mono text-primary-foreground"
-								aria-hidden="true"
-							>
-								{agent.displayName.slice(0, 1).toLocaleUpperCase()}
-							</span>
+							<AgentAvatar
+								agent={agent}
+								size="activity"
+								className="rounded-full bg-primary text-primary-foreground"
+							/>
 							<span className="min-w-0">
 								<strong className="block truncate">{agent.displayName}</strong>
 								<small className="block truncate text-xs text-muted-foreground">
@@ -367,7 +367,7 @@ export function CommonspaceProjectView({
 							</div>
 							<button
 								type="button"
-								className="grid size-11 place-items-center rounded-full border-0 bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground"
+								className="grid size-8 shrink-0 place-items-center rounded-sm border-0 bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
 								aria-label="Close project settings"
 								onClick={() => {
 									setSettingsOpen(false);
