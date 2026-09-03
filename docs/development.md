@@ -1,5 +1,18 @@
 # Development guide
 
+## Contributor start
+
+The default development path is credential-free:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm dev
+```
+
+Open the Vite UI at `http://127.0.0.1:5173`. The API runs at `http://127.0.0.1:3100`. The workspace starts empty. This is intentional: contributors can work on the application and its tests without installing or authenticating an agent harness.
+
+Read [the contributor guide](contributor-guide.md) before making a cross-cutting change. It explains which boundary owns each kind of work and which verification layer should cover it.
+
 ## Setup
 
 ```bash
@@ -52,6 +65,14 @@ pnpm verify:live
 ```
 
 `pnpm check` combines lint, typecheck, tests, and build. `verify:live` additionally starts the built server and exercises the application through a real browser.
+
+During iteration, use the smaller gate:
+
+```bash
+pnpm check:fast
+```
+
+It runs lint, type checks, the full unit/integration suite, and the representative Storybook browser suite. Use `pnpm check` before requesting review.
 
 ## Fast UI loop
 

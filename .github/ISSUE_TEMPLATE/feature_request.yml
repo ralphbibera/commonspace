@@ -1,0 +1,46 @@
+name: Feature request
+description: Propose a focused improvement that fits the Commonspace product model.
+title: "[Feature]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Start with the user problem. A feature should improve conversation, routing, context visibility, native-session continuity, trust, or collaboration without creating a separate task-management domain.
+  - type: textarea
+    id: problem
+    attributes:
+      label: User problem
+      description: Who is blocked, and what are they trying to accomplish?
+      placeholder: Explain the problem in user terms.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: Describe the smallest useful behavior.
+      placeholder: Describe the user-facing result, not only the implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: product_fit
+    attributes:
+      label: Product fit
+      description: Which existing Commonspace object or principle does this extend?
+      placeholder: Project, Channel, Direct Message, Agent, Message, thread, shared context, or another existing boundary.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and scope
+      description: What alternatives did you consider, and what should remain out of scope?
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues and pull requests.
+          required: true
+        - label: This proposal does not assume a new task, ticket, company, approval, or work-queue domain.
+          required: true

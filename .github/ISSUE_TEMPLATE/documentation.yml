@@ -1,0 +1,33 @@
+name: Documentation improvement
+description: Report unclear, missing, or incorrect project documentation.
+title: "[Docs]: "
+body:
+  - type: input
+    id: document
+    attributes:
+      label: Document or page
+      description: Link a repository-relative path or public URL.
+      placeholder: docs/development.md
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is unclear?
+      description: Explain what a new contributor cannot understand or complete.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed improvement
+      description: Suggest the smallest wording, example, or structural change that would help.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I checked the current README and contributor guide first.
+          required: true
