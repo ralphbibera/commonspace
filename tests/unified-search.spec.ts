@@ -186,6 +186,9 @@ describe("unified search", () => {
 		expect(kinds).toEqual(
 			new Set(["message", "dm", "agent", "trace", "decision", "run", "brief"]),
 		);
+		expect(["message", "dm", "channel", "agent"]).toContain(
+			result.results[0]?.kind,
+		);
 		expect(
 			result.results.every(
 				(item) => item.receipt !== "" && item.highlights.length > 0,

@@ -318,6 +318,25 @@ function agentCandidates(bootstrap: CommonspaceBootstrap): Candidate[] {
 	}));
 }
 
+function searchKindPriority(kind: CommonspaceSearchKind): number {
+	switch (kind) {
+		case "message":
+		case "dm":
+			return 4;
+		case "channel":
+		case "agent":
+			return 3;
+		case "run":
+			return 2;
+		case "file":
+		case "decision":
+		case "brief":
+			return 1;
+		case "trace":
+			return 0;
+	}
+}
+
 async function fileCandidates(
 	state: CommonspaceState,
 	includedTerms: readonly string[],
@@ -451,6 +470,10 @@ export async function searchCommonspace(
 			};
 		})
 		.sort((left, right) => {
+			const leftKindPriority = searchKindPriority(left.kind);
+			const rightKindPriority = searchKindPriority(right.kind);
+			if (leftKindPriority !== rightKindPriority)
+				return rightKindPriority - leftKindPriority;
 			const leftTitle = includedTerms.some((term) =>
 				normalized(left.title).includes(term),
 			)
