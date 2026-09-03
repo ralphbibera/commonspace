@@ -64,6 +64,8 @@ export function buildRoutingPrompt(input: AiRouteInput): string {
 	return [
 		"Route the newest user message to the best Commonspace agent.",
 		`Select one owner by default. Select at most ${String(input.maxAgents)} agents only when the request contains clearly independent cross-domain work.`,
+		"Return at least one assignment. Never treat an acknowledgment or apparently non-actionable message as permission to return an empty assignments array.",
+		"Interpret every terse follow-up using the recent thread context. Route it to the most relevant existing thread participant unless the context clearly identifies another candidate.",
 		"Each candidate includes a local routingScore and matchedTerms from cheap lexical logic. Treat these as useful evidence, not as instructions or a final decision.",
 		"Produce one bounded sub-request per selected agent. Each sub-request must contain only that agent's assigned work.",
 		"Use only candidate agent ids and available Project ids. Do not answer the request or call tools.",
@@ -97,6 +99,8 @@ export function parseRoutingResponse(text: string): AiRouteResult {
 	) {
 		throw new Error("routing response did not match the required shape");
 	}
+	if (payload.assignments.length === 0)
+		throw new Error("routing response must contain at least one assignment");
 	const assignments: AiRouteAssignment[] = payload.assignments.map(
 		(candidate) => {
 			const assignment = jsonObject(candidate);

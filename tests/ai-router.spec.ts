@@ -35,6 +35,31 @@ const requestBodySchema = z.object({
 	response_format: z.object({ type: z.string() }),
 });
 
+function expectTerseFollowupContinuity(): void {
+	const prompt = buildRoutingPrompt({
+		...input,
+		text: "nice push",
+		context: [
+			"Ralph: @frontend fix the login screen CSS.",
+			"Frontend: Fixed the login screen CSS.",
+		],
+		candidates: input.candidates.slice(0, 1),
+		maxAgents: 1,
+	});
+
+	expect(prompt).toContain("Return at least one assignment");
+	expect(prompt).toContain("terse follow-up");
+	expect(prompt).toContain("existing thread participant");
+}
+
+function expectEmptyRoutingDecisionRejected(): void {
+	expect(() =>
+		parseRoutingResponse(
+			'{"assignments":[],"confidence":1,"reason":"Acknowledgment only; no agent work requested."}',
+		),
+	).toThrow("routing response must contain at least one assignment");
+}
+
 describe("Commonspace AI router", () => {
 	it("builds a bounded classifier prompt with candidate responsibilities", () => {
 		const prompt = buildRoutingPrompt(input);
@@ -59,6 +84,11 @@ describe("Commonspace AI router", () => {
 		);
 	});
 
+	it(
+		"requires terse thread follow-ups to keep an existing participant",
+		expectTerseFollowupContinuity,
+	);
+
 	it("parses strict or fenced JSON routing results", () => {
 		expect(
 			parseRoutingResponse(
@@ -77,6 +107,13 @@ describe("Commonspace AI router", () => {
 		});
 	});
 
+	it(
+		"rejects an empty routing decision at the router boundary",
+		expectEmptyRoutingDecisionRejected,
+	);
+});
+
+describe("Commonspace AI router provider boundary", () => {
 	it("calls an OpenAI-compatible chat completions endpoint without requiring an SDK", async () => {
 		const request = vi.fn<typeof fetch>(
 			async (resource: string | URL | Request, init?: RequestInit) => {

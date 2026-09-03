@@ -1795,11 +1795,11 @@ describe("Commonspace host authority", () => {
 			assignments: [],
 			corrections: [],
 			inferredProjectIds: [],
-			reason: "inference routing failed",
+			reason: "inference routing failed: router unavailable",
 		});
 		expect(failed).toMatchObject({
 			replyStatus: "failed",
-			replyError: "inference routing failed",
+			replyError: "inference routing failed: router unavailable",
 		});
 		expect(deriveCommonspaceInboxItems(service.snapshot())).toEqual(
 			expect.arrayContaining([
