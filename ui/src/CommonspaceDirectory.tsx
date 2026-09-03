@@ -239,6 +239,17 @@ export function CommonspaceDirectory({
 		}
 	};
 
+	const markChannelUnread = (channelId: string) => {
+		if (bootstrap === null) return;
+		const latestMessage = bootstrap.state.messages[`channel:${channelId}`]?.at(-1);
+		if (latestMessage === undefined) return;
+		void store.mutate({
+			action: "set-inbox-item-unread",
+			messageId: latestMessage.id,
+			unread: true,
+		});
+	};
+
 	const copyCollectionName = (item: DirectoryItem) => {
 		const value = item.kind === "agent" ? `@${item.name}` : item.name;
 		void navigator.clipboard?.writeText(value).catch(() => undefined);
@@ -380,8 +391,13 @@ export function CommonspaceDirectory({
 									onOpen={() => {
 										openItem(item);
 									}}
-									{...(item.kind === "channel" && item.unread > 0
-										? { onMarkRead: () => markChannelRead(item.id) }
+									{...(item.kind === "channel"
+										? {
+												...(item.unread > 0
+													? { onMarkRead: () => markChannelRead(item.id) }
+													: {}),
+												onMarkUnread: () => markChannelUnread(item.id),
+											}
 										: {})}
 									{...(item.kind === "agent"
 										? {

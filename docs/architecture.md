@@ -111,7 +111,7 @@ Hermes launches its installed harness through `hermes acp`; Codex uses its bundl
 
 ## UI
 
-`ui/src/main.tsx` mounts a normal React root and shared styles. `CommonspaceApp` composes the responsive navigation and conversation surface. Project scope is inference-first: composers expose no root, Thread, branch, or reroute Project picker. A user may provide explicit context only through visible `@@project` tags. `CommonspaceClientStore` owns bootstrap state, selection, sends, mutations, and revision-event refreshes without injecting a singular Project compatibility fallback.
+`ui/src/main.tsx` mounts a normal React root and shared styles. `CommonspaceApp` composes the responsive navigation and conversation surface, opening directly to the attention-focused Inbox when no destination is saved and treating legacy `commonspace-view=home` values as Inbox. The shell has no separate Workspace landing page or Agent-runs dashboard. Project scope is inference-first: composers expose no root, Thread, branch, or reroute Project picker. A user may provide explicit context only through visible `@@project` tags. `CommonspaceClientStore` owns bootstrap state, selection, sends, mutations, and revision-event refreshes without injecting a singular Project compatibility fallback.
 
 ## Persistence
 

@@ -107,7 +107,7 @@ export function CollectionActionMenu({
 			<DropdownMenu>
 				<DropdownMenuTrigger
 					className={cn(
-						"grid size-11 place-items-center rounded-sm border-0 bg-transparent text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/30",
+						"grid size-7 place-items-center rounded-sm border-0 bg-transparent text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/30",
 						triggerClassName,
 					)}
 					aria-label={triggerLabel ?? `More actions for ${label}`}

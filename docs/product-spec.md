@@ -139,6 +139,10 @@ flowchart TD
 
 ## 5. Primary experience
 
+### Navigation and first surface
+
+Opening Commonspace takes the user directly to the attention-focused Inbox. The product has no separate Workspace landing page or Agent-runs dashboard. Replies, mentions, permission requests, needs-input outcomes, failures, and timeouts remain discoverable through Inbox items and the conversation or Thread that owns them. A previously saved legacy `home` view is treated as Inbox so an upgrade cannot reopen the removed surface.
+
 ### 5.1 First run and Agent addition
 
 1. The local Commonspace service starts and the browser or desktop client connects to it.

@@ -149,6 +149,7 @@ export function CommonspaceProjectFiles({
 					<select
 						className="min-h-11 min-w-0 rounded-md border bg-background px-3"
 						aria-label="Project folder"
+						title="Choose a project folder"
 						value={rootIndex}
 						onChange={(event) => {
 							setRootIndex(Number(event.target.value));

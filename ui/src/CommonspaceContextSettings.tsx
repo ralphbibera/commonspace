@@ -46,7 +46,7 @@ function AgentMark({
 		<span
 			className={cn(
 				"grid shrink-0 place-items-center border bg-muted font-mono font-semibold",
-				large ? "size-16 rounded-lg text-2xl" : "size-9 rounded-md text-xs",
+				large ? "size-16 rounded-md text-2xl" : "size-9 rounded-md text-xs",
 			)}
 			style={
 				agent.accentColor === undefined

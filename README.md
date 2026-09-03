@@ -12,6 +12,7 @@ Commonspace is a local-first workspace for durable conversations with coding age
 - **Channels** provide shared, optionally projectless conversations with explicit agent rosters and editable compacted context.
 - **Direct Messages** preserve one-to-one continuity with a chosen agent.
 - **Inbox** collects actual agent replies from Channels and Direct Messages, with unread filtering and exact thread navigation.
+- **Startup** opens directly to the attention-focused Inbox. There is no separate Workspace landing page or Agent-runs dashboard; runtime outcomes remain attached to their replies and Inbox items.
 - **Agents** are explicitly chosen from discovered supported harness installations. Workspace names and appearance stay local and never rename or reconfigure the harness.
 - **Messages and threads** are the work record. Native agent session references keep every continuation attached to the correct context.
 

@@ -374,7 +374,6 @@ export function CommonspaceSearchDialog({
 								<small
 									className="block truncate text-xs text-muted-foreground/80"
 									title={result.receipt}
-									aria-label={`Source: ${result.receipt}`}
 								>
 									{resultReceiptLabel(result)}
 								</small>
