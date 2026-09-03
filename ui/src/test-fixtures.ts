@@ -38,14 +38,14 @@ function emptyThreadMemory(): CommonspaceThreadMemory {
 	};
 }
 
-function storyThreadContext(): CommonspaceThreadContext {
+function testThreadContext(): CommonspaceThreadContext {
 	return {
 		channelSnapshot: { ...emptyThreadMemory(), capturedAt: now },
 		memory: emptyThreadMemory(),
 	};
 }
 
-export const storyBootstrap: CommonspaceBootstrap = {
+export const testBootstrap: CommonspaceBootstrap = {
 	agents: [
 		{
 			id: "agentops",
@@ -251,7 +251,7 @@ export const storyBootstrap: CommonspaceBootstrap = {
 				projectId: "commonspace",
 				rootMessageId: "root-running",
 				agentIds: ["agentops"],
-				context: storyThreadContext(),
+				context: testThreadContext(),
 				createdAt: now,
 			},
 			{
@@ -260,7 +260,7 @@ export const storyBootstrap: CommonspaceBootstrap = {
 				projectId: "platform",
 				rootMessageId: "root-attention",
 				agentIds: ["backend"],
-				context: storyThreadContext(),
+				context: testThreadContext(),
 				createdAt: now,
 			},
 			{
@@ -269,7 +269,7 @@ export const storyBootstrap: CommonspaceBootstrap = {
 				projectId: "commonspace",
 				rootMessageId: "root-complete",
 				agentIds: ["frontend"],
-				context: storyThreadContext(),
+				context: testThreadContext(),
 				createdAt: now,
 			},
 		],
@@ -352,8 +352,8 @@ export const storyBootstrap: CommonspaceBootstrap = {
 	},
 };
 
-export function createStoryStore(
-	bootstrap: CommonspaceBootstrap = storyBootstrap,
+export function createTestStore(
+	bootstrap: CommonspaceBootstrap = testBootstrap,
 ): CommonspaceStore {
 	const listeners = new Set<() => void>();
 	let snapshot: CommonspaceClientSnapshot = {
