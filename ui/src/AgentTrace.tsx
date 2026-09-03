@@ -86,7 +86,7 @@ function TraceEntry({ entry }: { entry: CommonspaceTraceEntry }) {
 						<strong>Plan</strong>
 						<span>{String(entry.steps.length)} steps</span>
 					</header>
-					{entry.markdown !== undefined && (
+					{entry.markdown !== undefined && entry.steps.length === 0 && (
 						<p className="mt-2 text-[13px] leading-5">{entry.markdown}</p>
 					)}
 					{entry.steps.length > 0 && (
@@ -94,10 +94,11 @@ function TraceEntry({ entry }: { entry: CommonspaceTraceEntry }) {
 							{entry.steps.map((step, index) => (
 								<li
 									key={`${entry.id}-${String(index)}`}
+									className="grid grid-cols-[20px_minmax(0,1fr)_auto] items-center gap-2 text-[13px] leading-5"
 									data-status={step.status}
 								>
 									<span
-										className="mr-2 inline-grid size-5 place-items-center rounded-full border font-mono text-[10px]"
+										className="inline-grid size-5 place-items-center rounded-full border font-mono text-[10px]"
 										aria-hidden="true"
 									>
 										{step.status === "completed"
@@ -107,7 +108,9 @@ function TraceEntry({ entry }: { entry: CommonspaceTraceEntry }) {
 												: "○"}
 									</span>
 									<span>{step.text}</span>
-									<small>{planStatusLabel(step.status)}</small>
+									<small className="text-xs text-muted-foreground">
+										{planStatusLabel(step.status)}
+									</small>
 								</li>
 							))}
 						</ol>

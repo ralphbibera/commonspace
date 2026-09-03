@@ -6,7 +6,6 @@ import {
 	type CommonspaceMessage,
 	type CommonspacePermissionRequest,
 	type CommonspaceThread,
-	type CommonspaceTraceEntry,
 	type ConversationRef,
 	deriveCommonspaceInboxItems,
 	deriveCommonspaceSessions,
@@ -37,7 +36,7 @@ import {
 } from "react";
 import { WorkspaceHeader } from "@/design-system/WorkspaceHeader";
 import { cn } from "@/lib/utils";
-import { AgentTrace, AgentTraceTimeline } from "./AgentTrace.tsx";
+import { AgentTrace } from "./AgentTrace.tsx";
 import {
 	AgentSettingsPane,
 	ChannelSettingsPane,
@@ -45,6 +44,7 @@ import {
 import type { CommonspaceStore } from "./commonspace-store.ts";
 import { AgentAvatar } from "./design-system/AgentAvatar.tsx";
 import { MessageActionMenu } from "./design-system/MessageActionMenu.tsx";
+import { LiveAgentActivity } from "./LiveAgentActivity.tsx";
 import { RunAttribution } from "./RunAttribution.tsx";
 import {
 	resolveSlashCommand,
@@ -314,10 +314,6 @@ function PendingFileStrip({
 function runtimeLabel(adapter: AgentAdapterKind | undefined): string {
 	if (adapter === "codex") return "Codex";
 	return "Hermes";
-}
-
-function waitingActivityText(adapter: AgentAdapterKind): string {
-	return `Waiting for ${runtimeLabel(adapter)} activity…`;
 }
 
 function conversationTitle(
@@ -872,197 +868,6 @@ function liveActivitiesFor(
 			activity.conversation.kind === conversation.kind &&
 			activity.conversation.id === conversation.id &&
 			activity.threadId === threadId,
-	);
-}
-
-function latestTraceEntry(
-	entries: readonly CommonspaceTraceEntry[],
-): CommonspaceTraceEntry | undefined {
-	return entries.reduce<CommonspaceTraceEntry | undefined>(
-		(latest, entry) =>
-			latest === undefined || entry.updatedAt > latest.updatedAt
-				? entry
-				: latest,
-		undefined,
-	);
-}
-
-function liveActivityDetail(activity: CommonspaceLiveAgentActivity): {
-	kind: string;
-	text: string;
-} {
-	const entry = latestTraceEntry(activity.entries);
-	if (entry === undefined)
-		return { kind: "Waiting", text: waitingActivityText(activity.adapter) };
-	if (entry.type === "reasoning")
-		return { kind: "Reasoning", text: entry.text };
-	if (entry.type === "plan") {
-		const step =
-			entry.steps.findLast((candidate) => candidate.status === "in_progress") ??
-			entry.steps.at(-1);
-		return {
-			kind: "Plan",
-			text: step?.text ?? entry.markdown ?? "Updating plan…",
-		};
-	}
-	if (entry.type === "tool")
-		return {
-			kind: entry.status === "in_progress" ? "Tool running" : "Tool",
-			text: entry.title,
-		};
-	return {
-		kind: "Context",
-		text: `${entry.usedTokens.toLocaleString()} / ${entry.contextWindow.toLocaleString()} tokens`,
-	};
-}
-
-function LiveAgentActivity({
-	activities,
-	fallbackAgents,
-	agents,
-	phase,
-	onStop,
-}: {
-	activities: readonly CommonspaceLiveAgentActivity[];
-	fallbackAgents: readonly CommonspaceAgentProfile[];
-	agents: readonly CommonspaceAgentProfile[];
-	phase: "queued" | "running";
-	onStop: (activity: CommonspaceLiveAgentActivity) => void;
-}) {
-	const panelIdPrefix = useId();
-	const [selectedActivityId, setSelectedActivityId] = useState<string | null>(
-		null,
-	);
-	if (activities.length === 0 && fallbackAgents.length === 0) return null;
-	const expandedActivityId = activities.some(
-		(activity) => activity.id === selectedActivityId,
-	)
-		? selectedActivityId
-		: null;
-	return (
-		<div
-			className="mx-auto mb-3 grid w-[min(780px,calc(100%-48px))] gap-2"
-			role="status"
-			aria-label="Live agent activity"
-			aria-live="polite"
-		>
-			{activities.length > 0
-				? activities.map((activity, index) => {
-						const agent = agents.find(
-							(candidate) => candidate.id === activity.agentId,
-						);
-						const detail = liveActivityDetail(activity);
-						const expanded = activity.id === expandedActivityId;
-						const panelId = `${panelIdPrefix}-${String(index)}`;
-						return (
-							<article
-								key={activity.id}
-								className={cn(
-									"overflow-hidden rounded-md border bg-background",
-									expanded &&
-										"border-primary/30 shadow-[inset_2px_0_0_var(--primary)]",
-								)}
-								data-runtime={activity.adapter}
-							>
-								<div className="grid grid-cols-[minmax(0,1fr)_auto] items-center">
-									<button
-										type="button"
-										className="grid min-h-[62px] w-full grid-cols-[34px_minmax(0,1fr)_20px] items-center gap-2.5 border-0 bg-transparent px-3 text-left hover:bg-muted"
-										aria-label={`${activity.agentName} activity`}
-										aria-expanded={expanded}
-										aria-controls={panelId}
-										onClick={() => {
-											setSelectedActivityId(expanded ? null : activity.id);
-										}}
-									>
-										<AgentAvatar
-											agent={agent}
-											fallbackName={activity.agentName}
-											size="activity"
-											ariaLabel={`${activity.agentName} is responding`}
-											className="rounded-full border-primary/30 bg-primary text-primary-foreground"
-										/>
-										<span className="min-w-0">
-											<span className="flex items-center justify-between gap-2 text-xs">
-												<strong>{activity.agentName}</strong>
-												<span className="text-muted-foreground">
-													{runtimeLabel(activity.adapter)} · {detail.kind}
-												</span>
-											</span>
-											<span className="mt-1 block truncate text-xs text-muted-foreground">
-												{detail.text}
-											</span>
-										</span>
-										<span
-											className={cn(
-												"transition-transform",
-												expanded && "rotate-180",
-											)}
-											aria-hidden="true"
-										>
-											⌄
-										</span>
-									</button>
-									<button
-										type="button"
-										className="mr-2 min-h-11 rounded-sm border border-destructive/40 bg-background px-3 text-xs font-semibold text-destructive hover:bg-destructive/5"
-										aria-label={`Stop ${activity.agentName}`}
-										onClick={() => {
-											onStop(activity);
-										}}
-									>
-										<span aria-hidden="true">■</span> Stop
-									</button>
-								</div>
-								{expanded && (
-									<section
-										id={panelId}
-										className="border-t bg-muted p-3"
-										aria-label={`${activity.agentName} live activity`}
-									>
-										{activity.entries.length > 0 ? (
-											<AgentTraceTimeline entries={activity.entries} />
-										) : (
-											<p className="text-xs text-muted-foreground">
-												{waitingActivityText(activity.adapter)}
-											</p>
-										)}
-									</section>
-								)}
-							</article>
-						);
-					})
-				: fallbackAgents.map((agent) => (
-						<div
-							key={agent.id}
-							className="overflow-hidden rounded-md border bg-background"
-							data-runtime={agent.adapter}
-						>
-							<div className="grid min-h-[62px] grid-cols-[34px_minmax(0,1fr)] items-center gap-2.5 px-3">
-								<AgentAvatar
-									agent={agent}
-									size="activity"
-									ariaLabel={`${agent.displayName} is ${phase === "queued" ? "queued" : "responding"}`}
-									className="rounded-full border-primary/30 bg-primary text-primary-foreground"
-								/>
-								<span className="min-w-0">
-									<span className="flex items-center justify-between gap-2 text-xs">
-										<strong>{agent.displayName}</strong>
-										<span className="text-muted-foreground">
-											{runtimeLabel(agent.adapter)} ·{" "}
-											{phase === "queued" ? "Queued" : "Waiting"}
-										</span>
-									</span>
-									<span className="mt-1 block truncate text-xs text-muted-foreground">
-										{phase === "queued"
-											? "Queued for provider run…"
-											: waitingActivityText(agent.adapter)}
-									</span>
-								</span>
-							</div>
-						</div>
-					))}
-		</div>
 	);
 }
 
