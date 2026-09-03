@@ -5598,7 +5598,11 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 			return routeResult;
 		} catch (error) {
 			this.environment.logger?.warn(error);
-			throw new Error("inference routing failed", { cause: error });
+			const detail = error instanceof Error ? error.message : String(error);
+			throw new Error(
+				this.redactHostDetails(`inference routing failed: ${detail}`, 500),
+				{ cause: error },
+			);
 		}
 	}
 
