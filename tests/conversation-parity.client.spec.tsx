@@ -11,7 +11,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CommonspaceConversation } from "../ui/src/CommonspaceConversation.tsx";
 import { createStoryStore } from "../ui/src/storybook-fixtures.ts";
 
-afterEach(cleanup);
+afterEach(() => {
+	cleanup();
+	vi.useRealTimers();
+});
 beforeEach(() => {
 	Element.prototype.scrollIntoView = vi.fn();
 });
@@ -100,6 +103,8 @@ describe("desktop conversation parity", () => {
 	});
 
 	it("shows date and unread boundaries and follows the active thread", async () => {
+		vi.useFakeTimers({ toFake: ["Date"] });
+		vi.setSystemTime(new Date("2026-09-01T12:00:00.000Z"));
 		const base = createStoryStore();
 		const mutate = vi.fn(async () => undefined);
 		const store = { ...base, mutate };

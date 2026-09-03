@@ -34,7 +34,7 @@ const meta = {
 } satisfies Meta<typeof SidebarPreview>;
 export default meta;
 type Story = StoryObj<typeof meta>;
-export const Default: Story = {};
+export const Default: Story = { tags: ["smoke"] };
 export const AddProjectDialog: Story = {
 	play: async ({ canvasElement }) => {
 		const canvas = within(canvasElement);

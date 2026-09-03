@@ -14,6 +14,7 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Dashboard: Story = {
+	tags: ["smoke"],
 	render: () => <CommonspaceApp store={createStoryStore()} />,
 };
 export const NavigationFlow: Story = {

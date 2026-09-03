@@ -43,7 +43,10 @@ const meta = {
 } satisfies Meta<typeof ConversationPreview>;
 export default meta;
 type Story = StoryObj<typeof meta>;
-export const Channel: Story = { args: { view: "channel" } };
+export const Channel: Story = {
+	tags: ["smoke"],
+	args: { view: "channel" },
+};
 export const ThreadOpen: Story = {
 	args: { view: "thread" },
 	play: async ({ canvasElement }) => {

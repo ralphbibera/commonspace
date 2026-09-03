@@ -98,6 +98,7 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 export const Files: Story = {
+	tags: ["smoke"],
 	args: { empty: false },
 	play: async ({ canvasElement }) => {
 		const canvas = within(canvasElement);

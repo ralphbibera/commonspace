@@ -53,6 +53,33 @@ pnpm verify:live
 
 `pnpm check` combines lint, typecheck, tests, and build. `verify:live` additionally starts the built server and exercises the application through a real browser.
 
+## Fast UI loop
+
+Keep Storybook running while working on visible UI:
+
+```bash
+pnpm storybook
+```
+
+The Storybook testing panel can watch the selected story and rerun only its component, interaction, and accessibility checks after an edit. The equivalent focused terminal loop accepts a story-file filter:
+
+```bash
+pnpm test:storybook:watch -- Conversation
+```
+
+Use the six representative screen stories for a quick cross-screen check, then run the complete browser suite before handing off visible work:
+
+```bash
+pnpm test:storybook:smoke
+pnpm check:ui
+```
+
+The Storybook Vitest suite validates rendering, interactions, and accessibility in a real browser. It does not compare pixels. The Chromatic panel provides optional visual-regression baselines after the repository is linked to a Chromatic project; it is intentionally excluded from the local headless test process.
+
+`verify:live` is the production-wiring smoke test. It builds and boots the API and UI, exercises desktop and narrow layouts, and verifies the installed single-origin path. Do not put component permutations there when a deterministic Storybook story can cover them faster.
+
+CI runs static checks, unit/integration tests, and browser checks in parallel. Browser jobs use the Chrome already present on the GitHub runner, while local browser tests continue to use Playwright's managed Chromium unless `COMMONSPACE_USE_SYSTEM_CHROME=1` is set.
+
 The macOS lifecycle manager can install the current committed `main` checkout through `pnpm service:install`. Use `pnpm service:status`, `service:stop`, `service:start`, `service:update`, and `service:rollback` to exercise the packaged path. It writes only the managed paths documented in [Operations](operations.md); normal development does not register a background service.
 
 ## Contract changes
