@@ -7208,7 +7208,9 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 			if (input.sessionId !== undefined) acpInput.sessionId = input.sessionId;
 			const result = await processClient.run(acpInput);
 			if (result.text.trim() === "")
-				throw new Error(`${input.agent.displayName} returned no response`);
+				throw new AcpEmptyResponseError(
+					`${input.agent.displayName} returned no response`,
+				);
 			const runResult: AgentRunResult = {
 				sessionId: result.sessionId,
 				text: result.text,
@@ -7289,7 +7291,13 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 		try {
 			return await this.runAgent(input);
 		} catch (error) {
-			if (input.sessionId === undefined || !isMissingNativeSession(error))
+			const silentPersistedHermesSession =
+				input.agent.adapter === "hermes" &&
+				error instanceof AcpEmptyResponseError;
+			if (
+				input.sessionId === undefined ||
+				(!silentPersistedHermesSession && !isMissingNativeSession(error))
+			)
 				throw error;
 			if (!shouldContinue()) return null;
 			this.forgetAgentSession(
