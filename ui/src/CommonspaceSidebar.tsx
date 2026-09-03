@@ -425,16 +425,14 @@ export function CommonspaceSidebar({
 	}, [store]);
 	useEffect(() => {
 		void inboxActive;
-		void snapshot.activeConversation;
-		void snapshot.activeProjectId;
 		void conversationActive;
 		void directoryActive;
 		void threadsActive;
+		void activeProjectViewId;
 		setSettingsOpen(false);
 	}, [
+		activeProjectViewId,
 		inboxActive,
-		snapshot.activeConversation,
-			snapshot.activeProjectId,
 		conversationActive,
 		directoryActive,
 		threadsActive,
@@ -1178,16 +1176,16 @@ export function CommonspaceSidebar({
 									{routingProvider === "harness" && (
 										<div className="mt-3 grid gap-2 rounded-md border bg-muted p-3">
 											{agents.map((agent) => (
-											<button
-												key={agent.id}
-												type="button"
-												role="radio"
-												aria-label={`Use ${agent.displayName} agent for routing`}
-												aria-checked={routingHarnessAgentId === agent.id}
+												<button
+													key={agent.id}
+													type="button"
+													role="radio"
+													aria-label={`Use ${agent.displayName} agent for routing`}
+													aria-checked={routingHarnessAgentId === agent.id}
 													onClick={() => {
 														setRoutingHarnessAgentId(agent.id);
 													}}
-												className="grid grid-cols-[36px_minmax(0,1fr)] items-center gap-3 bg-background text-left aria-checked:border-primary"
+													className="grid grid-cols-[36px_minmax(0,1fr)] items-center gap-3 bg-background text-left aria-checked:border-primary"
 												>
 													<AgentAvatar agent={agent} />
 													<span>
@@ -1863,12 +1861,9 @@ export function CommonspaceSidebar({
 							</form>
 						</SidebarDialog>
 					)}
-					{projectItems.pinnedCount > 0 && (
-						<NavGroupLabel label="Pinned" />
-					)}
+					{projectItems.pinnedCount > 0 && <NavGroupLabel label="Pinned" />}
 					{projectItems.items.map((project, index) => {
-						const active =
-							!settingsOpen && activeProjectViewId === project.id;
+						const active = !settingsOpen && activeProjectViewId === project.id;
 						const folderSummary =
 							project.paths.length === 1
 								? "1 folder · working directory"
@@ -1877,11 +1872,9 @@ export function CommonspaceSidebar({
 							<div key={project.id} className="grid gap-0.5">
 								{projectItems.pinnedCount > 0 &&
 									index === projectItems.pinnedCount && (
-										<NavGroupLabel
-											label="Recent"
-										/>
+										<NavGroupLabel label="Recent" />
 									)}
-								<div className="group grid grid-cols-[minmax(0,1fr)_28px] items-center rounded-sm hover:bg-sidebar-accent focus-within:bg-sidebar-accent has-[button[aria-pressed=true]]:border-l-2 has-[button[aria-pressed=true]]:border-primary has-[button[aria-pressed=true]]:bg-[color-mix(in_srgb,var(--sidebar-foreground)_20%,transparent)]">
+								<div className="group grid grid-cols-[minmax(0,1fr)_28px] items-center rounded-sm hover:bg-sidebar-accent focus-within:bg-sidebar-accent has-[button[aria-pressed=true]]:bg-[color-mix(in_srgb,var(--sidebar-foreground)_20%,transparent)]">
 									<button
 										type="button"
 										className="relative grid min-h-8 w-full min-w-0 grid-cols-[20px_minmax(0,1fr)] items-center gap-2 rounded-l-sm border-0 bg-transparent px-2 text-left text-sidebar-foreground/80 aria-pressed:text-sidebar-foreground"
@@ -2147,9 +2140,7 @@ export function CommonspaceSidebar({
 							</form>
 						</SidebarDialog>
 					)}
-					{channelItems.pinnedCount > 0 && (
-						<NavGroupLabel label="Pinned" />
-					)}
+					{channelItems.pinnedCount > 0 && <NavGroupLabel label="Pinned" />}
 					{channelItems.items.map((channel, index) => {
 						const unreadCount = channelUnreadCounts.get(channel.id) ?? 0;
 						const latestChannelMessage =
@@ -2164,11 +2155,9 @@ export function CommonspaceSidebar({
 							<div key={channel.id} className="grid gap-0.5">
 								{channelItems.pinnedCount > 0 &&
 									index === channelItems.pinnedCount && (
-										<NavGroupLabel
-											label="Recent"
-										/>
+										<NavGroupLabel label="Recent" />
 									)}
-								<div className="group grid grid-cols-[minmax(0,1fr)_28px] items-center rounded-sm hover:bg-sidebar-accent focus-within:bg-sidebar-accent has-[button[aria-pressed=true]]:border-l-2 has-[button[aria-pressed=true]]:border-primary has-[button[aria-pressed=true]]:bg-[color-mix(in_srgb,var(--sidebar-foreground)_20%,transparent)]">
+								<div className="group grid grid-cols-[minmax(0,1fr)_28px] items-center rounded-sm hover:bg-sidebar-accent focus-within:bg-sidebar-accent has-[button[aria-pressed=true]]:bg-[color-mix(in_srgb,var(--sidebar-foreground)_20%,transparent)]">
 									<button
 										type="button"
 										className="relative grid min-h-8 w-full min-w-0 grid-cols-[20px_minmax(0,1fr)_auto] items-center gap-2 rounded-l-sm border-0 bg-transparent px-2 text-left text-sidebar-foreground/80 aria-pressed:text-sidebar-foreground"
@@ -2729,9 +2718,7 @@ export function CommonspaceSidebar({
 								</SidebarDialog>
 							);
 						})()}
-					{agentItems.pinnedCount > 0 && (
-						<NavGroupLabel label="Pinned" />
-					)}
+					{agentItems.pinnedCount > 0 && <NavGroupLabel label="Pinned" />}
 					{agentItems.items.map((agent, index) => {
 						const effectiveStatus = activeAgentIds.has(agent.id)
 							? "running"
@@ -2740,11 +2727,9 @@ export function CommonspaceSidebar({
 							<div key={agent.id} className="grid gap-0.5">
 								{agentItems.pinnedCount > 0 &&
 									index === agentItems.pinnedCount && (
-										<NavGroupLabel
-											label="Recent"
-										/>
+										<NavGroupLabel label="Recent" />
 									)}
-								<div className="group grid grid-cols-[minmax(0,1fr)_28px] items-center rounded-sm hover:bg-sidebar-accent focus-within:bg-sidebar-accent has-[button[aria-pressed=true]]:border-l-2 has-[button[aria-pressed=true]]:border-primary has-[button[aria-pressed=true]]:bg-[color-mix(in_srgb,var(--sidebar-foreground)_20%,transparent)]">
+								<div className="group grid grid-cols-[minmax(0,1fr)_28px] items-center rounded-sm hover:bg-sidebar-accent focus-within:bg-sidebar-accent has-[button[aria-pressed=true]]:bg-[color-mix(in_srgb,var(--sidebar-foreground)_20%,transparent)]">
 									<button
 										type="button"
 										className="relative grid min-h-8 w-full min-w-0 grid-cols-[20px_minmax(0,1fr)] items-center gap-2 rounded-l-sm border-0 bg-transparent px-2 text-left text-sidebar-foreground/80 aria-pressed:text-sidebar-foreground"
