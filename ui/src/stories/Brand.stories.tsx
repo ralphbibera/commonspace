@@ -53,4 +53,4 @@ const meta = {
 } satisfies Meta<typeof BrandPreview>;
 export default meta;
 type Story = StoryObj<typeof meta>;
-export const ReferenceTokens: Story = {};
+export const ReferenceTokens: Story = { tags: ["smoke"] };

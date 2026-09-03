@@ -83,10 +83,14 @@ The split keeps product contracts, server behavior, and the browser interface in
 
 ```bash
 pnpm dev                    # server + UI development
+pnpm storybook              # persistent UI workbench
 pnpm test                   # unit and integration tests
+pnpm test:storybook:smoke   # six representative browser stories
+pnpm test:storybook:watch   # focused browser-test watch mode
 pnpm lint                   # ESLint
 pnpm typecheck              # workspace TypeScript checks
 pnpm build                  # all production builds
+pnpm check:ui               # full UI type, Storybook, and build gate
 pnpm check                  # complete local gate
 pnpm verify:live            # build, boot API + UI preview, and exercise the browser path
 pnpm verify:service         # isolated real clone/build/update/rollback lifecycle on macOS

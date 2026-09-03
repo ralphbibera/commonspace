@@ -1,4 +1,5 @@
 import { fileURLToPath } from "node:url";
+import process from "node:process";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
@@ -11,7 +12,9 @@ export default defineConfig({
 		},
 	},
 	test: {
-		environment: "jsdom",
+		environment: "node",
+		setupFiles: ["./tests/test-setup.ts"],
+		...(process.env.CI === "true" ? { maxWorkers: 2 } : {}),
 		clearMocks: true,
 		restoreMocks: true,
 	},

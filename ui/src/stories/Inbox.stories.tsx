@@ -12,5 +12,6 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 export const Attention: Story = {
+	tags: ["smoke"],
 	args: { store: createStoryStore(), onOpenItem: fn() },
 };

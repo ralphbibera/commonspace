@@ -148,7 +148,12 @@ try {
 		"Vite preview",
 	);
 
-	browser = await chromium.launch({ headless: true });
+	browser = await chromium.launch({
+		headless: true,
+		...(process.env.COMMONSPACE_USE_SYSTEM_CHROME === "1"
+			? { channel: "chrome" }
+			: {}),
+	});
 	const page = await browser.newPage({
 		viewport: { width: 1180, height: 820 },
 	});
