@@ -8,6 +8,7 @@ import {
 	type CommonspaceRetentionPreview,
 	type CommonspaceRoutingProvider,
 	type CommonspaceSearchResult,
+	type UpdateRoutingConfigurationRequest,
 	DEFAULT_COMMONSPACE_NOTIFICATION_SETTINGS,
 	deriveCommonspaceInboxItems,
 } from "@commonspace/shared";
@@ -776,24 +777,12 @@ export function CommonspaceSidebar({
 	const saveChannelAgents = async (event: FormEvent, channelId: string) => {
 		event.preventDefault();
 		await store.mutate({
-			action: "set-channel-agents",
+			action: "set-channel-configuration",
 			channelId,
 			agentIds: channelAgentIds,
-		});
-		await store.mutate({
-			action: "set-channel-context",
-			channelId,
 			instructions: channelInstructions,
-		});
-		await store.mutate({
-			action: "set-channel-settings",
-			channelId,
 			model: channelModel || null,
 			reasoning: channelReasoning || null,
-		});
-		await store.mutate({
-			action: "set-channel-memory",
-			channelId,
 			summary: channelSummary,
 			decisions: channelDecisions
 				.split("\n")
@@ -828,35 +817,40 @@ export function CommonspaceSidebar({
 		setChannelPinNote("");
 	};
 
+	const routingUpdateRequest = (): UpdateRoutingConfigurationRequest =>
+		routingProvider === "harness"
+			? { provider: "harness", harnessAgentId: routingHarnessAgentId }
+			: {
+					provider: "openai-compatible",
+					model: routingModel,
+					baseUrl: routingBaseUrl,
+					...(clearRoutingApiKey
+						? { apiKey: null }
+						: routingApiKey.trim() === ""
+							? {}
+							: { apiKey: routingApiKey }),
+				};
+
 	const saveDefaults = async (event: FormEvent) => {
 		event.preventDefault();
 		if (savingInference) return;
-		const routingUpdate =
-			routingProvider === "harness"
-				? {
-						provider: "harness" as const,
-						harnessAgentId: routingHarnessAgentId,
-					}
-				: {
-						provider: "openai-compatible" as const,
-						model: routingModel,
-						baseUrl: routingBaseUrl,
-						...(clearRoutingApiKey
-							? { apiKey: null }
-							: routingApiKey.trim() === ""
-								? {}
-								: { apiKey: routingApiKey }),
-					};
-		setSavingInference(true);
-		try {
-			await store.updateRoutingConfiguration(routingUpdate);
-			await store.mutate({
-				action: "set-defaults",
+		const request = {
+			routing: routingUpdateRequest(),
+			defaults: {
 				model: defaultModel || null,
 				reasoning: defaultReasoning,
 				maxAgentsPerTurn: defaultMaxAgents,
 				memoryThreads: defaultMemoryThreads,
-			});
+			},
+		};
+		setSavingInference(true);
+		try {
+			if (typeof store.updateWorkspaceSettings === "function") {
+				await store.updateWorkspaceSettings(request);
+			} else {
+				await store.updateRoutingConfiguration(request.routing);
+				await store.mutate({ action: "set-defaults", ...request.defaults });
+			}
 			setSettingsOpen(false);
 		} finally {
 			setSavingInference(false);
