@@ -148,3 +148,6 @@ test-results/
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+*storybook.log
+storybook-static

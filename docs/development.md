@@ -57,14 +57,11 @@ The development server runs behind a stable local supervisor. Changes under `ser
 5. Run the full gates:
 
 ```bash
-pnpm lint
-pnpm typecheck
-pnpm test                  # backend/runtime behavior suite
-pnpm build
-pnpm verify:live
+pnpm check                 # Biome, TypeScript, and tests
+pnpm verify:live           # final release-path build and browser verification
 ```
 
-`pnpm check` combines lint, typecheck, the backend/runtime behavior suite, and build. `verify:live` additionally starts the built server and exercises the application through a real desktop browser.
+`pnpm check` is the fast local gate and does not build production artifacts. `verify:live` creates a fresh production build, starts the built server, and exercises the application through a real desktop browser.
 
 During iteration, use the smaller gate:
 
