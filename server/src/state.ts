@@ -8,12 +8,11 @@ import {
 	agentTagName,
 	COMMONSPACE_STATE_VERSION,
 	DEFAULT_COMMONSPACE_NOTIFICATION_SETTINGS,
-	projectTagName,
-	referencedProjectIds,
 	uniqueAgentDisplayName,
 } from "@commonspace/shared";
 import type { JsonValue } from "./json.js";
 import { projectChannelMemory } from "./memory.js";
+import { applyProjectMutation } from "./state/project-mutations.js";
 
 export const DM_SESSION_BOUNDARY_AUTHOR_ID = "dm-session-boundary";
 
@@ -462,99 +461,10 @@ export function applyMutation(
 				return state;
 			return { ...state, revision: nextRevision(state), notifications: next };
 		}
-		case "create-project": {
-			const name = normalizedName(mutation.name, "project");
-			const tagName = projectTagName(name);
-			if (
-				state.projects.some(
-					(project) => projectTagName(project.name) === tagName,
-				)
-			) {
-				throw new Error("project name already exists");
-			}
-			const paths = [
-				...new Set(mutation.paths.map((path) => path.trim()).filter(Boolean)),
-			];
-			if (paths.length === 0)
-				throw new Error("project requires at least one filesystem path");
-			return {
-				...state,
-				revision: nextRevision(state),
-				projects: [
-					...state.projects,
-					{
-						id: dependencies.ids(),
-						name,
-						paths,
-						createdAt: dependencies.now(),
-					},
-				],
-			};
-		}
-		case "add-project-path": {
-			const path = mutation.path.trim();
-			if (path === "") throw new Error("project path is required");
-			let matched = false;
-			const projects = state.projects.map((project) => {
-				if (project.id !== mutation.projectId) return project;
-				matched = true;
-				return project.paths.includes(path)
-					? project
-					: { ...project, paths: [...project.paths, path] };
-			});
-			if (!matched) throw new Error("unknown project");
-			return { ...state, revision: nextRevision(state), projects };
-		}
-		case "remove-project": {
-			if (!state.projects.some((project) => project.id === mutation.projectId))
-				return state;
-			return {
-				...state,
-				revision: nextRevision(state),
-				projects: state.projects.filter(
-					(project) => project.id !== mutation.projectId,
-				),
-				threads: state.threads.map((thread) => {
-					const projectIds = referencedProjectIds(thread).filter(
-						(projectId) => projectId !== mutation.projectId,
-					);
-					return { ...thread, projectIds, projectId: projectIds[0] ?? null };
-				}),
-				messages: Object.fromEntries(
-					Object.entries(state.messages).map(([key, messages]) => [
-						key,
-						messages.map((message) => {
-							const previousProjectIds = referencedProjectIds(message);
-							const projectIds = referencedProjectIds(message).filter(
-								(projectId) => projectId !== mutation.projectId,
-							);
-							const updated = { ...message };
-							const primaryProjectId = projectIds[0];
-							if (primaryProjectId === undefined) {
-								delete updated.projectIds;
-								delete updated.projectId;
-							} else {
-								updated.projectIds = projectIds;
-								updated.projectId = primaryProjectId;
-							}
-							if (updated.runAttribution !== undefined) {
-								const roots =
-									previousProjectIds.length === 1 &&
-									previousProjectIds[0] === mutation.projectId
-										? []
-										: updated.runAttribution.roots.filter(
-												(root) => root.projectId !== mutation.projectId,
-											);
-								if (roots.length === 0) delete updated.runAttribution;
-								else
-									updated.runAttribution = { ...updated.runAttribution, roots };
-							}
-							return updated;
-						}),
-					]),
-				),
-			};
-		}
+		case "create-project":
+		case "add-project-path":
+		case "remove-project":
+			return applyProjectMutation(state, mutation, dependencies);
 		case "create-channel": {
 			const name = normalizedChannel(mutation.name);
 			if (state.channels.some((channel) => channel.name === name))

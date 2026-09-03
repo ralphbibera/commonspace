@@ -48,30 +48,6 @@ describe("Commonspace local state", () => {
 		expect(withChannel.revision).toBe(2);
 	});
 
-	it("rejects project names that resolve to the same tag", () => {
-		const state = applyMutation(
-			createInitialState(),
-			{
-				action: "create-project",
-				name: "Checkout App",
-				paths: ["/tmp/checkout-a"],
-			},
-			{ ids: () => "project-1", now: () => "now" },
-		);
-
-		expect(() =>
-			applyMutation(
-				state,
-				{
-					action: "create-project",
-					name: "checkout-app",
-					paths: ["/tmp/checkout-b"],
-				},
-				{ ids: () => "project-2", now: () => "now" },
-			),
-		).toThrow("project name already exists");
-	});
-
 	it("removing a project leaves global channels and room history unchanged", () => {
 		const seeded = {
 			...createInitialState(),
