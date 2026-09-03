@@ -317,9 +317,9 @@ export function CommonspaceProjectView({
 						}}
 					>
 						<FolderPlusIcon data-icon="inline-start" aria-hidden="true" />
-						{addingFolder ? "Choosing…" : "Add folder"}
+						{addingFolder ? "Choosing…" : "Add context folder"}
 					</Button>
-					<Badge variant="outline">Read only</Badge>
+					<Badge variant="outline">Files read only</Badge>
 				</nav>
 				<TabsContent
 					value="conversations"
@@ -398,7 +398,7 @@ export function CommonspaceProjectView({
 										void addLocalFolder();
 									}}
 								>
-									Add folder
+									Add context folder
 								</button>
 							</section>
 							<section className="mt-7 border-t pt-6">

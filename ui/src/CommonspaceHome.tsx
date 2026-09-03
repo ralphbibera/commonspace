@@ -81,9 +81,12 @@ function recentConversations(
 		.slice(0, 3);
 }
 
-function runLabel(status: CommonspaceSessionItem["status"]): string {
-	if (status === "running") return "Live";
-	if (status === "needs-attention") return "Action";
+function runLabel(session: CommonspaceSessionItem): string {
+	if (session.status === "running") return "Live";
+	if (session.attentionKind === "input-request") return "Needs input";
+	if (session.attentionKind === "permission-request") return "Permission";
+	if (session.attentionKind === "timeout") return "Timed out";
+	if (session.attentionKind === "failure") return "Failed";
 	return "Done";
 }
 
@@ -130,7 +133,10 @@ function runOutcomeText(
 				normalizedSummary.startsWith(normalizedSource)));
 	if (!repeatsRequest) return session.summary;
 	if (session.status === "running") return "Working on this request";
-	if (session.status === "needs-attention") return "Waiting for your input";
+	if (session.attentionKind === "input-request") return "Waiting for your input";
+	if (session.attentionKind === "permission-request") return "Permission needed";
+	if (session.attentionKind === "timeout") return "Run timed out";
+	if (session.attentionKind === "failure") return "Run failed — review details";
 	return "Response ready";
 }
 
@@ -180,7 +186,7 @@ export function CommonspaceHome({
 	onStopSession,
 	onOpenDirectory,
 }: CommonspaceHomeProps) {
-	const [filter, setFilter] = useState<RunFilter>("all");
+	const [filter, setFilter] = useState<RunFilter>("needs-attention");
 	const [showAllRuns, setShowAllRuns] = useState(false);
 	const sessions = useMemo(
 		() =>
@@ -284,7 +290,7 @@ export function CommonspaceHome({
 									Agent runs
 								</h2>
 								<p className="mt-[3px] max-w-[58ch] text-xs text-muted-foreground">
-									One agent response, tied to the conversation that started it.
+									Start with agent work that needs your decision, review, or follow-up.
 								</p>
 							</div>
 							<span className="inline-flex min-h-[30px] shrink-0 items-center gap-2 rounded-full border border-[color-mix(in_oklch,var(--status-success)_34%,var(--border))] bg-[color-mix(in_oklch,var(--status-success)_7%,var(--background))] px-2.5 font-mono text-xs whitespace-nowrap">
@@ -363,7 +369,7 @@ export function CommonspaceHome({
 												}
 												role="status"
 											>
-												{runLabel(session.status)}
+															{runLabel(session)}
 											</span>
 											<button
 												type="button"
