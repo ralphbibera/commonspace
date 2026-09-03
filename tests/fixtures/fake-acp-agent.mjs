@@ -270,7 +270,7 @@ for await (const line of lines) {
 					? processMcpServers
 					: mcpServersBySession.get(frame.params.sessionId);
 			const mcpServer = mcpServers?.[0];
-			if (!mcpServer || mcpServer.type !== "http")
+			if (mcpServer?.type !== "http")
 				throw new Error("Commonspace MCP server was not attached");
 			const [{ Client }, { StreamableHTTPClientTransport }] = await Promise.all(
 				[
