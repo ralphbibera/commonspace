@@ -12,6 +12,8 @@ import type {
 	CommonspaceRetentionPreview,
 	CommonspaceRoutingConfiguration,
 	CommonspaceState,
+	CommonspaceTraceEntry,
+	CommonspaceTracePlanStep,
 	CommonspaceWorkspaceArchive,
 	ConversationRef,
 	EditMessageRequest,
@@ -29,6 +31,7 @@ import type {
 	UpdateWorkspaceSettingsRequest,
 } from "@commonspace/shared";
 import { conversationKey } from "@commonspace/shared";
+import type { WorkspaceArchiveSource } from "./workspace-import.ts";
 
 export interface CommonspaceClientSnapshot {
 	bootstrap: CommonspaceBootstrap | null;
@@ -43,6 +46,236 @@ export interface CommonspaceClientSnapshot {
 type Listener = () => void;
 const LIVE_UPDATES_DISCONNECTED =
 	"Commonspace live updates disconnected; retrying…";
+
+interface TraceEntryMetadata {
+	id: string;
+	createdAt: string;
+	updatedAt: string;
+}
+
+interface TraceEntryCandidate extends TraceEntryMetadata {
+	type: unknown;
+}
+
+export interface CommonspaceActivityEventData {
+	activities: CommonspaceLiveAgentActivity[];
+	queuedFollowups?: CommonspaceQueuedFollowup[];
+}
+
+function isObject<T>(value: T): value is T & object {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isStringArray<T>(value: T): value is T & string[] {
+	return (
+		Array.isArray(value) && value.every((item) => typeof item === "string")
+	);
+}
+
+function isConversationRef<T>(value: T): value is T & ConversationRef {
+	return (
+		isObject(value) &&
+		"kind" in value &&
+		(value.kind === "channel" || value.kind === "dm") &&
+		"id" in value &&
+		typeof value.id === "string"
+	);
+}
+
+function hasTraceEntryMetadata<T>(value: T): value is T & TraceEntryMetadata {
+	return (
+		isObject(value) &&
+		"id" in value &&
+		typeof value.id === "string" &&
+		"createdAt" in value &&
+		typeof value.createdAt === "string" &&
+		"updatedAt" in value &&
+		typeof value.updatedAt === "string"
+	);
+}
+
+function isTracePlanStep<T>(value: T): value is T & CommonspaceTracePlanStep {
+	return (
+		isObject(value) &&
+		"text" in value &&
+		typeof value.text === "string" &&
+		"priority" in value &&
+		(value.priority === "high" ||
+			value.priority === "medium" ||
+			value.priority === "low") &&
+		"status" in value &&
+		(value.status === "pending" ||
+			value.status === "in_progress" ||
+			value.status === "completed")
+	);
+}
+
+function isReasoningTraceEntry(
+	value: TraceEntryCandidate,
+): value is Extract<CommonspaceTraceEntry, { type: "reasoning" }> {
+	return (
+		value.type === "reasoning" &&
+		"text" in value &&
+		typeof value.text === "string"
+	);
+}
+
+function isPlanTraceEntry(
+	value: TraceEntryCandidate,
+): value is Extract<CommonspaceTraceEntry, { type: "plan" }> {
+	return (
+		value.type === "plan" &&
+		"steps" in value &&
+		Array.isArray(value.steps) &&
+		value.steps.every(isTracePlanStep) &&
+		(!("markdown" in value) || typeof value.markdown === "string")
+	);
+}
+
+function isToolTraceEntry(
+	value: TraceEntryCandidate,
+): value is Extract<CommonspaceTraceEntry, { type: "tool" }> {
+	return (
+		value.type === "tool" &&
+		"title" in value &&
+		typeof value.title === "string" &&
+		"status" in value &&
+		(value.status === "pending" ||
+			value.status === "in_progress" ||
+			value.status === "completed" ||
+			value.status === "failed") &&
+		(!("toolName" in value) || typeof value.toolName === "string") &&
+		(!("toolKind" in value) || typeof value.toolKind === "string") &&
+		(!("input" in value) || typeof value.input === "string") &&
+		(!("output" in value) || typeof value.output === "string")
+	);
+}
+
+function isUsageTraceEntry(
+	value: TraceEntryCandidate,
+): value is Extract<CommonspaceTraceEntry, { type: "usage" }> {
+	return (
+		value.type === "usage" &&
+		value.id === "usage" &&
+		"usedTokens" in value &&
+		typeof value.usedTokens === "number" &&
+		Number.isFinite(value.usedTokens) &&
+		"contextWindow" in value &&
+		typeof value.contextWindow === "number" &&
+		Number.isFinite(value.contextWindow) &&
+		(!("costAmount" in value) ||
+			(typeof value.costAmount === "number" &&
+				Number.isFinite(value.costAmount))) &&
+		(!("costCurrency" in value) || typeof value.costCurrency === "string")
+	);
+}
+
+function isTraceEntry<T>(value: T): value is T & CommonspaceTraceEntry {
+	if (!hasTraceEntryMetadata(value) || !("type" in value)) return false;
+	return (
+		isReasoningTraceEntry(value) ||
+		isPlanTraceEntry(value) ||
+		isToolTraceEntry(value) ||
+		isUsageTraceEntry(value)
+	);
+}
+
+function isLiveAgentActivity<T>(
+	value: T,
+): value is T & CommonspaceLiveAgentActivity {
+	return (
+		isObject(value) &&
+		"id" in value &&
+		typeof value.id === "string" &&
+		"sourceMessageId" in value &&
+		typeof value.sourceMessageId === "string" &&
+		"agentId" in value &&
+		typeof value.agentId === "string" &&
+		"agentName" in value &&
+		typeof value.agentName === "string" &&
+		"adapter" in value &&
+		(value.adapter === "hermes" || value.adapter === "codex") &&
+		"conversation" in value &&
+		isConversationRef(value.conversation) &&
+		(!("threadId" in value) || typeof value.threadId === "string") &&
+		"startedAt" in value &&
+		typeof value.startedAt === "string" &&
+		"entries" in value &&
+		Array.isArray(value.entries) &&
+		value.entries.every(isTraceEntry)
+	);
+}
+
+function isQueuedFollowup<T>(value: T): value is T & CommonspaceQueuedFollowup {
+	return (
+		isObject(value) &&
+		"messageId" in value &&
+		typeof value.messageId === "string" &&
+		"conversation" in value &&
+		isConversationRef(value.conversation) &&
+		(!("threadId" in value) || typeof value.threadId === "string") &&
+		"agentIds" in value &&
+		isStringArray(value.agentIds) &&
+		"text" in value &&
+		typeof value.text === "string" &&
+		"position" in value &&
+		typeof value.position === "number" &&
+		Number.isSafeInteger(value.position) &&
+		value.position >= 0 &&
+		"createdAt" in value &&
+		typeof value.createdAt === "string" &&
+		"delivery" in value &&
+		(value.delivery === "queue" ||
+			value.delivery === "steer" ||
+			value.delivery === "stop-and-send")
+	);
+}
+
+export function parseRevisionEventData(data: string): number | null {
+	try {
+		const value: unknown = JSON.parse(data);
+		if (
+			!isObject(value) ||
+			!("revision" in value) ||
+			typeof value.revision !== "number" ||
+			!Number.isSafeInteger(value.revision) ||
+			value.revision < 0
+		)
+			return null;
+		return value.revision;
+	} catch {
+		return null;
+	}
+}
+
+export function parseActivityEventData(
+	data: string,
+): CommonspaceActivityEventData | null {
+	try {
+		const value: unknown = JSON.parse(data);
+		if (
+			!isObject(value) ||
+			!("activities" in value) ||
+			!Array.isArray(value.activities) ||
+			!value.activities.every(isLiveAgentActivity)
+		)
+			return null;
+		const parsed: CommonspaceActivityEventData = {
+			activities: value.activities,
+		};
+		if ("queuedFollowups" in value) {
+			if (
+				!Array.isArray(value.queuedFollowups) ||
+				!value.queuedFollowups.every(isQueuedFollowup)
+			)
+				return null;
+			parsed.queuedFollowups = value.queuedFollowups;
+		}
+		return parsed;
+	} catch {
+		return null;
+	}
+}
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
 	const response = await fetch(path, {
@@ -141,49 +374,35 @@ export class CommonspaceClientStore {
 		if (this.events !== null || typeof EventSource === "undefined") return;
 		const events = new EventSource("/api/events");
 		events.addEventListener("revision", (event) => {
-			try {
-				if (!(event instanceof MessageEvent) || typeof event.data !== "string")
-					return;
-				const value: {
-					revision?: number;
-				} = JSON.parse(event.data);
-				if (
-					typeof value.revision === "number" &&
-					value.revision > (this.snapshot.bootstrap?.state.revision ?? -1)
-				) {
-					this.pendingRevision = Math.max(this.pendingRevision, value.revision);
-					void this.refresh();
-				}
-			} catch {
-				// Ignore malformed event frames; EventSource will continue.
-			}
+			if (!(event instanceof MessageEvent) || typeof event.data !== "string")
+				return;
+			const revision = parseRevisionEventData(event.data);
+			if (
+				revision === null ||
+				revision <= (this.snapshot.bootstrap?.state.revision ?? -1)
+			)
+				return;
+			this.pendingRevision = Math.max(this.pendingRevision, revision);
+			void this.refresh();
 		});
 		events.addEventListener("activity", (event) => {
-			try {
-				if (!(event instanceof MessageEvent) || typeof event.data !== "string")
-					return;
-				const value: {
-					activities?: CommonspaceLiveAgentActivity[];
-					queuedFollowups?: CommonspaceQueuedFollowup[];
-				} = JSON.parse(event.data);
-				if (!Array.isArray(value.activities)) return;
-				const activities = value.activities;
-				this.pendingLiveActivities = activities;
-				const bootstrap = this.snapshot.bootstrap;
-				if (bootstrap === null) return;
-				const queuedFollowups = Array.isArray(value.queuedFollowups)
-					? value.queuedFollowups
-					: bootstrap.queuedFollowups;
-				const nextBootstrap = { ...bootstrap, liveActivities: activities };
-				if (queuedFollowups !== undefined)
-					nextBootstrap.queuedFollowups = queuedFollowups;
-				this.set({
-					...this.snapshot,
-					bootstrap: nextBootstrap,
-				});
-			} catch {
-				// Ignore malformed event frames; EventSource will continue.
-			}
+			if (!(event instanceof MessageEvent) || typeof event.data !== "string")
+				return;
+			const value = parseActivityEventData(event.data);
+			if (value === null) return;
+			const activities = value.activities;
+			this.pendingLiveActivities = activities;
+			const bootstrap = this.snapshot.bootstrap;
+			if (bootstrap === null) return;
+			const queuedFollowups =
+				value.queuedFollowups ?? bootstrap.queuedFollowups;
+			const nextBootstrap = { ...bootstrap, liveActivities: activities };
+			if (queuedFollowups !== undefined)
+				nextBootstrap.queuedFollowups = queuedFollowups;
+			this.set({
+				...this.snapshot,
+				bootstrap: nextBootstrap,
+			});
 		});
 		events.onerror = () => {
 			this.set({ ...this.snapshot, error: LIVE_UPDATES_DISCONNECTED });
@@ -602,13 +821,16 @@ export class CommonspaceClientStore {
 	}
 
 	async importWorkspace(
-		archive: CommonspaceWorkspaceArchive,
+		archiveSource: WorkspaceArchiveSource,
 		projectMappings: Record<string, string[]>,
 	): Promise<void> {
 		try {
 			const state = await requestJson<CommonspaceState>("/api/import", {
 				method: "POST",
-				body: JSON.stringify({ archive, projectMappings }),
+				body: JSON.stringify({
+					archive: archiveSource.value,
+					projectMappings,
+				}),
 			});
 			const bootstrap = this.snapshot.bootstrap;
 			if (bootstrap === null) {

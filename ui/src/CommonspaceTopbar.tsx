@@ -5,13 +5,11 @@ export interface CommonspaceTopbarProps {
 	onOpenSearch: () => void;
 }
 
-export function CommonspaceTopbar({
-	onOpenSearch,
-}: CommonspaceTopbarProps) {
+export function CommonspaceTopbar({ onOpenSearch }: CommonspaceTopbarProps) {
 	return (
-		<header className="relative z-30 grid min-h-[52px] grid-cols-[240px_minmax(260px,640px)_240px] items-center justify-between gap-[18px] bg-sidebar-deep px-3.5 py-1 text-sidebar-foreground max-[780px]:grid-cols-[36px_minmax(0,1fr)] max-[780px]:gap-3 max-[780px]:px-3">
+		<header className="relative z-30 grid min-h-[52px] grid-cols-[240px_minmax(260px,640px)_240px] items-center justify-between gap-[18px] bg-sidebar-deep px-3.5 py-1 text-sidebar-foreground max-[780px]:grid-cols-[48px_minmax(0,1fr)] max-[780px]:gap-3 max-[780px]:px-3">
 			<div className="flex min-h-9 w-fit items-center gap-2 px-2 text-left text-sidebar-foreground max-[780px]:px-2">
-				<CommonspaceLogo decorative className="size-6" />
+				<CommonspaceLogo decorative className="size-8" />
 				<strong className="font-heading text-[13px] font-medium max-[780px]:sr-only">
 					Commonspace
 				</strong>

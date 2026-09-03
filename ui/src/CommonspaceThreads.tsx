@@ -20,8 +20,8 @@ import {
 } from "@/components/ui/empty";
 import { ResourceActionMenu } from "@/design-system/ResourceActionMenu";
 import { WorkspaceHeader } from "@/design-system/WorkspaceHeader";
-import { cn } from "@/lib/utils";
 import type { CommonspaceStore } from "./commonspace-store.ts";
+import { AgentAvatar } from "./design-system/AgentAvatar.tsx";
 
 interface ThreadRow {
 	id: string;
@@ -30,7 +30,7 @@ interface ThreadRow {
 	channelName: string;
 	title: string;
 	detail: string;
-	agentNames: string[];
+	agentIds: string[];
 	replyCount: number;
 	updatedAt: string;
 	unread: boolean;
@@ -57,9 +57,6 @@ function threadRows(bootstrap: CommonspaceBootstrap | null): ThreadRow[] {
 	const sessions = deriveCommonspaceSessions(
 		state,
 		bootstrap.liveActivities ?? [],
-	);
-	const agents = new Map(
-		state.agents.map((agent) => [agent.id, agent.displayName]),
 	);
 	const channels = new Map(
 		state.channels.map((channel) => [channel.id, channel.name]),
@@ -99,9 +96,7 @@ function threadRows(bootstrap: CommonspaceBootstrap | null): ThreadRow[] {
 				channelName: channels.get(thread.channelId) ?? thread.channelId,
 				title: root.text,
 				detail: latest === root ? "No replies yet." : latest.text,
-				agentNames: thread.agentIds.flatMap(
-					(agentId) => agents.get(agentId) ?? [],
-				),
+				agentIds: thread.agentIds,
 				replyCount: replies.length,
 				updatedAt: latest.createdAt,
 				unread: unreadMessageIds.length > 0,
@@ -223,11 +218,11 @@ export function CommonspaceThreads({
 						{visibleRows.map((row) => (
 							<li
 								key={row.id}
-								className="group relative grid min-h-[88px] grid-cols-[minmax(0,1fr)_44px_44px] items-center border-b border-border/70 bg-background transition-colors [contain-intrinsic-size:88px] [content-visibility:auto] hover:bg-surface focus-within:bg-surface"
+								className="group relative grid min-h-[72px] grid-cols-[minmax(0,1fr)_32px_32px] items-center border-b border-border/70 bg-background transition-colors [contain-intrinsic-size:72px] [content-visibility:auto] hover:bg-surface focus-within:bg-surface"
 							>
 								<button
 									type="button"
-									className="relative grid min-h-[88px] min-w-0 grid-cols-[40px_minmax(0,1fr)_18px] items-center gap-[13px] rounded-sm border-0 bg-transparent px-2.5 py-3 text-left hover:bg-transparent focus-visible:outline-0 focus-visible:ring-2 focus-visible:ring-ring/50 max-[480px]:grid-cols-[36px_minmax(0,1fr)] max-[480px]:gap-2.5 max-[480px]:px-2"
+									className="relative grid min-h-[72px] min-w-0 grid-cols-[36px_minmax(0,1fr)_16px] items-center gap-3 rounded-sm border-0 bg-transparent px-2 py-2 text-left hover:bg-transparent focus-visible:outline-0 focus-visible:ring-2 focus-visible:ring-ring/50 max-[480px]:grid-cols-[32px_minmax(0,1fr)] max-[480px]:gap-2 max-[480px]:px-2"
 									aria-label={`Open thread ${row.title}${row.unread ? ", unread" : ""}`}
 									onClick={() => {
 										onOpenThread({
@@ -243,16 +238,16 @@ export function CommonspaceThreads({
 											aria-hidden="true"
 										/>
 									)}
-									<span className="relative grid size-10 place-items-center rounded-md border bg-background font-mono text-xs font-semibold max-[480px]:size-9">
-										{row.agentNames[0]?.slice(0, 1).toLocaleUpperCase() ?? "#"}
-										<span
-											className={cn(
-												"absolute right-[-2px] bottom-[-2px] size-2 rounded-full border-2 border-background bg-muted-foreground",
-												row.unread && "bg-[var(--status-success)]",
-											)}
-											aria-hidden="true"
-										/>
-									</span>
+									<AgentAvatar
+										agent={bootstrap?.agents.find(
+											(agent) => agent.id === row.agentIds[0],
+										)}
+										fallbackName={row.agentIds[0] ?? "#"}
+										size="md"
+										status={row.unread ? "running" : "stopped"}
+										showStatus
+										className="rounded-md max-[480px]:size-8"
+									/>
 									<span className="min-w-0">
 										<span className="flex min-w-0 items-center gap-[7px]">
 											<strong className="truncate text-sm tracking-[-0.006em]">
@@ -294,7 +289,7 @@ export function CommonspaceThreads({
 								</button>
 								<button
 									type="button"
-									className="grid size-11 place-items-center rounded-sm border-0 bg-transparent text-primary hover:bg-[color-mix(in_oklch,var(--primary)_9%,var(--background))] disabled:cursor-not-allowed disabled:opacity-40"
+									className="grid size-8 place-items-center rounded-sm border-0 bg-transparent text-primary hover:bg-[color-mix(in_oklch,var(--primary)_9%,var(--background))] disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
 									aria-label={
 										row.followed ? "Unfollow thread" : "Follow thread"
 									}

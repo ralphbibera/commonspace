@@ -11,7 +11,7 @@ import {
 	SquarePenIcon,
 	Trash2Icon,
 } from "lucide-react";
-import { useState } from "react";
+import { type ComponentProps, useState } from "react";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -26,13 +26,45 @@ import { ConfirmActionDialog } from "./ConfirmActionDialog";
 
 export type CommonspaceCollectionKind = "project" | "channel" | "agent";
 
+export const collectionActionTriggerClassName =
+	"grid size-6 place-items-center rounded-sm border-0 bg-transparent text-foreground/65 opacity-0 transition-[background-color,color,opacity] hover:bg-foreground/10 hover:text-foreground aria-expanded:bg-foreground/10 data-[popup-open]:bg-foreground/10 group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/40 max-[780px]:opacity-100";
+export const collectionActionIconClassName = "size-3.5";
+
+export type CollectionActionButtonProps = Omit<
+	ComponentProps<"button">,
+	"aria-label" | "children"
+> & {
+	label: string;
+};
+
+export function CollectionActionButton({
+	label,
+	className,
+	type = "button",
+	...props
+}: CollectionActionButtonProps) {
+	return (
+		<button
+			{...props}
+			type={type}
+			className={cn(collectionActionTriggerClassName, className)}
+			aria-label={label}
+		>
+			<MoreHorizontalIcon
+				className={collectionActionIconClassName}
+				aria-hidden="true"
+			/>
+		</button>
+	);
+}
+
 export interface CollectionActionMenuProps {
 	kind: CommonspaceCollectionKind;
 	label: string;
 	meta: string;
+	defaultOpen?: boolean;
 	pinned?: boolean;
 	triggerLabel?: string;
-	triggerClassName?: string;
 	onOpen: () => void;
 	onTogglePinned?: () => void;
 	onSettings?: () => void;
@@ -81,9 +113,9 @@ export function CollectionActionMenu({
 	kind,
 	label,
 	meta,
+	defaultOpen = false,
 	pinned = false,
 	triggerLabel,
-	triggerClassName,
 	onOpen,
 	onTogglePinned,
 	onSettings,
@@ -104,15 +136,15 @@ export function CollectionActionMenu({
 
 	return (
 		<>
-			<DropdownMenu>
+			<DropdownMenu defaultOpen={defaultOpen}>
 				<DropdownMenuTrigger
-					className={cn(
-						"grid size-7 place-items-center rounded-sm border-0 bg-transparent text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/30",
-						triggerClassName,
-					)}
+					className={collectionActionTriggerClassName}
 					aria-label={triggerLabel ?? `More actions for ${label}`}
 				>
-					<MoreHorizontalIcon className="size-4" aria-hidden="true" />
+					<MoreHorizontalIcon
+						className={collectionActionIconClassName}
+						aria-hidden="true"
+					/>
 				</DropdownMenuTrigger>
 				<DropdownMenuContent
 					align="end"

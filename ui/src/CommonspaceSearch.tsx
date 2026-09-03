@@ -118,7 +118,11 @@ function resultGlyph(kind: CommonspaceSearchKind): string {
 }
 
 function resultReceiptLabel(result: CommonspaceSearchResult): string {
-	const location = result.receipt.split(" · ")[0]?.trim();
+	const receiptLocation = result.receipt.split(" · ")[0]?.trim();
+	const location =
+		receiptLocation !== undefined && receiptLocation !== result.detail.trim()
+			? receiptLocation
+			: undefined;
 	const occurredAt = result.occurredAt;
 	const time =
 		occurredAt === undefined
@@ -250,12 +254,9 @@ export function CommonspaceSearchDialog({
 						ESC
 					</kbd>
 				</div>
-				<section
-					className="flex flex-wrap items-center gap-2 px-3.5 py-2"
-					aria-label="Search filters"
-				>
+				<section className="grid gap-2 px-3.5 py-2" aria-label="Search filters">
 					<select
-						className="h-9 max-w-40 rounded-sm border bg-background px-2 text-xs text-muted-foreground"
+						className="h-9 w-full max-w-40 rounded-sm border bg-background px-2 text-xs text-muted-foreground"
 						aria-label="Filter search by project"
 						value={projectId}
 						onChange={(event) => {
@@ -285,10 +286,16 @@ export function CommonspaceSearchDialog({
 							setActiveIndex(0);
 						}}
 						aria-label="Search result types"
-						className="w-full flex-wrap gap-1"
+						className="min-w-0 w-full flex-nowrap gap-1 overflow-x-auto pb-1"
 					>
 						{COMMONSPACE_SEARCH_KINDS.map((kind) => (
-							<ToggleGroupItem key={kind} value={kind}>
+							<ToggleGroupItem
+								key={kind}
+								value={kind}
+								variant="outline"
+								size="sm"
+								className="data-[state=on]:border-primary data-[state=on]:bg-primary/10 data-[state=on]:text-foreground"
+							>
 								{kindLabel(kind)}
 							</ToggleGroupItem>
 						))}
@@ -378,9 +385,11 @@ export function CommonspaceSearchDialog({
 									{resultReceiptLabel(result)}
 								</small>
 							</span>
-							<span className="max-w-32 truncate text-xs text-muted-foreground">
-								{kindLabel(result.kind)}
-							</span>
+							{result.detail.trim() === kindLabel(result.kind) ? null : (
+								<span className="max-w-32 truncate text-xs text-muted-foreground">
+									{kindLabel(result.kind)}
+								</span>
+							)}
 						</button>
 					))}
 				</div>
@@ -389,14 +398,25 @@ export function CommonspaceSearchDialog({
 					aria-hidden="true"
 				>
 					<span>
-						<kbd>↑</kbd>
-						<kbd>↓</kbd> Navigate
+						<kbd className="rounded-sm border bg-muted px-1 py-0.5 font-mono">
+							↑
+						</kbd>
+						<kbd className="rounded-sm border bg-muted px-1 py-0.5 font-mono">
+							↓
+						</kbd>{" "}
+						Navigate
 					</span>
 					<span>
-						<kbd>↵</kbd> Open
+						<kbd className="rounded-sm border bg-muted px-1 py-0.5 font-mono">
+							↵
+						</kbd>{" "}
+						Open
 					</span>
 					<span>
-						<kbd>esc</kbd> Close
+						<kbd className="rounded-sm border bg-muted px-1 py-0.5 font-mono">
+							esc
+						</kbd>{" "}
+						Close
 					</span>
 				</footer>
 			</DialogContent>

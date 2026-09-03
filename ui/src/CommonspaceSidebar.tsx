@@ -8,8 +8,6 @@ import {
 	type CommonspaceRetentionPreview,
 	type CommonspaceRoutingProvider,
 	type CommonspaceSearchResult,
-	type CommonspaceWorkspaceArchive,
-	type UpdateRoutingConfigurationRequest,
 	DEFAULT_COMMONSPACE_NOTIFICATION_SETTINGS,
 	deriveCommonspaceInboxItems,
 } from "@commonspace/shared";
@@ -18,9 +16,9 @@ import {
 	ChevronDownIcon,
 	InboxIcon,
 	MessagesSquareIcon,
-	MoreHorizontalIcon,
 	RefreshCwIcon,
 	SettingsIcon,
+	XIcon,
 } from "lucide-react";
 import {
 	type FormEvent,
@@ -39,6 +37,7 @@ import {
 	DialogTitle,
 } from "@/components/ui/dialog";
 import {
+	CollectionActionButton,
 	CollectionActionMenu,
 	type CommonspaceCollectionKind,
 } from "@/design-system/CollectionActionMenu";
@@ -48,6 +47,7 @@ import { cn } from "@/lib/utils";
 import type { CommonspaceDirectoryKind } from "./CommonspaceDirectory.tsx";
 import { CommonspaceSearchDialog } from "./CommonspaceSearch.tsx";
 import type { CommonspaceStore } from "./commonspace-store.ts";
+import { AgentAvatar } from "./design-system/AgentAvatar.tsx";
 import { folderName } from "./project-files-api.ts";
 import {
 	collectionKey,
@@ -55,6 +55,10 @@ import {
 	useSidebarPreferences,
 } from "./sidebar-preferences.ts";
 import type { CommonspaceColorMode } from "./theme.ts";
+import {
+	parseWorkspaceImport,
+	type WorkspaceImportCandidate,
+} from "./workspace-import.ts";
 
 const reasoningValues: ReadonlySet<string> = new Set([
 	"none",
@@ -260,28 +264,6 @@ function agentStatusLabel(status: CommonspaceAgentProfile["status"]): string {
 	return "available";
 }
 
-function AgentAvatar({ agent }: { agent: CommonspaceAgentProfile }) {
-	return (
-		<span
-			className="relative grid size-9 place-items-center rounded-sm border bg-background font-mono text-xs font-semibold text-foreground"
-			style={
-				agent.accentColor === undefined
-					? undefined
-					: { backgroundColor: agent.accentColor, color: "#fff" }
-			}
-			aria-hidden="true"
-		>
-			{agent.avatarEmoji ?? agent.displayName.slice(0, 1).toLocaleUpperCase()}
-			<i
-				className={cn(
-					"absolute right-[-2px] bottom-[-2px] size-2 rounded-full border border-background bg-muted-foreground",
-					agent.status === "running" && "bg-[var(--status-success)]",
-				)}
-			/>
-		</span>
-	);
-}
-
 function copyText(value: string) {
 	void navigator.clipboard?.writeText(value).catch(() => undefined);
 }
@@ -406,7 +388,7 @@ export function CommonspaceSidebar({
 	>(null);
 	const [inferenceCheckOk, setInferenceCheckOk] = useState<boolean | null>(null);
 	const [importArchive, setImportArchive] =
-		useState<CommonspaceWorkspaceArchive | null>(null);
+		useState<WorkspaceImportCandidate | null>(null);
 	const [importMappings, setImportMappings] = useState<
 		Record<string, string[]>
 	>({});
@@ -826,38 +808,21 @@ export function CommonspaceSidebar({
 		if (file === undefined) return;
 		const reader = new FileReader();
 		reader.onload = () => {
-			try {
-				const archive: CommonspaceWorkspaceArchive = JSON.parse(
-					String(reader.result),
-				);
-				if (
-					archive.format !== "commonspace-workspace" ||
-					archive.version !== 1 ||
-					!Array.isArray(archive.workspace.projects)
-				)
-					throw new Error("invalid archive");
-				if (
-					archive.workspace.projects.some(
-						(project) =>
-							!Number.isSafeInteger(project.rootCount) ||
-							project.rootCount < 1 ||
-							project.rootCount > 32,
-					)
-				)
-					throw new Error("invalid archive Project roots");
-				setImportArchive(archive);
-				setImportMappings(
-					Object.fromEntries(
-						archive.workspace.projects.map((project) => [
-							project.id,
-							Array.from({ length: project.rootCount }, () => ""),
-						]),
-					),
-				);
-			} catch {
+			const archive = parseWorkspaceImport(String(reader.result));
+			if (archive === null) {
 				setImportArchive(null);
 				setImportMappings({});
+				return;
 			}
+			setImportArchive(archive);
+			setImportMappings(
+				Object.fromEntries(
+					archive.projects.map((project) => [
+						project.id,
+						Array.from({ length: project.rootCount }, () => ""),
+					]),
+				),
+			);
 		};
 		reader.readAsText(file);
 	};
@@ -877,7 +842,7 @@ export function CommonspaceSidebar({
 		if (importArchive === null || importingWorkspace) return;
 		setImportingWorkspace(true);
 		try {
-			await store.importWorkspace(importArchive, importMappings);
+			await store.importWorkspace(importArchive.source, importMappings);
 			setImportArchive(null);
 			setImportMappings({});
 			setSettingsOpen(false);
@@ -999,9 +964,24 @@ export function CommonspaceSidebar({
 							void saveDefaults(event);
 						}}
 					>
-						<WorkspaceHeader title="Workspace settings" mark="S" />
+						<WorkspaceHeader
+							title="Workspace settings"
+							mark={<SettingsIcon className="size-4" aria-hidden="true" />}
+							actions={
+								<button
+									type="button"
+									className="grid size-10 place-items-center rounded-sm border-0 bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+									aria-label="Close settings"
+									onClick={() => {
+										setSettingsOpen(false);
+									}}
+								>
+									<XIcon className="size-4" aria-hidden="true" />
+								</button>
+							}
+						/>
 						<div className="min-h-0 flex-1 overflow-y-auto">
-							<div className="mx-auto grid w-full max-w-[860px] gap-0 px-0 py-12 pb-20 max-[920px]:px-6 max-[640px]:px-4 [&_button]:min-h-11 [&_button]:rounded-sm [&_button]:border [&_button]:px-4 [&_fieldset]:min-w-0 [&_input:not([type=checkbox])]:min-h-11 [&_input:not([type=checkbox])]:w-full [&_input:not([type=checkbox])]:rounded-md [&_input:not([type=checkbox])]:border [&_input:not([type=checkbox])]:bg-background [&_input:not([type=checkbox])]:px-3 [&_label]:grid [&_label]:gap-1.5 [&_select]:min-h-11 [&_select]:w-full [&_select]:rounded-md [&_select]:border [&_select]:bg-background [&_select]:px-3 [&_textarea]:min-h-24 [&_textarea]:w-full [&_textarea]:rounded-md [&_textarea]:border [&_textarea]:bg-background [&_textarea]:p-3">
+							<div className="mx-auto grid w-full max-w-[860px] gap-0 px-0 py-12 pb-20 max-[920px]:px-6 max-[640px]:px-4 [&_button]:min-h-11 [&_button]:rounded-sm [&_button]:border [&_button]:px-4 [&_fieldset]:min-w-0 [&_input:not([type=checkbox]):not([type=radio])]:min-h-11 [&_input:not([type=checkbox]):not([type=radio])]:w-full [&_input:not([type=checkbox]):not([type=radio])]:rounded-md [&_input:not([type=checkbox]):not([type=radio])]:border [&_input:not([type=checkbox]):not([type=radio])]:bg-background [&_input:not([type=checkbox]):not([type=radio])]:px-3 [&_label]:grid [&_label]:gap-1.5 [&_select]:min-h-11 [&_select]:w-full [&_select]:rounded-md [&_select]:border [&_select]:bg-background [&_select]:px-3 [&_textarea]:min-h-24 [&_textarea]:w-full [&_textarea]:rounded-md [&_textarea]:border [&_textarea]:bg-background [&_textarea]:p-3">
 								<section
 									className="mb-10 rounded-md border bg-card p-5"
 									aria-labelledby="workspace-appearance-title"
@@ -1026,53 +1006,72 @@ export function CommonspaceSidebar({
 													: "Light mode"}
 										</span>
 									</div>
-									<fieldset
-										role="radiogroup"
-										className="mt-5 grid grid-cols-3 gap-3 max-[640px]:grid-cols-1"
-										aria-label="Color mode"
-									>
-										<button
-											type="button"
-											role="radio"
-											aria-checked={colorMode === "light"}
-											className="grid min-h-16 gap-1 bg-background text-left hover:bg-muted aria-checked:border-primary aria-checked:bg-primary/10"
-											onClick={() => {
-												onSetColorMode?.("light");
-											}}
+									<fieldset className="mt-5 grid grid-cols-3 gap-3 max-[640px]:grid-cols-1">
+										<legend className="sr-only">Color mode</legend>
+										<label
+											className={cn(
+												"grid min-h-16 cursor-pointer gap-1 rounded-sm border bg-background px-4 py-2 text-left hover:bg-muted has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-offset-2 has-[input:focus-visible]:outline-ring",
+												colorMode === "light" && "border-primary bg-primary/10",
+											)}
 										>
+											<input
+												className="sr-only"
+												type="radio"
+												name="commonspace-color-mode"
+												value="light"
+												checked={colorMode === "light"}
+												onChange={() => {
+													onSetColorMode?.("light");
+												}}
+											/>
 											<strong>Light</strong>
 											<span className="text-xs font-normal text-muted-foreground">
 												Bright canvas and soft neutral surfaces
 											</span>
-										</button>
-										<button
-											type="button"
-											role="radio"
-											aria-checked={colorMode === "dark"}
-											className="grid min-h-16 gap-1 bg-background text-left hover:bg-muted aria-checked:border-primary aria-checked:bg-primary/10"
-											onClick={() => {
-												onSetColorMode?.("dark");
-											}}
+										</label>
+										<label
+											className={cn(
+												"grid min-h-16 cursor-pointer gap-1 rounded-sm border bg-background px-4 py-2 text-left hover:bg-muted has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-offset-2 has-[input:focus-visible]:outline-ring",
+												colorMode === "dark" && "border-primary bg-primary/10",
+											)}
 										>
+											<input
+												className="sr-only"
+												type="radio"
+												name="commonspace-color-mode"
+												value="dark"
+												checked={colorMode === "dark"}
+												onChange={() => {
+													onSetColorMode?.("dark");
+												}}
+											/>
 											<strong>Dark</strong>
 											<span className="text-xs font-normal text-muted-foreground">
 												Low-glare canvas and deeper surfaces
 											</span>
-										</button>
-										<button
-											type="button"
-											role="radio"
-											aria-checked={colorMode === "system"}
-											className="grid min-h-16 gap-1 bg-background text-left hover:bg-muted aria-checked:border-primary aria-checked:bg-primary/10"
-											onClick={() => {
-												onSetColorMode?.("system");
-											}}
+										</label>
+										<label
+											className={cn(
+												"grid min-h-16 cursor-pointer gap-1 rounded-sm border bg-background px-4 py-2 text-left hover:bg-muted has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-offset-2 has-[input:focus-visible]:outline-ring",
+												colorMode === "system" &&
+													"border-primary bg-primary/10",
+											)}
 										>
+											<input
+												className="sr-only"
+												type="radio"
+												name="commonspace-color-mode"
+												value="system"
+												checked={colorMode === "system"}
+												onChange={() => {
+													onSetColorMode?.("system");
+												}}
+											/>
 											<strong>System</strong>
 											<span className="text-xs font-normal text-muted-foreground">
 												Follow your operating system preference
 											</span>
-										</button>
+										</label>
 									</fieldset>
 								</section>
 								<div className="relative pb-5">
@@ -1100,22 +1099,26 @@ export function CommonspaceSidebar({
 										title="Routing source"
 										description="Choose where Commonspace gets routing and context decisions."
 									/>
-									<fieldset
-										role="radiogroup"
-										aria-label="Routing engine"
-										className="m-0 grid min-w-0 grid-cols-2 gap-3 border-0 p-0 max-[640px]:grid-cols-1"
-									>
-										<button
-											type="button"
-											role="radio"
-											aria-label="Use OpenAI-compatible inference for routing"
-											aria-checked={routingProvider === "openai-compatible"}
-											onClick={() => {
-												setRoutingProvider("openai-compatible");
-												setRoutingHarnessAgentId("");
-											}}
-											className="relative grid min-h-[94px] grid-cols-[20px_minmax(0,1fr)] items-start gap-3 rounded-md border bg-background p-4 text-left aria-checked:border-2 aria-checked:border-primary aria-checked:bg-[color-mix(in_oklch,var(--primary)_3%,var(--background))]"
+									<fieldset className="m-0 grid min-w-0 grid-cols-2 gap-3 border-0 p-0 max-[640px]:grid-cols-1">
+										<legend className="sr-only">Routing engine</legend>
+										<label
+											className={cn(
+												"relative grid min-h-[94px] cursor-pointer grid-cols-[20px_minmax(0,1fr)] items-start gap-3 rounded-md border bg-background p-4 text-left has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-offset-2 has-[input:focus-visible]:outline-ring",
+												routingProvider === "openai-compatible" &&
+													"border-2 border-primary bg-[color-mix(in_oklch,var(--primary)_3%,var(--background))]",
+											)}
 										>
+											<input
+												className="sr-only"
+												type="radio"
+												name="commonspace-routing-engine"
+												value="openai-compatible"
+												checked={routingProvider === "openai-compatible"}
+												onChange={() => {
+													setRoutingProvider("openai-compatible");
+													setRoutingHarnessAgentId("");
+												}}
+											/>
 											<span
 												className={cn(
 													"mt-0.5 size-[18px] rounded-full border before:m-auto before:block before:size-2 before:translate-y-1 before:rounded-full",
@@ -1137,19 +1140,26 @@ export function CommonspaceSidebar({
 													Selected
 												</em>
 											)}
-										</button>
-										<button
-											type="button"
-											role="radio"
-											aria-label="Use native agent inference for routing"
-											aria-checked={routingProvider === "harness"}
-											onClick={() => {
-												setRoutingProvider("harness");
-												if (routingHarnessAgentId === "")
-													setRoutingHarnessAgentId(agents[0]?.id ?? "");
-											}}
-											className="relative grid min-h-[94px] grid-cols-[20px_minmax(0,1fr)] items-start gap-3 rounded-md border bg-background p-4 text-left aria-checked:border-2 aria-checked:border-primary aria-checked:bg-[color-mix(in_oklch,var(--primary)_3%,var(--background))]"
+										</label>
+										<label
+											className={cn(
+												"relative grid min-h-[94px] cursor-pointer grid-cols-[20px_minmax(0,1fr)] items-start gap-3 rounded-md border bg-background p-4 text-left has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-offset-2 has-[input:focus-visible]:outline-ring",
+												routingProvider === "harness" &&
+													"border-2 border-primary bg-[color-mix(in_oklch,var(--primary)_3%,var(--background))]",
+											)}
 										>
+											<input
+												className="sr-only"
+												type="radio"
+												name="commonspace-routing-engine"
+												value="harness"
+												checked={routingProvider === "harness"}
+												onChange={() => {
+													setRoutingProvider("harness");
+													if (routingHarnessAgentId === "")
+														setRoutingHarnessAgentId(agents[0]?.id ?? "");
+												}}
+											/>
 											<span
 												className={cn(
 													"mt-0.5 size-[18px] rounded-full border before:m-auto before:block before:size-2 before:translate-y-1 before:rounded-full",
@@ -1171,22 +1181,30 @@ export function CommonspaceSidebar({
 													Selected
 												</em>
 											)}
-										</button>
+										</label>
 									</fieldset>
 									{routingProvider === "harness" && (
-										<div className="mt-3 grid gap-2 rounded-md border bg-muted p-3">
+										<fieldset className="mt-3 grid gap-2 rounded-md border bg-muted p-3">
+											<legend className="sr-only">Routing agent</legend>
 											{agents.map((agent) => (
-												<button
+												<label
 													key={agent.id}
-													type="button"
-													role="radio"
-													aria-label={`Use ${agent.displayName} agent for routing`}
-													aria-checked={routingHarnessAgentId === agent.id}
-													onClick={() => {
-														setRoutingHarnessAgentId(agent.id);
-													}}
-													className="grid grid-cols-[36px_minmax(0,1fr)] items-center gap-3 bg-background text-left aria-checked:border-primary"
+													className={cn(
+														"grid min-h-11 cursor-pointer grid-cols-[36px_minmax(0,1fr)] items-center gap-3 rounded-sm border bg-background px-4 text-left has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-offset-2 has-[input:focus-visible]:outline-ring",
+														routingHarnessAgentId === agent.id &&
+															"border-primary",
+													)}
 												>
+													<input
+														className="sr-only"
+														type="radio"
+														name="commonspace-routing-agent"
+														value={agent.id}
+														checked={routingHarnessAgentId === agent.id}
+														onChange={() => {
+															setRoutingHarnessAgentId(agent.id);
+														}}
+													/>
 													<AgentAvatar agent={agent} />
 													<span>
 														<strong className="block text-[13px]">
@@ -1197,9 +1215,9 @@ export function CommonspaceSidebar({
 															{agent.model ?? "harness default"}
 														</small>
 													</span>
-												</button>
+												</label>
 											))}
-										</div>
+										</fieldset>
 									)}
 								</section>
 
@@ -1591,7 +1609,7 @@ export function CommonspaceSidebar({
 												Map every exported Project root to a local folder.
 												Import works only in an empty workspace.
 											</p>
-											{importArchive.workspace.projects.map((project) => (
+											{importArchive.projects.map((project) => (
 												<fieldset key={project.id}>
 													<legend>{project.name}</legend>
 													{Array.from(
@@ -1900,29 +1918,21 @@ export function CommonspaceSidebar({
 										</span>
 									</button>
 									{onOpenContextSettings === undefined ? (
-										<button
-											type="button"
-											className="grid size-7 place-items-center rounded-r-sm border-0 bg-transparent text-sidebar-foreground/65 opacity-0 hover:bg-sidebar-accent hover:text-sidebar-foreground group-hover:opacity-100 focus:opacity-100"
-											aria-label={`Add local folder to project ${project.name}`}
+										<CollectionActionButton
+											label={`Add local folder to project ${project.name}`}
 											onClick={() => {
 												touchRecent("project", project.id);
 												store.selectProject(project.id);
 												setPathProjectId(project.id);
 												setPathDraft("");
 											}}
-										>
-											<MoreHorizontalIcon
-												className="size-4"
-												aria-hidden="true"
-											/>
-										</button>
+										/>
 									) : (
 										<CollectionActionMenu
 											kind="project"
 											label={project.name}
 											meta={folderSummary}
 											pinned={collectionPinned("project", project.id)}
-											triggerClassName="rounded-r-sm text-sidebar-foreground/65 opacity-0 hover:bg-sidebar-accent hover:text-sidebar-foreground group-hover:opacity-100 focus:opacity-100 max-[780px]:opacity-100"
 											onOpen={() => {
 												touchRecent("project", project.id);
 												store.selectProject(project.id);
@@ -2202,10 +2212,8 @@ export function CommonspaceSidebar({
 										)}
 									</button>
 									{onOpenContextSettings === undefined ? (
-										<button
-											type="button"
-											className="grid size-7 place-items-center rounded-r-sm border-0 bg-transparent text-sidebar-foreground/65 opacity-0 hover:bg-sidebar-accent hover:text-sidebar-foreground group-hover:opacity-100 focus:opacity-100"
-											aria-label={`Manage agents in channel ${channel.name}`}
+										<CollectionActionButton
+											label={`Manage agents in channel ${channel.name}`}
 											onClick={() => {
 												setEditingChannelId(channel.id);
 												setChannelAgentIds(channel.agentIds);
@@ -2221,19 +2229,13 @@ export function CommonspaceSidebar({
 												);
 												setChannelPinNote("");
 											}}
-										>
-											<MoreHorizontalIcon
-												className="size-4"
-												aria-hidden="true"
-											/>
-										</button>
+										/>
 									) : (
 										<CollectionActionMenu
 											kind="channel"
 											label={channel.name}
 											meta={`${String(channel.agentIds.length)} ${channel.agentIds.length === 1 ? "agent" : "agents"}`}
 											pinned={collectionPinned("channel", channel.id)}
-											triggerClassName="rounded-r-sm text-sidebar-foreground/65 opacity-0 hover:bg-sidebar-accent hover:text-sidebar-foreground group-hover:opacity-100 focus:opacity-100 max-[780px]:opacity-100"
 											unread={unreadCount > 0}
 											onOpen={() => {
 												touchRecent("channel", channel.id);
@@ -2745,20 +2747,14 @@ export function CommonspaceSidebar({
 											startDirectMessage(agent.id);
 										}}
 									>
-										<span
-											className="relative grid size-5 place-items-center rounded-sm font-mono text-xs text-sidebar-foreground/55"
-											aria-hidden="true"
-										>
-											{agent.avatarEmoji ??
-												agent.displayName.slice(0, 1).toLocaleUpperCase()}
-											<i
-												className={cn(
-													"absolute right-[-1px] bottom-[-1px] size-[6px] rounded-full border border-sidebar bg-sidebar-foreground/55",
-													effectiveStatus === "running" &&
-														"bg-[var(--status-success)]",
-												)}
-											/>
-										</span>
+										<AgentAvatar
+											agent={agent}
+											size="sm"
+											status={effectiveStatus}
+											showStatus
+											statusClassName="border-sidebar"
+											className="text-sidebar-foreground/55"
+										/>
 										<span className="min-w-0">
 											<strong className="block truncate text-[13px] font-medium">
 												{agent.displayName}
@@ -2773,29 +2769,21 @@ export function CommonspaceSidebar({
 										</span>
 									</button>
 									{onOpenContextSettings === undefined ? (
-										<button
-											type="button"
-											className="grid size-7 place-items-center rounded-r-sm border-0 bg-transparent text-sidebar-foreground/65 opacity-0 hover:bg-sidebar-accent hover:text-sidebar-foreground group-hover:opacity-100 focus:opacity-100"
-											aria-label={`Customize agent ${agent.displayName}`}
+										<CollectionActionButton
+											label={`Customize agent ${agent.displayName}`}
 											onClick={() => {
 												setEditingAgentId(agent.id);
 												setAgentProfileName(agent.displayName);
 												setAgentAvatarEmoji(agent.avatarEmoji ?? "");
 												setAgentAccentColor(agent.accentColor ?? "#6d5dfc");
 											}}
-										>
-											<MoreHorizontalIcon
-												className="size-4"
-												aria-hidden="true"
-											/>
-										</button>
+										/>
 									) : (
 										<CollectionActionMenu
 											kind="agent"
 											label={agent.displayName}
 											meta={`${runtimeLabel(agent.adapter)} · ${agentStatusLabel(effectiveStatus)}`}
 											pinned={collectionPinned("agent", agent.id)}
-											triggerClassName="rounded-r-sm text-sidebar-foreground/65 opacity-0 hover:bg-sidebar-accent hover:text-sidebar-foreground group-hover:opacity-100 focus:opacity-100 max-[780px]:opacity-100"
 											onOpen={() => {
 												touchRecent("agent", agent.id);
 												startDirectMessage(agent.id);
