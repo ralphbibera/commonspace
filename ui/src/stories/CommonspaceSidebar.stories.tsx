@@ -1,7 +1,21 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { fn } from "storybook/test";
+import { expect, fn, userEvent, within } from "storybook/test";
 import { CommonspaceSidebar } from "../CommonspaceSidebar";
-import { createStoryStore, storyBootstrap } from "./story-fixtures";
+import {
+	createStoryBootstrap,
+	createStoryStore,
+	storyBootstrap,
+} from "./story-fixtures";
+
+const apiRoutingBootstrap = createStoryBootstrap({
+	routing: {
+		provider: "openai-compatible",
+		model: "gpt-5.6-sol",
+		harnessAgentId: "",
+		baseUrl: "https://api.openai.com/v1",
+		apiKeyConfigured: true,
+	},
+});
 
 const meta = {
 	title: "Pages/CommonspaceSidebar",
@@ -53,6 +67,114 @@ export const DirectoryActive: Story = {
 	args: {
 		inboxActive: false,
 		directoryActive: true,
+	},
+};
+
+export const WorkspaceSettings: Story = {
+	args: {
+		store: createStoryStore(storyBootstrap),
+	},
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		await userEvent.click(
+			canvas.getByRole("button", { name: "Commonspace settings" }),
+		);
+
+		await expect(
+			within(document.body).getByRole("form", { name: "Workspace settings" }),
+		).toBeVisible();
+	},
+};
+
+export const WorkspaceSettingsApiInference: Story = {
+	args: {
+		store: createStoryStore(apiRoutingBootstrap),
+	},
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		await userEvent.click(
+			canvas.getByRole("button", { name: "Commonspace settings" }),
+		);
+
+		const page = within(document.body);
+		const connectionHeading = page.getByRole("heading", { name: "Connection" });
+		connectionHeading.scrollIntoView({ block: "start" });
+
+		await expect(page.getByLabelText("Routing model")).toHaveValue(
+			"gpt-5.6-sol",
+		);
+		const clearApiKey = page.getByRole("checkbox", {
+			name: "Clear routing API key",
+		});
+		await expect(clearApiKey).not.toBeChecked();
+		await userEvent.click(clearApiKey);
+		await expect(clearApiKey).toBeChecked();
+	},
+};
+
+export const WorkspaceSettingsNotifications: Story = {
+	args: {
+		store: createStoryStore(storyBootstrap),
+	},
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		await userEvent.click(
+			canvas.getByRole("button", { name: "Commonspace settings" }),
+		);
+
+		const page = within(document.body);
+		const notificationsHeading = page.getByRole("heading", {
+			name: "OS notifications",
+		});
+		notificationsHeading.scrollIntoView({ block: "start" });
+
+		const masterSwitch = page.getByRole("switch", {
+			name: "Allow native notifications",
+		});
+		const soundSwitch = page.getByRole("switch", {
+			name: "Notification sound",
+		});
+		await expect(masterSwitch).not.toBeChecked();
+		await expect(soundSwitch).toBeDisabled();
+
+		await userEvent.click(masterSwitch);
+		await expect(masterSwitch).toBeChecked();
+		await expect(soundSwitch).toBeEnabled();
+		await userEvent.click(soundSwitch);
+		await expect(soundSwitch).toBeChecked();
+
+		await userEvent.click(
+			page.getByRole("button", { name: "Save notification settings" }),
+		);
+		await expect(page.getByRole("status")).toHaveTextContent(
+			"Notification settings saved.",
+		);
+	},
+};
+
+export const WorkspaceSettingsOperations: Story = {
+	args: {
+		store: createStoryStore(storyBootstrap),
+	},
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		await userEvent.click(
+			canvas.getByRole("button", { name: "Commonspace settings" }),
+		);
+
+		const page = within(document.body);
+		const diagnostics = page.getByRole("region", {
+			name: "Runtime diagnostics",
+		});
+		diagnostics.scrollIntoView({ block: "start" });
+
+		await expect(diagnostics).toBeVisible();
+		await expect(
+			page.getByRole("region", { name: "Workspace data management" }),
+		).toBeVisible();
+		await expect(
+			page.getByRole("region", { name: "Conversation retention" }),
+		).toBeVisible();
 	},
 };
 
