@@ -74,7 +74,7 @@ pnpm test:storybook:smoke
 pnpm check:ui
 ```
 
-The Storybook Vitest suite validates rendering, interactions, and accessibility in a real browser. It does not compare pixels. The Chromatic panel provides optional visual-regression baselines after the repository is linked to a Chromatic project; it is intentionally excluded from the local headless test process.
+The Storybook Vitest suite validates rendering, interactions, and accessibility in a real browser. It does not compare pixels. The Chromatic panel provides optional visual-regression baselines after the repository is linked to a Chromatic project. Chromatic, docs rendering, and React docgen stay enabled in the normal Storybook workbench but are excluded from the headless test process.
 
 `verify:live` is the production-wiring smoke test. It builds and boots the API and UI, exercises desktop and narrow layouts, and verifies the installed single-origin path. Do not put component permutations there when a deterministic Storybook story can cover them faster.
 

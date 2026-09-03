@@ -9,8 +9,9 @@ const config: StorybookConfig = {
 		...(testing ? [] : ["@chromatic-com/storybook"]),
 		"@storybook/addon-vitest",
 		"@storybook/addon-a11y",
-		"@storybook/addon-docs",
+		...(testing ? [] : ["@storybook/addon-docs"]),
 	],
 	framework: "@storybook/react-vite",
+	typescript: testing ? { reactDocgen: false } : undefined,
 };
 export default config;
