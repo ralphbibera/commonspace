@@ -5,14 +5,16 @@
 | Product | Commonspace |
 | Positioning | The workspace for the agents you already use |
 | Spec version | 1.0 |
-| Decision state | Implementation-ready; product behavior is locked unless Ralph amends it |
-| Last updated | 2026-08-30 |
+| Decision state | Approved baseline; changes require an explicit product decision |
+| Last updated | 2026-09-03 |
 | License | MIT |
 | Primary release | v0.1 local private preview |
 
 This is the canonical product-behavior specification for Commonspace. [Product direction](product-direction.md) defines the boundary and decision filter, [Product model](product.md) summarizes the domain, [Implementation gap audit](implementation-gap-audit.md) tracks current code against this specification, and [Roadmap](roadmap.md) sequences delivery.
 
 UI layouts, visual styling, and interaction polish are intentionally not specified here. This document defines what the product must do and what every later UI must make possible.
+
+Reference research is evidence, not scope. Commonspace is defined by its own user problem and product principles. Any pattern adopted from research must first be justified, named, and specified in Commonspace's own terms. Named comparisons do not belong in canonical product documents or user-facing product language.
 
 ## 1. Product definition
 

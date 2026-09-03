@@ -1,6 +1,6 @@
 # Commonspace product direction
 
-This document records the current product boundary and should override speculative comparator research when the two conflict. [Product specification](product-spec.md) is the canonical implementation-ready behavior contract.
+This document records the current product boundary. [Product specification](product-spec.md) is the canonical implementation-ready behavior contract. Research notes are non-canonical and cannot add product scope on their own.
 
 ## Positioning
 
@@ -11,6 +11,10 @@ Commonspace is a fully open-source, MIT-licensed, local-first shared workspace f
 Commonspace is not a company simulator, task manager, orchestration dashboard, or workflow engine. It should not introduce goals, objectives, org charts, employees, managers, budgets, tickets, or a parallel work-management domain.
 
 Conversation is the product and the work record.
+
+## Reference policy
+
+External products may be studied for evidence about user needs, interaction risks, and technical patterns. Their feature models, terminology, and product language do not define Commonspace and do not belong in canonical product documents or user-facing copy. A referenced pattern enters scope only after it is justified and rewritten as a Commonspace-specific product decision.
 
 ## Product boundary
 
@@ -144,7 +148,7 @@ Agent-suggested durable context is not a v0.1 requirement.
 
 Humans and agents can attach files to messages. Supported harness-generated files should render as normal Commonspace attachments.
 
-Message editing should behave like ChatGPT-style branching/versioning. Editing a message after delivery must not pretend to rewrite an already-consumed native harness turn. The edited version creates a new conversation branch from that point and may be routed again.
+Editing a message after delivery must not pretend to rewrite an already-consumed native harness turn. The edited version creates a visible conversation branch from that point and may be routed again. The original version and its replies remain available as history.
 
 If a delivered message is deleted, Commonspace should preserve a visible deletion marker rather than pretending the harness never saw it.
 
@@ -198,7 +202,7 @@ Commonspace remains MIT licensed.
 
 A feature belongs when it makes the shared workspace between one human and many local agents better by improving conversation, routing, shared context, session continuity, discoverability, trust, or collaboration.
 
-A feature does not belong merely because Paperclip, ClickUp, Slack, Buzz, or another comparator has it.
+A feature does not belong merely because it appears in a reference product.
 
 When in doubt, ask:
 

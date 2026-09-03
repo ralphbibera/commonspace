@@ -1,12 +1,16 @@
-# Commonspace feature-parity research
+# Internal product reference research
 
-Researched 2026-08-28 against the current working tree and primary sources for Visual Studio Code, Block Buzz, Slack, ClickUp, and Paperclip AI. The two open-source comparators were also inspected at their current default branches.
+> This document is research, not a product specification or backlog. It records external observations and their provenance. It cannot add Commonspace scope, terminology, positioning, or interaction patterns. A pattern becomes a Commonspace decision only when it is independently justified and rewritten in Commonspace's own language in [the canonical product specification](product-spec.md).
 
-## Executive conclusion
+Reference names remain in this document only so the source of each observation is clear. They should not appear in canonical product documents or user-facing copy.
+
+Research date: 2026-08-28. Sources include the current working tree and primary material for Visual Studio Code, Block Buzz, Slack, ClickUp, and Paperclip AI. The two open-source references were also inspected at their current default branches.
+
+## Research summary
 
 Commonspace already has the right **agent-collaboration spine**: local filesystem Projects, Channels, one-to-one agent DMs, threaded native sessions, explicit agent routing, exact session resumption, bounded cross-agent handoffs, per-channel context, and durable agent activity traces.
 
-The deeper comparison changes the emphasis. Commonspace now implements much of the first report's read-only trust layer—Project Files, Git Changes/diffs, image attachments, an actual-replies Inbox, richer Markdown, speech playback, and native harness configuration/capability inspection. The next gaps are the surfaces that let one owner supervise several durable agent sessions without turning Commonspace into a ticketing product:
+The deeper comparison highlights several areas worth evaluating. Commonspace now implements much of the first report's read-only trust layer: Project Files, Git Changes/diffs, image attachments, an actual-replies Inbox, richer Markdown, speech playback, and native harness configuration/capability inspection. The remaining observations concern how one owner might supervise several durable agent sessions without turning Commonspace into a ticketing product:
 
 1. **Live supervision:** semantic activity and stop are implemented; steer/queue, needs-attention states, and richer completion/failure signals remain.
 2. **Work/result binding:** identify what a run changed, distinguish pre-existing changes, attach validation evidence, and review a result from the conversation that caused it.
@@ -16,11 +20,11 @@ The deeper comparison changes the emphasis. Commonspace now implements much of t
 
 Buzz is the closest product-shape comparator: people and agents share rooms, repositories, workflows, and an audit substrate. VS Code is the strongest execution/review comparator. Slack is strongest at attention, retrieval, and multiplayer agent sessions. ClickUp is strongest at configurable agent profiles and operational analytics. Paperclip is strongest at autonomous-run governance, but its company/org-chart/task hierarchy is intentionally outside Commonspace's scope.
 
-ClickUp's task hierarchy, assignees, statuses, dashboards, and approval/work-queue model should remain comparator context, not parity targets. Commonspace's product contract says conversation is the work record and explicitly excludes a parallel task domain.
+The observed task hierarchies, assignees, statuses, dashboards, and approval queues remain research context, not product targets. Commonspace's product contract says conversation is the work record and explicitly excludes a parallel task domain.
 
-## Full capability map: top-level first
+## Research capability map
 
-The product should be planned as an **agent collaboration workspace**, not as chat with a few AI buttons. The complete opportunity breaks into twelve top-level capability pillars. The order below reflects product importance, not implementation difficulty.
+For analysis, the observed opportunity is grouped into twelve capability areas. These categories help organize evidence; they are not an adoption plan. Any priority must come from the canonical product specification and roadmap.
 
 | Pillar                               | Product outcome                                                                             | Priority   |
 | ------------------------------------ | ------------------------------------------------------------------------------------------- | ---------- |
@@ -493,7 +497,7 @@ This report separates four layers that are often bundled together under “agent
 3. **Trust substrate:** semantic activity, file attribution, diffs, tests, permissions, approvals, audit, cost, and rollback.
 4. **Coordination model:** conversation-led work, session-led work, temporary project rooms, or explicit tasks/goals/org charts.
 
-Feature parity should be sought within the first three layers. The fourth is a product choice. Commonspace should not adopt a task/company hierarchy merely because Paperclip or ClickUp uses one.
+The first three layers expose recurring user needs. The fourth describes different product models. None of the four creates scope on its own, and Commonspace does not adopt a task or company hierarchy merely because one appears elsewhere.
 
 ## Deep comparison: Block Buzz
 
@@ -513,13 +517,13 @@ The current repository explicitly marks channels, threads, DMs, canvases, media,
 - **Semantic supervision:** Buzz's activity design normalizes agent actions into verb/object/outcome cards, mutates running actions in place, surfaces failures, keeps raw detail behind disclosure, and renders silence/timeouts instead of going dark. [42]
 - **Portable/self-owned identity:** signed identities and a relay owned by the operator create a different portability and multi-user trust model from Commonspace's local aliases over native harness identities. [40][41]
 
-### What Commonspace should copy, adapt, or reject
+### Reference interpretation
 
-**Copy:** result-linked rooms; semantic activity cards; changed-file/CI/review events in the causative thread; message/reaction/schedule/webhook triggers; a searchable audit timeline; richer local-media references.
+**Potential lesson:** result-linked rooms; semantic activity cards; changed-file/CI/review events in the causative thread; message/reaction/schedule/webhook triggers; a searchable audit timeline; richer local-media references.
 
-**Adapt:** agent/member symmetry should mean equal conversational and reference affordances, not permission to mutate every workspace object. Commonspace should keep host paths and native session identifiers private and preserve harness-owned credentials.
+**Commonspace constraint:** agent/member symmetry should mean equal conversational and reference affordances, not permission to mutate every workspace object. Commonspace should keep host paths and native session identifiers private and preserve harness-owned credentials.
 
-**Reject for now:** Nostr migration, cryptographic social identity, multi-community hosting, Git hosting, voice huddles, and multi-human access control. These solve different deployment and trust problems than a single-owner local-first workspace.
+**Outside current scope:** Nostr migration, cryptographic social identity, multi-community hosting, Git hosting, voice huddles, and multi-human access control. These solve different deployment and trust problems than a single-owner local-first workspace.
 
 ## Deep comparison: Visual Studio Code
 
@@ -539,13 +543,13 @@ VS Code treats an agent session—not a channel or task—as the primary unit of
 - **Explicit context:** files, symbols, selections, source-control state, test failures, and other resources are attached deliberately rather than inferred from unlimited history. [11][12]
 - **Context lifecycle:** independent sessions prevent leakage; context usage is visible; compaction and an explicit new session address context pressure without pretending old and new work are one conversation. [34][53]
 
-### What Commonspace should copy, adapt, or reject
+### Reference interpretation
 
-**Copy:** a session-centric supervision view; stop/steer/queue; explicit context chips; run-linked diffs and validation; needs-attention state; checkpoints or at least safe snapshots; context-window visibility; archive/resume affordances.
+**Potential lesson:** a session-centric supervision view; stop/steer/queue; explicit context chips; run-linked diffs and validation; needs-attention state; checkpoints or at least safe snapshots; context-window visibility; archive/resume affordances.
 
-**Adapt:** Commonspace threads already map well to sessions, but Channels must continue to support multiple agents and non-blocking peer mentions. A handoff should remain a visible message/context transfer, not silent session identity substitution.
+**Commonspace constraint:** Commonspace threads already map well to sessions, but Channels must continue to support multiple agents and non-blocking peer mentions. A handoff should remain a visible message/context transfer, not silent session identity substitution.
 
-**Reject for now:** becoming a full editor, source-control client, debugger, terminal multiplexer, or extension marketplace. “Open in editor” plus an excellent inspect/review loop is enough.
+**Outside current scope:** becoming a full editor, source-control client, debugger, terminal multiplexer, or extension marketplace. “Open in editor” plus an excellent inspect/review loop is enough.
 
 ## Deep comparison: Slack
 
@@ -564,13 +568,13 @@ Slack Code creates temporary public or private code channels around an agent tas
 - **Workflow Builder:** message-adjacent automation supports templates, external starts, connector steps, conditional branches, schedules, reactions, channel events, managers, permissions, and activity/error logs. [38]
 - **Durable context objects:** canvases hold long-form context while lists/workflows can be composed into channel templates. [6][39]
 
-### What Commonspace should copy, adapt, or reject
+### Reference interpretation
 
-**Copy:** an attention model beyond “new reply”; source-linked summaries; agent session status/needs-attention; temporary result rooms or explicit thread archival; permission-like visibility of native capabilities; scheduled/reaction/message triggers; stable links and saved items.
+**Potential lesson:** an attention model beyond “new reply”; source-linked summaries; agent session status/needs-attention; temporary result rooms or explicit thread archival; permission-like visibility of native capabilities; scheduled/reaction/message triggers; stable links and saved items.
 
-**Adapt:** Commonspace's single owner does not need notification delivery matrices or app-install governance, but it does need mute/follow, clear unread semantics, and a way to see which agent can access which tools/services before invoking it.
+**Commonspace constraint:** Commonspace's single owner does not need notification delivery matrices or app-install governance, but it does need mute/follow, clear unread semantics, and a way to see which agent can access which tools/services before invoking it.
 
-**Reject for now:** enterprise search connectors, marketplace economics, multi-organization administration, calls/huddles, guest roles, and broad workflow integrations.
+**Outside current scope:** enterprise search connectors, marketplace economics, multi-organization administration, calls/huddles, guest roles, and broad workflow integrations.
 
 ## Deep comparison: ClickUp
 
@@ -588,13 +592,13 @@ ClickUp combines chat and documents with a task hierarchy. Its newer Super Agent
 - **Knowledge and memory:** configuration distinguishes durable instructions, selected knowledge, skills, and memory behavior. This is more legible than one generic prompt or opaque native profile. [36][57]
 - **Standups and summaries:** ClickUp can generate recurring standups from work activity, showing the value of scheduled evidence-based digests. [35]
 
-### What Commonspace should copy, adapt, or reject
+### Reference interpretation
 
-**Copy:** unified agent profile; run/activity filters; cost/usage visibility; activate/deactivate control; explicit trigger/skill/knowledge/memory categories; cloneable profile presets; scheduled evidence-based digests.
+**Potential lesson:** unified agent profile; run/activity filters; cost/usage visibility; activate/deactivate control; explicit trigger/skill/knowledge/memory categories; cloneable profile presets; scheduled evidence-based digests.
 
-**Adapt:** configuration must read from and write through supported native harness APIs. Commonspace-local aliases and appearance must remain separate from native profile identity and credentials. “Permissions” can begin as a truthful capability matrix and Project/Channel participation scope for one owner.
+**Commonspace constraint:** configuration must read from and write through supported native harness APIs. Commonspace-local aliases and appearance must remain separate from native profile identity and credentials. “Permissions” can begin as a truthful capability matrix and Project/Channel participation scope for one owner.
 
-**Reject:** Spaces/Folders/Lists/tasks, assigned comments, dashboards, goals, and approval queues as product domains. They would create a parallel work record contrary to Commonspace's contract.
+**Outside current scope:** Spaces/Folders/Lists/tasks, assigned comments, dashboards, goals, and approval queues as product domains. They would create a parallel work record contrary to Commonspace's contract.
 
 ## Deep comparison: Paperclip AI
 
@@ -613,13 +617,13 @@ This is deliberately unlike Commonspace's non-blocking rooms and same-session co
 - **Runtime adapters:** local Codex supports ACP or CLI, persistent session state, structured live transcripts, inactivity timeout, worktree strategy, model profiles, managed per-company homes, skill injection, environment tests, and controlled sandbox credential sync. [48]
 - **Extensibility:** official documentation exposes adapter, skill, plugin, CLI, API, secret, deployment, and external-task-protocol surfaces. [43]
 
-### What Commonspace should copy, adapt, or reject
+### Reference interpretation
 
-**Copy:** bounded run wake reasons; separate run liveness from conversation semantics; inactivity/timeout detection; per-agent and per-run cost; pause/resume; environment tests; persistent adapter state; structured transcript folding; explicit execution workspace/isolation metadata.
+**Potential lesson:** bounded run wake reasons; separate run liveness from conversation semantics; inactivity/timeout detection; per-agent and per-run cost; pause/resume; environment tests; persistent adapter state; structured transcript folding; explicit execution workspace/isolation metadata.
 
-**Adapt:** approvals should be narrow, consequence-based run gates (for example destructive shell or external publication), not a generic approval queue. Schedules should post to the owning conversation and wake a native agent session without creating hidden tasks.
+**Commonspace constraint:** approvals should be narrow, consequence-based run gates (for example destructive shell or external publication), not a generic approval queue. Schedules should post to the owning conversation and wake a native agent session without creating hidden tasks.
 
-**Reject:** companies, CEOs, org charts, goals, issues, assignees, priority/status workflow, atomic task checkout, manager-only delegation, stale-task dashboards, and the “zero-human company” framing.
+**Outside current scope:** companies, CEOs, org charts, goals, issues, assignees, priority/status workflow, atomic task checkout, manager-only delegation, stale-task dashboards, and the “zero-human company” framing.
 
 ## Baseline lessons from Slack
 
@@ -633,13 +637,13 @@ Slack's relevant baseline is the **attention and conversation layer**, not enter
 - A Canvas holds longer-lived, fully formatted context and can be attached as a Channel/DM tab; it supports mentions and comments. [Slack Canvas](https://slack.com/help/articles/203950418-Use-a-canvas-in-Slack) [6]
 - Huddles add real-time audio/video, screen sharing, and a dedicated notes thread inside a conversation. [Slack huddles](https://slack.com/help/articles/4402059015315-Use-huddles-in-Slack) [7]
 
-### What Commonspace should take from Slack
+### Reference interpretation
 
-**Table stakes:** unread/read state, Activity/mentions, stable thread navigation, global search filters, message permalinks, message actions, composer formatting, and attachments.
+**Potential lesson:** unread/read state, Activity/mentions, stable thread navigation, global search filters, message permalinks, message actions, composer formatting, and attachments.
 
-**Later:** lightweight Channel/Project brief similar to Canvas.
+**Possible later exploration:** a lightweight Channel/Project brief.
 
-**Defer:** audio/video huddles, broad app marketplace, enterprise directory/admin controls, and multi-human notification delivery. These do not unblock local agent collaboration.
+**Outside current scope:** audio/video huddles, a broad app marketplace, enterprise directory/admin controls, and multi-human notification delivery. These do not unblock local agent collaboration.
 
 ## Baseline lessons from ClickUp
 
@@ -657,13 +661,13 @@ ClickUp's useful lesson is how communication stays connected to a visible work c
 - The same tasks can be viewed as List, Board, Calendar, Gantt, or Team layouts with saved grouping/filter/sort configuration. [ClickUp task views](https://help.clickup.com/hc/en-us/articles/6310172583831-Use-Task-views) [28]
 - Permissions span full edit, edit, comment, and view-only levels. [ClickUp permissions](https://help.clickup.com/hc/en-us/articles/6309225399703-Intro-to-permissions) [29]
 
-### What Commonspace should take from ClickUp
+### Reference interpretation
 
-**Take:** bind every Channel clearly to a Project; show context breadcrumbs; provide a unified personal attention view; support save-for-later; add lightweight Project/Channel briefs; make files and references visible from the conversation; preserve history and export.
+**Potential lesson:** show Project context clearly when it is present; keep projectless Channels valid; provide a unified personal attention view; support save-for-later; add lightweight Project/Channel briefs; make files and references visible from the conversation; preserve history and export.
 
-**Adapt carefully:** an “assigned message” could be useful as a local follow-up marker, but it should remain a message annotation—not become a second task database.
+**Commonspace constraint:** a local follow-up marker could remain a message annotation, but must not become a second task database.
 
-**Do not copy:** Space/Folder/List/task hierarchy, statuses, assignees, priorities, dependencies, multiple task views, dashboards, approvals, goals, or enterprise permissions. Those would violate Commonspace's conversation-first scope.
+**Outside current scope:** Space/Folder/List/task hierarchy, statuses, assignees, priorities, dependencies, multiple task views, dashboards, approvals, goals, or enterprise permissions. Those would violate Commonspace's conversation-first scope.
 
 ## Baseline lessons from VS Code
 
@@ -679,15 +683,15 @@ VS Code supplies the missing **developer trust layer**:
 - Markdown support includes source/preview, outline, path/header completions, workspace links, drag/drop file links, and preview synchronization. [VS Code Markdown](https://code.visualstudio.com/docs/languages/markdown) [14]
 - The integrated terminal starts in the workspace root, supports multiple/split terminals, exposes command status, and can appear beside editors. [VS Code terminal](https://code.visualstudio.com/docs/terminal/basics) [15]
 
-### What Commonspace should take from VS Code
+### Reference interpretation
 
-**Table stakes for an agent workspace:** Project Files, Project Changes, changed-file summaries on agent replies, readable diffs, file/line deep links, explicit context attachments, stop/steer/queue, session history, and visible validation output.
+**Potential lesson:** Project Files, Project Changes, changed-file summaries on agent replies, readable diffs, file/line deep links, explicit context attachments, stop/steer/queue, session history, and visible validation output.
 
-**Later:** inline diff feedback, reviewed markers, checkpoints/revert, Problems/test views, and optional terminal output surfaces.
+**Possible later exploration:** inline diff feedback, reviewed markers, checkpoints/revert, Problems/test views, and optional terminal output surfaces.
 
-**Avoid initially:** full editor/IDE parity, staging/commit/push mutation, extension marketplace, debugger, and arbitrary shell UI. Commonspace can first be an excellent review-and-collaboration workspace that opens a file in the user's editor when editing is needed.
+**Outside current scope:** full editor/IDE parity, staging/commit/push mutation, extension marketplace, debugger, and arbitrary shell UI. Commonspace can remain an excellent review-and-collaboration workspace that opens a file in the user's editor when editing is needed.
 
-## Parity matrix
+## Observation matrix
 
 | Capability                   | Commonspace                                | VS Code                         | Block Buzz                         | Slack                               | ClickUp                           | Paperclip AI                  | Direction                                                                                                    |
 | ---------------------------- | ------------------------------------------ | ------------------------------- | ---------------------------------- | ----------------------------------- | --------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------ |
@@ -770,14 +774,16 @@ VS Code supplies the missing **developer trust layer**:
     - Export non-secret Projects, Channels, DMs, messages, threads, briefs, triggers, and run summaries.
     - Sanitize host paths and native sessions; define deletion and retention semantics before changing storage architecture.
 
-### Explicitly out of scope
+### Patterns already excluded by canonical scope
 
 - A ClickUp/Paperclip-style company, goal, issue, assignee, priority, status, approval-queue, or org-chart domain.
 - Buzz's Nostr/cryptographic identity and Git hosting.
 - Slack's marketplace, calls, enterprise directory, and multi-human administration.
 - VS Code editor/debugger/terminal/source-control mutation parity.
 
-## Product acceptance criteria for the next milestone
+## Candidate validation questions
+
+These research-derived questions are not acceptance criteria until they are adopted into the canonical product specification.
 
 A user should be able to:
 
@@ -789,7 +795,7 @@ A user should be able to:
 6. Find new replies, mentions, failures, timeouts, completions, and input requests in one attention surface.
 7. Inspect an agent before invoking it and understand its native model, tools, skills, integrations, memory policy, session state, and reported cost without exposing credentials.
 
-Meeting those criteria would combine Buzz's shared human-agent rooms and unified work record, VS Code's session/review loop, Slack's attention and retrieval, ClickUp's legible agent profiles, and Paperclip's runtime governance—without abandoning Commonspace's local-first, conversation-primary, native-session model.
+Meeting any adopted criteria should strengthen Commonspace's own local-first, conversation-primary, native-session model.
 
 ## Sources
 
