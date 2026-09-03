@@ -148,33 +148,26 @@ export function CommonspaceThreads({
 		>
 			<WorkspaceHeader
 				title="Threads"
-				subtitle="All channel threads with unread and follow filters"
+				subtitle={`${String(unreadCount)} unread · ${String(followingCount)} following`}
 				mark={<MessageSquareTextIcon className="size-[17px]" />}
+				actions={
+					<button
+						type="button"
+						className="inline-flex min-h-9 items-center gap-2 rounded-sm border bg-background px-3 text-[11px] font-medium text-foreground hover:bg-muted disabled:text-muted-foreground"
+						disabled={unreadCount === 0}
+						onClick={() => {
+							void store
+								.mutate({ action: "mark-inbox-read" })
+								.catch(() => undefined);
+						}}
+					>
+						<CheckCheckIcon className="size-4" aria-hidden="true" />
+						Mark all read
+					</button>
+				}
 			/>
 
-			<div className="mx-auto flex min-h-[52px] w-full max-w-[1020px] items-center justify-between gap-3 border-b px-9 font-mono text-xs text-muted-foreground max-[780px]:px-5 max-[480px]:gap-2.5 max-[480px]:px-3.5">
-				<div className="flex items-center gap-4">
-					<span>{String(unreadCount)} unread</span>
-					<span className="border-l pl-4">
-						{String(followingCount)} following
-					</span>
-				</div>
-				<button
-					type="button"
-					className="inline-flex min-h-9 items-center gap-2 rounded-sm border bg-background px-3 text-[13px] font-semibold text-foreground hover:bg-muted disabled:text-muted-foreground"
-					disabled={unreadCount === 0}
-					onClick={() => {
-						void store
-							.mutate({ action: "mark-inbox-read" })
-							.catch(() => undefined);
-					}}
-				>
-					<CheckCheckIcon className="size-4" aria-hidden="true" />
-					Mark all read
-				</button>
-			</div>
-
-			<div className="mx-auto flex min-h-[54px] w-full max-w-[1020px] items-center justify-end border-b px-9 max-[780px]:px-5 max-[480px]:px-3">
+			<div className="mx-auto flex min-h-12 w-full max-w-[1020px] items-center justify-end border-b px-9 max-[780px]:px-5 max-[480px]:px-3">
 				<fieldset
 					aria-label="Thread filter"
 					className="m-0 flex min-w-0 items-center gap-0.5 border-0 p-0"
@@ -185,7 +178,7 @@ export function CommonspaceThreads({
 						onClick={() => {
 							setFilter("all");
 						}}
-						className="inline-flex min-h-9 items-center rounded-sm border border-transparent px-2.5 text-xs font-semibold text-muted-foreground hover:bg-muted hover:text-foreground aria-pressed:border-border aria-pressed:bg-muted aria-pressed:text-foreground"
+						className="inline-flex min-h-9 items-center rounded-sm border border-transparent px-2.5 text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground aria-pressed:border-border aria-pressed:bg-muted aria-pressed:text-foreground"
 					>
 						All
 					</button>
@@ -195,7 +188,7 @@ export function CommonspaceThreads({
 						onClick={() => {
 							setFilter("unread");
 						}}
-						className="inline-flex min-h-9 items-center rounded-sm border border-transparent px-2.5 text-xs font-semibold text-muted-foreground hover:bg-muted hover:text-foreground aria-pressed:border-border aria-pressed:bg-muted aria-pressed:text-foreground"
+						className="inline-flex min-h-9 items-center rounded-sm border border-transparent px-2.5 text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground aria-pressed:border-border aria-pressed:bg-muted aria-pressed:text-foreground"
 					>
 						Unread {String(unreadCount)}
 					</button>
@@ -205,7 +198,7 @@ export function CommonspaceThreads({
 						onClick={() => {
 							setFilter("following");
 						}}
-						className="inline-flex min-h-9 items-center rounded-sm border border-transparent px-2.5 text-xs font-semibold text-muted-foreground hover:bg-muted hover:text-foreground aria-pressed:border-border aria-pressed:bg-muted aria-pressed:text-foreground"
+						className="inline-flex min-h-9 items-center rounded-sm border border-transparent px-2.5 text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground aria-pressed:border-border aria-pressed:bg-muted aria-pressed:text-foreground"
 					>
 						Following
 					</button>

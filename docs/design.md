@@ -237,7 +237,7 @@ components:
 
 These rules govern the application. The detailed reference material below is background only and never overrides them.
 
-- **Workspace:** Desktop web app. Use `/Users/ralphbibera/Downloads/commonspace-apple-workspace.html` as the geometry reference: 52px title bar, 260px navigation rail, flexible content pane, 64px pane headers, and 8px pane dividers.
+- **Workspace:** Desktop web app. Use `/Users/ralphbibera/Downloads/commonspace-apple-workspace.html` as the geometry reference: 52px title bar, 260px navigation rail, flexible content pane, 64px pane headers, and 8px pane dividers. The shell opens directly to the attention-focused Inbox; it has no separate Workspace landing page or Agent-runs dashboard, and workspace branding is non-navigating.
 - **Collections:** Keep Projects, Channels, Agents, Inbox, Threads, conversations, and project workbenches as flat working surfaces with visible borders, tight rows, and clear hierarchy.
 - **Messages:** Keep the message highlight card. Its treatment is quiet and neutral: semantic surface plus border/ring. No orange rail, orange border, or orange tint.
 - **Appearance:** Start Light when no preference exists. Offer Light, Dark, and System. System follows the operating-system preference and persists locally.
@@ -246,6 +246,16 @@ These rules govern the application. The detailed reference material below is bac
 - **Copy:** Show product meaning, not implementation vocabulary. Do not expose token names, CSS names, internal class names, or explanatory theme jargon to users.
 - **Tests:** Keep backend/runtime tests focused on behavior and contracts. Do not add frontend click/assertion specs for styling; verify the UI through the real desktop browser flow.
 - **Proof:** Use desktop screenshots and the real desktop flow. Run the focused behavior suite, `pnpm check`, and `pnpm verify:live`.
+
+## Reference notes
+
+This file preserves research from an earlier visual reference. It is not the
+active application contract: use [ui-direction.md](ui-direction.md) for the
+current desktop product direction, and use `ui/src/index.css` for the active
+semantic palette. The proprietary fonts, aubergine palette, pill geometry,
+marketing sections, and pricing examples below are reference-only and must
+not be introduced into the Commonspace app without an explicit product
+decision.
 
 ## Overview
 

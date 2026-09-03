@@ -12,6 +12,14 @@ When changing the shell, collections, conversations, Inbox, Threads, or Project 
 
 Do not copy the reference file's color settings. Preserve the active Tweakcn/Darkmatter semantic palette in `ui/src/index.css` and Commonspace's user appearance controls.
 
+## Shell and navigation
+
+- With no saved destination, the desktop shell opens directly to the attention-focused Inbox.
+- Do not add a separate Workspace landing page, welcome dashboard, or Agent-runs overview.
+- Runtime outcomes remain represented by Inbox items and their owning conversation or Thread; do not duplicate them in a second dashboard surface.
+- Workspace branding is non-navigating. Returning from a Project pane goes back to Inbox.
+- Treat a legacy `commonspace-view=home` value as Inbox so upgrades cannot reopen the removed surface.
+
 ## Implementation rules
 
 - Target the desktop web application first. Narrow/mobile validation is deferred until desktop parity is accepted.
@@ -27,6 +35,14 @@ Do not copy the reference file's color settings. Preserve the active Tweakcn/Dar
 - User-facing copy uses Light, Dark, and System. Darkmatter remains a swappable theme source, not explanatory product copy.
 
 To swap themes, run `pnpm dlx shadcn@latest add "<tweakcn-theme-url>" --cwd ui --yes`. React components and layout must not need theme-specific edits. Stable aliases at the end of `ui/src/index.css` adapt Commonspace-only names such as `surface`, status colors, sidebar depth, radius tiers, control sizing, shadows, and motion to the incoming shadcn variables.
+
+## Radius roles
+
+- `rounded-sm` is for compact controls, nav rows, and small inline status surfaces.
+- `rounded-md` is the default for fields, cards, panels, dialogs, menus, message highlights, and composers.
+- `rounded-full` is reserved for circular avatars, status dots, and pill badges.
+- `rounded-none` is reserved for full-bleed strips such as line tabs and table-like separators.
+- Do not introduce `rounded-lg`, `rounded-xl`, or larger radii for core Commonspace surfaces without a component-specific reason.
 
 ## Conversation focus
 

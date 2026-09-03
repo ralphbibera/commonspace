@@ -141,9 +141,6 @@ export function CommonspaceInbox({
 		[snapshot.bootstrap?.liveActivities, state],
 	);
 	const unreadCount = items.filter((item) => item.unread).length;
-	const attentionCount = sessions.filter(
-		(session) => session.status === "needs-attention",
-	).length;
 	const runningCount = sessions.filter(
 		(session) => session.status === "running",
 	).length;
@@ -194,53 +191,28 @@ export function CommonspaceInbox({
 		>
 			<WorkspaceHeader
 				title="Inbox"
-				subtitle="Agent replies, requests, and native session outcomes"
+				subtitle={`${String(unreadCount)} unread · ${String(attentionItems.length)} need attention · ${String(runningCount)} running`}
 				mark={<InboxIcon className="size-[17px]" />}
+				actions={
+					view !== "sessions" ? (
+						<button
+							type="button"
+							className="inline-flex min-h-9 shrink-0 items-center gap-2 rounded-sm border bg-background px-3 text-[11px] font-medium hover:bg-muted disabled:text-muted-foreground max-[480px]:size-11 max-[480px]:justify-center max-[480px]:px-0"
+							disabled={unreadCount === 0 || markingRead}
+							onClick={() => {
+								void markAllRead().catch(() => undefined);
+							}}
+						>
+							<CheckCheckIcon className="size-4" aria-hidden="true" />
+							<span className="max-[480px]:sr-only">
+								{markingRead ? "Marking read…" : "Mark all read"}
+							</span>
+						</button>
+					) : undefined
+				}
 			/>
 
-			<section
-				className="mx-auto flex min-h-[52px] w-full max-w-[1020px] items-center gap-4 border-b px-9 font-mono text-xs text-muted-foreground max-[780px]:gap-2 max-[780px]:px-5 max-[480px]:gap-2.5 max-[480px]:px-3.5"
-				aria-label="Inbox summary"
-			>
-				<span>
-					<i
-						className="mr-1.5 inline-block size-1.5 rounded-full bg-destructive"
-						aria-hidden="true"
-					/>
-					{String(unreadCount)} unread
-				</span>
-				<span className="border-l pl-4 max-[780px]:pl-2">
-					<i
-						className="mr-1.5 inline-block size-1.5 rounded-full bg-[var(--status-warning)]"
-						aria-hidden="true"
-					/>
-					{String(attentionCount)} need action
-				</span>
-				<span className="border-l pl-4 max-[780px]:pl-2">
-					<i
-						className="mr-1.5 inline-block size-1.5 rounded-full bg-[var(--status-success)]"
-						aria-hidden="true"
-					/>
-					{String(runningCount)} running
-				</span>
-				{view !== "sessions" && (
-						<button
-						type="button"
-						className="ml-auto inline-flex min-h-9 shrink-0 items-center gap-2 rounded-sm border bg-background px-3 text-xs font-semibold hover:bg-muted disabled:text-muted-foreground max-[480px]:size-11 max-[480px]:justify-center max-[480px]:px-0"
-						disabled={unreadCount === 0 || markingRead}
-						onClick={() => {
-							void markAllRead().catch(() => undefined);
-						}}
-					>
-						<CheckCheckIcon className="size-4" aria-hidden="true" />
-						<span className="max-[480px]:sr-only">
-							{markingRead ? "Marking read…" : "Mark all read"}
-						</span>
-					</button>
-				)}
-			</section>
-
-			<div className="mx-auto flex min-h-[54px] w-full max-w-[1020px] items-center justify-between gap-3 border-b px-9 max-[780px]:overflow-x-auto max-[780px]:px-5 max-[480px]:px-3">
+			<div className="mx-auto flex min-h-12 w-full max-w-[1020px] items-center justify-between gap-3 border-b px-9 max-[780px]:overflow-x-auto max-[780px]:px-5 max-[480px]:px-3">
 				<fieldset
 					aria-label="Inbox view"
 					className="m-0 flex min-w-0 items-center gap-0.5 border-0 p-0"
@@ -251,35 +223,35 @@ export function CommonspaceInbox({
 						onClick={() => {
 							setView("attention");
 						}}
-						className="inline-flex min-h-9 items-center gap-1.5 rounded-sm border border-transparent px-2.5 text-xs font-semibold text-muted-foreground hover:bg-muted hover:text-foreground aria-pressed:border-border aria-pressed:bg-muted aria-pressed:text-foreground"
+						className="inline-flex min-h-9 items-center gap-1.5 rounded-sm border border-transparent px-2.5 text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground aria-pressed:border-border aria-pressed:bg-muted aria-pressed:text-foreground"
 					>
-							<InboxIcon className="size-4" aria-hidden="true" />
-							Attention{" "}
+						<InboxIcon className="size-4" aria-hidden="true" />
+						Attention{" "}
 						<span className="grid size-5 place-items-center rounded-full border bg-background font-mono">
 							{String(attentionItems.length)}
 						</span>
-						</button>
-						<button
-							type="button"
-							aria-pressed={view === "activity"}
-							onClick={() => {
-								setView("activity");
-							}}
-							className="inline-flex min-h-9 items-center gap-1.5 rounded-sm border border-transparent px-2.5 text-xs font-semibold text-muted-foreground hover:bg-muted hover:text-foreground aria-pressed:border-border aria-pressed:bg-muted aria-pressed:text-foreground"
-						>
-							<MessageSquareTextIcon className="size-4" aria-hidden="true" />
-							Activity{" "}
-							<span className="grid size-5 place-items-center rounded-full border bg-background font-mono">
-								{String(activityItems.length)}
-							</span>
-						</button>
-						<button
+					</button>
+					<button
+						type="button"
+						aria-pressed={view === "activity"}
+						onClick={() => {
+							setView("activity");
+						}}
+						className="inline-flex min-h-9 items-center gap-1.5 rounded-sm border border-transparent px-2.5 text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground aria-pressed:border-border aria-pressed:bg-muted aria-pressed:text-foreground"
+					>
+						<MessageSquareTextIcon className="size-4" aria-hidden="true" />
+						Activity{" "}
+						<span className="grid size-5 place-items-center rounded-full border bg-background font-mono">
+							{String(activityItems.length)}
+						</span>
+					</button>
+					<button
 						type="button"
 						aria-pressed={view === "sessions"}
 						onClick={() => {
 							setView("sessions");
 						}}
-						className="inline-flex min-h-9 items-center gap-1.5 rounded-sm border border-transparent px-2.5 text-xs font-semibold text-muted-foreground hover:bg-muted hover:text-foreground aria-pressed:border-border aria-pressed:bg-muted aria-pressed:text-foreground"
+						className="inline-flex min-h-9 items-center gap-1.5 rounded-sm border border-transparent px-2.5 text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground aria-pressed:border-border aria-pressed:bg-muted aria-pressed:text-foreground"
 					>
 						<Clock3Icon className="size-4" aria-hidden="true" />
 						Sessions{" "}
@@ -288,7 +260,7 @@ export function CommonspaceInbox({
 						</span>
 					</button>
 				</fieldset>
-					{view !== "sessions" ? (
+				{view !== "sessions" ? (
 					<fieldset
 						aria-label="Inbox filter"
 						className="m-0 flex min-w-0 items-center gap-0.5 border-0 p-0"
@@ -301,12 +273,12 @@ export function CommonspaceInbox({
 								onClick={() => {
 									setFilter(value);
 								}}
-								className="inline-flex min-h-9 items-center gap-1.5 rounded-sm border border-transparent px-2.5 text-xs font-semibold text-muted-foreground hover:bg-muted hover:text-foreground aria-pressed:border-border aria-pressed:bg-muted aria-pressed:text-foreground"
+								className="inline-flex min-h-9 items-center gap-1.5 rounded-sm border border-transparent px-2.5 text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground aria-pressed:border-border aria-pressed:bg-muted aria-pressed:text-foreground"
 							>
 								{value === "all" ? (
 									"All"
 								) : value === "unread" ? (
-										`Unread${currentUnreadCount === 0 ? "" : ` ${String(currentUnreadCount)}`}`
+									`Unread${currentUnreadCount === 0 ? "" : ` ${String(currentUnreadCount)}`}`
 								) : (
 									<>
 										<BookmarkIcon className="size-3.5" aria-hidden="true" />
@@ -330,7 +302,7 @@ export function CommonspaceInbox({
 									onClick={() => {
 										setSessionFilter(value);
 									}}
-									className="inline-flex min-h-9 items-center rounded-sm border border-transparent px-2.5 text-xs font-semibold text-muted-foreground hover:bg-muted hover:text-foreground aria-pressed:border-border aria-pressed:bg-muted aria-pressed:text-foreground"
+									className="inline-flex min-h-9 items-center rounded-sm border border-transparent px-2.5 text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground aria-pressed:border-border aria-pressed:bg-muted aria-pressed:text-foreground"
 								>
 									{value === "all"
 										? "All"
@@ -345,20 +317,22 @@ export function CommonspaceInbox({
 			</div>
 
 			<div className="min-h-0 flex-1 overflow-y-auto" aria-live="polite">
-					{view !== "sessions" ? (
-						visibleItems.length === 0 ? (
-							<Empty className="min-h-72 border-0">
-								<EmptyHeader>
-									<EmptyMedia variant="icon">
-										<CheckCheckIcon aria-hidden="true" />
-									</EmptyMedia>
-									<EmptyTitle>
-										{view === "activity" ? "No replies yet." : "You’re all caught up."}
-									</EmptyTitle>
-									<EmptyDescription>
-										{view === "activity"
-											? "Agent replies will appear here."
-											: "New requests and failures will appear here."}
+				{view !== "sessions" ? (
+					visibleItems.length === 0 ? (
+						<Empty className="min-h-72 border-0">
+							<EmptyHeader>
+								<EmptyMedia variant="icon">
+									<CheckCheckIcon aria-hidden="true" />
+								</EmptyMedia>
+								<EmptyTitle>
+									{view === "activity"
+										? "No replies yet."
+										: "You’re all caught up."}
+								</EmptyTitle>
+								<EmptyDescription>
+									{view === "activity"
+										? "Agent replies will appear here."
+										: "New requests and failures will appear here."}
 								</EmptyDescription>
 							</EmptyHeader>
 						</Empty>

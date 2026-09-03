@@ -76,12 +76,12 @@ export interface CommonspaceSidebarProps {
 	store: CommonspaceStore;
 	colorMode?: CommonspaceColorMode;
 	onSetColorMode?: (mode: CommonspaceColorMode) => void;
-	homeActive?: boolean;
 	inboxActive?: boolean;
 	threadsActive?: boolean;
+	conversationActive?: boolean;
+	directoryActive?: boolean;
 	activeProjectViewId?: string | null;
 	createRequest?: { kind: CommonspaceCollectionKind; token: number } | null;
-	onOpenHome?: () => void;
 	onOpenSearch?: () => void;
 	onOpenInbox?: () => void;
 	onOpenThreads?: () => void;
@@ -105,29 +105,29 @@ function Section(props: {
 	children: React.ReactNode;
 }) {
 	return (
-		<section className="mt-2 border-t border-sidebar-border pt-1 first:mt-2 first:border-t-0">
-			<div className="grid grid-cols-[minmax(0,1fr)_44px] items-center">
+		<section className="mt-3 first:mt-1">
+			<div className="grid grid-cols-[minmax(0,1fr)_28px] items-center">
 				<button
 					type="button"
-					className="flex min-h-11 w-full items-center gap-2 rounded-md border-0 bg-transparent px-1.5 text-left text-[13px] font-bold text-sidebar-foreground/85 hover:text-sidebar-foreground"
+					className="flex min-h-8 w-full items-center gap-1.5 rounded-sm border-0 bg-transparent px-2 text-left text-xs font-semibold text-sidebar-foreground/65 hover:bg-sidebar-accent hover:text-sidebar-foreground"
 					aria-expanded={props.open}
 					onClick={() => {
 						props.onOpenChange(!props.open);
 					}}
 				>
 					<ChevronDownIcon
-						className={`size-[18px] transition-transform ${props.open ? "" : "-rotate-90"}`}
+						className={`size-4 transition-transform ${props.open ? "" : "-rotate-90"}`}
 						aria-hidden="true"
 					/>
 					<span>{props.title}</span>
-					<span className="ml-auto grid h-[22px] min-w-6 place-items-center rounded-full border border-sidebar-border bg-sidebar-accent px-1.5 font-mono text-xs font-normal text-sidebar-foreground/70">
+					<span className="ml-auto font-mono text-[11px] font-normal tabular-nums text-sidebar-foreground/45">
 						{props.count}
 					</span>
 				</button>
 				{props.onAdd !== undefined && (
 					<button
 						type="button"
-						className="grid size-11 place-items-center rounded-sm border-0 bg-transparent text-[22px] text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+						className="grid size-7 place-items-center rounded-sm border-0 bg-transparent text-lg text-sidebar-foreground/55 hover:bg-sidebar-accent hover:text-sidebar-foreground"
 						aria-label={`Add ${props.title.slice(0, -1).toLowerCase()}`}
 						onClick={props.onAdd}
 					>
@@ -135,37 +135,40 @@ function Section(props: {
 					</button>
 				)}
 			</div>
-			{props.open && <div className="grid gap-0.5">{props.children}</div>}
+			{props.open && (
+				<div className="grid gap-0.5 pt-0.5">{props.children}</div>
+			)}
 		</section>
 	);
 }
 
-function NavGroupLabel({ label, count }: { label: string; count: number }) {
+function NavGroupLabel({ label }: { label: string }) {
 	return (
-		<p className="flex items-center justify-between gap-2 mt-1 mr-2 mb-px ml-[34px] text-xs font-semibold text-sidebar-foreground/55">
+		<p className="mt-1 mr-2 mb-0.5 ml-[30px] px-1 pt-0.5 text-[10px] font-medium tracking-[0.08em] text-sidebar-foreground/45 uppercase">
 			<span>{label}</span>
-			<span className="font-mono font-normal">{count}</span>
 		</p>
 	);
 }
 
 function BrowseButton({
 	label,
+	ariaLabel = label,
 	onClick,
 }: {
 	label: string;
+	ariaLabel?: string;
 	onClick: () => void;
 }) {
 	return (
 		<button
 			type="button"
-			className="mt-2 flex min-h-11 w-full items-center justify-between gap-2 rounded-sm border-0 border-t border-sidebar-border bg-transparent px-2 pt-2 text-left text-[13px] font-medium text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-sidebar-foreground"
-			aria-label={label}
+			className="mt-0.5 flex min-h-8 w-full items-center justify-between gap-2 rounded-sm border-0 border-t-0 bg-transparent px-2 py-0 text-left text-[11px] font-medium text-sidebar-foreground/55 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+			aria-label={ariaLabel}
 			onClick={onClick}
 		>
 			<span className="truncate">{label}</span>
 			<ArrowRightIcon
-				className="size-4 text-sidebar-foreground/50"
+				className="size-3.5 text-sidebar-foreground/40"
 				aria-hidden="true"
 			/>
 		</button>
@@ -320,12 +323,12 @@ export function CommonspaceSidebar({
 	store,
 	colorMode = "light",
 	onSetColorMode,
-	homeActive = false,
 	inboxActive = false,
 	threadsActive = false,
+	conversationActive = false,
+	directoryActive = false,
 	activeProjectViewId = null,
 	createRequest = null,
-	onOpenHome,
 	onOpenSearch,
 	onOpenInbox,
 	onOpenThreads,
@@ -421,30 +424,24 @@ export function CommonspaceSidebar({
 		void store.refresh();
 	}, [store]);
 	useEffect(() => {
-		setInferenceCheckStatus(null);
-		setInferenceCheckOk(null);
-	}, [
-		routingProvider,
-		routingHarnessAgentId,
-		routingModel,
-		routingBaseUrl,
-		routingApiKey,
-		clearRoutingApiKey,
-	]);
-	useEffect(() => {
-		void homeActive;
 		void inboxActive;
 		void snapshot.activeConversation;
 		void snapshot.activeProjectId;
+		void conversationActive;
+		void directoryActive;
 		void threadsActive;
 		setSettingsOpen(false);
 	}, [
-		homeActive,
 		inboxActive,
 		snapshot.activeConversation,
-		snapshot.activeProjectId,
+			snapshot.activeProjectId,
+		conversationActive,
+		directoryActive,
 		threadsActive,
 	]);
+	useEffect(() => {
+		if (form !== null) setSettingsOpen(false);
+	}, [form]);
 	useEffect(() => {
 		if (createRequest === null) return;
 		setForm(createRequest.kind);
@@ -669,6 +666,24 @@ export function CommonspaceSidebar({
 		});
 		setPathProjectId(null);
 		setPathDraft("");
+	};
+
+	const addProjectFolder = async (projectId: string) => {
+		setSelectingPath(true);
+		try {
+			const selectedPath = await store.selectDirectory();
+			if (selectedPath !== null) {
+				await store.mutate({
+					action: "add-project-path",
+					projectId,
+					path: selectedPath,
+				});
+			}
+		} catch {
+			// The application-level toast renders the store error once.
+		} finally {
+			setSelectingPath(false);
+		}
 	};
 
 	const saveChannelAgents = async (event: FormEvent, channelId: string) => {
@@ -936,13 +951,7 @@ export function CommonspaceSidebar({
 		>
 			{onOpenSearch === undefined && (
 				<header className="grid gap-2 border-b border-sidebar-border p-3">
-					<button
-						type="button"
-						className="grid min-h-11 grid-cols-[28px_minmax(0,1fr)_24px] items-center gap-2 rounded-sm border-0 bg-transparent px-2 text-left text-sidebar-foreground hover:bg-sidebar-accent"
-						aria-label="Open Commonspace home"
-						aria-current={homeActive ? "page" : undefined}
-						onClick={onOpenHome}
-					>
+					<div className="grid min-h-11 grid-cols-[28px_minmax(0,1fr)_24px] items-center gap-2 px-2 text-left text-sidebar-foreground">
 						<CommonspaceLogo decorative className="size-6" />
 						<span className="min-w-0">
 							<strong className="block truncate text-[13px]">Workspace</strong>
@@ -951,7 +960,7 @@ export function CommonspaceSidebar({
 							</small>
 						</span>
 						<span aria-hidden="true">•••</span>
-					</button>
+					</div>
 					<button
 						type="button"
 						className="grid min-h-11 grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-2 rounded-md border border-sidebar-border bg-sidebar-accent px-3 text-left text-sidebar-foreground/75"
@@ -996,7 +1005,7 @@ export function CommonspaceSidebar({
 						<div className="min-h-0 flex-1 overflow-y-auto">
 							<div className="mx-auto grid w-full max-w-[860px] gap-0 px-0 py-12 pb-20 max-[920px]:px-6 max-[640px]:px-4 [&_button]:min-h-11 [&_button]:rounded-sm [&_button]:border [&_button]:px-4 [&_fieldset]:min-w-0 [&_input:not([type=checkbox])]:min-h-11 [&_input:not([type=checkbox])]:w-full [&_input:not([type=checkbox])]:rounded-md [&_input:not([type=checkbox])]:border [&_input:not([type=checkbox])]:bg-background [&_input:not([type=checkbox])]:px-3 [&_label]:grid [&_label]:gap-1.5 [&_select]:min-h-11 [&_select]:w-full [&_select]:rounded-md [&_select]:border [&_select]:bg-background [&_select]:px-3 [&_textarea]:min-h-24 [&_textarea]:w-full [&_textarea]:rounded-md [&_textarea]:border [&_textarea]:bg-background [&_textarea]:p-3">
 								<section
-									className="mb-10 rounded-lg border bg-card p-5"
+									className="mb-10 rounded-md border bg-card p-5"
 									aria-labelledby="workspace-appearance-title"
 								>
 									<div className="flex items-start justify-between gap-6 max-[640px]:grid">
@@ -1020,13 +1029,15 @@ export function CommonspaceSidebar({
 										</span>
 									</div>
 									<fieldset
+										role="radiogroup"
 										className="mt-5 grid grid-cols-3 gap-3 max-[640px]:grid-cols-1"
 										aria-label="Color mode"
 									>
 										<button
 											type="button"
-											aria-pressed={colorMode === "light"}
-											className="grid min-h-16 gap-1 bg-background text-left hover:bg-muted aria-pressed:border-primary aria-pressed:bg-primary/10"
+											role="radio"
+											aria-checked={colorMode === "light"}
+											className="grid min-h-16 gap-1 bg-background text-left hover:bg-muted aria-checked:border-primary aria-checked:bg-primary/10"
 											onClick={() => {
 												onSetColorMode?.("light");
 											}}
@@ -1038,8 +1049,9 @@ export function CommonspaceSidebar({
 										</button>
 										<button
 											type="button"
-											aria-pressed={colorMode === "dark"}
-											className="grid min-h-16 gap-1 bg-background text-left hover:bg-muted aria-pressed:border-primary aria-pressed:bg-primary/10"
+											role="radio"
+											aria-checked={colorMode === "dark"}
+											className="grid min-h-16 gap-1 bg-background text-left hover:bg-muted aria-checked:border-primary aria-checked:bg-primary/10"
 											onClick={() => {
 												onSetColorMode?.("dark");
 											}}
@@ -1051,8 +1063,9 @@ export function CommonspaceSidebar({
 										</button>
 										<button
 											type="button"
-											aria-pressed={colorMode === "system"}
-											className="grid min-h-16 gap-1 bg-background text-left hover:bg-muted aria-pressed:border-primary aria-pressed:bg-primary/10"
+											role="radio"
+											aria-checked={colorMode === "system"}
+											className="grid min-h-16 gap-1 bg-background text-left hover:bg-muted aria-checked:border-primary aria-checked:bg-primary/10"
 											onClick={() => {
 												onSetColorMode?.("system");
 											}}
@@ -1090,18 +1103,20 @@ export function CommonspaceSidebar({
 										description="Choose where Commonspace gets routing and context decisions."
 									/>
 									<fieldset
+										role="radiogroup"
 										aria-label="Routing engine"
 										className="m-0 grid min-w-0 grid-cols-2 gap-3 border-0 p-0 max-[640px]:grid-cols-1"
 									>
 										<button
 											type="button"
+											role="radio"
 											aria-label="Use OpenAI-compatible inference for routing"
-											aria-pressed={routingProvider === "openai-compatible"}
+											aria-checked={routingProvider === "openai-compatible"}
 											onClick={() => {
 												setRoutingProvider("openai-compatible");
 												setRoutingHarnessAgentId("");
 											}}
-											className="relative grid min-h-[94px] grid-cols-[20px_minmax(0,1fr)] items-start gap-3 rounded-md border bg-background p-4 text-left aria-pressed:border-2 aria-pressed:border-primary aria-pressed:bg-[color-mix(in_oklch,var(--primary)_3%,var(--background))]"
+											className="relative grid min-h-[94px] grid-cols-[20px_minmax(0,1fr)] items-start gap-3 rounded-md border bg-background p-4 text-left aria-checked:border-2 aria-checked:border-primary aria-checked:bg-[color-mix(in_oklch,var(--primary)_3%,var(--background))]"
 										>
 											<span
 												className={cn(
@@ -1127,14 +1142,15 @@ export function CommonspaceSidebar({
 										</button>
 										<button
 											type="button"
+											role="radio"
 											aria-label="Use native agent inference for routing"
-											aria-pressed={routingProvider === "harness"}
+											aria-checked={routingProvider === "harness"}
 											onClick={() => {
 												setRoutingProvider("harness");
 												if (routingHarnessAgentId === "")
 													setRoutingHarnessAgentId(agents[0]?.id ?? "");
 											}}
-											className="relative grid min-h-[94px] grid-cols-[20px_minmax(0,1fr)] items-start gap-3 rounded-md border bg-background p-4 text-left aria-pressed:border-2 aria-pressed:border-primary aria-pressed:bg-[color-mix(in_oklch,var(--primary)_3%,var(--background))]"
+											className="relative grid min-h-[94px] grid-cols-[20px_minmax(0,1fr)] items-start gap-3 rounded-md border bg-background p-4 text-left aria-checked:border-2 aria-checked:border-primary aria-checked:bg-[color-mix(in_oklch,var(--primary)_3%,var(--background))]"
 										>
 											<span
 												className={cn(
@@ -1162,15 +1178,16 @@ export function CommonspaceSidebar({
 									{routingProvider === "harness" && (
 										<div className="mt-3 grid gap-2 rounded-md border bg-muted p-3">
 											{agents.map((agent) => (
-												<button
-													key={agent.id}
-													type="button"
-													aria-label={`Use ${agent.displayName} agent for routing`}
-													aria-pressed={routingHarnessAgentId === agent.id}
+											<button
+												key={agent.id}
+												type="button"
+												role="radio"
+												aria-label={`Use ${agent.displayName} agent for routing`}
+												aria-checked={routingHarnessAgentId === agent.id}
 													onClick={() => {
 														setRoutingHarnessAgentId(agent.id);
 													}}
-													className="grid grid-cols-[36px_minmax(0,1fr)] items-center gap-3 bg-background text-left aria-pressed:border-primary"
+												className="grid grid-cols-[36px_minmax(0,1fr)] items-center gap-3 bg-background text-left aria-checked:border-primary"
 												>
 													<AgentAvatar agent={agent} />
 													<span>
@@ -1709,23 +1726,23 @@ export function CommonspaceSidebar({
 				)}
 
 			<nav
-				className="grid gap-0.5 px-2 pt-2"
+				className="grid gap-0.5 px-2 pt-2 pb-1"
 				aria-label="Workspace destinations"
 			>
 				<button
 					type="button"
-					className="relative grid min-h-11 w-full grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-[7px] rounded-sm border-0 bg-transparent px-2 text-left text-sidebar-foreground/90 hover:bg-sidebar-accent aria-pressed:bg-[color-mix(in_srgb,var(--sidebar-foreground)_20%,transparent)]"
+					className="relative grid min-h-9 w-full grid-cols-[20px_minmax(0,1fr)_auto] items-center gap-2 rounded-sm border-0 bg-transparent px-2 text-left text-sidebar-foreground/80 hover:bg-sidebar-accent aria-pressed:bg-[color-mix(in_srgb,var(--sidebar-foreground)_20%,transparent)]"
 					aria-label={`Open Inbox${inboxUnreadCount === 0 ? "" : `, ${String(inboxUnreadCount)} unread`}`}
 					aria-pressed={inboxActive}
 					onClick={onOpenInbox}
 				>
 					<span
-						className="grid size-[22px] place-items-center rounded-sm bg-sidebar-accent"
+						className="grid size-5 place-items-center rounded-sm text-sidebar-foreground/50"
 						aria-hidden="true"
 					>
 						<InboxIcon className="size-[15px]" />
 					</span>
-					<strong className="text-[13px] font-semibold">Inbox</strong>
+					<span className="text-[13px] font-medium">Inbox</span>
 					{inboxUnreadCount > 0 && (
 						<span
 							className="grid size-5 min-w-5 place-items-center rounded-full bg-destructive px-1 font-mono text-xs text-white"
@@ -1737,18 +1754,18 @@ export function CommonspaceSidebar({
 				</button>
 				<button
 					type="button"
-					className="relative grid min-h-11 w-full grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-[7px] rounded-sm border-0 bg-transparent px-2 text-left text-sidebar-foreground/90 hover:bg-sidebar-accent aria-pressed:bg-[color-mix(in_srgb,var(--sidebar-foreground)_20%,transparent)]"
+					className="relative grid min-h-9 w-full grid-cols-[20px_minmax(0,1fr)_auto] items-center gap-2 rounded-sm border-0 bg-transparent px-2 text-left text-sidebar-foreground/80 hover:bg-sidebar-accent aria-pressed:bg-[color-mix(in_srgb,var(--sidebar-foreground)_20%,transparent)]"
 					aria-label={`Open Threads${threadUnreadCount === 0 ? "" : `, ${String(threadUnreadCount)} unread`}`}
 					aria-pressed={threadsActive}
 					onClick={onOpenThreads}
 				>
 					<span
-						className="grid size-[22px] place-items-center rounded-sm bg-sidebar-accent"
+						className="grid size-5 place-items-center rounded-sm text-sidebar-foreground/50"
 						aria-hidden="true"
 					>
 						<MessagesSquareIcon className="size-[15px]" />
 					</span>
-					<strong className="text-[13px] font-semibold">Threads</strong>
+					<span className="text-[13px] font-medium">Threads</span>
 					{threadUnreadCount > 0 && (
 						<span
 							className="grid size-5 min-w-5 place-items-center rounded-full bg-destructive px-1 font-mono text-xs text-white"
@@ -1760,7 +1777,7 @@ export function CommonspaceSidebar({
 				</button>
 			</nav>
 
-			<div className="min-h-0 flex-1 overflow-y-auto px-2 pb-[18px] [scrollbar-color:color-mix(in_srgb,var(--sidebar-foreground)_20%,transparent)_transparent] [scrollbar-width:thin]">
+			<div className="min-h-0 flex-1 overflow-y-auto px-2 pb-4 [scrollbar-color:color-mix(in_srgb,var(--sidebar-foreground)_20%,transparent)_transparent] [scrollbar-width:thin]">
 				<Section
 					title="Projects"
 					count={projects.length}
@@ -1847,10 +1864,11 @@ export function CommonspaceSidebar({
 						</SidebarDialog>
 					)}
 					{projectItems.pinnedCount > 0 && (
-						<NavGroupLabel label="Pinned" count={projectItems.pinnedCount} />
+						<NavGroupLabel label="Pinned" />
 					)}
 					{projectItems.items.map((project, index) => {
-						const active = activeProjectViewId === project.id;
+						const active =
+							!settingsOpen && activeProjectViewId === project.id;
 						const folderSummary =
 							project.paths.length === 1
 								? "1 folder · working directory"
@@ -1861,15 +1879,12 @@ export function CommonspaceSidebar({
 									index === projectItems.pinnedCount && (
 										<NavGroupLabel
 											label="Recent"
-											count={
-												projectItems.items.length - projectItems.pinnedCount
-											}
 										/>
 									)}
-								<div className="group grid grid-cols-[minmax(0,1fr)_44px] items-center rounded-sm hover:bg-sidebar-accent focus-within:bg-sidebar-accent has-[button[aria-pressed=true]]:bg-[color-mix(in_srgb,var(--sidebar-foreground)_20%,transparent)]">
+								<div className="group grid grid-cols-[minmax(0,1fr)_28px] items-center rounded-sm hover:bg-sidebar-accent focus-within:bg-sidebar-accent has-[button[aria-pressed=true]]:border-l-2 has-[button[aria-pressed=true]]:border-primary has-[button[aria-pressed=true]]:bg-[color-mix(in_srgb,var(--sidebar-foreground)_20%,transparent)]">
 									<button
 										type="button"
-										className="relative grid min-h-11 w-full min-w-0 grid-cols-[22px_minmax(0,1fr)] items-center gap-[7px] rounded-l-sm border-0 bg-transparent px-2 text-left text-sidebar-foreground/90 aria-pressed:text-sidebar-foreground"
+										className="relative grid min-h-8 w-full min-w-0 grid-cols-[20px_minmax(0,1fr)] items-center gap-2 rounded-l-sm border-0 bg-transparent px-2 text-left text-sidebar-foreground/80 aria-pressed:text-sidebar-foreground"
 										aria-label={`Select project ${project.name}`}
 										aria-pressed={active}
 										onClick={() => {
@@ -1879,13 +1894,13 @@ export function CommonspaceSidebar({
 										}}
 									>
 										<span
-											className="grid size-[22px] place-items-center rounded-sm bg-sidebar-accent font-mono text-xs"
+											className="grid size-5 place-items-center rounded-sm font-mono text-xs text-sidebar-foreground/55"
 											aria-hidden="true"
 										>
 											{project.name.slice(0, 1).toLocaleUpperCase()}
 										</span>
 										<span className="min-w-0">
-											<strong className="block truncate text-[13px] font-semibold">
+											<strong className="block truncate text-[13px] font-medium">
 												{project.name}
 											</strong>
 											<small className="hidden">{folderSummary}</small>
@@ -1894,7 +1909,7 @@ export function CommonspaceSidebar({
 									{onOpenContextSettings === undefined ? (
 										<button
 											type="button"
-											className="grid size-11 place-items-center rounded-r-sm border-0 bg-transparent text-sidebar-foreground/65 opacity-0 hover:bg-sidebar-accent hover:text-sidebar-foreground group-hover:opacity-100 focus:opacity-100"
+											className="grid size-7 place-items-center rounded-r-sm border-0 bg-transparent text-sidebar-foreground/65 opacity-0 hover:bg-sidebar-accent hover:text-sidebar-foreground group-hover:opacity-100 focus:opacity-100"
 											aria-label={`Add local folder to project ${project.name}`}
 											onClick={() => {
 												touchRecent("project", project.id);
@@ -1927,9 +1942,7 @@ export function CommonspaceSidebar({
 												} else onOpenContextSettings("project", project.id);
 											}}
 											onAddFolder={() => {
-												store.selectProject(project.id);
-												setPathProjectId(project.id);
-												setPathDraft("");
+												void addProjectFolder(project.id);
 											}}
 											onCopy={() => copyText(project.name)}
 											copyLabel="Copy project name"
@@ -1984,14 +1997,17 @@ export function CommonspaceSidebar({
 							Add a local filesystem project.
 						</div>
 					)}
-					<BrowseButton
-						label="Browse all projects"
-						onClick={() => {
-							if (onOpenDirectory !== undefined) onOpenDirectory("projects");
-							else if (onOpenSearch === undefined) setSearchOpen(true);
-							else onOpenSearch();
-						}}
-					/>
+					{projects.length > projectItems.items.length && (
+						<BrowseButton
+							label="View all"
+							ariaLabel="Browse all projects"
+							onClick={() => {
+								if (onOpenDirectory !== undefined) onOpenDirectory("projects");
+								else if (onOpenSearch === undefined) setSearchOpen(true);
+								else onOpenSearch();
+							}}
+						/>
+					)}
 				</Section>
 
 				<Section
@@ -2132,7 +2148,7 @@ export function CommonspaceSidebar({
 						</SidebarDialog>
 					)}
 					{channelItems.pinnedCount > 0 && (
-						<NavGroupLabel label="Pinned" count={channelItems.pinnedCount} />
+						<NavGroupLabel label="Pinned" />
 					)}
 					{channelItems.items.map((channel, index) => {
 						const unreadCount = channelUnreadCounts.get(channel.id) ?? 0;
@@ -2150,17 +2166,16 @@ export function CommonspaceSidebar({
 									index === channelItems.pinnedCount && (
 										<NavGroupLabel
 											label="Recent"
-											count={
-												channelItems.items.length - channelItems.pinnedCount
-											}
 										/>
 									)}
-								<div className="group grid grid-cols-[minmax(0,1fr)_44px] items-center rounded-sm hover:bg-sidebar-accent focus-within:bg-sidebar-accent has-[button[aria-pressed=true]]:bg-[color-mix(in_srgb,var(--sidebar-foreground)_20%,transparent)]">
+								<div className="group grid grid-cols-[minmax(0,1fr)_28px] items-center rounded-sm hover:bg-sidebar-accent focus-within:bg-sidebar-accent has-[button[aria-pressed=true]]:border-l-2 has-[button[aria-pressed=true]]:border-primary has-[button[aria-pressed=true]]:bg-[color-mix(in_srgb,var(--sidebar-foreground)_20%,transparent)]">
 									<button
 										type="button"
-										className="relative grid min-h-11 w-full min-w-0 grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-[7px] rounded-l-sm border-0 bg-transparent px-2 text-left text-sidebar-foreground/90 aria-pressed:text-sidebar-foreground"
+										className="relative grid min-h-8 w-full min-w-0 grid-cols-[20px_minmax(0,1fr)_auto] items-center gap-2 rounded-l-sm border-0 bg-transparent px-2 text-left text-sidebar-foreground/80 aria-pressed:text-sidebar-foreground"
 										aria-label={`Open channel ${channel.name}${unreadCount === 0 ? "" : `, ${String(unreadCount)} unread`}`}
 										aria-pressed={
+											conversationActive &&
+											activeProjectViewId === null &&
 											snapshot.activeConversation?.kind === "channel" &&
 											snapshot.activeConversation.id === channel.id
 										}
@@ -2174,13 +2189,13 @@ export function CommonspaceSidebar({
 										}}
 									>
 										<span
-											className="grid size-[22px] place-items-center rounded-sm bg-sidebar-accent font-mono text-base"
+											className="grid size-5 place-items-center rounded-sm font-mono text-base text-sidebar-foreground/55"
 											aria-hidden="true"
 										>
 											#
 										</span>
 										<span className="min-w-0">
-											<strong className="block truncate text-[13px] font-semibold">
+											<strong className="block truncate text-[13px] font-medium">
 												{channel.name}
 											</strong>
 											<small className="hidden">
@@ -2200,7 +2215,7 @@ export function CommonspaceSidebar({
 									{onOpenContextSettings === undefined ? (
 										<button
 											type="button"
-											className="grid size-11 place-items-center rounded-r-sm border-0 bg-transparent text-sidebar-foreground/65 opacity-0 hover:bg-sidebar-accent hover:text-sidebar-foreground group-hover:opacity-100 focus:opacity-100"
+											className="grid size-7 place-items-center rounded-r-sm border-0 bg-transparent text-sidebar-foreground/65 opacity-0 hover:bg-sidebar-accent hover:text-sidebar-foreground group-hover:opacity-100 focus:opacity-100"
 											aria-label={`Manage agents in channel ${channel.name}`}
 											onClick={() => {
 												setEditingChannelId(channel.id);
@@ -2499,14 +2514,17 @@ export function CommonspaceSidebar({
 							Create a channel and seat agents.
 						</div>
 					)}
-					<BrowseButton
-						label="Browse all channels"
-						onClick={() => {
-							if (onOpenDirectory !== undefined) onOpenDirectory("channels");
-							else if (onOpenSearch === undefined) setSearchOpen(true);
-							else onOpenSearch();
-						}}
-					/>
+					{channels.length > channelItems.items.length && (
+						<BrowseButton
+							label="View all"
+							ariaLabel="Browse all channels"
+							onClick={() => {
+								if (onOpenDirectory !== undefined) onOpenDirectory("channels");
+								else if (onOpenSearch === undefined) setSearchOpen(true);
+								else onOpenSearch();
+							}}
+						/>
+					)}
 				</Section>
 
 				<Section
@@ -2712,7 +2730,7 @@ export function CommonspaceSidebar({
 							);
 						})()}
 					{agentItems.pinnedCount > 0 && (
-						<NavGroupLabel label="Pinned" count={agentItems.pinnedCount} />
+						<NavGroupLabel label="Pinned" />
 					)}
 					{agentItems.items.map((agent, index) => {
 						const effectiveStatus = activeAgentIds.has(agent.id)
@@ -2724,15 +2742,16 @@ export function CommonspaceSidebar({
 									index === agentItems.pinnedCount && (
 										<NavGroupLabel
 											label="Recent"
-											count={agentItems.items.length - agentItems.pinnedCount}
 										/>
 									)}
-								<div className="group grid grid-cols-[minmax(0,1fr)_44px] items-center rounded-sm hover:bg-sidebar-accent focus-within:bg-sidebar-accent has-[button[aria-pressed=true]]:bg-[color-mix(in_srgb,var(--sidebar-foreground)_20%,transparent)]">
+								<div className="group grid grid-cols-[minmax(0,1fr)_28px] items-center rounded-sm hover:bg-sidebar-accent focus-within:bg-sidebar-accent has-[button[aria-pressed=true]]:border-l-2 has-[button[aria-pressed=true]]:border-primary has-[button[aria-pressed=true]]:bg-[color-mix(in_srgb,var(--sidebar-foreground)_20%,transparent)]">
 									<button
 										type="button"
-										className="relative grid min-h-11 w-full min-w-0 grid-cols-[22px_minmax(0,1fr)] items-center gap-[7px] rounded-l-sm border-0 bg-transparent px-2 text-left text-sidebar-foreground/90 aria-pressed:text-sidebar-foreground"
+										className="relative grid min-h-8 w-full min-w-0 grid-cols-[20px_minmax(0,1fr)] items-center gap-2 rounded-l-sm border-0 bg-transparent px-2 text-left text-sidebar-foreground/80 aria-pressed:text-sidebar-foreground"
 										aria-label={`Message agent ${agent.displayName}`}
 										aria-pressed={
+											conversationActive &&
+											activeProjectViewId === null &&
 											snapshot.activeConversation?.kind === "dm" &&
 											snapshot.activeConversation.id === agent.id
 										}
@@ -2742,7 +2761,7 @@ export function CommonspaceSidebar({
 										}}
 									>
 										<span
-											className="relative grid size-[22px] place-items-center rounded-sm bg-sidebar-accent font-mono text-xs"
+											className="relative grid size-5 place-items-center rounded-sm font-mono text-xs text-sidebar-foreground/55"
 											aria-hidden="true"
 										>
 											{agent.avatarEmoji ??
@@ -2756,7 +2775,7 @@ export function CommonspaceSidebar({
 											/>
 										</span>
 										<span className="min-w-0">
-											<strong className="block truncate text-[13px] font-semibold">
+											<strong className="block truncate text-[13px] font-medium">
 												{agent.displayName}
 											</strong>
 											<small className="sr-only">
@@ -2771,7 +2790,7 @@ export function CommonspaceSidebar({
 									{onOpenContextSettings === undefined ? (
 										<button
 											type="button"
-											className="grid size-11 place-items-center rounded-r-sm border-0 bg-transparent text-sidebar-foreground/65 opacity-0 hover:bg-sidebar-accent hover:text-sidebar-foreground group-hover:opacity-100 focus:opacity-100"
+											className="grid size-7 place-items-center rounded-r-sm border-0 bg-transparent text-sidebar-foreground/65 opacity-0 hover:bg-sidebar-accent hover:text-sidebar-foreground group-hover:opacity-100 focus:opacity-100"
 											aria-label={`Customize agent ${agent.displayName}`}
 											onClick={() => {
 												setEditingAgentId(agent.id);
@@ -2840,14 +2859,17 @@ export function CommonspaceSidebar({
 							</div>
 						);
 					})}
-					<BrowseButton
-						label="Browse all agents"
-						onClick={() => {
-							if (onOpenDirectory !== undefined) onOpenDirectory("agents");
-							else if (onOpenSearch === undefined) setSearchOpen(true);
-							else onOpenSearch();
-						}}
-					/>
+					{agents.length > agentItems.items.length && (
+						<BrowseButton
+							label="View all"
+							ariaLabel="Browse all agents"
+							onClick={() => {
+								if (onOpenDirectory !== undefined) onOpenDirectory("agents");
+								else if (onOpenSearch === undefined) setSearchOpen(true);
+								else onOpenSearch();
+							}}
+						/>
+					)}
 				</Section>
 			</div>
 			<div className="flex min-h-[60px] items-center gap-1.5 border-t border-sidebar-border bg-sidebar-deep py-2 pr-2.5 pl-[18px]">

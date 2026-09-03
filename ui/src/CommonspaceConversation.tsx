@@ -1416,7 +1416,6 @@ export function CommonspaceConversation({
 		bottom.current?.scrollIntoView({ block: "end" });
 	}, [messages.length, snapshot.sending, directMessagePhase]);
 	useEffect(() => {
-		void messages.length;
 		void snapshot.activeThreadId;
 		if (targetMessageId == null) return;
 		const targetMessage = messages.find(
@@ -1432,7 +1431,7 @@ export function CommonspaceConversation({
 		target.scrollIntoView({ block: "center", behavior: "smooth" });
 		onTargetMessageHandled?.();
 	}, [
-		messages.length,
+		messages,
 		onTargetMessageHandled,
 		snapshot.activeThreadId,
 		targetMessageId,
@@ -1447,7 +1446,7 @@ export function CommonspaceConversation({
 		if (targetMessageId !== null) return;
 		setFocusedMessageId(null);
 		setFocusedRootMessageId(null);
-	}, [snapshot.activeConversation]);
+	}, [snapshot.activeConversation, targetMessageId]);
 	useEffect(() => {
 		if (composerInsertRequest === null || !isChannel) return;
 		setDraft(
@@ -2135,7 +2134,7 @@ export function CommonspaceConversation({
 			{snapshot.activeConversation === null ? (
 				<div className="flex flex-1 flex-col items-start justify-start px-[clamp(24px,6vw,72px)] py-[clamp(44px,8vh,82px)]">
 					<div
-						className="mb-5 grid size-12 place-items-center rounded-lg border bg-muted font-mono text-primary"
+						className="mb-5 grid size-12 place-items-center rounded-md border bg-muted font-mono text-primary"
 						aria-hidden="true"
 					>
 						C
@@ -2154,7 +2153,7 @@ export function CommonspaceConversation({
 						className="mt-7 grid w-[min(100%,760px)] grid-cols-3 gap-2.5 max-[640px]:grid-cols-1"
 						aria-hidden="true"
 					>
-						<span className="flex min-h-[88px] gap-2.5 rounded-lg border p-4">
+						<span className="flex min-h-[88px] gap-2.5 rounded-md border p-4">
 							<b className="text-muted-foreground">01</b>
 							<span className="grid gap-1 text-xs font-semibold">
 								Projects
@@ -2163,7 +2162,7 @@ export function CommonspaceConversation({
 								</small>
 							</span>
 						</span>
-						<span className="flex min-h-[88px] gap-2.5 rounded-lg border p-4">
+						<span className="flex min-h-[88px] gap-2.5 rounded-md border p-4">
 							<b className="text-muted-foreground">02</b>
 							<span className="grid gap-1 text-xs font-semibold">
 								Channels
@@ -2172,7 +2171,7 @@ export function CommonspaceConversation({
 								</small>
 							</span>
 						</span>
-						<span className="flex min-h-[88px] gap-2.5 rounded-lg border p-4">
+						<span className="flex min-h-[88px] gap-2.5 rounded-md border p-4">
 							<b className="text-muted-foreground">03</b>
 							<span className="grid gap-1 text-xs font-semibold">
 								Threads
@@ -2396,7 +2395,7 @@ export function CommonspaceConversation({
 
 						{directMessageFollowups.length > 0 && (
 							<section
-								className="mx-auto mb-2 w-[min(780px,calc(100%-48px))] rounded-lg border bg-muted px-3 py-2.5"
+								className="mx-auto mb-2 w-[min(780px,calc(100%-48px))] rounded-md border bg-muted px-3 py-2.5"
 								aria-label="Queued follow-ups"
 							>
 								<header>
@@ -2502,7 +2501,7 @@ export function CommonspaceConversation({
 						)}
 
 						<form
-							className="mx-auto mb-[18px] flex w-[calc(100%-48px)] max-w-[780px] flex-col gap-1 rounded-xl border bg-background px-3 pt-3 pb-2 focus-within:border-primary focus-within:ring-3 focus-within:ring-primary/10 max-[640px]:mb-3 max-[640px]:w-[calc(100%-24px)]"
+							className="mx-auto mb-[18px] flex w-[calc(100%-48px)] max-w-[780px] flex-col gap-1 rounded-md border bg-background px-3 pt-3 pb-2 focus-within:border-primary focus-within:ring-3 focus-within:ring-primary/10 max-[640px]:mb-3 max-[640px]:w-[calc(100%-24px)]"
 							onSubmit={(event) => {
 								void sendRoot(event);
 							}}
@@ -3020,7 +3019,7 @@ export function CommonspaceConversation({
 							</div>
 							{activeThreadFollowups.length > 0 && (
 								<section
-									className="mx-4 mb-2 rounded-lg border bg-muted px-3 py-2.5"
+									className="mx-4 mb-2 rounded-md border bg-muted px-3 py-2.5"
 									aria-label="Queued thread follow-ups"
 								>
 									<header>
@@ -3078,7 +3077,7 @@ export function CommonspaceConversation({
 								</section>
 							)}
 							<form
-								className="relative mx-4 mb-4 grid gap-2 rounded-xl border bg-background p-3 focus-within:border-primary focus-within:ring-3 focus-within:ring-primary/10"
+								className="relative mx-4 mb-4 grid gap-2 rounded-md border bg-background p-3 focus-within:border-primary focus-within:ring-3 focus-within:ring-primary/10"
 								onSubmit={(event) => {
 									void sendThreadReply(event);
 								}}

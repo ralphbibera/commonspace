@@ -235,8 +235,11 @@ describe("editable shared Channel context", () => {
 				"compacting",
 			);
 		});
+		const compactingFailure = expect(compacting).rejects.toThrow(
+			"thread compactor unavailable",
+		);
 		completion.reject(new Error("thread compactor unavailable"));
-		await expect(compacting).rejects.toThrow("thread compactor unavailable");
+		await compactingFailure;
 
 		expect(service.snapshot().threads[0]?.context.memory).toMatchObject({
 			summary: "Last valid Thread context.",
@@ -393,8 +396,11 @@ describe("editable shared Channel context", () => {
 		await vi.waitFor(() => {
 			expect(service.snapshot().channels[0]?.memory.status).toBe("compacting");
 		});
+		const compactingFailure = expect(compacting).rejects.toThrow(
+			"compactor unavailable",
+		);
 		completion.reject(new Error("compactor unavailable"));
-		await expect(compacting).rejects.toThrow("compactor unavailable");
+		await compactingFailure;
 
 		expect(service.snapshot().channels[0]?.memory).toMatchObject({
 			summary: "Last valid Channel context.",

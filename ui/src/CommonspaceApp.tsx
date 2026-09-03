@@ -1,6 +1,5 @@
 import type {
 	CommonspaceSearchResult,
-	CommonspaceSessionItem,
 	ConversationRef,
 } from "@commonspace/shared";
 import { MenuIcon, XIcon } from "lucide-react";
@@ -11,7 +10,6 @@ import {
 	CommonspaceDirectory,
 	type CommonspaceDirectoryKind,
 } from "./CommonspaceDirectory.tsx";
-import { CommonspaceHome } from "./CommonspaceHome.tsx";
 import { CommonspaceInbox } from "./CommonspaceInbox.tsx";
 import { CommonspaceProjectView } from "./CommonspaceProjectView.tsx";
 import { CommonspaceSearchDialog } from "./CommonspaceSearch.tsx";
@@ -27,7 +25,6 @@ export interface CommonspaceAppProps {
 }
 
 type CommonspaceDestination =
-	| "home"
 	| "conversation"
 	| "directory"
 	| "inbox"
@@ -77,7 +74,7 @@ function storedNavigation(raw: string | null): {
 	}
 }
 
-function initialDestination(): CommonspaceDestination {
+export function initialDestination(): CommonspaceDestination {
 	const saved = storedUiValue("commonspace-view");
 	return saved === "conversation" ||
 		saved === "directory" ||
@@ -85,7 +82,7 @@ function initialDestination(): CommonspaceDestination {
 		saved === "threads" ||
 		saved === "project"
 		? saved
-		: "home";
+		: "inbox";
 }
 
 function initialDirectoryKind(): CommonspaceDirectoryKind {
@@ -345,14 +342,6 @@ export function CommonspaceApp({ store }: CommonspaceAppProps) {
 		};
 	}, []);
 
-	const openHome = () => {
-		setActiveProjectViewId(null);
-		setTargetProjectFile(null);
-		setActiveDestination("home");
-		setSettingsRequest(null);
-		setNavigationOpen(false);
-	};
-
 	const openConversation = (
 		conversation?: ConversationRef,
 		messageId?: string,
@@ -370,15 +359,6 @@ export function CommonspaceApp({ store }: CommonspaceAppProps) {
 		store.selectConversation(target.conversation);
 		store.selectThread(target.threadId ?? null);
 		openConversation(undefined, target.messageId);
-	};
-
-	const openSession = (session: CommonspaceSessionItem) => {
-		const target: ConversationTarget = {
-			messageId: session.sourceMessageId,
-			conversation: session.conversation,
-		};
-		if (session.threadId !== undefined) target.threadId = session.threadId;
-		openTarget(target);
 	};
 
 	const openSearchResult = (result: CommonspaceSearchResult) => {
@@ -449,10 +429,6 @@ export function CommonspaceApp({ store }: CommonspaceAppProps) {
 	return (
 		<div className="relative flex h-dvh min-h-0 min-w-0 flex-col overflow-hidden bg-sidebar">
 			<CommonspaceTopbar
-				homeActive={
-					activeDestination === "home" && activeProjectViewId === null
-				}
-				onOpenHome={openHome}
 				onOpenSearch={() => {
 					setSearchOpen(true);
 				}}
@@ -499,14 +475,12 @@ export function CommonspaceApp({ store }: CommonspaceAppProps) {
 						store={store}
 						colorMode={colorMode}
 						onSetColorMode={setColorMode}
-						homeActive={
-							activeDestination === "home" && activeProjectViewId === null
-						}
 						inboxActive={activeDestination === "inbox"}
 						threadsActive={activeDestination === "threads"}
+						conversationActive={activeDestination === "conversation"}
+						directoryActive={activeDestination === "directory"}
 						activeProjectViewId={activeProjectViewId}
 						createRequest={createRequest}
-						onOpenHome={openHome}
 						onOpenSearch={() => {
 							setSearchOpen(true);
 						}}
@@ -550,24 +524,9 @@ export function CommonspaceApp({ store }: CommonspaceAppProps) {
 							settingsRequest.id === activeProjectViewId
 								? { settingsRequest: settingsRequest.token }
 								: {})}
-							onBack={openHome}
+							onBack={openInbox}
 							onOpenConversation={(conversation) => {
 								openConversation(conversation);
-							}}
-						/>
-					) : activeDestination === "home" ? (
-						<CommonspaceHome
-							bootstrap={snapshot.bootstrap}
-							onOpenDirectory={openDirectory}
-							onOpenSession={openSession}
-							onOpenConversation={(conversation) => {
-								openConversation(conversation);
-							}}
-							onStopSession={async (session) => {
-								await store.stopAgentRuns(
-									session.sourceMessageId,
-									session.agentId,
-								);
 							}}
 						/>
 					) : activeDestination === "directory" ? (

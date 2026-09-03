@@ -162,16 +162,14 @@ try {
 		pageErrors.push(error.message);
 	});
 	await page.goto(uiUrl, { waitUntil: "domcontentloaded" });
-	await page
-		.getByRole("main", { name: "Workspace home" })
-		.waitFor({ state: "visible" });
+	await page.getByRole("main", { name: "Inbox" }).waitFor({ state: "visible" });
 	await page.getByLabel("Commonspace browser").waitFor({ state: "visible" });
-	await page.getByLabel("Workspace home").waitFor({ state: "visible" });
 	if (pageErrors.length > 0)
 		throw new Error(`browser errors: ${pageErrors.join(" | ")}`);
 
 	const verificationChannel = page.getByRole("button", {
 		name: "Open channel verification",
+		exact: true,
 	});
 	await verificationChannel.waitFor({ state: "visible" });
 	await verificationChannel.focus();
@@ -200,9 +198,9 @@ try {
 		name: "Commonspace settings",
 	});
 	await settingsButton.click();
-	const colorMode = page.getByRole("group", { name: "Color mode" });
+	const colorMode = page.getByRole("radiogroup", { name: "Color mode" });
 	await colorMode.waitFor({ state: "visible" });
-	await colorMode.getByRole("button", { name: /^Light\b/ }).click();
+	await colorMode.getByRole("radio", { name: /^Light\b/ }).click();
 	await page.waitForFunction(() =>
 		globalThis.document.documentElement.classList.contains("light"),
 	);
@@ -212,7 +210,7 @@ try {
 			.getPropertyValue("--background")
 			.trim(),
 	);
-	await colorMode.getByRole("button", { name: /^Dark\b/ }).click();
+	await colorMode.getByRole("radio", { name: /^Dark\b/ }).click();
 	await page.waitForFunction(() =>
 		globalThis.document.documentElement.classList.contains("dark"),
 	);
@@ -230,7 +228,7 @@ try {
 	) {
 		throw new Error("light/dark palette verification failed");
 	}
-	await colorMode.getByRole("button", { name: /^Light\b/ }).click();
+	await colorMode.getByRole("radio", { name: /^Light\b/ }).click();
 	await page.waitForFunction(() =>
 		globalThis.document.documentElement.classList.contains("light"),
 	);
@@ -244,7 +242,6 @@ try {
 	await page
 		.getByRole("dialog", { name: "Search Commonspace" })
 		.waitFor({ state: "detached" });
-
 	installedServer = spawn(
 		process.execPath,
 		[join(repoRoot, "server/dist/index.js")],
@@ -274,13 +271,10 @@ try {
 	});
 	await installedPage.goto(installedUrl, { waitUntil: "domcontentloaded" });
 	await installedPage
-		.getByRole("main", { name: "Workspace home" })
+		.getByRole("main", { name: "Inbox" })
 		.waitFor({ state: "visible" });
 	await installedPage
 		.getByLabel("Commonspace browser")
-		.waitFor({ state: "visible" });
-	await installedPage
-		.getByLabel("Workspace home")
 		.waitFor({ state: "visible" });
 	if (installedPageErrors.length > 0)
 		throw new Error(
