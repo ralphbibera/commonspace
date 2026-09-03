@@ -12,6 +12,11 @@ import {
 } from "@/design-system/CollectionActionMenu";
 import { WorkspaceHeader } from "@/design-system/WorkspaceHeader";
 import type { CommonspaceStore } from "./commonspace-store.ts";
+import {
+	collectionKey,
+	sidebarPreferencesStore,
+	useSidebarPreferences,
+} from "./sidebar-preferences.ts";
 
 export type CommonspaceDirectoryKind = "projects" | "channels" | "agents";
 
@@ -142,21 +147,31 @@ export function CommonspaceDirectory({
 		() => directoryItems(kind, bootstrap),
 		[bootstrap, kind],
 	);
+	const preferences = useSidebarPreferences();
+	const defaultPinnedKeys = useMemo(
+		() =>
+			allItems[0] === undefined
+				? []
+				: [collectionKey(allItems[0].kind, allItems[0].id)],
+		[allItems],
+	);
+	const effectivePinnedKeys = preferences.hasStoredPins
+		? preferences.pinnedKeys
+		: defaultPinnedKeys;
 	const [query, setQuery] = useState("");
 	const [direction, setDirection] = useState<"name-asc" | "name-desc">(
 		"name-asc",
 	);
 	const [page, setPage] = useState(1);
-	const [pinnedIds, setPinnedIds] = useState<Set<string>>(
-		() => new Set(allItems[0] === undefined ? [] : [allItems[0].id]),
-	);
 
 	useEffect(() => {
 		setQuery("");
 		setDirection("name-asc");
 		setPage(1);
-		setPinnedIds(new Set(allItems[0] === undefined ? [] : [allItems[0].id]));
 	}, [allItems]);
+	useEffect(() => {
+		sidebarPreferencesStore.ensurePinnedDefaults(defaultPinnedKeys);
+	}, [defaultPinnedKeys]);
 
 	const filteredItems = useMemo(() => {
 		const normalized = query.trim().toLocaleLowerCase();
@@ -175,9 +190,12 @@ export function CommonspaceDirectory({
 		);
 	}, [allItems, direction, query]);
 	const visibleItems = filteredItems.slice(0, page * PAGE_SIZE);
-	const pinnedCount = allItems.filter((item) => pinnedIds.has(item.id)).length;
+	const pinnedCount = allItems.filter((item) =>
+		effectivePinnedKeys.includes(collectionKey(item.kind, item.id)),
+	).length;
 
 	const openItem = (item: DirectoryItem) => {
+		sidebarPreferencesStore.touchRecent(item.kind, item.id, defaultPinnedKeys);
 		if (item.kind === "project") {
 			store.selectProject(item.id);
 			onOpenProject(item.id);
@@ -232,7 +250,7 @@ export function CommonspaceDirectory({
 			aria-label={`${config.title} directory`}
 		>
 			<WorkspaceHeader title={config.title} mark={config.mark} />
-			<header className="flex min-h-[132px] shrink-0 items-center justify-between gap-6 border-b px-8 py-6">
+			<header className="flex min-h-[132px] shrink-0 items-center justify-between gap-6 border-b px-8 py-6 max-[780px]:min-h-[112px] max-[780px]:px-5 max-[780px]:py-5 max-[480px]:items-start max-[480px]:flex-col max-[480px]:gap-3">
 				<div className="min-w-0">
 					<p className="mb-1 font-mono text-xs font-semibold tracking-[0.06em] text-muted-foreground uppercase">
 						{config.kicker}
@@ -245,7 +263,7 @@ export function CommonspaceDirectory({
 					</p>
 				</div>
 				<Button
-					className="shrink-0"
+					className="shrink-0 max-[480px]:w-full"
 					onClick={() => {
 						onAdd(kind);
 					}}
@@ -253,7 +271,7 @@ export function CommonspaceDirectory({
 					{config.add}
 				</Button>
 			</header>
-			<div className="grid shrink-0 grid-cols-[minmax(220px,1fr)_auto] items-center gap-3 border-b bg-muted px-8 py-3">
+			<div className="grid shrink-0 grid-cols-[minmax(220px,1fr)_auto] items-center gap-3 border-b bg-muted px-8 py-3 max-[780px]:px-5 max-[480px]:grid-cols-[minmax(0,1fr)] max-[480px]:px-3">
 				<label className="flex min-h-11 min-w-0 items-center gap-2 rounded-sm border bg-background px-3 text-muted-foreground focus-within:border-primary focus-within:ring-3 focus-within:ring-primary/10">
 					<SearchIcon className="size-4" aria-hidden="true" />
 					<span className="sr-only">{config.filter}</span>
@@ -272,7 +290,7 @@ export function CommonspaceDirectory({
 				<label>
 					<span className="sr-only">Sort directory</span>
 					<select
-						className="min-h-11 rounded-sm border bg-background px-3 text-[13px]"
+						className="min-h-11 rounded-sm border bg-background px-3 text-[13px] max-[480px]:w-full"
 						aria-label="Sort directory"
 						value={direction}
 						onChange={(event) => {
@@ -289,8 +307,8 @@ export function CommonspaceDirectory({
 					</select>
 				</label>
 			</div>
-			<div className="min-h-0 flex-1 overflow-y-auto px-8 pb-8">
-				<div className="sticky top-0 z-10 flex min-h-[54px] items-center justify-between gap-4 border-b bg-background text-xs text-muted-foreground">
+			<div className="min-h-0 flex-1 overflow-y-auto px-8 pb-8 max-[780px]:px-5 max-[480px]:px-3 max-[480px]:pb-6">
+				<div className="sticky top-0 z-10 flex min-h-[54px] items-center justify-between gap-4 border-b bg-background text-xs text-muted-foreground max-[480px]:items-start max-[480px]:flex-col max-[480px]:justify-center max-[480px]:gap-0.5">
 					<strong className="text-foreground">
 						{String(filteredItems.length)}{" "}
 						{filteredItems.length === 1 ? config.singular : kind}
@@ -303,15 +321,17 @@ export function CommonspaceDirectory({
 				</div>
 				<ul className="m-0 list-none border-b p-0">
 					{visibleItems.map((item) => {
-						const pinned = pinnedIds.has(item.id);
+						const pinned = effectivePinnedKeys.includes(
+							collectionKey(item.kind, item.id),
+						);
 						return (
 							<li
 								key={item.id}
-								className="grid min-h-[72px] grid-cols-[minmax(0,1fr)_44px] items-stretch border-b last:border-b-0 hover:bg-muted"
+								className="group grid min-h-[72px] grid-cols-[minmax(0,1fr)_44px] items-stretch border-b border-border/70 bg-background last:border-b-0 hover:bg-surface"
 							>
 								<button
 									type="button"
-									className="grid min-w-0 grid-cols-[38px_minmax(0,1fr)_minmax(150px,auto)_24px] items-center gap-3 border-0 bg-transparent px-2 py-2.5 text-left"
+									className="grid w-full min-w-0 grid-cols-[38px_minmax(0,1fr)_minmax(150px,auto)_24px] items-center gap-3 border-0 bg-transparent px-2 py-2.5 text-left max-[480px]:grid-cols-[38px_minmax(0,1fr)_20px] max-[480px]:gap-2"
 									aria-label={`Open ${item.kind} ${item.name}`}
 									onClick={() => {
 										openItem(item);
@@ -335,7 +355,7 @@ export function CommonspaceDirectory({
 											{item.description}
 										</small>
 									</span>
-									<span className="text-right font-mono text-xs text-muted-foreground">
+									<span className="text-right font-mono text-xs text-muted-foreground max-[480px]:col-start-2 max-[480px]:text-left">
 										{item.meta}
 									</span>
 									{pinned ? (
@@ -354,6 +374,7 @@ export function CommonspaceDirectory({
 									kind={item.kind}
 									label={item.name}
 									meta={item.meta}
+									triggerClassName="opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 max-[780px]:opacity-100"
 									pinned={pinned}
 									unread={item.unread > 0}
 									onOpen={() => {
@@ -396,12 +417,11 @@ export function CommonspaceDirectory({
 											}
 										: {})}
 									onTogglePinned={() => {
-										setPinnedIds((current) => {
-											const next = new Set(current);
-											if (next.has(item.id)) next.delete(item.id);
-											else next.add(item.id);
-											return next;
-										});
+										sidebarPreferencesStore.togglePin(
+											item.kind,
+											item.id,
+											defaultPinnedKeys,
+										);
 									}}
 									onRemove={() => removeItem(item)}
 								/>

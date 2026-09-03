@@ -140,6 +140,7 @@ export function deriveCommonspaceInboxItems(
 	const readAt =
 		state.inboxReadAt === null ? null : timestampValue(state.inboxReadAt);
 	const readMessageIds = new Set(state.inboxReadMessageIds);
+	const unreadMessageIds = new Set(state.inboxUnreadMessageIds ?? []);
 	const savedMessageIds = new Set(state.inboxSavedItemIds);
 	const mutedSessionIds = new Set(state.mutedSessionIds);
 	const failedSources = new Set(
@@ -183,8 +184,9 @@ export function deriveCommonspaceInboxItems(
 			const created = timestampValue(message.createdAt);
 			const unread =
 				!muted &&
-				!readMessageIds.has(message.id) &&
-				(readAt === null || (created !== null && created > readAt));
+				(unreadMessageIds.has(message.id) ||
+					(!readMessageIds.has(message.id) &&
+						(readAt === null || (created !== null && created > readAt))));
 			const item: CommonspaceInboxItem = {
 				id: `message:${message.id}`,
 				messageId: message.id,
@@ -235,8 +237,9 @@ export function deriveCommonspaceInboxItems(
 			text: conciseText(permission.title, "Permission requested."),
 			unread:
 				!muted &&
-				!readMessageIds.has(permission.sourceMessageId) &&
-				(readAt === null || (created !== null && created > readAt)),
+				(unreadMessageIds.has(permission.sourceMessageId) ||
+					(!readMessageIds.has(permission.sourceMessageId) &&
+						(readAt === null || (created !== null && created > readAt)))),
 			saved: savedMessageIds.has(permission.sourceMessageId),
 			muted,
 		};

@@ -2246,6 +2246,11 @@ function sanitizeLoadedState(value: JsonValue): CommonspaceState {
 		agentIds,
 		messages,
 	);
+	const messageIds = new Set(
+		Object.values(messages)
+			.flat()
+			.map((message) => message.id),
+	);
 	const inboxMessageIds = new Set(
 		Object.values(messages).flatMap((entries) =>
 			entries
@@ -2274,6 +2279,11 @@ function sanitizeLoadedState(value: JsonValue): CommonspaceState {
 			10_000,
 			200,
 		).filter((messageId) => inboxMessageIds.has(messageId)),
+		inboxUnreadMessageIds: loadedStringArray(
+			record.inboxUnreadMessageIds,
+			10_000,
+			200,
+		).filter((messageId) => messageIds.has(messageId)),
 		inboxSavedItemIds: loadedStringArray(
 			record.inboxSavedItemIds,
 			10_000,
@@ -3038,6 +3048,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 		const workspace: CommonspaceWorkspaceArchive["workspace"] = {
 			inboxReadAt: state.inboxReadAt,
 			inboxReadMessageIds: state.inboxReadMessageIds,
+			inboxUnreadMessageIds: state.inboxUnreadMessageIds ?? [],
 			inboxSavedItemIds: state.inboxSavedItemIds,
 			followedSessionIds: state.followedSessionIds,
 			mutedSessionIds: state.mutedSessionIds,
@@ -3179,6 +3190,9 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 			const canonicalWorkspace: CommonspaceWorkspaceArchive["workspace"] = {
 				inboxReadAt: imported.inboxReadAt,
 				inboxReadMessageIds: imported.inboxReadMessageIds,
+				...(workspace.inboxUnreadMessageIds === undefined
+					? {}
+					: { inboxUnreadMessageIds: imported.inboxUnreadMessageIds ?? [] }),
 				inboxSavedItemIds: imported.inboxSavedItemIds,
 				followedSessionIds: imported.followedSessionIds,
 				mutedSessionIds: imported.mutedSessionIds,
@@ -3421,6 +3435,9 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 				...this.state,
 				revision: this.state.revision + 1,
 				inboxReadMessageIds: this.state.inboxReadMessageIds.filter(
+					(id) => !removedMessageIds.has(id),
+				),
+				inboxUnreadMessageIds: (this.state.inboxUnreadMessageIds ?? []).filter(
 					(id) => !removedMessageIds.has(id),
 				),
 				inboxSavedItemIds: this.state.inboxSavedItemIds.filter(

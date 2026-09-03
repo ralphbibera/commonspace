@@ -3,8 +3,8 @@ import type {
 	CommonspaceBootstrap,
 	CommonspaceReasoning,
 } from "@commonspace/shared";
-import { CheckIcon, SearchIcon, XIcon } from "lucide-react";
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { CheckIcon, ChevronDownIcon, SearchIcon, XIcon } from "lucide-react";
+import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ConfirmActionDialog } from "@/design-system/ConfirmActionDialog";
 import { cn } from "@/lib/utils";
@@ -57,6 +57,120 @@ function AgentMark({
 		>
 			{agent.avatarEmoji ?? agent.displayName.slice(0, 1).toLocaleUpperCase()}
 		</span>
+	);
+}
+
+const AVATAR_EMOJIS = [
+	["🤖", "robot agent"],
+	["🧠", "brain thinking"],
+	["🧭", "compass direction"],
+	["🛠️", "tools builder"],
+	["⚙️", "gear systems"],
+	["✨", "sparkles"],
+	["🚀", "rocket launch"],
+	["⚡", "lightning fast"],
+	["🔥", "fire hot"],
+	["🌐", "globe web"],
+	["🔬", "microscope research"],
+	["🔎", "search inspect"],
+	["🎨", "palette design"],
+	["💻", "computer code"],
+	["🧩", "puzzle solve"],
+	["🛰️", "satellite infrastructure"],
+	["🦾", "robot arm"],
+	["🦉", "owl wisdom"],
+	["🐙", "octopus"],
+	["🦊", "fox"],
+	["🐝", "bee"],
+	["🌱", "seed growth"],
+	["💡", "lightbulb idea"],
+	["🛡️", "shield safety"],
+] as const;
+
+function AvatarEmojiPicker({
+	value,
+	onChange,
+}: {
+	value: string;
+	onChange: (value: string) => void;
+}) {
+	const [open, setOpen] = useState(false);
+	const [query, setQuery] = useState("");
+	const picker = useRef<HTMLDivElement>(null);
+	const visible = AVATAR_EMOJIS.filter(([, keywords]) =>
+		`${keywords}`
+			.toLocaleLowerCase()
+			.includes(query.trim().toLocaleLowerCase()),
+	);
+
+	useEffect(() => {
+		if (!open) return;
+		const close = (event: PointerEvent) => {
+			if (
+				!(event.target instanceof Node) ||
+				picker.current?.contains(event.target) !== true
+			)
+				setOpen(false);
+		};
+		document.addEventListener("pointerdown", close);
+		return () => {
+			document.removeEventListener("pointerdown", close);
+		};
+	}, [open]);
+
+	return (
+		<div ref={picker} className="relative">
+			<button
+				type="button"
+				className="flex min-h-11 w-full items-center justify-between rounded-sm border bg-background px-3 text-left text-xl hover:bg-muted"
+				aria-label="Choose avatar emoji"
+				aria-expanded={open}
+				onClick={() => {
+					setOpen((current) => !current);
+				}}
+			>
+				<span>{value || "🤖"}</span>
+				<ChevronDownIcon
+					className="size-4 text-muted-foreground"
+					aria-hidden="true"
+				/>
+			</button>
+			{open && (
+				<div
+					className="absolute top-[calc(100%+6px)] left-0 z-30 w-full min-w-[240px] rounded-md border bg-popover p-2 text-popover-foreground shadow-lg"
+					role="region"
+					aria-label="Avatar emoji picker"
+				>
+					<input
+						type="search"
+						className="mb-2 min-h-10 w-full rounded-sm border bg-background px-2 text-sm"
+						aria-label="Search avatar emoji"
+						placeholder="Search emoji"
+						value={query}
+						onChange={(event) => {
+							setQuery(event.target.value);
+						}}
+					/>
+					<div className="grid max-h-44 grid-cols-6 gap-1 overflow-y-auto">
+						{visible.map(([emoji, keywords]) => (
+							<button
+								key={emoji}
+								type="button"
+								className="grid size-9 place-items-center rounded-sm border-0 text-lg hover:bg-muted aria-pressed:bg-primary/10"
+								aria-label={`Use ${keywords} avatar`}
+								aria-pressed={value === emoji}
+								onClick={() => {
+									onChange(emoji);
+									setOpen(false);
+								}}
+							>
+								{emoji}
+							</button>
+						))}
+					</div>
+				</div>
+			)}
+		</div>
 	);
 }
 
@@ -675,19 +789,16 @@ export function AgentSettingsPane({
 							</label>
 						</div>
 						<div className="grid grid-cols-2 gap-3">
-							<label>
-								Avatar emoji
-								<input
-									aria-label="Avatar emoji"
+							<div className="grid gap-1.5 text-xs font-semibold">
+								<span>Avatar emoji</span>
+								<AvatarEmojiPicker
 									value={avatarEmoji}
-									maxLength={16}
-									placeholder={displayName.slice(0, 1).toLocaleUpperCase()}
-									onChange={(event) => {
-										setAvatarEmoji(event.target.value);
+									onChange={(value) => {
+										setAvatarEmoji(value);
 										setSaveState("Unsaved changes stay local until verified.");
 									}}
 								/>
-							</label>
+							</div>
 							<label>
 								Background color
 								<span className="grid grid-cols-[44px_minmax(0,1fr)] gap-2">

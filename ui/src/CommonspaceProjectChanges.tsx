@@ -152,7 +152,7 @@ export function CommonspaceProjectChanges({
 			aria-label="Project changes"
 		>
 			<aside className="min-h-0 min-w-0 overflow-y-auto border-r bg-[color-mix(in_oklch,var(--background)_55%,var(--muted))] max-[780px]:border-r-0 max-[780px]:border-b">
-				<header className="flex min-h-16 items-center gap-3 border-b px-3 py-2">
+				<header className="flex min-h-[66px] items-center gap-3 border-b px-3 py-2">
 					<div className="min-w-0 flex-1">
 						<strong className="block truncate text-[13px]">
 							Working changes
@@ -292,7 +292,7 @@ export function CommonspaceProjectChanges({
 					</div>
 				) : (
 					<>
-						<header className="flex min-h-16 items-center justify-between gap-3 border-b px-3 py-2">
+						<header className="flex min-h-[66px] items-center justify-between gap-3 border-b px-3 py-2">
 							<div className="min-w-0">
 								<strong className="block truncate text-[13px]">
 									{selected.path}

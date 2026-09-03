@@ -27,6 +27,7 @@ export interface ResourceActionMenuProps {
 	onOpen: () => void;
 	onToggleFollow?: () => void;
 	onMarkRead?: () => void;
+	onMarkUnread?: () => void;
 	onCopy: () => void;
 }
 
@@ -40,13 +41,15 @@ export function ResourceActionMenu({
 	onOpen,
 	onToggleFollow,
 	onMarkRead,
+	onMarkUnread,
 	onCopy,
 }: ResourceActionMenuProps) {
+	const markState = unread ? onMarkRead : onMarkUnread;
 	return (
 		<DropdownMenu>
 			<DropdownMenuTrigger
 				className={cn(
-					"grid size-11 place-items-center rounded-sm border-0 bg-transparent text-muted-foreground opacity-0 hover:bg-muted hover:text-foreground group-hover:opacity-100 focus:opacity-100 focus-visible:ring-3 focus-visible:ring-ring/30",
+					"grid size-11 place-items-center rounded-sm border-0 bg-transparent text-muted-foreground opacity-0 hover:bg-muted hover:text-foreground group-hover:opacity-100 focus:opacity-100 max-[780px]:opacity-100 focus-visible:ring-3 focus-visible:ring-ring/30",
 					triggerClassName,
 				)}
 				aria-label={`More actions for ${label}`}
@@ -92,13 +95,13 @@ export function ResourceActionMenu({
 							{following ? "Unfollow thread" : "Follow thread"}
 						</DropdownMenuItem>
 					)}
-					{kind === "thread" && unread && onMarkRead !== undefined && (
+					{kind === "thread" && markState !== undefined && (
 						<DropdownMenuItem
 							className="min-h-10 gap-2.5 px-2.5 text-[13px]"
-							onClick={onMarkRead}
+							onClick={markState}
 						>
 							<CheckCheckIcon aria-hidden="true" />
-							Mark read
+							{unread ? "Mark read" : "Mark unread"}
 						</DropdownMenuItem>
 					)}
 				</DropdownMenuGroup>

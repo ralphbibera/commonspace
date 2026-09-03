@@ -7,6 +7,7 @@ import {
 import {
 	BellPlusIcon,
 	CheckCheckIcon,
+	ChevronRightIcon,
 	MessageSquareTextIcon,
 } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -19,6 +20,7 @@ import {
 } from "@/components/ui/empty";
 import { ResourceActionMenu } from "@/design-system/ResourceActionMenu";
 import { WorkspaceHeader } from "@/design-system/WorkspaceHeader";
+import { cn } from "@/lib/utils";
 import type { CommonspaceStore } from "./commonspace-store.ts";
 
 interface ThreadRow {
@@ -51,11 +53,7 @@ function threadRows(bootstrap: CommonspaceBootstrap | null): ThreadRow[] {
 	if (bootstrap === null) return [];
 	const { state } = bootstrap;
 	const inboxItems = deriveCommonspaceInboxItems(state);
-	const unreadThreadIds = new Set(
-		inboxItems.flatMap((item) =>
-			item.unread && item.threadId !== undefined ? [item.threadId] : [],
-		),
-	);
+	const manuallyUnreadMessageIds = new Set(state.inboxUnreadMessageIds ?? []);
 	const sessions = deriveCommonspaceSessions(
 		state,
 		bootstrap.liveActivities ?? [],
@@ -84,9 +82,16 @@ function threadRows(bootstrap: CommonspaceBootstrap | null): ThreadRow[] {
 			const session = sessions.find(
 				(candidate) => candidate.threadId === thread.id,
 			);
-			const unreadMessageIds = inboxItems
-				.filter((item) => item.unread && item.threadId === thread.id)
-				.map((item) => item.messageId);
+			const unreadMessageIds = [
+				...new Set(
+					inboxItems
+						.filter((item) => item.unread && item.threadId === thread.id)
+						.map((item) => item.messageId),
+				),
+				...[root.id, ...replies.map((reply) => reply.id)].filter((id) =>
+					manuallyUnreadMessageIds.has(id),
+				),
+			];
 			const row: ThreadRow = {
 				id: thread.id,
 				messageId: root.id,
@@ -99,7 +104,7 @@ function threadRows(bootstrap: CommonspaceBootstrap | null): ThreadRow[] {
 				),
 				replyCount: replies.length,
 				updatedAt: latest.createdAt,
-				unread: unreadThreadIds.has(thread.id),
+				unread: unreadMessageIds.length > 0,
 				followed: session?.followed ?? false,
 				unreadMessageIds,
 			};
@@ -143,11 +148,11 @@ export function CommonspaceThreads({
 		>
 			<WorkspaceHeader
 				title="Threads"
-				subtitle="Followed and unread channel conversations"
+				subtitle="All channel threads with unread and follow filters"
 				mark={<MessageSquareTextIcon className="size-[17px]" />}
 			/>
 
-			<div className="mx-auto flex min-h-[52px] w-full max-w-[1020px] items-center justify-between gap-3 border-b px-10 font-mono text-xs text-muted-foreground max-[640px]:px-4">
+			<div className="mx-auto flex min-h-[52px] w-full max-w-[1020px] items-center justify-between gap-3 border-b px-9 font-mono text-xs text-muted-foreground max-[780px]:px-5 max-[480px]:gap-2.5 max-[480px]:px-3.5">
 				<div className="flex items-center gap-4">
 					<span>{String(unreadCount)} unread</span>
 					<span className="border-l pl-4">
@@ -169,7 +174,7 @@ export function CommonspaceThreads({
 				</button>
 			</div>
 
-			<div className="mx-auto flex min-h-[54px] w-full max-w-[1020px] items-center justify-end border-b px-9 max-[640px]:px-3">
+			<div className="mx-auto flex min-h-[54px] w-full max-w-[1020px] items-center justify-end border-b px-9 max-[780px]:px-5 max-[480px]:px-3">
 				<fieldset
 					aria-label="Thread filter"
 					className="m-0 flex min-w-0 items-center gap-0.5 border-0 p-0"
@@ -221,15 +226,15 @@ export function CommonspaceThreads({
 						</EmptyHeader>
 					</Empty>
 				) : (
-					<ol className="mx-auto w-full max-w-[1020px] px-7 pb-10">
+					<ol className="mx-auto w-full max-w-[1020px] px-7 pb-10 max-[780px]:px-3">
 						{visibleRows.map((row) => (
 							<li
 								key={row.id}
-								className="group relative grid min-h-[88px] grid-cols-[minmax(0,1fr)_44px_44px] items-center border-b [contain-intrinsic-size:88px] [content-visibility:auto]"
+								className="group relative grid min-h-[88px] grid-cols-[minmax(0,1fr)_44px_44px] items-center border-b border-border/70 bg-background transition-colors [contain-intrinsic-size:88px] [content-visibility:auto] hover:bg-surface focus-within:bg-surface"
 							>
 								<button
 									type="button"
-									className="relative grid min-h-[88px] min-w-0 grid-cols-[40px_minmax(0,1fr)_auto] items-center gap-[13px] rounded-sm px-2.5 py-3 text-left hover:bg-muted"
+									className="relative grid min-h-[88px] min-w-0 grid-cols-[40px_minmax(0,1fr)_18px] items-center gap-[13px] rounded-sm border-0 bg-transparent px-2.5 py-3 text-left hover:bg-transparent focus-visible:outline-0 focus-visible:ring-2 focus-visible:ring-ring/50 max-[480px]:grid-cols-[36px_minmax(0,1fr)] max-[480px]:gap-2.5 max-[480px]:px-2"
 									aria-label={`Open thread ${row.title}${row.unread ? ", unread" : ""}`}
 									onClick={() => {
 										onOpenThread({
@@ -245,22 +250,35 @@ export function CommonspaceThreads({
 											aria-hidden="true"
 										/>
 									)}
-									<span className="grid size-10 place-items-center rounded-sm border bg-background font-mono text-xs font-semibold">
+									<span className="relative grid size-10 place-items-center rounded-md border bg-background font-mono text-xs font-semibold max-[480px]:size-9">
 										{row.agentNames[0]?.slice(0, 1).toLocaleUpperCase() ?? "#"}
+										<span
+											className={cn(
+												"absolute right-[-2px] bottom-[-2px] size-2 rounded-full border-2 border-background bg-muted-foreground",
+												row.unread && "bg-[var(--status-success)]",
+											)}
+											aria-hidden="true"
+										/>
 									</span>
 									<span className="min-w-0">
 										<span className="flex min-w-0 items-center gap-[7px]">
 											<strong className="truncate text-sm tracking-[-0.006em]">
 												{row.title}
 											</strong>
-											<span className="shrink-0 text-xs text-muted-foreground">
+											<span className="truncate text-xs text-muted-foreground">
 												# {row.channelName}
 											</span>
+											<time
+												className="ml-auto shrink-0 font-mono text-xs text-muted-foreground"
+												dateTime={row.updatedAt}
+											>
+												{formattedTime(row.updatedAt)}
+											</time>
 										</span>
 										<span className="mt-1 block truncate text-[13px]">
 											{row.detail}
 										</span>
-										<span className="mt-1 flex items-center gap-2 text-xs">
+										<span className="mt-1 flex min-w-0 items-center gap-2 text-xs">
 											<span
 												className={
 													row.unread
@@ -276,16 +294,14 @@ export function CommonspaceThreads({
 											</span>
 										</span>
 									</span>
-									<time
-										className="self-start pt-1 font-mono text-xs text-muted-foreground"
-										dateTime={row.updatedAt}
-									>
-										{formattedTime(row.updatedAt)}
-									</time>
+									<ChevronRightIcon
+										className="size-[17px] text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 max-[480px]:hidden"
+										aria-hidden="true"
+									/>
 								</button>
 								<button
 									type="button"
-									className="grid size-11 place-items-center rounded-sm border-0 bg-transparent text-primary opacity-0 hover:bg-[color-mix(in_oklch,var(--primary)_9%,var(--background))] group-hover:opacity-100 focus:opacity-100 aria-pressed:opacity-100"
+									className="grid size-11 place-items-center rounded-sm border-0 bg-transparent text-primary hover:bg-[color-mix(in_oklch,var(--primary)_9%,var(--background))] disabled:cursor-not-allowed disabled:opacity-40"
 									aria-label={
 										row.followed ? "Unfollow thread" : "Follow thread"
 									}
@@ -308,6 +324,7 @@ export function CommonspaceThreads({
 									kind="thread"
 									label={row.title}
 									meta={`#${row.channelName}`}
+									triggerClassName="opacity-100"
 									following={row.followed}
 									unread={row.unread}
 									onOpen={() => {
@@ -337,6 +354,13 @@ export function CommonspaceThreads({
 												messageId,
 											});
 										}
+									}}
+									onMarkUnread={() => {
+										void store.mutate({
+											action: "set-inbox-item-unread",
+											messageId: row.messageId,
+											unread: true,
+										});
 									}}
 									onCopy={() => {
 										void navigator.clipboard

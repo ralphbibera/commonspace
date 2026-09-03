@@ -39,6 +39,7 @@ export interface CollectionActionMenuProps {
 	onAddFolder?: () => void;
 	unread?: boolean;
 	onMarkRead?: () => void;
+	onMarkUnread?: () => void;
 	onStartFreshChat?: () => void;
 	onMention?: () => void;
 	mentionLabel?: string;
@@ -89,6 +90,7 @@ export function CollectionActionMenu({
 	onAddFolder,
 	unread = false,
 	onMarkRead,
+	onMarkUnread,
 	onStartFreshChat,
 	onMention,
 	mentionLabel,
@@ -172,15 +174,16 @@ export function CollectionActionMenu({
 									/>
 								</DropdownMenuItem>
 							)}
-						{kind === "channel" && unread && onMarkRead !== undefined && (
-							<DropdownMenuItem
-								className="min-h-10 gap-2.5 px-2.5 text-[13px]"
-								onClick={onMarkRead}
-							>
-								<CheckCheckIcon aria-hidden="true" />
-								Mark read
-							</DropdownMenuItem>
-						)}
+						{kind === "channel" &&
+							(unread ? onMarkRead : onMarkUnread) !== undefined && (
+								<DropdownMenuItem
+									className="min-h-10 gap-2.5 px-2.5 text-[13px]"
+									onClick={unread ? onMarkRead : onMarkUnread}
+								>
+									<CheckCheckIcon aria-hidden="true" />
+									{unread ? "Mark read" : "Mark unread"}
+								</DropdownMenuItem>
+							)}
 						{kind === "project" && onAddFolder !== undefined && (
 							<DropdownMenuItem
 								className="min-h-10 gap-2.5 px-2.5 text-[13px]"

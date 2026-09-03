@@ -10,7 +10,6 @@ import {
 	type ConversationRef,
 	deriveCommonspaceInboxItems,
 	deriveCommonspaceSessions,
-	type RerouteAssignmentRequest,
 	referencedProjectIds,
 	type SendFileAttachment,
 	type SendImageAttachment,
@@ -39,10 +38,6 @@ import {
 } from "./CommonspaceContextSettings.tsx";
 import type { CommonspaceStore } from "./commonspace-store.ts";
 import { MessageActionMenu } from "./design-system/MessageActionMenu.tsx";
-import {
-	type MessageSpeechControls,
-	useMessageSpeech,
-} from "./message-speech.ts";
 import { RunAttribution } from "./RunAttribution.tsx";
 import {
 	resolveSlashCommand,
@@ -376,197 +371,28 @@ function conversationDateLabel(
 	return `${prefix} · ${date.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" })}`;
 }
 
-function RoutingAssignments({
-	message,
-	bootstrap,
-	onReroute,
-}: {
-	message: CommonspaceMessage;
-	bootstrap: CommonspaceBootstrap | null | undefined;
-	onReroute: ((request: RerouteAssignmentRequest) => Promise<void>) | undefined;
-}) {
-	const routing = message.routing;
-	const [editingId, setEditingId] = useState<string | null>(null);
-	const [agentId, setAgentId] = useState("");
-	const [subRequest, setSubRequest] = useState("");
-	const [submitting, setSubmitting] = useState(false);
-	if (routing === undefined || routing.assignments.length === 0) return null;
-	const corrections = routing.corrections ?? [];
-	const supersededIds = new Set(
-		corrections.map((correction) => correction.fromAssignmentId),
-	);
-	const correctedIds = new Set(
-		corrections.map((correction) => correction.toAssignmentId),
-	);
-	const channelAgentIds =
-		message.conversation.kind === "channel"
-			? (bootstrap?.state.channels.find(
-					(channel) => channel.id === message.conversation.id,
-				)?.agentIds ?? [])
-			: [];
-	const rerouteAgents = (bootstrap?.agents ?? []).filter((agent) =>
-		channelAgentIds.includes(agent.id),
-	);
-	const beginReroute = (assignmentId: string) => {
-		const assignment = routing.assignments.find(
-			(candidate) => candidate.id === assignmentId,
-		);
-		if (assignment === undefined) return;
-		setEditingId(assignment.id);
-		setAgentId(assignment.agentId);
-		setSubRequest(assignment.subRequest);
-	};
-	const submit = async (event: FormEvent) => {
-		event.preventDefault();
-		if (
-			editingId === null ||
-			agentId === "" ||
-			subRequest.trim() === "" ||
-			onReroute === undefined ||
-			submitting
-		)
-			return;
-		const assignment = routing.assignments.find(
-			(candidate) => candidate.id === editingId,
-		);
-		if (assignment === undefined) return;
-		setSubmitting(true);
+function initialThreadWidth(): number {
+	if (typeof window !== "undefined") {
 		try {
-			await onReroute({
-				sourceMessageId: message.id,
-				assignmentId: editingId,
-				agentId,
-				subRequest,
-				projectIds: assignment.projectIds,
-			});
-			setEditingId(null);
+			const value = Number(
+				window.localStorage.getItem("commonspace-thread-width"),
+			);
+			if (Number.isFinite(value) && value >= 25 && value <= 75)
+				return Math.round(value);
 		} catch {
-			// Store exposes request failures through shared error state.
-		} finally {
-			setSubmitting(false);
+			// Use the default width when storage is unavailable.
 		}
-	};
-	return (
-		<ul className="mt-2 grid gap-2" aria-label="Routing assignments">
-			{routing.assignments.map((assignment) => {
-				const agent = bootstrap?.agents.find(
-					(candidate) => candidate.id === assignment.agentId,
-				);
-				const projects = assignment.projectIds.flatMap((projectId) => {
-					const project = bootstrap?.state.projects.find(
-						(candidate) => candidate.id === projectId,
-					);
-					return project === undefined ? [] : [project.name];
-				});
-				const superseded = supersededIds.has(assignment.id);
-				const corrected = correctedIds.has(assignment.id);
-				const inferred =
-					!corrected &&
-					assignment.projectIds.some((projectId) =>
-						(routing.inferredProjectIds ?? []).includes(projectId),
-					);
-				return (
-					<li
-						key={assignment.id}
-						className="relative rounded-sm border bg-background p-3 text-xs"
-						data-status={superseded ? "superseded" : "current"}
-					>
-						<strong>
-							@{agent?.displayName ?? assignment.agentId}
-							{projects.length === 0 ? "" : ` · ${projects.join(", ")}`}
-							{inferred ? " · inferred" : ""}
-						</strong>
-						{superseded && (
-							<span className="ml-2 rounded-full border px-2 py-0.5 font-mono text-[10px] text-muted-foreground">
-								Superseded
-							</span>
-						)}
-						{corrected && (
-							<span className="ml-2 rounded-full border px-2 py-0.5 font-mono text-[10px] text-primary">
-								Correction
-							</span>
-						)}
-						<p className="mt-1 text-[13px]">{assignment.subRequest}</p>
-						{!superseded && onReroute !== undefined && (
-							<button
-								type="button"
-								className="mt-2 min-h-9 rounded-sm border bg-background px-3 text-xs hover:bg-muted"
-								aria-label={`Reroute assignment for ${agent?.displayName ?? assignment.agentId}`}
-								onClick={() => {
-									beginReroute(assignment.id);
-								}}
-							>
-								Reroute
-							</button>
-						)}
-						{editingId === assignment.id && (
-							<form
-								className="mt-3 grid gap-2 rounded-sm border bg-muted p-3 [&_button]:min-h-9 [&_button]:rounded-sm [&_button]:border [&_button]:px-3 [&_label]:grid [&_label]:gap-1 [&_select]:min-h-10 [&_select]:rounded-sm [&_select]:border [&_select]:bg-background [&_select]:px-2 [&_textarea]:min-h-20 [&_textarea]:rounded-sm [&_textarea]:border [&_textarea]:bg-background [&_textarea]:p-2"
-								aria-label="Reroute assignment"
-								onSubmit={(event) => {
-									void submit(event);
-								}}
-							>
-								<label>
-									Agent
-									<select
-										aria-label="Reroute agent"
-										value={agentId}
-										onChange={(event) => {
-											setAgentId(event.target.value);
-										}}
-									>
-										{rerouteAgents.map((candidate) => (
-											<option key={candidate.id} value={candidate.id}>
-												{candidate.displayName}
-											</option>
-										))}
-									</select>
-								</label>
-								<label>
-									Sub-request
-									<textarea
-										aria-label="Corrected sub-request"
-										value={subRequest}
-										onChange={(event) => {
-											setSubRequest(event.target.value);
-										}}
-									/>
-								</label>
-								<div>
-									<button
-										type="submit"
-										disabled={
-											submitting || agentId === "" || subRequest.trim() === ""
-										}
-									>
-										{submitting ? "Sending…" : "Send correction"}
-									</button>
-									<button
-										type="button"
-										onClick={() => {
-											setEditingId(null);
-										}}
-									>
-										Cancel
-									</button>
-								</div>
-							</form>
-						)}
-					</li>
-				);
-			})}
-		</ul>
-	);
+	}
+	return 50;
 }
 
 function MessageRow({
 	message,
 	elementId,
 	bootstrap,
-	compact = false,
+	flush = false,
+	highlighted = false,
 	onReplyToAgent,
-	onReroute,
 	onPin,
 	onEdit,
 	onDelete,
@@ -574,15 +400,15 @@ function MessageRow({
 	saved = false,
 	onReplyInThread,
 	onToggleSaved,
+	onMarkUnread,
 	onCopyLink,
-	speech,
 }: {
 	message: CommonspaceMessage;
 	elementId?: string;
 	bootstrap?: CommonspaceBootstrap | null;
-	compact?: boolean;
+	flush?: boolean;
+	highlighted?: boolean;
 	onReplyToAgent?: (message: CommonspaceMessage) => void;
-	onReroute?: (request: RerouteAssignmentRequest) => Promise<void>;
 	onPin?: (message: CommonspaceMessage, attachmentId?: string) => Promise<void>;
 	onEdit?: (message: CommonspaceMessage, text: string) => Promise<void>;
 	onDelete?: (message: CommonspaceMessage) => Promise<void>;
@@ -593,10 +419,9 @@ function MessageRow({
 		message: CommonspaceMessage,
 		saved: boolean,
 	) => Promise<void>;
+	onMarkUnread?: (message: CommonspaceMessage) => Promise<void>;
 	onCopyLink?: (message: CommonspaceMessage) => void;
-	speech: MessageSpeechControls;
 }) {
-	const reading = speech.activeMessageId === message.id;
 	const supersedesMessageId = message.supersedesMessageId;
 	const [editing, setEditing] = useState(false);
 	const [editedText, setEditedText] = useState(message.text);
@@ -616,10 +441,12 @@ function MessageRow({
 		<article
 			id={elementId}
 			className={cn(
-				"group/message mx-auto mb-6 grid w-full max-w-[780px] grid-cols-[36px_minmax(0,1fr)] gap-3 rounded-md",
-				compact && "mb-3",
+				"group/message relative mx-auto mb-0 grid w-full max-w-[780px] grid-cols-[36px_minmax(0,1fr)] gap-3 rounded-none px-4 py-2 hover:bg-muted focus-within:bg-muted",
+				flush && "px-0 py-0",
+				highlighted && "rounded-md bg-muted/60 ring-1 ring-border",
 			)}
 			data-author={message.authorType}
+			aria-current={highlighted ? "true" : undefined}
 		>
 			<div
 				className={cn(
@@ -632,9 +459,9 @@ function MessageRow({
 				{message.authorName.slice(0, 1).toUpperCase()}
 			</div>
 			<div className="min-w-0">
-				<header className="flex min-h-[22px] flex-wrap items-center gap-2 text-xs [&>strong]:text-sm">
+				<header className="flex min-h-5 flex-wrap items-baseline gap-[7px] text-xs [&>strong]:font-heading [&>strong]:text-sm">
 					<strong>{message.authorName}</strong>
-					<time>
+					<time className="text-muted-foreground opacity-0 transition-opacity group-hover/message:opacity-100 group-focus-within/message:opacity-100">
 						{new Date(message.createdAt).toLocaleTimeString([], {
 							hour: "2-digit",
 							minute: "2-digit",
@@ -705,29 +532,18 @@ function MessageRow({
 							onToggleSaved={() => {
 								void onToggleSaved(message, !saved);
 							}}
+							{...(onMarkUnread === undefined
+								? {}
+								: {
+										onMarkUnread: () => {
+											void onMarkUnread(message);
+										},
+									})}
 							onCopyLink={() => {
 								onCopyLink(message);
 							}}
 						/>
 					)}
-					{message.authorType === "agent" &&
-						message.text.trim() !== "" &&
-						speech.supported && (
-							<button
-								type="button"
-								className="ml-auto grid size-8 place-items-center rounded-sm border-0 bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground"
-								aria-label={
-									reading ? "Stop reading aloud" : "Read message aloud"
-								}
-								aria-pressed={reading}
-								title={reading ? "Stop reading aloud" : "Read message aloud"}
-								onClick={() => {
-									speech.toggle(message.id, message.text);
-								}}
-							>
-								<span aria-hidden="true">{reading ? "■" : "◖))"}</span>
-							</button>
-						)}
 				</header>
 				{supersedesMessageId !== undefined && (
 					<div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
@@ -760,7 +576,7 @@ function MessageRow({
 							<LazyMessageMarkdown text={message.text} />
 						</Suspense>
 					) : (
-						<p className="mt-1 whitespace-pre-wrap text-sm leading-6">
+						<p className="mt-1 whitespace-pre-wrap text-sm leading-[1.5]">
 							{renderMessageText(message, bootstrap ?? undefined)}
 						</p>
 					))
@@ -801,57 +617,26 @@ function MessageRow({
 						</div>
 					</form>
 				)}
-				{message.routing !== undefined &&
-					(message.routing.status === "pending" ? (
-						<div
-							className="mt-2 text-xs text-muted-foreground"
-							role="status"
-							aria-label="Routing message"
-						>
-							Routing…
-						</div>
-					) : message.routing.status === "failed" ? (
-						<div
-							className="mt-2 rounded-sm border border-destructive/30 bg-destructive/5 p-2 text-xs text-destructive"
-							role="alert"
-						>
-							Routing failed · {message.routing.reason}
-							{routingDurationLabel(message.routing.durationMs) === null
-								? ""
-								: ` · ${routingDurationLabel(message.routing.durationMs)}`}
-						</div>
-					) : (
-						<div
-							className="mt-2 border-l-2 pl-2 text-xs text-muted-foreground"
-							title={message.routing.reason}
-						>
-							<span>
-								{message.routing.source === "ai"
-									? "AI routed"
-									: message.routing.source === "explicit"
-										? "Explicitly routed"
-										: "Local routing"}{" "}
-								to{" "}
-								{message.routing.agentIds
-									.map((agentId) => {
-										const agent = bootstrap?.agents.find(
-											(candidate) => candidate.id === agentId,
-										);
-										return `@${agent?.displayName ?? agentId}`;
-									})
-									.join(", ")}{" "}
-								· {message.routing.reason}
-								{routingDurationLabel(message.routing.durationMs) === null
-									? ""
-									: ` · ${routingDurationLabel(message.routing.durationMs)}`}
-							</span>
-							<RoutingAssignments
-								message={message}
-								bootstrap={bootstrap}
-								onReroute={onReroute}
-							/>
-						</div>
-					))}
+				{message.routing?.status === "pending" && (
+					<div
+						className="mt-2 text-xs text-muted-foreground"
+						role="status"
+						aria-label="Routing message"
+					>
+						Routing…
+					</div>
+				)}
+				{message.routing?.status === "failed" && (
+					<div
+						className="mt-2 rounded-sm border border-destructive/30 bg-destructive/5 p-2 text-xs text-destructive"
+						role="alert"
+					>
+						Routing failed · {message.routing.reason}
+						{routingDurationLabel(message.routing.durationMs) === null
+							? ""
+							: ` · ${routingDurationLabel(message.routing.durationMs)}`}
+					</div>
+				)}
 				{message.attachments !== undefined &&
 					message.attachments.length > 0 && (
 						<div className="mt-3 flex flex-wrap gap-2">
@@ -1108,7 +893,7 @@ function LiveAgentActivity({
 		: null;
 	return (
 		<div
-			className="mx-auto mb-3 grid w-[min(760px,calc(100%-48px))] gap-2"
+			className="mx-auto mb-3 grid w-[min(780px,calc(100%-48px))] gap-2"
 			role="status"
 			aria-label="Live agent activity"
 			aria-live="polite"
@@ -1314,7 +1099,7 @@ function PermissionRequests({
 				return (
 					<section
 						key={permission.id}
-						className="mx-auto mb-3 w-[min(760px,calc(100%-48px))] rounded-md border border-[color-mix(in_oklch,var(--status-warning)_45%,var(--border))] bg-[color-mix(in_oklch,var(--status-warning)_7%,var(--background))] p-4"
+						className="mx-auto mb-3 w-[min(780px,calc(100%-48px))] rounded-md border border-[color-mix(in_oklch,var(--status-warning)_45%,var(--border))] bg-[color-mix(in_oklch,var(--status-warning)_7%,var(--background))] p-4"
 						aria-label={`Permission request from ${agentName}`}
 					>
 						<header className="flex items-center justify-between gap-2 text-xs">
@@ -1360,11 +1145,6 @@ export function CommonspaceConversation({
 		store.getSnapshot,
 		store.getSnapshot,
 	);
-	const speech = useMessageSpeech(
-		snapshot.activeConversation === null
-			? null
-			: `${snapshot.activeConversation.kind}:${snapshot.activeConversation.id}`,
-	);
 	const [draft, setDraft] = useState("");
 	const [activeDelivery, setActiveDelivery] = useState<
 		"queue" | "steer" | "stop-and-send"
@@ -1397,10 +1177,13 @@ export function CommonspaceConversation({
 	const [selectedThreadSuggestion, setSelectedThreadSuggestion] = useState(0);
 	const [commandFeedback, setCommandFeedback] =
 		useState<CommandFeedback | null>(null);
+	const [focusedMessageId, setFocusedMessageId] = useState<string | null>(
+		targetMessageId,
+	);
 	const [focusedRootMessageId, setFocusedRootMessageId] = useState<
 		string | null
 	>(targetMessageId ?? null);
-	const [threadWidth, setThreadWidth] = useState(42);
+	const [threadWidth, setThreadWidth] = useState(initialThreadWidth);
 	const [resizingThread, setResizingThread] = useState(false);
 	const [contextSettingsOpen, setContextSettingsOpen] = useState(false);
 	const conversationLayout = useRef<HTMLDivElement>(null);
@@ -1414,9 +1197,12 @@ export function CommonspaceConversation({
 	const unreadMessageIds = new Set(
 		bootstrap === null
 			? []
-			: deriveCommonspaceInboxItems(bootstrap.state)
-					.filter((item) => item.unread)
-					.map((item) => item.messageId),
+			: [
+					...deriveCommonspaceInboxItems(bootstrap.state)
+						.filter((item) => item.unread)
+						.map((item) => item.messageId),
+					...(bootstrap.state.inboxUnreadMessageIds ?? []),
+				],
 	);
 	const savedMessageIds = new Set(bootstrap?.state.inboxSavedItemIds ?? []);
 	const heading = conversationTitle(store, snapshot.activeConversation);
@@ -1633,7 +1419,11 @@ export function CommonspaceConversation({
 		void messages.length;
 		void snapshot.activeThreadId;
 		if (targetMessageId == null) return;
-		setFocusedRootMessageId(targetMessageId);
+		const targetMessage = messages.find(
+			(message) => message.id === targetMessageId,
+		);
+		setFocusedMessageId(targetMessageId);
+		setFocusedRootMessageId(targetMessage?.parentMessageId ?? targetMessageId);
 		const target = document.getElementById(
 			`commonspace-message-${targetMessageId}`,
 		);
@@ -1654,6 +1444,9 @@ export function CommonspaceConversation({
 		setPendingImages([]);
 		setPendingFiles([]);
 		setContextSettingsOpen(false);
+		if (targetMessageId !== null) return;
+		setFocusedMessageId(null);
+		setFocusedRootMessageId(null);
 	}, [snapshot.activeConversation]);
 	useEffect(() => {
 		if (composerInsertRequest === null || !isChannel) return;
@@ -1728,6 +1521,16 @@ export function CommonspaceConversation({
 			window.removeEventListener("pointerup", stopResizing);
 		};
 	}, [resizingThread]);
+	useEffect(() => {
+		try {
+			window.localStorage.setItem(
+				"commonspace-thread-width",
+				String(threadWidth),
+			);
+		} catch {
+			// Thread resizing remains available for this session.
+		}
+	}, [threadWidth]);
 
 	const attachPastedImages = async (
 		files: readonly File[],
@@ -2235,6 +2038,13 @@ export function CommonspaceConversation({
 			saved,
 		});
 	};
+	const markMessageUnread = async (message: CommonspaceMessage) => {
+		await store.mutate({
+			action: "set-inbox-item-unread",
+			messageId: message.id,
+			unread: true,
+		});
+	};
 	const copyMessageLink = (message: CommonspaceMessage) => {
 		const link = new URL(window.location.href);
 		link.search = "";
@@ -2414,9 +2224,9 @@ export function CommonspaceConversation({
 										const thread = channelThreads.find(
 											(candidate) => candidate.rootMessageId === root.id,
 										);
+										const threadIsActive = thread?.id === activeThread?.id;
 										const threadIsFocused =
-											thread?.id === activeThread?.id ||
-											root.id === focusedRootMessageId;
+											threadIsActive || root.id === focusedRootMessageId;
 										const threadReplies =
 											thread === undefined
 												? []
@@ -2460,25 +2270,20 @@ export function CommonspaceConversation({
 													id={`commonspace-message-${root.id}`}
 													className={cn(
 														"mx-auto mb-2 w-full max-w-[780px] rounded-md pb-1",
-														threadIsFocused &&
-															"bg-[color-mix(in_oklch,var(--primary)_7%,var(--background))] shadow-[inset_3px_0_0_var(--primary)]",
+														threadIsFocused && "bg-muted/60 ring-1 ring-border",
 													)}
-													aria-current={
-														thread?.id === activeThread?.id ? "true" : undefined
-													}
-													data-focused={threadIsFocused || undefined}
+													aria-current={threadIsFocused ? "true" : undefined}
 												>
 													<MessageRow
 														message={root}
 														bootstrap={bootstrap}
-														onReroute={(request) =>
-															store.rerouteAssignment(request)
-														}
+														flush
 														onEdit={editDeliveredMessage}
 														onDelete={deleteDeliveredMessage}
 														onOpenVersion={openMessageVersion}
 														saved={savedMessageIds.has(root.id)}
 														onToggleSaved={toggleSavedMessage}
+														onMarkUnread={markMessageUnread}
 														onCopyLink={copyMessageLink}
 														{...(thread === undefined
 															? {}
@@ -2488,12 +2293,11 @@ export function CommonspaceConversation({
 																		store.selectThread(thread.id);
 																	},
 																})}
-														speech={speech}
 													/>
 													<button
 														type="button"
 														className={cn(
-															"relative ml-12 inline-flex min-h-11 max-w-[calc(100%-48px)] items-center gap-2 rounded-md border-0 bg-[color-mix(in_oklch,var(--primary)_8%,var(--background))] px-2 text-xs font-semibold text-primary hover:bg-[color-mix(in_oklch,var(--primary)_14%,var(--background))]",
+															"relative ml-12 mt-0.5 inline-flex min-h-10 w-fit items-center gap-2 rounded-md border-0 bg-transparent py-1 pr-2 pl-0.5 text-xs font-semibold text-muted-foreground hover:bg-muted hover:text-foreground",
 															unreadCount > 0 && "text-primary",
 														)}
 														aria-label={`${String(replyCount)} ${replyCount === 1 ? "reply" : "replies"}${unreadCount === 0 ? "" : `, ${String(unreadCount)} unread`}`}
@@ -2560,14 +2364,14 @@ export function CommonspaceConversation({
 											elementId={`commonspace-message-${message.id}`}
 											message={message}
 											bootstrap={bootstrap}
-											onReroute={(request) => store.rerouteAssignment(request)}
+											highlighted={message.id === focusedMessageId}
 											onEdit={editDeliveredMessage}
 											onDelete={deleteDeliveredMessage}
 											onOpenVersion={openMessageVersion}
 											saved={savedMessageIds.has(message.id)}
 											onToggleSaved={toggleSavedMessage}
+											onMarkUnread={markMessageUnread}
 											onCopyLink={copyMessageLink}
-											speech={speech}
 										/>
 									))}
 							{directMessagePhase !== null && (
@@ -2592,7 +2396,7 @@ export function CommonspaceConversation({
 
 						{directMessageFollowups.length > 0 && (
 							<section
-								className="mx-auto mb-2 w-[min(760px,calc(100%-48px))] rounded-lg border bg-muted px-3 py-2.5"
+								className="mx-auto mb-2 w-[min(780px,calc(100%-48px))] rounded-lg border bg-muted px-3 py-2.5"
 								aria-label="Queued follow-ups"
 							>
 								<header>
@@ -2698,7 +2502,7 @@ export function CommonspaceConversation({
 						)}
 
 						<form
-							className="mx-auto mb-[18px] flex w-[calc(100%-48px)] max-w-[940px] flex-col gap-1 rounded-xl border bg-background px-3 pt-3 pb-2 focus-within:border-primary focus-within:ring-3 focus-within:ring-primary/10 max-[640px]:mb-3 max-[640px]:w-[calc(100%-24px)]"
+							className="mx-auto mb-[18px] flex w-[calc(100%-48px)] max-w-[780px] flex-col gap-1 rounded-xl border bg-background px-3 pt-3 pb-2 focus-within:border-primary focus-within:ring-3 focus-within:ring-primary/10 max-[640px]:mb-3 max-[640px]:w-[calc(100%-24px)]"
 							onSubmit={(event) => {
 								void sendRoot(event);
 							}}
@@ -2922,7 +2726,7 @@ export function CommonspaceConversation({
 							aria-valuenow={threadWidth}
 							tabIndex={0}
 							onDoubleClick={() => {
-								setThreadWidth(42);
+								setThreadWidth(50);
 							}}
 							onPointerDown={(event) => {
 								event.preventDefault();
@@ -3163,15 +2967,16 @@ export function CommonspaceConversation({
 									<MessageRow
 										message={activeRoot}
 										bootstrap={bootstrap}
-										onReroute={(request) => store.rerouteAssignment(request)}
+										flush
+										highlighted={activeRoot.id === focusedMessageId}
 										onPin={pinThreadMessage}
 										onEdit={editDeliveredMessage}
 										onDelete={deleteDeliveredMessage}
 										onOpenVersion={openMessageVersion}
 										saved={savedMessageIds.has(activeRoot.id)}
 										onToggleSaved={toggleSavedMessage}
+										onMarkUnread={markMessageUnread}
 										onCopyLink={copyMessageLink}
-										speech={speech}
 									/>
 								)}
 								<div className="my-5 flex items-center gap-3 text-xs text-muted-foreground after:h-px after:flex-1 after:bg-border">
@@ -3183,7 +2988,7 @@ export function CommonspaceConversation({
 										elementId={`commonspace-message-${reply.id}`}
 										message={reply}
 										bootstrap={bootstrap}
-										compact
+										highlighted={reply.id === focusedMessageId}
 										onReplyToAgent={replyDirectlyToAgent}
 										onPin={pinThreadMessage}
 										onEdit={editDeliveredMessage}
@@ -3191,8 +2996,8 @@ export function CommonspaceConversation({
 										onOpenVersion={openMessageVersion}
 										saved={savedMessageIds.has(reply.id)}
 										onToggleSaved={toggleSavedMessage}
+										onMarkUnread={markMessageUnread}
 										onCopyLink={copyMessageLink}
-										speech={speech}
 									/>
 								))}
 								{activeThreadActivities.length > 0 && (

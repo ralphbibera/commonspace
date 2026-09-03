@@ -89,8 +89,8 @@ Routing rules:
 6. Without explicit mentions, inference selects the smallest useful set of agents for the request.
 7. Prefer one best-fit agent when one agent is sufficient.
 8. Select multiple agents when the request clearly spans distinct responsibilities.
-9. Routing decisions and generated sub-requests must be inspectable.
-10. Users can reroute a sub-request easily when routing is wrong.
+9. Routing decisions and generated sub-requests must persist as service-side metadata for dispatch, reply binding, diagnostics, and correction history.
+10. A service-level correction can reroute one sub-request without resending unrelated assignments; resolved receipts and inline correction controls are deferred from the conversation UI.
 11. Reroutes are stored as feedback and compacted into routing knowledge so future routing improves.
 12. Project references and channel/thread context are inputs to routing.
 13. Routing should feel effectively immediate; sub-second latency is the target where practical.

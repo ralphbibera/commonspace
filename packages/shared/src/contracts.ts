@@ -1,4 +1,4 @@
-export const COMMONSPACE_STATE_VERSION = 24 as const;
+export const COMMONSPACE_STATE_VERSION = 25 as const;
 export const COMMONSPACE_EXPORT_VERSION = 1 as const;
 
 export type AgentAdapterKind = "hermes" | "codex";
@@ -556,6 +556,8 @@ export interface CommonspaceState {
 	inboxReadAt: string | null;
 	/** Agent message IDs opened individually after the global read cursor. */
 	inboxReadMessageIds: string[];
+	/** Message IDs manually marked unread, including messages outside Inbox derivation. */
+	inboxUnreadMessageIds?: string[];
 	inboxSavedItemIds: string[];
 	followedSessionIds: string[];
 	mutedSessionIds: string[];
@@ -589,6 +591,7 @@ export interface DiscoverAgentsRequest {
 export type CommonspaceMutation =
 	| { action: "mark-inbox-read" }
 	| { action: "mark-inbox-item-read"; messageId: string }
+	| { action: "set-inbox-item-unread"; messageId: string; unread: boolean }
 	| { action: "set-inbox-item-saved"; messageId: string; saved: boolean }
 	| { action: "set-session-followed"; sessionId: string; followed: boolean }
 	| { action: "set-session-muted"; sessionId: string; muted: boolean }

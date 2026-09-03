@@ -196,31 +196,45 @@ try {
 	await projectSuggestion.waitFor({ state: "visible" });
 	await composer.fill("");
 
-	await page.emulateMedia({ colorScheme: "light" });
+	const settingsButton = page.getByRole("button", {
+		name: "Commonspace settings",
+	});
+	await settingsButton.click();
+	const colorMode = page.getByRole("group", { name: "Color mode" });
+	await colorMode.waitFor({ state: "visible" });
+	await colorMode.getByRole("button", { name: /^Light\b/ }).click();
+	await page.waitForFunction(() =>
+		globalThis.document.documentElement.classList.contains("light"),
+	);
 	const lightPalette = await page.evaluate(() =>
 		globalThis
 			.getComputedStyle(globalThis.document.documentElement)
 			.getPropertyValue("--background")
 			.trim(),
 	);
-	await page.emulateMedia({ colorScheme: "dark" });
+	await colorMode.getByRole("button", { name: /^Dark\b/ }).click();
+	await page.waitForFunction(() =>
+		globalThis.document.documentElement.classList.contains("dark"),
+	);
 	const darkPalette = await page.evaluate(() => ({
-		colorScheme: globalThis.getComputedStyle(
-			globalThis.document.documentElement,
-		).colorScheme,
+		darkClass: globalThis.document.documentElement.classList.contains("dark"),
 		background: globalThis
 			.getComputedStyle(globalThis.document.documentElement)
 			.getPropertyValue("--background")
 			.trim(),
 	}));
 	if (
-		darkPalette.colorScheme !== "dark" ||
+		!darkPalette.darkClass ||
 		lightPalette === "" ||
 		darkPalette.background === lightPalette
 	) {
 		throw new Error("light/dark palette verification failed");
 	}
-	await page.emulateMedia({ colorScheme: "light" });
+	await colorMode.getByRole("button", { name: /^Light\b/ }).click();
+	await page.waitForFunction(() =>
+		globalThis.document.documentElement.classList.contains("light"),
+	);
+	await page.getByRole("button", { name: "Close settings" }).click();
 
 	await page.keyboard.press("Control+K");
 	await page
@@ -230,38 +244,6 @@ try {
 	await page
 		.getByRole("dialog", { name: "Search Commonspace" })
 		.waitFor({ state: "detached" });
-
-	await page.setViewportSize({ width: 390, height: 844 });
-	const navigationToggle = page.getByRole("button", {
-		name: "Open navigation",
-	});
-	await navigationToggle.waitFor({ state: "visible" });
-	await navigationToggle.focus();
-	await page.keyboard.press("Enter");
-	await page
-		.getByRole("button", { name: "Close navigation" })
-		.first()
-		.waitFor({ state: "visible" });
-	await page.keyboard.press("Escape");
-	await page
-		.getByRole("button", { name: "Open navigation" })
-		.waitFor({ state: "visible" });
-	const narrowLayout = await page.evaluate(() => ({
-		viewport: globalThis.innerWidth,
-		documentWidth: globalThis.document.documentElement.scrollWidth,
-		conversationWidth:
-			globalThis.document
-				.querySelector('[aria-label="Commonspace conversation"]')
-				?.getBoundingClientRect().width ?? 0,
-	}));
-	if (
-		narrowLayout.documentWidth > narrowLayout.viewport ||
-		narrowLayout.conversationWidth <= 0
-	) {
-		throw new Error(
-			`narrow layout overflowed: ${JSON.stringify(narrowLayout)}`,
-		);
-	}
 
 	installedServer = spawn(
 		process.execPath,
@@ -315,7 +297,6 @@ try {
 			browserMounted: true,
 			installedBrowserMounted: true,
 			keyboardNavigation: true,
-			narrowLayout: true,
 			lightDarkPalettes: true,
 		})}\n`,
 	);

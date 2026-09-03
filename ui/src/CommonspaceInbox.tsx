@@ -8,6 +8,7 @@ import {
 import {
 	BookmarkIcon,
 	CheckCheckIcon,
+	ChevronRightIcon,
 	Clock3Icon,
 	InboxIcon,
 } from "lucide-react";
@@ -89,6 +90,14 @@ function statusClass(label: string): string {
 	return "text-muted-foreground";
 }
 
+function isAttentionItem(item: CommonspaceInboxItem): boolean {
+	return (
+		item.kind !== "agent-reply" &&
+		item.kind !== "thread-reply" &&
+		item.kind !== "completion"
+	);
+}
+
 export function CommonspaceInbox({
 	store,
 	onOpenItem,
@@ -113,6 +122,7 @@ export function CommonspaceInbox({
 		() => (state === undefined ? [] : deriveCommonspaceInboxItems(state)),
 		[state],
 	);
+	const attentionItems = useMemo(() => items.filter(isAttentionItem), [items]);
 	const sessions = useMemo(
 		() =>
 			state === undefined
@@ -132,10 +142,10 @@ export function CommonspaceInbox({
 	).length;
 	const visibleItems =
 		filter === "unread"
-			? items.filter((item) => item.unread)
+			? attentionItems.filter((item) => item.unread)
 			: filter === "saved"
-				? items.filter((item) => item.saved)
-				: items;
+				? attentionItems.filter((item) => item.saved)
+				: attentionItems;
 	const visibleSessions =
 		sessionFilter === "all"
 			? sessions
@@ -177,25 +187,10 @@ export function CommonspaceInbox({
 				title="Inbox"
 				subtitle="Agent replies, requests, and native session outcomes"
 				mark={<InboxIcon className="size-[17px]" />}
-				actions={
-					view === "attention" ? (
-						<button
-							type="button"
-							className="inline-flex min-h-11 items-center gap-2 rounded-sm border bg-background px-4 text-[13px] font-semibold hover:bg-muted disabled:text-muted-foreground"
-							disabled={unreadCount === 0 || markingRead}
-							onClick={() => {
-								void markAllRead().catch(() => undefined);
-							}}
-						>
-							<CheckCheckIcon className="size-4" aria-hidden="true" />
-							{markingRead ? "Marking read…" : "Mark all read"}
-						</button>
-					) : undefined
-				}
 			/>
 
 			<section
-				className="mx-auto flex min-h-[52px] w-full max-w-[1020px] items-center gap-4 border-b px-10 font-mono text-xs text-muted-foreground max-[640px]:gap-2 max-[640px]:px-4"
+				className="mx-auto flex min-h-[52px] w-full max-w-[1020px] items-center gap-4 border-b px-9 font-mono text-xs text-muted-foreground max-[780px]:gap-2 max-[780px]:px-5 max-[480px]:gap-2.5 max-[480px]:px-3.5"
 				aria-label="Inbox summary"
 			>
 				<span>
@@ -205,23 +200,38 @@ export function CommonspaceInbox({
 					/>
 					{String(unreadCount)} unread
 				</span>
-				<span className="border-l pl-4 max-[640px]:pl-2">
+				<span className="border-l pl-4 max-[780px]:pl-2">
 					<i
 						className="mr-1.5 inline-block size-1.5 rounded-full bg-[var(--status-warning)]"
 						aria-hidden="true"
 					/>
 					{String(attentionCount)} need action
 				</span>
-				<span className="border-l pl-4 max-[640px]:pl-2">
+				<span className="border-l pl-4 max-[780px]:pl-2">
 					<i
 						className="mr-1.5 inline-block size-1.5 rounded-full bg-[var(--status-success)]"
 						aria-hidden="true"
 					/>
 					{String(runningCount)} running
 				</span>
+				{view === "attention" && (
+					<button
+						type="button"
+						className="ml-auto inline-flex min-h-9 shrink-0 items-center gap-2 rounded-sm border bg-background px-3 text-xs font-semibold hover:bg-muted disabled:text-muted-foreground max-[480px]:size-11 max-[480px]:justify-center max-[480px]:px-0"
+						disabled={unreadCount === 0 || markingRead}
+						onClick={() => {
+							void markAllRead().catch(() => undefined);
+						}}
+					>
+						<CheckCheckIcon className="size-4" aria-hidden="true" />
+						<span className="max-[480px]:sr-only">
+							{markingRead ? "Marking read…" : "Mark all read"}
+						</span>
+					</button>
+				)}
 			</section>
 
-			<div className="mx-auto flex min-h-[54px] w-full max-w-[1020px] items-center justify-between gap-3 border-b px-9 max-[640px]:overflow-x-auto max-[640px]:px-3">
+			<div className="mx-auto flex min-h-[54px] w-full max-w-[1020px] items-center justify-between gap-3 border-b px-9 max-[780px]:overflow-x-auto max-[780px]:px-5 max-[480px]:px-3">
 				<fieldset
 					aria-label="Inbox view"
 					className="m-0 flex min-w-0 items-center gap-0.5 border-0 p-0"
@@ -237,7 +247,7 @@ export function CommonspaceInbox({
 						<InboxIcon className="size-4" aria-hidden="true" />
 						Attention{" "}
 						<span className="grid size-5 place-items-center rounded-full border bg-background font-mono">
-							{String(items.length)}
+							{String(attentionItems.length)}
 						</span>
 					</button>
 					<button
@@ -326,16 +336,16 @@ export function CommonspaceInbox({
 							</EmptyHeader>
 						</Empty>
 					) : (
-						<ol className="mx-auto w-full max-w-[1020px] px-7 pb-10">
+						<ol className="mx-auto w-full max-w-[1020px] px-7 pb-10 max-[780px]:px-3">
 							{visibleItems.map((item) => {
 								const label = kindLabel(item);
 								return (
 									<li
 										key={item.id}
-										className="group relative grid min-h-[88px] grid-cols-[minmax(0,1fr)_44px] items-center border-b [contain-intrinsic-size:88px] [content-visibility:auto]"
+										className="group relative grid min-h-[88px] grid-cols-[minmax(0,1fr)_44px] items-center border-b border-border/70 bg-background transition-colors [contain-intrinsic-size:88px] [content-visibility:auto] hover:bg-surface focus-within:bg-surface"
 									>
 										<button
-											className="relative grid min-h-[88px] min-w-0 grid-cols-[40px_minmax(0,1fr)] items-center gap-[13px] rounded-sm px-2.5 py-3 text-left hover:bg-muted"
+											className="relative grid min-h-[88px] min-w-0 grid-cols-[40px_minmax(0,1fr)_18px] items-center gap-[13px] rounded-sm border-0 bg-transparent px-2.5 py-3 text-left hover:bg-transparent focus-visible:outline-0 focus-visible:ring-2 focus-visible:ring-ring/50 max-[480px]:grid-cols-[36px_minmax(0,1fr)] max-[480px]:gap-2.5 max-[480px]:px-2"
 											type="button"
 											aria-label={`Open ${label.toLowerCase()} from ${item.actorName} in ${item.conversationName}${item.unread ? ", unread" : ""}`}
 											onClick={() => {
@@ -348,8 +358,20 @@ export function CommonspaceInbox({
 													aria-hidden="true"
 												/>
 											)}
-											<span className="grid size-10 place-items-center rounded-sm border bg-background font-mono text-xs font-semibold">
+											<span className="relative grid size-10 place-items-center rounded-md border bg-background font-mono text-xs font-semibold max-[480px]:size-9">
 												{item.actorName.slice(0, 1).toLocaleUpperCase()}
+												<span
+													className={cn(
+														"absolute right-[-2px] bottom-[-2px] size-2 rounded-full border-2 border-background bg-muted-foreground",
+														label === "Mention" && "bg-primary",
+														(label === "Needs input" ||
+															label === "Permission" ||
+															label === "Timed out") &&
+															"bg-[var(--status-warning)]",
+														label === "Failed" && "bg-destructive",
+													)}
+													aria-hidden="true"
+												/>
 											</span>
 											<span className="min-w-0">
 												<span className="flex min-w-0 items-center gap-[7px]">
@@ -372,7 +394,7 @@ export function CommonspaceInbox({
 												<span className="mt-1 flex min-w-0 items-center gap-2 text-xs">
 													<span
 														className={cn(
-															"font-mono font-semibold",
+															"inline-flex min-h-5 items-center gap-1.5 font-mono text-xs font-semibold",
 															statusClass(label),
 														)}
 													>
@@ -383,10 +405,14 @@ export function CommonspaceInbox({
 													</span>
 												</span>
 											</span>
+											<ChevronRightIcon
+												className="size-[17px] text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 max-[480px]:hidden"
+												aria-hidden="true"
+											/>
 										</button>
 										<button
 											type="button"
-											className="grid size-11 place-items-center rounded-sm border-0 bg-transparent text-muted-foreground opacity-0 hover:bg-muted hover:text-foreground group-hover:opacity-100 focus:opacity-100 aria-pressed:bg-[color-mix(in_oklch,var(--primary)_9%,var(--background))] aria-pressed:text-primary"
+											className="grid size-11 place-items-center rounded-sm border-0 bg-transparent text-muted-foreground opacity-0 hover:bg-muted hover:text-foreground group-hover:opacity-100 focus:opacity-100 max-[480px]:opacity-100 aria-pressed:bg-[color-mix(in_oklch,var(--primary)_9%,var(--background))] aria-pressed:text-primary"
 											aria-label={
 												item.saved ? "Remove from saved" : "Save for later"
 											}
@@ -431,18 +457,28 @@ export function CommonspaceInbox({
 							return (
 								<li
 									key={session.id}
-									className="group grid min-h-[88px] grid-cols-[minmax(0,1fr)_auto] items-center border-b [contain-intrinsic-size:88px] [content-visibility:auto]"
+									className="group relative grid min-h-[88px] grid-cols-[minmax(0,1fr)_auto] items-center border-b border-border/70 bg-background transition-colors [contain-intrinsic-size:88px] [content-visibility:auto] hover:bg-surface focus-within:bg-surface"
 								>
 									<button
-										className="grid min-h-[88px] min-w-0 grid-cols-[40px_minmax(0,1fr)] items-center gap-[13px] rounded-sm px-2.5 py-3 text-left hover:bg-muted"
+										className="grid min-h-[88px] min-w-0 grid-cols-[40px_minmax(0,1fr)_18px] items-center gap-[13px] rounded-sm border-0 bg-transparent px-2.5 py-3 text-left hover:bg-transparent focus-visible:outline-0 focus-visible:ring-2 focus-visible:ring-ring/50 max-[480px]:grid-cols-[36px_minmax(0,1fr)] max-[480px]:gap-2.5 max-[480px]:px-2"
 										type="button"
 										aria-label={`Open ${label.toLowerCase()} session for ${session.agentName} in ${session.conversationName}`}
 										onClick={() => {
 											openSession(session);
 										}}
 									>
-										<span className="grid size-10 place-items-center rounded-sm border bg-background font-mono text-xs font-semibold">
+										<span className="relative grid size-10 place-items-center rounded-md border bg-background font-mono text-xs font-semibold max-[480px]:size-9">
 											{session.agentName.slice(0, 1).toLocaleUpperCase()}
+											<span
+												className={cn(
+													"absolute right-[-2px] bottom-[-2px] size-2 rounded-full border-2 border-background bg-muted-foreground",
+													session.status === "running" &&
+														"bg-[var(--status-success)]",
+													session.status === "needs-attention" &&
+														"bg-[var(--status-warning)]",
+												)}
+												aria-hidden="true"
+											/>
 										</span>
 										<span className="min-w-0">
 											<span className="flex min-w-0 items-center gap-[7px]">
@@ -473,8 +509,12 @@ export function CommonspaceInbox({
 												{label}
 											</span>
 										</span>
+										<ChevronRightIcon
+											className="size-[17px] text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 max-[480px]:hidden"
+											aria-hidden="true"
+										/>
 									</button>
-									<div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100">
+									<div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 max-[780px]:opacity-100">
 										<button
 											type="button"
 											className="min-h-11 rounded-sm border-0 bg-transparent px-2.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"

@@ -12,6 +12,7 @@ Commonspace workspace archives are plain JSON. They are local, self-contained, a
   "workspace": {
     "inboxReadAt": null,
     "inboxReadMessageIds": [],
+    "inboxUnreadMessageIds": [],
     "inboxSavedItemIds": [],
     "followedSessionIds": [],
     "mutedSessionIds": [],
