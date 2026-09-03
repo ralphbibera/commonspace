@@ -13,6 +13,7 @@ import {
 } from "@commonspace/shared";
 import {
 	ArrowRightIcon,
+	CheckIcon,
 	ChevronDownIcon,
 	InboxIcon,
 	MessagesSquareIcon,
@@ -195,6 +196,106 @@ function SettingsSectionHeading({
 		</div>
 	);
 }
+
+function SettingsSwitch({
+	checked,
+	disabled = false,
+	label,
+	onCheckedChange,
+}: {
+	checked: boolean;
+	disabled?: boolean;
+	label: string;
+	onCheckedChange: (checked: boolean) => void;
+}) {
+	return (
+		<button
+			type="button"
+			role="switch"
+			aria-checked={checked}
+			aria-label={label}
+			disabled={disabled}
+			className={cn(
+				"relative !h-7 !min-h-7 !w-12 shrink-0 !rounded-full !border !p-0 transition-colors focus-visible:!outline-2 focus-visible:!outline-offset-2 focus-visible:!outline-ring disabled:cursor-not-allowed disabled:opacity-45",
+				checked ? "!border-primary !bg-primary" : "!border-border !bg-muted",
+			)}
+			onClick={() => {
+				onCheckedChange(!checked);
+			}}
+		>
+			<span
+				className={cn(
+					"pointer-events-none block size-5 translate-x-[3px] rounded-full bg-background shadow-sm transition-transform",
+					checked && "translate-x-[23px]",
+				)}
+				aria-hidden="true"
+			/>
+		</button>
+	);
+}
+
+function SettingsCheckbox({
+	checked,
+	label,
+	onCheckedChange,
+}: {
+	checked: boolean;
+	label: string;
+	onCheckedChange: (checked: boolean) => void;
+}) {
+	return (
+		<label className="!grid size-11 shrink-0 cursor-pointer place-items-center">
+			<input
+				type="checkbox"
+				className="peer sr-only"
+				checked={checked}
+				aria-label={label}
+				onChange={(event) => {
+					onCheckedChange(event.target.checked);
+				}}
+			/>
+			<span
+				className="grid size-5 place-items-center rounded-sm border border-border bg-background text-transparent transition-colors peer-checked:border-primary peer-checked:bg-primary peer-checked:text-primary-foreground peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-ring"
+				aria-hidden="true"
+			>
+				<CheckIcon className="size-3.5" />
+			</span>
+		</label>
+	);
+}
+
+const NOTIFICATION_OPTIONS = [
+	[
+		"replies",
+		"Replies and input requests",
+		"Agent replies and requests that need your input.",
+		"Reply notifications",
+	],
+	[
+		"mentions",
+		"Mentions",
+		"Messages where you are explicitly mentioned.",
+		"Mention notifications",
+	],
+	[
+		"permissions",
+		"Permission requests",
+		"Approval requests before an agent continues.",
+		"Permission notifications",
+	],
+	[
+		"failures",
+		"Failures and timeouts",
+		"Failed runs, timeouts, and disconnected sessions.",
+		"Failure notifications",
+	],
+	[
+		"sound",
+		"Notification sound",
+		"Play a sound when a native alert is delivered.",
+		"Notification sound",
+	],
+] as const;
 
 function SidebarDialog({
 	title,
@@ -379,6 +480,7 @@ export function CommonspaceSidebar({
 	const [clearRoutingApiKey, setClearRoutingApiKey] = useState(false);
 	const [searchOpen, setSearchOpen] = useState(false);
 	const [diagnostics, setDiagnostics] = useState<CommonspaceDiagnostics | null>(
+	const [savingInference, setSavingInference] = useState(false);
 		null,
 	);
 	const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
@@ -403,6 +505,7 @@ export function CommonspaceSidebar({
 	const [savingNotifications, setSavingNotifications] = useState(false);
 
 	useEffect(() => {
+	const [notificationsSaved, setNotificationsSaved] = useState(false);
 		void store.refresh();
 	}, [store]);
 	useEffect(() => {
@@ -725,22 +828,37 @@ export function CommonspaceSidebar({
 
 	const saveDefaults = async (event: FormEvent) => {
 		event.preventDefault();
-		const request = {
-			routing: routingUpdateRequest(),
-			defaults: {
+		const routingUpdate =
+			routingProvider === "harness"
+				? {
+						provider: "harness" as const,
+						harnessAgentId: routingHarnessAgentId,
+		if (savingInference) return;
+					}
+				: {
+						provider: "openai-compatible" as const,
+						model: routingModel,
+						baseUrl: routingBaseUrl,
+						...(clearRoutingApiKey
+							? { apiKey: null }
+							: routingApiKey.trim() === ""
+								? {}
+								: { apiKey: routingApiKey }),
+					};
+		setSavingInference(true);
+		try {
+			await store.updateRoutingConfiguration(routingUpdate);
+			await store.mutate({
+				action: "set-defaults",
 				model: defaultModel || null,
 				reasoning: defaultReasoning,
 				maxAgentsPerTurn: defaultMaxAgents,
 				memoryThreads: defaultMemoryThreads,
-			},
-		};
-		if (typeof store.updateWorkspaceSettings === "function") {
-			await store.updateWorkspaceSettings(request);
-		} else {
-			await store.updateRoutingConfiguration(request.routing);
-			await store.mutate({ action: "set-defaults", ...request.defaults });
+			});
+			setSettingsOpen(false);
+		} finally {
+			setSavingInference(false);
 		}
-		setSettingsOpen(false);
 	};
 
 	const saveNotifications = async () => {
@@ -756,6 +874,7 @@ export function CommonspaceSidebar({
 		}
 	};
 
+			setNotificationsSaved(true);
 	const runDiagnostics = async () => {
 		if (diagnosticsLoading) return;
 		setDiagnosticsLoading(true);
@@ -1103,7 +1222,7 @@ export function CommonspaceSidebar({
 										<legend className="sr-only">Routing engine</legend>
 										<label
 											className={cn(
-												"relative grid min-h-[94px] cursor-pointer grid-cols-[20px_minmax(0,1fr)] items-start gap-3 rounded-md border bg-background p-4 text-left has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-offset-2 has-[input:focus-visible]:outline-ring",
+												"relative grid min-h-[104px] cursor-pointer grid-cols-[20px_minmax(0,1fr)] items-start gap-3 rounded-md border bg-card p-4 text-left transition-colors hover:bg-muted/50 has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-offset-2 has-[input:focus-visible]:outline-ring",
 												routingProvider === "openai-compatible" &&
 													"border-2 border-primary bg-[color-mix(in_oklch,var(--primary)_3%,var(--background))]",
 											)}
@@ -1143,7 +1262,7 @@ export function CommonspaceSidebar({
 										</label>
 										<label
 											className={cn(
-												"relative grid min-h-[94px] cursor-pointer grid-cols-[20px_minmax(0,1fr)] items-start gap-3 rounded-md border bg-background p-4 text-left has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-offset-2 has-[input:focus-visible]:outline-ring",
+												"relative grid min-h-[104px] cursor-pointer grid-cols-[20px_minmax(0,1fr)] items-start gap-3 rounded-md border bg-card p-4 text-left transition-colors hover:bg-muted/50 has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-offset-2 has-[input:focus-visible]:outline-ring",
 												routingProvider === "harness" &&
 													"border-2 border-primary bg-[color-mix(in_oklch,var(--primary)_3%,var(--background))]",
 											)}
@@ -1184,13 +1303,13 @@ export function CommonspaceSidebar({
 										</label>
 									</fieldset>
 									{routingProvider === "harness" && (
-										<fieldset className="mt-3 grid gap-2 rounded-md border bg-muted p-3">
+										<fieldset className="mt-3 grid gap-2 rounded-md border bg-muted/50 p-3">
 											<legend className="sr-only">Routing agent</legend>
 											{agents.map((agent) => (
 												<label
 													key={agent.id}
 													className={cn(
-														"grid min-h-11 cursor-pointer grid-cols-[36px_minmax(0,1fr)] items-center gap-3 rounded-sm border bg-background px-4 text-left has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-offset-2 has-[input:focus-visible]:outline-ring",
+														"grid min-h-[58px] cursor-pointer grid-cols-[36px_minmax(0,1fr)_auto] items-center gap-3 rounded-sm border bg-background px-4 text-left transition-colors hover:bg-muted/50 has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-offset-2 has-[input:focus-visible]:outline-ring",
 														routingHarnessAgentId === agent.id &&
 															"border-primary",
 													)}
@@ -1221,105 +1340,134 @@ export function CommonspaceSidebar({
 									)}
 								</section>
 
+													{routingHarnessAgentId === agent.id && (
+														<span className="text-xs font-semibold text-primary">
+															Routing agent
+														</span>
+													)}
 								{routingProvider === "openai-compatible" && (
 									<section className="mt-8 border-t pt-8">
 										<SettingsSectionHeading
 											title="Connection"
 											description="Credentials stay on this device and are never included in public workspace configuration."
 										/>
-										<div className="grid grid-cols-2 gap-3 max-[640px]:grid-cols-1">
-											<label>
-												<span className="text-xs font-semibold text-muted-foreground">
-													Model ID
-												</span>
-												<input
-													aria-label="Routing model"
-													placeholder="gpt-4.1-mini"
-													value={routingModel}
-													onChange={(event) => {
-														setRoutingModel(event.target.value);
-													}}
-												/>
-											</label>
-											<label>
-												<span className="text-xs font-semibold text-muted-foreground">
-													API base URL
-												</span>
-												<input
-													aria-label="Routing API base URL"
-													type="url"
-													value={routingBaseUrl}
-													onChange={(event) => {
-														setRoutingBaseUrl(event.target.value);
-													}}
-												/>
-											</label>
-										</div>
-										<label className="mt-3">
-											<span className="text-xs font-semibold text-muted-foreground">
-												API key
-											</span>
-											<input
-												aria-label="Routing API key"
-												type="password"
-												autoComplete="new-password"
-												placeholder={
-													bootstrap?.routing?.apiKeyConfigured === true
-														? "Saved — leave blank to keep"
-														: "Optional for local compatible APIs"
-												}
-												value={routingApiKey}
-												onChange={(event) => {
-													setRoutingApiKey(event.target.value);
-													setClearRoutingApiKey(false);
-												}}
-											/>
-										</label>
-										{bootstrap?.routing?.apiKeyConfigured === true && (
-											<label className="mt-3 flex min-h-11 grid-cols-none flex-row items-center gap-2 text-xs text-muted-foreground">
-												<input
-													aria-label="Clear routing API key"
-													type="checkbox"
-													checked={clearRoutingApiKey}
-													onChange={(event) => {
-														setClearRoutingApiKey(event.target.checked);
-													}}
-												/>{" "}
-												Clear saved API key
-											</label>
-										)}
-										<div className="mt-4 flex min-h-[72px] items-center justify-between gap-4 rounded-md border bg-muted p-4">
-											<div>
-												<strong className="block text-[13px]">
-													Used by Commonspace
-												</strong>
-												<p className="mt-1 text-xs text-muted-foreground">
-													Message routing · context compaction · workspace
-													utilities
-												</p>
+										<div className="overflow-hidden rounded-md border bg-card">
+											<div className="grid grid-cols-2 gap-3 p-4 max-[640px]:grid-cols-1">
+												<label>
+													<span className="text-xs font-semibold text-muted-foreground">
+														Model ID
+													</span>
+													<input
+														aria-label="Routing model"
+														placeholder="gpt-4.1-mini"
+														value={routingModel}
+														onChange={(event) => {
+															setRoutingModel(event.target.value);
+														}}
+													/>
+												</label>
+												<label>
+													<span className="text-xs font-semibold text-muted-foreground">
+														API base URL
+													</span>
+													<input
+														aria-label="Routing API base URL"
+														type="url"
+														value={routingBaseUrl}
+														onChange={(event) => {
+															setRoutingBaseUrl(event.target.value);
+														}}
+													/>
+												</label>
 											</div>
-											<button
-												type="button"
-												disabled={inferenceChecking}
-												onClick={() => {
-													void checkInferenceConfiguration();
-												}}
-											>
-												{inferenceChecking
-													? "Checking…"
-													: "Check configuration"}
-											</button>
+											<label className="border-t p-4">
+												<span className="text-xs font-semibold text-muted-foreground">
+													API key
+												</span>
+												<input
+													aria-label="Routing API key"
+													type="password"
+													autoComplete="new-password"
+													placeholder={
+														bootstrap?.routing?.apiKeyConfigured === true
+															? "Saved — leave blank to keep"
+															: "Optional for local compatible APIs"
+													}
+													value={routingApiKey}
+													onChange={(event) => {
+														setRoutingApiKey(event.target.value);
+														setClearRoutingApiKey(false);
+													}}
+												/>
+											</label>
+											{bootstrap?.routing?.apiKeyConfigured === true && (
+												<div className="flex min-h-[62px] items-center justify-between gap-4 border-t px-4 py-3">
+													<div>
+														<strong className="block text-[13px]">
+															Clear saved API key
+														</strong>
+														<p className="mt-1 text-xs text-muted-foreground">
+															Removes the stored credential when you save.
+														</p>
+													</div>
+													<SettingsCheckbox
+														label="Clear routing API key"
+														checked={clearRoutingApiKey}
+														onCheckedChange={setClearRoutingApiKey}
+													/>
+												</div>
+											)}
+											<div className="flex min-h-[76px] items-center justify-between gap-4 border-t bg-muted/30 p-4 max-[640px]:grid">
+												<div>
+													<strong className="block text-[13px]">
+														Used by Commonspace
+													</strong>
+													<p className="mt-1 text-xs text-muted-foreground">
+														Message routing · context compaction · workspace
+														utilities
+													</p>
+												</div>
+												<button
+													type="button"
+													disabled={inferenceChecking}
+													onClick={() => {
+														void checkInferenceConfiguration();
+													}}
+												>
+													{inferenceChecking
+														? "Checking…"
+														: "Check configuration"}
+												</button>
+											</div>
+											{inferenceCheckStatus !== null && (
+												<p
+													className={cn(
+														"flex items-center gap-2 border-t px-4 py-3 text-xs",
+														inferenceChecking
+															? "text-muted-foreground"
+															: inferenceCheckStatus.startsWith(
+																		"Configuration verified",
+																	)
+																? "text-[var(--status-success)]"
+																: "text-destructive",
+													)}
+													role="status"
+													aria-live="polite"
+													aria-label="Inference configuration status"
+												>
+													<span aria-hidden="true">
+														{inferenceChecking
+															? "…"
+															: inferenceCheckStatus.startsWith(
+																		"Configuration verified",
+																	)
+																? "✓"
+																: "!"}
+													</span>
+													{inferenceCheckStatus}
+												</p>
+											)}
 										</div>
-										{inferenceCheckStatus !== null && (
-											<p
-												className={cn("mt-3 inline-flex items-center gap-2 text-xs", inferenceCheckOk === true ? "text-[var(--status-success)]" : inferenceCheckOk === false ? "text-destructive" : "text-muted-foreground")}
-												role="status"
-												aria-label="Inference configuration status"
-											>
-												<span aria-hidden="true">{inferenceCheckOk === true ? "✓" : inferenceCheckOk === false ? "!" : "…"}</span>
-												{inferenceCheckStatus}
-											</p>
-										)}
 									</section>
 								)}
 
@@ -1329,7 +1477,7 @@ export function CommonspaceSidebar({
 										title="Agent run defaults"
 										description="Defaults apply when a channel or agent profile does not override them."
 									/>
-									<div className="grid grid-cols-2 gap-3 max-[640px]:grid-cols-1">
+									<div className="grid grid-cols-2 gap-4 rounded-md border bg-card p-4 max-[640px]:grid-cols-1">
 										<label>
 											<span className="text-xs font-semibold text-muted-foreground">
 												Model override
@@ -1408,201 +1556,227 @@ export function CommonspaceSidebar({
 										</label>
 									</div>
 								</fieldset>
-								<div className="flex justify-end border-t pt-5">
+								<div className="mt-4 flex items-center justify-between gap-6 rounded-md border bg-muted/30 p-4 max-[640px]:grid">
+									<p className="text-xs leading-5 text-muted-foreground">
+										Saves the routing source, connection, and run defaults
+										together.
+									</p>
 									<button
 										type="submit"
-										className="border-primary bg-primary font-semibold text-primary-foreground hover:bg-[color-mix(in_srgb,var(--primary)_88%,black)]"
+										className="shrink-0 border-primary bg-primary font-semibold text-primary-foreground hover:bg-[color-mix(in_srgb,var(--primary)_88%,black)] disabled:cursor-wait disabled:opacity-60"
+										disabled={savingInference}
 									>
-										Save inference settings
+										{savingInference
+											? "Saving inference…"
+											: "Save inference settings"}
 									</button>
 								</div>
-								<fieldset className="mt-8 grid gap-3 border-t pt-8">
-									<legend>OS notifications</legend>
-									<p>
-										Native alerts are optional. Turning them off never removes
-										items from the durable Inbox.
-									</p>
-									<label>
-										<input
-											aria-label="Enable OS notifications"
-											type="checkbox"
-											checked={notificationSettings.enabled}
-											onChange={(event) => {
-												setNotificationSettings((current) => ({
-													...current,
-													enabled: event.target.checked,
-												}));
+								<fieldset className="mt-8 border-t pt-8">
+									<legend className="sr-only">OS notifications</legend>
+									<SettingsSectionHeading
+										title="OS notifications"
+										description="Choose which durable Inbox events also appear as native alerts on this Mac."
+									/>
+									<div className="overflow-hidden rounded-md border bg-card">
+										<div className="flex min-h-[80px] items-center justify-between gap-6 bg-muted/20 px-4 py-3">
+											<div>
+												<strong className="block text-[13px]">
+													Allow native notifications
+												</strong>
+												<p className="mt-1 text-xs leading-5 text-muted-foreground">
+													Show selected Inbox events as macOS alerts. Inbox
+													delivery is always preserved.
+												</p>
+											</div>
+											<SettingsSwitch
+												label="Allow native notifications"
+												checked={notificationSettings.enabled}
+												onCheckedChange={(enabled) => {
+													setNotificationsSaved(false);
+													setNotificationSettings((current) => ({
+														...current,
+														enabled,
+													}));
+												}}
+											/>
+										</div>
+										{NOTIFICATION_OPTIONS.map(
+											([key, label, description, ariaLabel]) => (
+												<div
+													key={key}
+													className={cn(
+														"flex min-h-[68px] items-center justify-between gap-6 border-t px-4 py-3 transition-colors",
+														!notificationSettings.enabled && "bg-muted/20",
+													)}
+												>
+													<div
+														className={cn(
+															!notificationSettings.enabled && "opacity-55",
+														)}
+													>
+														<strong className="block text-[13px]">
+															{label}
+														</strong>
+														<p className="mt-1 text-xs leading-5 text-muted-foreground">
+															{description}
+														</p>
+													</div>
+													<SettingsSwitch
+														label={ariaLabel}
+														disabled={!notificationSettings.enabled}
+														checked={notificationSettings[key]}
+														onCheckedChange={(checked) => {
+															setNotificationsSaved(false);
+															setNotificationSettings((current) => ({
+																...current,
+																[key]: checked,
+															}));
+														}}
+													/>
+												</div>
+											),
+										)}
+									</div>
+									<div className="mt-4 flex min-h-11 items-center justify-between gap-4">
+										<p
+											className="text-xs text-[var(--status-success)]"
+											role="status"
+											aria-live="polite"
+										>
+											{notificationsSaved ? "Notification settings saved." : ""}
+										</p>
+										<button
+											type="button"
+											aria-label="Save notification settings"
+											disabled={savingNotifications}
+											className="border-primary bg-primary font-semibold text-primary-foreground hover:bg-[color-mix(in_srgb,var(--primary)_88%,black)] disabled:cursor-wait disabled:opacity-60"
+											onClick={() => {
+												void saveNotifications();
 											}}
-										/>{" "}
-										Enable notifications
-									</label>
-									<label>
-										<input
-											aria-label="Reply notifications"
-											type="checkbox"
-											disabled={!notificationSettings.enabled}
-											checked={notificationSettings.replies}
-											onChange={(event) => {
-												setNotificationSettings((current) => ({
-													...current,
-													replies: event.target.checked,
-												}));
-											}}
-										/>{" "}
-										Replies and input requests
-									</label>
-									<label>
-										<input
-											aria-label="Mention notifications"
-											type="checkbox"
-											disabled={!notificationSettings.enabled}
-											checked={notificationSettings.mentions}
-											onChange={(event) => {
-												setNotificationSettings((current) => ({
-													...current,
-													mentions: event.target.checked,
-												}));
-											}}
-										/>{" "}
-										Mentions
-									</label>
-									<label>
-										<input
-											aria-label="Permission notifications"
-											type="checkbox"
-											disabled={!notificationSettings.enabled}
-											checked={notificationSettings.permissions}
-											onChange={(event) => {
-												setNotificationSettings((current) => ({
-													...current,
-													permissions: event.target.checked,
-												}));
-											}}
-										/>{" "}
-										Permission requests
-									</label>
-									<label>
-										<input
-											aria-label="Failure notifications"
-											type="checkbox"
-											disabled={!notificationSettings.enabled}
-											checked={notificationSettings.failures}
-											onChange={(event) => {
-												setNotificationSettings((current) => ({
-													...current,
-													failures: event.target.checked,
-												}));
-											}}
-										/>{" "}
-										Failures and timeouts
-									</label>
-									<label>
-										<input
-											aria-label="Notification sound"
-											type="checkbox"
-											disabled={!notificationSettings.enabled}
-											checked={notificationSettings.sound}
-											onChange={(event) => {
-												setNotificationSettings((current) => ({
-													...current,
-													sound: event.target.checked,
-												}));
-											}}
-										/>{" "}
-										Sound
-									</label>
-									<button
-										type="button"
-										aria-label="Save notification settings"
-										disabled={savingNotifications}
-										onClick={() => {
-											void saveNotifications();
-										}}
-									>
-										{savingNotifications ? "Saving…" : "Save notifications"}
-									</button>
+										>
+											{savingNotifications ? "Saving…" : "Save notifications"}
+										</button>
+									</div>
 								</fieldset>
 								<section
-									className="mt-8 rounded-md border bg-muted p-4"
+									className="mt-8 border-t pt-8"
 									aria-label="Runtime diagnostics"
 								>
-									<header>
-										<strong>Runtime diagnostics</strong>
-										<button
-											type="button"
-											aria-label="Run runtime diagnostics"
-											disabled={diagnosticsLoading}
-											onClick={() => {
-												void runDiagnostics();
-											}}
-										>
-											{diagnosticsLoading ? "Checking…" : "Run diagnostics"}
-										</button>
-									</header>
-									{diagnostics === null ? (
-										<p>
-											Check installed harnesses, storage readiness, and
-											inference data flow.
-										</p>
-									) : (
-										<>
-											<p>
-												<strong>
-													{diagnostics.inference.location === "remote"
-														? "Remote inference"
-														: "Local inference"}
-												</strong>{" "}
-												· {diagnostics.inference.provider} ·{" "}
-												{diagnostics.inference.configured
-													? "configured"
-													: "needs configuration"}
-											</p>
-											<p>
-												Inference sends:{" "}
-												{diagnostics.inference.sends.join(" · ")}
-											</p>
-											<ul>
-												{diagnostics.harnesses.map((harness) => (
-													<li key={harness.adapter}>
-														<strong>{runtimeLabel(harness.adapter)}</strong> ·{" "}
-														{harness.installed ? "installed" : "not installed"}{" "}
-														· {harness.rostered ? "added" : "not added"} ·{" "}
-														{harness.runReadiness}
-														<small>{harness.recovery}</small>
-													</li>
-												))}
-											</ul>
-										</>
-									)}
+									<SettingsSectionHeading
+										title="Runtime diagnostics"
+										description="Check the local services and connections Commonspace needs to run agents."
+									/>
+									<div className="overflow-hidden rounded-md border bg-card">
+										<div className="flex items-center justify-between gap-6 px-4 py-4 max-[640px]:grid">
+											<div>
+												<strong className="text-[13px]">
+													System readiness
+												</strong>
+												<p className="mt-1 text-xs leading-5 text-muted-foreground">
+													Inspect installed harnesses, storage, and inference
+													data flow.
+												</p>
+											</div>
+											<button
+												type="button"
+												className="shrink-0"
+												aria-label="Run runtime diagnostics"
+												disabled={diagnosticsLoading}
+												onClick={() => {
+													void runDiagnostics();
+												}}
+											>
+												{diagnosticsLoading ? "Checking…" : "Run diagnostics"}
+											</button>
+										</div>
+										{diagnostics !== null && (
+											<div className="grid gap-4 border-t px-4 py-4 text-xs">
+												<div>
+													<strong className="text-[13px]">
+														{diagnostics.inference.location === "remote"
+															? "Remote inference"
+															: "Local inference"}
+													</strong>
+													<p className="mt-1 text-muted-foreground">
+														{diagnostics.inference.provider} ·{" "}
+														{diagnostics.inference.configured
+															? "configured"
+															: "needs configuration"}
+													</p>
+													<p className="mt-1 text-muted-foreground">
+														Sends {diagnostics.inference.sends.join(" · ")}
+													</p>
+												</div>
+												<ul className="grid gap-2">
+													{diagnostics.harnesses.map((harness) => (
+														<li
+															key={harness.adapter}
+															className="rounded-sm border bg-muted/40 px-3 py-2"
+														>
+															<strong>{runtimeLabel(harness.adapter)}</strong>
+															<span className="ml-2 text-muted-foreground">
+																{harness.installed
+																	? "Installed"
+																	: "Not installed"}{" "}
+																· {harness.rostered ? "Added" : "Not added"} ·{" "}
+																{harness.runReadiness}
+															</span>
+															<small className="mt-1 block text-muted-foreground">
+																{harness.recovery}
+															</small>
+														</li>
+													))}
+												</ul>
+											</div>
+										)}
+									</div>
 								</section>
 								<section
-									className="mt-8 rounded-md border bg-muted p-4"
+									className="mt-8 border-t pt-8"
 									aria-label="Workspace data management"
 								>
-									<header>
-										<strong>Workspace data</strong>
-										<button
-											type="button"
-											aria-label="Export workspace data"
-											onClick={() => {
-												void exportWorkspace();
-											}}
-										>
-											Export
-										</button>
-									</header>
-									<label>
-										Import archive
-										<input
-											type="file"
-											accept="application/json,.json"
-											aria-label="Import workspace archive"
-											onChange={(event) => {
-												selectImportArchive(event.target.files?.[0]);
-												event.target.value = "";
-											}}
-										/>
-									</label>
+									<SettingsSectionHeading
+										title="Workspace data"
+										description="Move local Commonspace data or selectively remove conversation history."
+									/>
+									<div className="overflow-hidden rounded-md border bg-card">
+										<div className="flex items-center justify-between gap-6 px-4 py-4 max-[640px]:grid">
+											<div>
+												<strong className="text-[13px]">
+													Export workspace
+												</strong>
+												<p className="mt-1 text-xs leading-5 text-muted-foreground">
+													Download a portable JSON archive of workspace data.
+												</p>
+											</div>
+											<button
+												type="button"
+												className="shrink-0"
+												aria-label="Export workspace data"
+												onClick={() => {
+													void exportWorkspace();
+												}}
+											>
+												Export
+											</button>
+										</div>
+										<label className="border-t px-4 py-4">
+											<strong className="text-[13px]">Import archive</strong>
+											<span className="text-xs leading-5 text-muted-foreground">
+												Restore data from a Commonspace JSON export.
+											</span>
+											<input
+												className="mt-2 cursor-pointer text-xs text-muted-foreground file:mr-3 file:rounded-sm file:border-0 file:bg-muted file:px-3 file:py-2 file:text-xs file:font-semibold file:text-foreground"
+												type="file"
+												accept="application/json,.json"
+												aria-label="Import workspace archive"
+												onChange={(event) => {
+													selectImportArchive(event.target.files?.[0]);
+													event.target.value = "";
+												}}
+											/>
+										</label>
+									</div>
 									{importArchive !== null && (
 										<section aria-label="Import Project mappings">
 											<p>
@@ -1655,47 +1829,55 @@ export function CommonspaceSidebar({
 										</section>
 									)}
 									<section
-										className="mt-6 border-t pt-5"
+										className="mt-5 rounded-md border border-destructive/30 bg-destructive/[0.03] p-4"
 										aria-label="Conversation retention"
 									>
-										<strong>Remove conversation history</strong>
-										<p>
+										<strong className="text-[13px] text-destructive">
+											Remove conversation history
+										</strong>
+										<p className="mt-1 text-xs leading-5 text-muted-foreground">
 											Preview the exact impact before permanently removing one
 											Channel or Direct Message.
 										</p>
-										<select
-											aria-label="Retention conversation"
-											value={retentionConversation}
-											onChange={(event) => {
-												setRetentionConversation(event.target.value);
-												setRetentionPreview(null);
-											}}
-										>
-											<option value="">Choose a conversation</option>
-											{channels.map((channel) => (
-												<option
-													key={`channel:${channel.id}`}
-													value={`channel:${channel.id}`}
-												>
-													#{channel.name}
-												</option>
-											))}
-											{agents.map((agent) => (
-												<option key={`dm:${agent.id}`} value={`dm:${agent.id}`}>
-													DM · {agent.displayName}
-												</option>
-											))}
-										</select>
-										<button
-											type="button"
-											aria-label="Preview retention"
-											disabled={retentionConversation === ""}
-											onClick={() => {
-												void previewRetention();
-											}}
-										>
-											Preview retention
-										</button>
+										<div className="mt-4 flex items-center gap-3 max-[640px]:grid">
+											<select
+												aria-label="Retention conversation"
+												value={retentionConversation}
+												onChange={(event) => {
+													setRetentionConversation(event.target.value);
+													setRetentionPreview(null);
+												}}
+											>
+												<option value="">Choose a conversation</option>
+												{channels.map((channel) => (
+													<option
+														key={`channel:${channel.id}`}
+														value={`channel:${channel.id}`}
+													>
+														#{channel.name}
+													</option>
+												))}
+												{agents.map((agent) => (
+													<option
+														key={`dm:${agent.id}`}
+														value={`dm:${agent.id}`}
+													>
+														DM · {agent.displayName}
+													</option>
+												))}
+											</select>
+											<button
+												type="button"
+												className="shrink-0"
+												aria-label="Preview retention"
+												disabled={retentionConversation === ""}
+												onClick={() => {
+													void previewRetention();
+												}}
+											>
+												Preview impact
+											</button>
+										</div>
 										{retentionPreview !== null && (
 											<section aria-label="Retention impact">
 												<p>
