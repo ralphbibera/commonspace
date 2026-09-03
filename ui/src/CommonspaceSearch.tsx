@@ -224,7 +224,7 @@ export function CommonspaceSearchDialog({
 						autoFocus
 						type="search"
 						aria-label="Search Commonspace"
-						aria-controls={resultsId}
+						aria-controls={results.length > 0 ? resultsId : undefined}
 						aria-activedescendant={
 							activeResult === undefined
 								? undefined
@@ -311,23 +311,7 @@ export function CommonspaceSearchDialog({
 								: results.length}
 					</span>
 				</div>
-				<div
-					id={resultsId}
-					className="min-h-24 overflow-y-auto px-2 pb-2"
-					role="listbox"
-					aria-label="Commonspace search results"
-					aria-busy={pending}
-				>
-					{results.length === 0 && (
-						<span
-							className="sr-only"
-							role="option"
-							aria-disabled="true"
-							tabIndex={-1}
-						>
-							No selectable search results
-						</span>
-					)}
+				<div className="min-h-24 overflow-y-auto px-2 pb-2" aria-busy={pending}>
 					{error !== null && (
 						<div
 							className="grid min-h-24 place-items-center text-sm text-destructive"
@@ -341,57 +325,65 @@ export function CommonspaceSearchDialog({
 							No results for “{query.trim()}”.
 						</div>
 					)}
-					{results.map((result, index) => (
-						<button
-							id={`${resultsId}-${String(index)}`}
-							key={result.id}
-							type="button"
-							role="option"
-							aria-label={`Open ${kindLabel(result.kind)}: ${result.title}`}
-							aria-selected={index === boundedActiveIndex}
-							className="grid min-h-14 w-full grid-cols-[32px_minmax(0,1fr)_auto] items-center gap-2.5 rounded-sm px-2.5 py-2 text-left hover:bg-muted aria-selected:bg-muted"
-							onMouseEnter={() => {
-								setActiveIndex(index);
-							}}
-							onClick={() => {
-								onSelect(result);
-							}}
+					{results.length > 0 && (
+						<div
+							id={resultsId}
+							role="listbox"
+							aria-label="Commonspace search results"
 						>
-							<span
-								className="grid size-8 place-items-center rounded-sm border bg-background font-semibold text-muted-foreground"
-								aria-hidden="true"
-							>
-								{resultGlyph(result.kind)}
-							</span>
-							<span className="min-w-0">
-								<strong className="block truncate text-[13px]">
-									<HighlightedText
-										text={result.title}
-										field="title"
-										highlights={result.highlights}
-									/>
-								</strong>
-								<small className="block truncate text-xs text-muted-foreground">
-									<HighlightedText
-										text={result.detail}
-										field="detail"
-										highlights={result.highlights}
-									/>
-								</small>
-								<small
-									className="block truncate text-xs text-muted-foreground/80"
-									title={result.receipt}
+							{results.map((result, index) => (
+								<button
+									id={`${resultsId}-${String(index)}`}
+									key={result.id}
+									type="button"
+									role="option"
+									aria-label={`Open ${kindLabel(result.kind)}: ${result.title}`}
+									aria-selected={index === boundedActiveIndex}
+									className="grid min-h-14 w-full grid-cols-[32px_minmax(0,1fr)_auto] items-center gap-2.5 rounded-sm px-2.5 py-2 text-left hover:bg-muted aria-selected:bg-muted"
+									onMouseEnter={() => {
+										setActiveIndex(index);
+									}}
+									onClick={() => {
+										onSelect(result);
+									}}
 								>
-									{resultReceiptLabel(result)}
-								</small>
-							</span>
-							{result.detail.trim() === kindLabel(result.kind) ? null : (
-								<span className="max-w-32 truncate text-xs text-muted-foreground">
-									{kindLabel(result.kind)}
-								</span>
-							)}
-						</button>
-					))}
+									<span
+										className="grid size-8 place-items-center rounded-sm border bg-background font-semibold text-muted-foreground"
+										aria-hidden="true"
+									>
+										{resultGlyph(result.kind)}
+									</span>
+									<span className="min-w-0">
+										<strong className="block truncate text-[13px]">
+											<HighlightedText
+												text={result.title}
+												field="title"
+												highlights={result.highlights}
+											/>
+										</strong>
+										<small className="block truncate text-xs text-muted-foreground">
+											<HighlightedText
+												text={result.detail}
+												field="detail"
+												highlights={result.highlights}
+											/>
+										</small>
+										<small
+											className="block truncate text-xs text-muted-foreground/80"
+											title={result.receipt}
+										>
+											{resultReceiptLabel(result)}
+										</small>
+									</span>
+									{result.detail.trim() === kindLabel(result.kind) ? null : (
+										<span className="max-w-32 truncate text-xs text-muted-foreground">
+											{kindLabel(result.kind)}
+										</span>
+									)}
+								</button>
+							))}
+						</div>
+					)}
 				</div>
 				<footer
 					className="flex min-h-10 items-center justify-end gap-3 border-t px-3.5 py-1.5 text-xs text-muted-foreground"
