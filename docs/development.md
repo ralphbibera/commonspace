@@ -48,23 +48,23 @@ The development server runs behind a stable local supervisor. Changes under `ser
 - `ui/src/AgentTrace.tsx` — expandable provider-emitted reasoning, plan, tool, and usage activity.
 - `ui/src/main.tsx` — standalone browser mount.
 
-## Test-driven workflow
+## Development workflow
 
-1. Add a focused failing test in `tests/` or beside a package module.
-2. Confirm the failure describes the missing behavior.
-3. Implement the smallest change.
-4. Run the focused test.
+1. For backend/runtime changes, add a focused failing behavior test.
+2. For frontend changes, verify the real desktop browser flow and avoid styling-only click/assertion specs.
+3. Confirm the evidence describes the missing behavior.
+4. Implement the smallest change.
 5. Run the full gates:
 
 ```bash
 pnpm lint
 pnpm typecheck
-pnpm test
+pnpm test                  # backend/runtime behavior suite
 pnpm build
 pnpm verify:live
 ```
 
-`pnpm check` combines lint, typecheck, tests, and build. `verify:live` additionally starts the built server and exercises the application through a real browser.
+`pnpm check` combines lint, typecheck, the backend/runtime behavior suite, and build. `verify:live` additionally starts the built server and exercises the application through a real desktop browser.
 
 During iteration, use the smaller gate:
 

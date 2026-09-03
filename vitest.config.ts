@@ -13,8 +13,6 @@ export default defineConfig({
 	},
 	test: {
 		environment: "node",
-		setupFiles: ["./tests/test-setup.ts"],
-		...(process.env.CI === "true" ? { maxWorkers: 2 } : {}),
 		clearMocks: true,
 		restoreMocks: true,
 	},
