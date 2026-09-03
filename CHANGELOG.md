@@ -1,5 +1,7 @@
 # Changelog
 
+- Persist sidebar pin/recent/collapse preferences, manual unread message state, and reference-aligned collection/channel controls.
+
 All notable changes to Commonspace are recorded here.
 
 ## [Unreleased]
@@ -19,10 +21,10 @@ All notable changes to Commonspace are recorded here.
 - Vite and React application served independently from the Express API in development and production preview.
 - pnpm workspace boundaries for shared contracts, server behavior, and UI behavior.
 - Real standalone health, API, browser-mount, build, and live smoke verification.
-- Inference-only Channel routing through either an agent harness or an OpenAI-compatible model, with inspectable routing decisions.
-- Persisted, inspectable per-harness routing assignments with bounded sub-requests and scoped Project references.
+- Inference-only Channel routing through either an agent harness or an OpenAI-compatible model, with durable routing decisions.
+- Persisted per-harness routing assignments with bounded sub-requests and scoped Project references.
 - Visible Project-reference inference for unreferenced new Channel roots, with inferred union persisted on the source message and Thread.
-- Single-assignment rerouting with durable linked correction attempts, assignment-bound replies, scoped Agent/Project changes, and an inline correction UI.
+- Single-assignment rerouting with durable linked correction attempts, assignment-bound replies, and scoped Agent/Project changes.
 - Per-Channel routing memory compacted from explicit corrections through the configured inference layer and supplied to later routing decisions.
 - Immutable per-Thread Channel-context snapshots plus independently projected, editable, manually compactable, and pressure-compacted Thread context.
 - Prospective Thread Project references: replies inherit inferred scope, while `@@project` tags can set explicit context for that turn and future defaults without rewriting prior deliveries or invalidating active MCP scopes.
@@ -42,10 +44,12 @@ All notable changes to Commonspace are recorded here.
 - Opt-in native notifications for replies/input requests, mentions, ACP permissions, failures, and timeouts, with independent persisted settings, exact loopback deep links, and restart/import replay prevention.
 - Inference-first Project context with no root, Thread, branch, or reroute Project pickers; `@@project` remains the sole explicit Project-context interaction, and the hidden singular fallback is removed.
 - Live browser acceptance for keyboard search/navigation, narrow layout overflow, and complete light/dark palettes across preview and installed serving modes.
-- Persisted routing-stage start/resolution timing shown separately from harness execution, with inference failures promoted into retryable durable Inbox attention.
+- Persisted routing-stage start/resolution timing tracked separately from harness execution, with inference failures promoted into retryable durable Inbox attention.
 - Browser-safe Project folder labels while canonical absolute roots remain server-private for file, Git, search, attribution, and execution.
+- Desktop-first Apple-reference visual parity for shell geometry, borders, collections, conversations, Inbox, Threads, and Project panes while preserving Commonspace color settings.
+- Light-default appearance with Light/Dark/System selection and neutral deep-link message focus cards without orange accent rails.
 - Retention apply now refuses queued conversation runs and Channel/Thread/routing compaction in addition to live Agent activity.
-- Project Files, Git Changes/diffs, speech playback, live activity, and stop controls.
+- Project Files, Git Changes/diffs, live activity, and stop controls.
 - Zero-to-many Project references on messages and threads, with multi-root agent execution, Project-aware search, correct run attribution, and backward-compatible singular fields for the current UI.
 - Editable Channel context APIs with user-owned context preservation, manual inference compaction, automatic token-pressure compaction, and visible current/stale metadata.
 - ANSI-safe live-preview URL detection so CI can verify Vite startup reliably.
@@ -70,6 +74,7 @@ All notable changes to Commonspace are recorded here.
 
 ### Removed
 
+- Resolved routing destination/assignment details, including latency and inline reroute controls, from conversation messages; pending and failed routing states remain visible.
 - Managed/custom Agent creation and profile import; every new Agent now represents one explicitly selected supported harness installation.
 - Commonspace-defined Codex `default`, `worker`, and `explorer` personas.
 - Runtime-specific Hermes configuration inspection/mutation and the native-configuration dashboard; Commonspace now limits Agent customization to workspace-local appearance until capabilities are advertised through ACP.

@@ -1,8 +1,8 @@
 # Commonspace design system
 
-## Direction: Commonspace's visual language
+## Direction: Apple workspace structure, Darkmatter palette, Commonspace model
 
-Commonspace should feel like a focused, local-first working surface for conversations with agents. Its visual language prioritizes orientation, legibility, and trust: a stable navigation shell, an inset conversation surface, dense but calm rows, and a chat-first composer. The constellation mark, semantic tokens, and state colors give Commonspace its own identity.
+Commonspace should feel like a focused working surface for conversations with agents. Its desktop visual direction follows `/Users/ralphbibera/Downloads/commonspace-apple-workspace.html` for shell geometry, pane composition, borders, spacing, and dense flat rows. Commonspace retains its own product model. Tweakcn/shadcn Darkmatter remains the swappable color source in `ui/src/index.css`.
 
 ## Principles
 
@@ -11,11 +11,11 @@ Commonspace should feel like a focused, local-first working surface for conversa
 3. **Structure before decoration.** Selection, hierarchy, labels, and metadata explain where context lives.
 4. **Quiet selection.** Neutral translucent fills identify active context; the constellation accent is reserved for identity, links, and focus.
 5. **Theme from tokens.** Standalone root variables feed the existing `--csp-*` semantic layer.
-6. **Purposeful accents.** Use restrained accent treatments for identity, focus, and meaningful state changes. Keep conversation surfaces calm; decoration must not compete with the work.
+6. **Reference-led composition.** The Apple prototype controls structure; semantic tokens control color. Do not add decorative CSS layers or prototype-only class names.
 
 ## Application shell
 
-The desktop layout uses a 256px navigation canvas and a flexible, inset conversation surface with rounded corners. A compact decorative desktop chrome completes the shell. At narrow widths, navigation becomes a dismissible overlay with an explicit menu control and backdrop. The product remains usable without a desktop wrapper.
+The desktop layout uses a 260px navigation canvas, a 52px titlebar, and a flexible conversation surface. Main headers are 64px. Collections use bordered 1020px content rails; the Home dashboard uses a 920px rail; Project workbenches use a 330px file rail. Threads split the available desktop surface with an 8px draggable divider and default to an even 50/50 split.
 
 ## Components
 
@@ -26,6 +26,9 @@ The desktop layout uses a 256px navigation canvas and a flexible, inset conversa
 - Agent activity stays collapsed beneath the reply until requested, then expands into a quiet timeline of harness-emitted reasoning, plans, tool calls, and usage.
 - Threads make native execution boundaries inspectable.
 - The composer exposes slash commands and references without hiding the active context.
+- Deep-linked and active messages keep a quiet neutral highlight card without an orange rail or tint.
+- Light is the default appearance; Light, Dark, and System are selectable and persisted.
+- Any Tweakcn theme can replace the current palette through the shadcn CLI without React/layout edits.
 
 ## Accessibility
 
@@ -35,4 +38,4 @@ The desktop layout uses a 256px navigation canvas and a flexible, inset conversa
 - Pickers and suggestions use listbox/option semantics.
 - Errors and command outcomes use alert or status roles.
 - Motion is minimized under `prefers-reduced-motion`.
-- All primary flows must remain usable at 320px width.
+- Desktop flows are the acceptance target for this visual slice. Narrow/mobile validation is deferred until desktop parity is accepted.

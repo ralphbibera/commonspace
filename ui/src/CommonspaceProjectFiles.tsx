@@ -141,7 +141,7 @@ export function CommonspaceProjectFiles({
 			aria-label="Project files"
 		>
 			<aside className="min-h-0 min-w-0 overflow-y-auto border-r bg-[color-mix(in_oklch,var(--background)_55%,var(--muted))] max-[780px]:border-r-0 max-[780px]:border-b">
-				<header className="grid min-h-16 grid-cols-[76px_minmax(0,1fr)] items-center gap-2 border-b px-3 py-2">
+				<header className="grid min-h-[66px] grid-cols-[76px_minmax(0,1fr)] items-center gap-2 border-b px-3 py-2">
 					<div>
 						<strong className="block text-[13px]">Files</strong>
 						<small className="hidden">Read-only project browser</small>
@@ -164,7 +164,7 @@ export function CommonspaceProjectFiles({
 				</header>
 
 				<nav
-					className="flex min-h-[54px] items-center gap-1 overflow-x-auto border-b px-3 text-xs"
+					className="flex min-h-[54px] items-center gap-1 overflow-x-auto border-b px-3 text-xs whitespace-nowrap"
 					aria-label="File path"
 				>
 					<button
@@ -287,7 +287,7 @@ export function CommonspaceProjectFiles({
 					</div>
 				) : (
 					<>
-						<header className="flex min-h-16 items-center justify-between gap-3 border-b px-3 py-2">
+						<header className="flex min-h-[66px] items-center justify-between gap-3 border-b px-3 py-2">
 							<div className="min-w-0">
 								<strong className="block truncate text-[13px]">
 									{selected.name}

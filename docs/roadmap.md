@@ -20,9 +20,9 @@ Commonspace is a private preview focused on durable human-agent conversation and
 - Explicit completed, needs-input, failed, silent, cancelled, and timeout outcomes with needs-attention surfacing.
 - Inference-only unaddressed Channel routing through a harness or OpenAI-compatible model.
 - Persisted routing-stage latency reported independently from Agent execution, with failed inference promoted to retryable Inbox attention.
-- Inspectable per-harness routing assignments with bounded sub-requests, scoped Projects, and visible user-controlled fan-out.
+- Persisted per-harness routing assignments with bounded sub-requests, scoped Projects, and visible user-controlled fan-out; resolved assignment details stay out of conversation messages.
 - Visible Project-reference inference for new Channel roots, with `@@project` tags remaining authoritative.
-- Single-assignment rerouting among existing Channel members with visible retained attempts, assignment-bound replies, preserved Project scope, and compacted per-Channel routing knowledge used by later inference.
+- Durable single-assignment corrections among existing Channel members, assignment-bound replies, preserved Project scope, and compacted per-Channel routing knowledge used by later inference; no inline reroute control.
 - Immutable Channel-context snapshots per Thread, independent editable/pressure-compacted Thread context, and visible manual compaction controls.
 - Prospective Thread references inherited from inference or supplied through `@@project`, preserving earlier delivery and active-session scope.
 - Channel/Thread pins for messages, attachments, and notes with scoped MCP visibility and removal tombstones.
@@ -36,7 +36,10 @@ Commonspace is a private preview focused on durable human-agent conversation and
 - Explicit revision-guarded Channel/DM retention with impact preview and attachment-byte cleanup; no automatic expiry.
 - One-command macOS installation, owner LaunchAgent startup, same-origin built UI/API service, staged updates, health control, and one-release rollback.
 - Opt-in native notifications for replies, mentions, permission requests, failures, and timeouts, with independent category/sound controls and exact message deep links.
-- Project Files, Git Changes/diffs, image attachments, and reply speech playback.
+- Project Files, Git Changes/diffs, and image attachments.
+- Desktop-first Apple-reference visual parity for shell geometry, borders, collections, conversations, Inbox, Threads, and Project panes; existing semantic color settings remain authoritative.
+- Light-default appearance with Light/Dark/System selection and neutral message focus cards without orange accent rails.
+- Theme swaps remain one-command: a new Tweakcn/shadcn theme updates `ui/src/index.css` without React or layout edits.
 - Work/result binding through per-reply run attribution, changed-file surfaces, activity traces, and validation evidence emitted by the harness.
 - Hard-boundary cancellation, stale-session recovery that distinguishes missing from transient failures, and graceful bridge shutdown.
 - Slash commands and agent/project/channel references.
@@ -53,7 +56,8 @@ See [Product specification](product-spec.md) for the complete behavior and accep
 ## Release readiness
 
 - Exercise Hermes and Codex ACP login/start/resume paths on a clean machine.
-- Keep automated keyboard search/navigation, narrow overflow, and light/dark palette checks green in `pnpm verify:live`.
+- Keep automated keyboard search/navigation and Light/Dark/System desktop palette checks green in `pnpm verify:live`.
+- Defer narrow/mobile layout validation until the desktop visual direction is accepted.
 - Keep state migration, automatic backup recovery, and rollback fixtures green in `pnpm check`.
 - Repeat the green isolated `pnpm verify:service` lifecycle on a clean supported macOS user account with real launchctl health.
 - Complete keyboard-only and destructive-action reviews.

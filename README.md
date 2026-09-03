@@ -19,7 +19,7 @@ Commonspace is conversation-first. Hermes and Codex receive only the newly deliv
 
 Optional native notifications mirror new durable Inbox events for replies, mentions, permissions, failures, and timeouts. Their category/sound settings are independent from Inbox state, and clicks open the exact loopback conversation item.
 
-Unaddressed Channel messages always use configured inference—either an agent harness or a BYO OpenAI-compatible model—to select the smallest useful harness set and create an inspectable sub-request for each selection. When a new root has no `@@project` tag, the same decision infers visible Project scope; each harness receives only its assigned sub-request and Project subset. Explicit `@agent` and `@@project` tags remain authoritative; there is no deterministic/no-inference routing mode or separate Project picker.
+Unaddressed Channel messages always use configured inference—either an agent harness or a BYO OpenAI-compatible model—to select the smallest useful harness set and persist one bounded sub-request for each selection. When a new root has no `@@project` tag, the same decision infers visible Project scope; each harness receives only its assigned sub-request and Project subset. Routing records remain durable for dispatch and diagnostics, but resolved destinations and assignment details are not rendered in the conversation. Explicit `@agent` and `@@project` tags remain authoritative; there is no deterministic/no-inference routing mode or separate Project picker.
 
 ## Quick start
 

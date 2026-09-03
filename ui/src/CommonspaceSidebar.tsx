@@ -49,6 +49,12 @@ import type { CommonspaceDirectoryKind } from "./CommonspaceDirectory.tsx";
 import { CommonspaceSearchDialog } from "./CommonspaceSearch.tsx";
 import type { CommonspaceStore } from "./commonspace-store.ts";
 import { folderName } from "./project-files-api.ts";
+import {
+	collectionKey,
+	sidebarPreferencesStore,
+	useSidebarPreferences,
+} from "./sidebar-preferences.ts";
+import type { CommonspaceColorMode } from "./theme.ts";
 
 const reasoningValues: ReadonlySet<string> = new Set([
 	"none",
@@ -68,6 +74,8 @@ export interface CommonspaceSidebarProps {
 	wide: boolean;
 	expandSidebar: () => void;
 	store: CommonspaceStore;
+	colorMode?: CommonspaceColorMode;
+	onSetColorMode?: (mode: CommonspaceColorMode) => void;
 	homeActive?: boolean;
 	inboxActive?: boolean;
 	threadsActive?: boolean;
@@ -90,23 +98,24 @@ export interface CommonspaceSidebarProps {
 function Section(props: {
 	title: string;
 	count: number;
+	open: boolean;
+	onOpenChange: (open: boolean) => void;
 	onAdd?: () => void;
 	children: React.ReactNode;
 }) {
-	const [open, setOpen] = useState(true);
 	return (
 		<section className="mt-2 border-t border-sidebar-border pt-1 first:mt-2 first:border-t-0">
 			<div className="grid grid-cols-[minmax(0,1fr)_44px] items-center">
 				<button
 					type="button"
 					className="flex min-h-11 w-full items-center gap-2 rounded-md border-0 bg-transparent px-1.5 text-left text-[13px] font-bold text-sidebar-foreground/85 hover:text-sidebar-foreground"
-					aria-expanded={open}
+					aria-expanded={props.open}
 					onClick={() => {
-						setOpen((value) => !value);
+						props.onOpenChange(!props.open);
 					}}
 				>
 					<ChevronDownIcon
-						className={`size-[18px] transition-transform ${open ? "" : "-rotate-90"}`}
+						className={`size-[18px] transition-transform ${props.open ? "" : "-rotate-90"}`}
 						aria-hidden="true"
 					/>
 					<span>{props.title}</span>
@@ -125,7 +134,7 @@ function Section(props: {
 					</button>
 				)}
 			</div>
-			{open && <div className="grid gap-0.5">{props.children}</div>}
+			{props.open && <div className="grid gap-0.5">{props.children}</div>}
 		</section>
 	);
 }
@@ -149,7 +158,7 @@ function BrowseButton({
 	return (
 		<button
 			type="button"
-			className="mt-0.5 flex min-h-10 w-full items-center justify-between gap-2 rounded-sm border-0 bg-transparent px-2 text-left text-[13px] text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+			className="mt-2 flex min-h-11 w-full items-center justify-between gap-2 rounded-sm border-0 border-t border-sidebar-border bg-transparent px-2 pt-2 text-left text-[13px] font-medium text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-sidebar-foreground"
 			aria-label={label}
 			onClick={onClick}
 		>
@@ -238,6 +247,14 @@ function SidebarDialog({
 	);
 }
 
+function FormError({ message }: { message: string | null }) {
+	return message === null ? null : (
+		<p className="text-xs text-destructive" role="alert">
+			{message}
+		</p>
+	);
+}
+
 function runtimeLabel(adapter: AgentAdapterKind): string {
 	if (adapter === "codex") return "Codex";
 	return "Hermes";
@@ -275,10 +292,43 @@ function copyText(value: string) {
 	void navigator.clipboard?.writeText(value).catch(() => undefined);
 }
 
+function orderedSidebarItems<Item extends { id: string }>(
+	items: readonly Item[],
+	kind: CommonspaceCollectionKind,
+	pinnedKeys: readonly string[],
+	recentKeys: readonly string[],
+): { items: Item[]; pinnedCount: number } {
+	const byId = new Map(items.map((item) => [item.id, item]));
+	const pinned = pinnedKeys
+		.filter((key) => key.startsWith(`${kind}:`))
+		.map((key) => byId.get(key.slice(kind.length + 1)))
+		.filter((item): item is Item => item !== undefined);
+	const pinnedIds = new Set(pinned.map((item) => item.id));
+	const recent = [
+		...recentKeys,
+		...items.map((item) => collectionKey(kind, item.id)),
+	]
+		.map((key) => {
+			if (!key.startsWith(`${kind}:`)) return undefined;
+			return byId.get(key.slice(kind.length + 1));
+		})
+		.filter(
+			(item): item is Item => item !== undefined && !pinnedIds.has(item.id),
+		)
+		.filter(
+			(item, index, values) =>
+				values.findIndex((candidate) => candidate.id === item.id) === index,
+		)
+		.slice(0, 3);
+	return { items: [...pinned, ...recent], pinnedCount: pinned.length };
+}
+
 export function CommonspaceSidebar({
 	wide,
 	expandSidebar,
 	store,
+	colorMode = "light",
+	onSetColorMode,
 	homeActive = false,
 	inboxActive = false,
 	threadsActive = false,
@@ -299,9 +349,11 @@ export function CommonspaceSidebar({
 		store.getSnapshot,
 		store.getSnapshot,
 	);
+	const preferences = useSidebarPreferences();
 	const [form, setForm] = useState<"project" | "channel" | "agent" | null>(
 		null,
 	);
+	const [formError, setFormError] = useState<string | null>(null);
 	const [name, setName] = useState("");
 	const [path, setPath] = useState("");
 	const [selectingPath, setSelectingPath] = useState(false);
@@ -309,6 +361,9 @@ export function CommonspaceSidebar({
 	const [pathDraft, setPathDraft] = useState("");
 	const [agentIds, setAgentIds] = useState<string[]>([]);
 	const [channelAgentQuery, setChannelAgentQuery] = useState("");
+	const [channelAgentFilter, setChannelAgentFilter] = useState<
+		"all" | "selected"
+	>("all");
 	const [agentAdapter, setAgentAdapter] = useState<AgentAdapterKind | null>(
 		null,
 	);
@@ -401,11 +456,13 @@ export function CommonspaceSidebar({
 	useEffect(() => {
 		if (createRequest === null) return;
 		setForm(createRequest.kind);
+		setFormError(null);
 		setName("");
 		if (createRequest.kind === "project") setPath("");
 		if (createRequest.kind === "channel") {
 			setAgentIds([]);
 			setChannelAgentQuery("");
+			setChannelAgentFilter("all");
 		}
 		if (createRequest.kind === "agent") setAgentAdapter(null);
 	}, [createRequest]);
@@ -452,14 +509,16 @@ export function CommonspaceSidebar({
 	const normalizedChannelAgentQuery = channelAgentQuery
 		.trim()
 		.toLocaleLowerCase();
-	const availableChannelAgents =
-		normalizedChannelAgentQuery === ""
-			? agents
-			: agents.filter((agent) =>
-					`${agent.displayName} ${agent.adapter} ${agent.model ?? ""}`
-						.toLocaleLowerCase()
-						.includes(normalizedChannelAgentQuery),
-				);
+	const availableChannelAgents = agents.filter((agent) => {
+		if (channelAgentFilter === "selected" && !agentIds.includes(agent.id))
+			return false;
+		return (
+			normalizedChannelAgentQuery === "" ||
+			`${agent.displayName} ${agent.adapter} ${agent.model ?? ""}`
+				.toLocaleLowerCase()
+				.includes(normalizedChannelAgentQuery)
+		);
+	});
 	const activeAgentIds = new Set(
 		(bootstrap?.liveActivities ?? []).map((activity) => activity.agentId),
 	);
@@ -481,12 +540,62 @@ export function CommonspaceSidebar({
 	);
 	const projects = state?.projects ?? [];
 	const channels = state?.channels ?? [];
+	const defaultPinnedKeys = useMemo(
+		() =>
+			[
+				projects[0] === undefined
+					? undefined
+					: collectionKey("project", projects[0].id),
+				channels[0] === undefined
+					? undefined
+					: collectionKey("channel", channels[0].id),
+				agents[0] === undefined
+					? undefined
+					: collectionKey("agent", agents[0].id),
+			].filter((key): key is string => key !== undefined),
+		[agents, channels, projects],
+	);
+	const effectivePinnedKeys = preferences.hasStoredPins
+		? preferences.pinnedKeys
+		: defaultPinnedKeys;
+	const projectItems = orderedSidebarItems(
+		projects,
+		"project",
+		effectivePinnedKeys,
+		preferences.recentKeys.project,
+	);
+	const channelItems = orderedSidebarItems(
+		channels,
+		"channel",
+		effectivePinnedKeys,
+		preferences.recentKeys.channel,
+	);
+	const agentItems = orderedSidebarItems(
+		agents,
+		"agent",
+		effectivePinnedKeys,
+		preferences.recentKeys.agent,
+	);
+	useEffect(() => {
+		sidebarPreferencesStore.ensurePinnedDefaults(defaultPinnedKeys);
+	}, [defaultPinnedKeys]);
 	const activeMentionChannel =
 		snapshot.activeConversation?.kind === "channel"
 			? channels.find(
 					(channel) => channel.id === snapshot.activeConversation?.id,
 				)
 			: undefined;
+	const collectionPinned = (kind: CommonspaceCollectionKind, id: string) =>
+		effectivePinnedKeys.includes(collectionKey(kind, id));
+	const toggleCollectionPinned = (
+		kind: CommonspaceCollectionKind,
+		id: string,
+	) => {
+		sidebarPreferencesStore.togglePin(kind, id, defaultPinnedKeys);
+	};
+	const touchRecent = (kind: CommonspaceCollectionKind, id: string) => {
+		sidebarPreferencesStore.touchRecent(kind, id, defaultPinnedKeys);
+	};
 
 	if (!wide) {
 		return (
@@ -526,10 +635,19 @@ export function CommonspaceSidebar({
 
 	const submit = async (event: FormEvent) => {
 		event.preventDefault();
+		setFormError(null);
 		let mutation: CommonspaceMutation;
 		if (form === "project") {
+			if (name.trim() === "" || path.trim() === "") {
+				setFormError("Project name and local folder are required.");
+				return;
+			}
 			mutation = { action: "create-project", name, paths: [path] };
 		} else if (form === "channel") {
+			if (name.trim() === "") {
+				setFormError("Channel name is required.");
+				return;
+			}
 			mutation = {
 				action: "create-channel",
 				name,
@@ -538,11 +656,13 @@ export function CommonspaceSidebar({
 		} else return;
 		try {
 			await store.mutate(mutation);
-		} catch {
+		} catch (error) {
 			// Keep the form open while the application-level toast shows the error.
+			setFormError(error instanceof Error ? error.message : String(error));
 			return;
 		}
 		setForm(null);
+		setFormError(null);
 		setName("");
 		setPath("");
 		setAgentIds([]);
@@ -883,6 +1003,75 @@ export function CommonspaceSidebar({
 						<WorkspaceHeader title="Workspace settings" mark="S" />
 						<div className="min-h-0 flex-1 overflow-y-auto">
 							<div className="mx-auto grid w-full max-w-[860px] gap-0 px-0 py-12 pb-20 max-[920px]:px-6 max-[640px]:px-4 [&_button]:min-h-11 [&_button]:rounded-sm [&_button]:border [&_button]:px-4 [&_fieldset]:min-w-0 [&_input:not([type=checkbox])]:min-h-11 [&_input:not([type=checkbox])]:w-full [&_input:not([type=checkbox])]:rounded-md [&_input:not([type=checkbox])]:border [&_input:not([type=checkbox])]:bg-background [&_input:not([type=checkbox])]:px-3 [&_label]:grid [&_label]:gap-1.5 [&_select]:min-h-11 [&_select]:w-full [&_select]:rounded-md [&_select]:border [&_select]:bg-background [&_select]:px-3 [&_textarea]:min-h-24 [&_textarea]:w-full [&_textarea]:rounded-md [&_textarea]:border [&_textarea]:bg-background [&_textarea]:p-3">
+								<section
+									className="mb-10 rounded-lg border bg-card p-5"
+									aria-labelledby="workspace-appearance-title"
+								>
+									<div className="flex items-start justify-between gap-6 max-[640px]:grid">
+										<div>
+											<span className="font-mono text-xs tracking-[0.06em] text-primary">
+												Appearance
+											</span>
+											<h2
+												id="workspace-appearance-title"
+												className="mt-2 font-heading text-2xl font-bold tracking-[-0.02em]"
+											>
+												Choose your color mode
+											</h2>
+										</div>
+										<span className="inline-flex min-h-[30px] shrink-0 items-center rounded-full border bg-muted px-2.5 font-mono text-xs text-muted-foreground">
+											{colorMode === "dark"
+												? "Dark mode"
+												: colorMode === "system"
+													? "System mode"
+													: "Light mode"}
+										</span>
+									</div>
+									<fieldset
+										className="mt-5 grid grid-cols-3 gap-3 max-[640px]:grid-cols-1"
+										aria-label="Color mode"
+									>
+										<button
+											type="button"
+											aria-pressed={colorMode === "light"}
+											className="grid min-h-16 gap-1 bg-background text-left hover:bg-muted aria-pressed:border-primary aria-pressed:bg-primary/10"
+											onClick={() => {
+												onSetColorMode?.("light");
+											}}
+										>
+											<strong>Light</strong>
+											<span className="text-xs font-normal text-muted-foreground">
+												Bright canvas and soft neutral surfaces
+											</span>
+										</button>
+										<button
+											type="button"
+											aria-pressed={colorMode === "dark"}
+											className="grid min-h-16 gap-1 bg-background text-left hover:bg-muted aria-pressed:border-primary aria-pressed:bg-primary/10"
+											onClick={() => {
+												onSetColorMode?.("dark");
+											}}
+										>
+											<strong>Dark</strong>
+											<span className="text-xs font-normal text-muted-foreground">
+												Low-glare canvas and deeper surfaces
+											</span>
+										</button>
+										<button
+											type="button"
+											aria-pressed={colorMode === "system"}
+											className="grid min-h-16 gap-1 bg-background text-left hover:bg-muted aria-pressed:border-primary aria-pressed:bg-primary/10"
+											onClick={() => {
+												onSetColorMode?.("system");
+											}}
+										>
+											<strong>System</strong>
+											<span className="text-xs font-normal text-muted-foreground">
+												Follow your operating system preference
+											</span>
+										</button>
+									</fieldset>
+								</section>
 								<div className="relative pb-5">
 									<span className="font-mono text-xs tracking-[0.06em] text-primary">
 										Commonspace inference
@@ -1536,7 +1725,7 @@ export function CommonspaceSidebar({
 			>
 				<button
 					type="button"
-					className="relative grid min-h-11 w-full grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-[7px] rounded-sm border-0 bg-transparent px-2 text-left text-sidebar-foreground/90 hover:bg-sidebar-accent aria-pressed:bg-[color-mix(in_srgb,var(--sidebar-foreground)_20%,transparent)] aria-pressed:before:absolute aria-pressed:before:left-0 aria-pressed:before:h-5 aria-pressed:before:w-[3px] aria-pressed:before:rounded-full aria-pressed:before:bg-sidebar-foreground"
+					className="relative grid min-h-11 w-full grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-[7px] rounded-sm border-0 bg-transparent px-2 text-left text-sidebar-foreground/90 hover:bg-sidebar-accent aria-pressed:bg-[color-mix(in_srgb,var(--sidebar-foreground)_20%,transparent)]"
 					aria-label={`Open Inbox${inboxUnreadCount === 0 ? "" : `, ${String(inboxUnreadCount)} unread`}`}
 					aria-pressed={inboxActive}
 					onClick={onOpenInbox}
@@ -1559,7 +1748,7 @@ export function CommonspaceSidebar({
 				</button>
 				<button
 					type="button"
-					className="relative grid min-h-11 w-full grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-[7px] rounded-sm border-0 bg-transparent px-2 text-left text-sidebar-foreground/90 hover:bg-sidebar-accent aria-pressed:bg-[color-mix(in_srgb,var(--sidebar-foreground)_20%,transparent)] aria-pressed:before:absolute aria-pressed:before:left-0 aria-pressed:before:h-5 aria-pressed:before:w-[3px] aria-pressed:before:rounded-full aria-pressed:before:bg-sidebar-foreground"
+					className="relative grid min-h-11 w-full grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-[7px] rounded-sm border-0 bg-transparent px-2 text-left text-sidebar-foreground/90 hover:bg-sidebar-accent aria-pressed:bg-[color-mix(in_srgb,var(--sidebar-foreground)_20%,transparent)]"
 					aria-label={`Open Threads${threadUnreadCount === 0 ? "" : `, ${String(threadUnreadCount)} unread`}`}
 					aria-pressed={threadsActive}
 					onClick={onOpenThreads}
@@ -1586,8 +1775,13 @@ export function CommonspaceSidebar({
 				<Section
 					title="Projects"
 					count={projects.length}
+					open={!preferences.collapsedSections.includes("project")}
+					onOpenChange={(open) => {
+						sidebarPreferencesStore.setSectionCollapsed("project", !open);
+					}}
 					onAdd={() => {
 						setForm("project");
+						setFormError(null);
 					}}
 				>
 					{form === "project" && (
@@ -1610,8 +1804,10 @@ export function CommonspaceSidebar({
 										aria-label="Project name"
 										placeholder="Project name"
 										value={name}
+										required
 										onChange={(event) => {
 											setName(event.target.value);
+											setFormError(null);
 										}}
 									/>
 								</label>
@@ -1622,8 +1818,10 @@ export function CommonspaceSidebar({
 											aria-label="Project path"
 											placeholder="Choose a local folder"
 											value={path}
+											required
 											onChange={(event) => {
 												setPath(event.target.value);
+												setFormError(null);
 											}}
 										/>
 										<button
@@ -1638,7 +1836,8 @@ export function CommonspaceSidebar({
 										</button>
 									</span>
 								</label>
-								<div className="mt-2 flex justify-end gap-2 border-t pt-3">
+								<div className="mt-2 flex items-end justify-end gap-2 border-t pt-3">
+									<FormError message={formError} />
 									<button
 										type="button"
 										onClick={() => {
@@ -1649,6 +1848,7 @@ export function CommonspaceSidebar({
 									</button>
 									<button
 										type="submit"
+										disabled={name.trim() === "" || path.trim() === ""}
 										className="border-primary bg-primary text-primary-foreground"
 									>
 										Create project
@@ -1657,8 +1857,10 @@ export function CommonspaceSidebar({
 							</form>
 						</SidebarDialog>
 					)}
-					<NavGroupLabel label="Pinned" count={projects.length === 0 ? 0 : 1} />
-					{projects.map((project, index) => {
+					{projectItems.pinnedCount > 0 && (
+						<NavGroupLabel label="Pinned" count={projectItems.pinnedCount} />
+					)}
+					{projectItems.items.map((project, index) => {
 						const active = snapshot.activeProjectId === project.id;
 						const folderSummary =
 							project.paths.length === 1
@@ -1666,19 +1868,23 @@ export function CommonspaceSidebar({
 								: `${String(project.paths.length)} folders · working + references`;
 						return (
 							<div key={project.id} className="grid gap-0.5">
-								{index === 1 && (
-									<NavGroupLabel
-										label="Recent"
-										count={Math.max(0, projects.length - 1)}
-									/>
-								)}
+								{projectItems.pinnedCount > 0 &&
+									index === projectItems.pinnedCount && (
+										<NavGroupLabel
+											label="Recent"
+											count={
+												projectItems.items.length - projectItems.pinnedCount
+											}
+										/>
+									)}
 								<div className="group grid grid-cols-[minmax(0,1fr)_44px] items-center rounded-sm hover:bg-sidebar-accent focus-within:bg-sidebar-accent has-[button[aria-pressed=true]]:bg-[color-mix(in_srgb,var(--sidebar-foreground)_20%,transparent)]">
 									<button
 										type="button"
-										className="relative grid min-h-11 w-full min-w-0 grid-cols-[22px_minmax(0,1fr)] items-center gap-[7px] rounded-l-sm border-0 bg-transparent px-2 text-left text-sidebar-foreground/90 aria-pressed:text-sidebar-foreground aria-pressed:before:absolute aria-pressed:before:left-0 aria-pressed:before:h-5 aria-pressed:before:w-[3px] aria-pressed:before:rounded-full aria-pressed:before:bg-sidebar-foreground"
+										className="relative grid min-h-11 w-full min-w-0 grid-cols-[22px_minmax(0,1fr)] items-center gap-[7px] rounded-l-sm border-0 bg-transparent px-2 text-left text-sidebar-foreground/90 aria-pressed:text-sidebar-foreground"
 										aria-label={`Select project ${project.name}`}
 										aria-pressed={active}
 										onClick={() => {
+											touchRecent("project", project.id);
 											store.selectProject(project.id);
 											onOpenProject?.(project.id);
 										}}
@@ -1702,6 +1908,7 @@ export function CommonspaceSidebar({
 											className="grid size-11 place-items-center rounded-r-sm border-0 bg-transparent text-sidebar-foreground/65 opacity-0 hover:bg-sidebar-accent hover:text-sidebar-foreground group-hover:opacity-100 focus:opacity-100"
 											aria-label={`Add local folder to project ${project.name}`}
 											onClick={() => {
+												touchRecent("project", project.id);
 												store.selectProject(project.id);
 												setPathProjectId(project.id);
 												setPathDraft("");
@@ -1717,8 +1924,10 @@ export function CommonspaceSidebar({
 											kind="project"
 											label={project.name}
 											meta={folderSummary}
-											triggerClassName="rounded-r-sm text-sidebar-foreground/65 opacity-0 hover:bg-sidebar-accent hover:text-sidebar-foreground group-hover:opacity-100 focus:opacity-100"
+											pinned={collectionPinned("project", project.id)}
+											triggerClassName="rounded-r-sm text-sidebar-foreground/65 opacity-0 hover:bg-sidebar-accent hover:text-sidebar-foreground group-hover:opacity-100 focus:opacity-100 max-[780px]:opacity-100"
 											onOpen={() => {
+												touchRecent("project", project.id);
 												store.selectProject(project.id);
 												onOpenProject?.(project.id);
 											}}
@@ -1735,6 +1944,9 @@ export function CommonspaceSidebar({
 											}}
 											onCopy={() => copyText(project.name)}
 											copyLabel="Copy project name"
+											onTogglePinned={() => {
+												toggleCollectionPinned("project", project.id);
+											}}
 											onRemove={() =>
 												store.mutate({
 													action: "remove-project",
@@ -1778,7 +1990,6 @@ export function CommonspaceSidebar({
 							</div>
 						);
 					})}
-					{projects.length < 2 && <NavGroupLabel label="Recent" count={0} />}
 					{projects.length === 0 && form !== "project" && (
 						<div className="px-2 py-4 text-xs text-sidebar-foreground/60">
 							Add a local filesystem project.
@@ -1797,10 +2008,16 @@ export function CommonspaceSidebar({
 				<Section
 					title="Channels"
 					count={channels.length}
+					open={!preferences.collapsedSections.includes("channel")}
+					onOpenChange={(open) => {
+						sidebarPreferencesStore.setSectionCollapsed("channel", !open);
+					}}
 					onAdd={() => {
 						setForm("channel");
+						setFormError(null);
 						setAgentIds([]);
 						setChannelAgentQuery("");
+						setChannelAgentFilter("all");
 					}}
 				>
 					{form === "channel" && (
@@ -1823,8 +2040,10 @@ export function CommonspaceSidebar({
 										aria-label="Channel name"
 										placeholder="channel-name"
 										value={name}
+										required
 										onChange={(event) => {
 											setName(event.target.value);
+											setFormError(null);
 										}}
 									/>
 								</label>
@@ -1849,6 +2068,24 @@ export function CommonspaceSidebar({
 											setChannelAgentQuery(event.target.value);
 										}}
 									/>
+									<fieldset
+										className="mt-2 flex gap-1 border-0 p-0"
+										aria-label="Filter available agents"
+									>
+										{(["all", "selected"] as const).map((value) => (
+											<button
+												key={value}
+												type="button"
+												className="min-h-9 rounded-full border px-3 text-xs font-semibold capitalize aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground"
+												aria-pressed={channelAgentFilter === value}
+												onClick={() => {
+													setChannelAgentFilter(value);
+												}}
+											>
+												{value}
+											</button>
+										))}
+									</fieldset>
 									<div className="mt-2 max-h-[260px] overflow-y-auto">
 										{availableChannelAgents.map((agent) => (
 											<label
@@ -1886,6 +2123,7 @@ export function CommonspaceSidebar({
 									</div>
 								</fieldset>
 								<div className="mt-2 flex justify-end gap-2 border-t pt-3">
+									<FormError message={formError} />
 									<button
 										type="button"
 										onClick={() => {
@@ -1904,9 +2142,13 @@ export function CommonspaceSidebar({
 							</form>
 						</SidebarDialog>
 					)}
-					<NavGroupLabel label="Pinned" count={channels.length === 0 ? 0 : 1} />
-					{channels.map((channel, index) => {
+					{channelItems.pinnedCount > 0 && (
+						<NavGroupLabel label="Pinned" count={channelItems.pinnedCount} />
+					)}
+					{channelItems.items.map((channel, index) => {
 						const unreadCount = channelUnreadCounts.get(channel.id) ?? 0;
+						const latestChannelMessage =
+							state?.messages[`channel:${channel.id}`]?.at(-1);
 						const channelPins = (state?.pins ?? []).filter(
 							(pin) =>
 								pin.removedAt === null &&
@@ -1915,22 +2157,26 @@ export function CommonspaceSidebar({
 						);
 						return (
 							<div key={channel.id} className="grid gap-0.5">
-								{index === 1 && (
-									<NavGroupLabel
-										label="Recent"
-										count={Math.max(0, channels.length - 1)}
-									/>
-								)}
+								{channelItems.pinnedCount > 0 &&
+									index === channelItems.pinnedCount && (
+										<NavGroupLabel
+											label="Recent"
+											count={
+												channelItems.items.length - channelItems.pinnedCount
+											}
+										/>
+									)}
 								<div className="group grid grid-cols-[minmax(0,1fr)_44px] items-center rounded-sm hover:bg-sidebar-accent focus-within:bg-sidebar-accent has-[button[aria-pressed=true]]:bg-[color-mix(in_srgb,var(--sidebar-foreground)_20%,transparent)]">
 									<button
 										type="button"
-										className="relative grid min-h-11 w-full min-w-0 grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-[7px] rounded-l-sm border-0 bg-transparent px-2 text-left text-sidebar-foreground/90 aria-pressed:text-sidebar-foreground aria-pressed:before:absolute aria-pressed:before:left-0 aria-pressed:before:h-5 aria-pressed:before:w-[3px] aria-pressed:before:rounded-full aria-pressed:before:bg-sidebar-foreground"
+										className="relative grid min-h-11 w-full min-w-0 grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-[7px] rounded-l-sm border-0 bg-transparent px-2 text-left text-sidebar-foreground/90 aria-pressed:text-sidebar-foreground"
 										aria-label={`Open channel ${channel.name}${unreadCount === 0 ? "" : `, ${String(unreadCount)} unread`}`}
 										aria-pressed={
 											snapshot.activeConversation?.kind === "channel" &&
 											snapshot.activeConversation.id === channel.id
 										}
 										onClick={() => {
+											touchRecent("channel", channel.id);
 											onOpenConversation?.();
 											store.selectConversation({
 												kind: "channel",
@@ -1993,9 +2239,11 @@ export function CommonspaceSidebar({
 											kind="channel"
 											label={channel.name}
 											meta={`${String(channel.agentIds.length)} ${channel.agentIds.length === 1 ? "agent" : "agents"}`}
-											triggerClassName="rounded-r-sm text-sidebar-foreground/65 opacity-0 hover:bg-sidebar-accent hover:text-sidebar-foreground group-hover:opacity-100 focus:opacity-100"
+											pinned={collectionPinned("channel", channel.id)}
+											triggerClassName="rounded-r-sm text-sidebar-foreground/65 opacity-0 hover:bg-sidebar-accent hover:text-sidebar-foreground group-hover:opacity-100 focus:opacity-100 max-[780px]:opacity-100"
 											unread={unreadCount > 0}
 											onOpen={() => {
+												touchRecent("channel", channel.id);
 												onOpenConversation?.();
 												store.selectConversation({
 													kind: "channel",
@@ -2034,6 +2282,17 @@ export function CommonspaceSidebar({
 														});
 													}
 												}
+											}}
+											onMarkUnread={() => {
+												if (latestChannelMessage === undefined) return;
+												void store.mutate({
+													action: "set-inbox-item-unread",
+													messageId: latestChannelMessage.id,
+													unread: true,
+												});
+											}}
+											onTogglePinned={() => {
+												toggleCollectionPinned("channel", channel.id);
 											}}
 											onRemove={() =>
 												store.mutate({
@@ -2246,7 +2505,6 @@ export function CommonspaceSidebar({
 							</div>
 						);
 					})}
-					{channels.length < 2 && <NavGroupLabel label="Recent" count={0} />}
 					{channels.length === 0 && form !== "channel" && (
 						<div className="px-2 py-4 text-xs text-sidebar-foreground/60">
 							Create a channel and seat agents.
@@ -2265,6 +2523,10 @@ export function CommonspaceSidebar({
 				<Section
 					title="Agents"
 					count={agents.length}
+					open={!preferences.collapsedSections.includes("agent")}
+					onOpenChange={(open) => {
+						sidebarPreferencesStore.setSectionCollapsed("agent", !open);
+					}}
 					onAdd={() => {
 						setForm("agent");
 						setName("");
@@ -2460,29 +2722,33 @@ export function CommonspaceSidebar({
 								</SidebarDialog>
 							);
 						})()}
-					<NavGroupLabel label="Pinned" count={agents.length === 0 ? 0 : 1} />
-					{agents.map((agent, index) => {
+					{agentItems.pinnedCount > 0 && (
+						<NavGroupLabel label="Pinned" count={agentItems.pinnedCount} />
+					)}
+					{agentItems.items.map((agent, index) => {
 						const effectiveStatus = activeAgentIds.has(agent.id)
 							? "running"
 							: agent.status;
 						return (
 							<div key={agent.id} className="grid gap-0.5">
-								{index === 1 && (
-									<NavGroupLabel
-										label="Recent"
-										count={Math.max(0, agents.length - 1)}
-									/>
-								)}
+								{agentItems.pinnedCount > 0 &&
+									index === agentItems.pinnedCount && (
+										<NavGroupLabel
+											label="Recent"
+											count={agentItems.items.length - agentItems.pinnedCount}
+										/>
+									)}
 								<div className="group grid grid-cols-[minmax(0,1fr)_44px] items-center rounded-sm hover:bg-sidebar-accent focus-within:bg-sidebar-accent has-[button[aria-pressed=true]]:bg-[color-mix(in_srgb,var(--sidebar-foreground)_20%,transparent)]">
 									<button
 										type="button"
-										className="relative grid min-h-11 w-full min-w-0 grid-cols-[22px_minmax(0,1fr)] items-center gap-[7px] rounded-l-sm border-0 bg-transparent px-2 text-left text-sidebar-foreground/90 aria-pressed:text-sidebar-foreground aria-pressed:before:absolute aria-pressed:before:left-0 aria-pressed:before:h-5 aria-pressed:before:w-[3px] aria-pressed:before:rounded-full aria-pressed:before:bg-sidebar-foreground"
+										className="relative grid min-h-11 w-full min-w-0 grid-cols-[22px_minmax(0,1fr)] items-center gap-[7px] rounded-l-sm border-0 bg-transparent px-2 text-left text-sidebar-foreground/90 aria-pressed:text-sidebar-foreground"
 										aria-label={`Message agent ${agent.displayName}`}
 										aria-pressed={
 											snapshot.activeConversation?.kind === "dm" &&
 											snapshot.activeConversation.id === agent.id
 										}
 										onClick={() => {
+											touchRecent("agent", agent.id);
 											startDirectMessage(agent.id);
 										}}
 									>
@@ -2535,8 +2801,10 @@ export function CommonspaceSidebar({
 											kind="agent"
 											label={agent.displayName}
 											meta={`${runtimeLabel(agent.adapter)} · ${agentStatusLabel(effectiveStatus)}`}
-											triggerClassName="rounded-r-sm text-sidebar-foreground/65 opacity-0 hover:bg-sidebar-accent hover:text-sidebar-foreground group-hover:opacity-100 focus:opacity-100"
+											pinned={collectionPinned("agent", agent.id)}
+											triggerClassName="rounded-r-sm text-sidebar-foreground/65 opacity-0 hover:bg-sidebar-accent hover:text-sidebar-foreground group-hover:opacity-100 focus:opacity-100 max-[780px]:opacity-100"
 											onOpen={() => {
+												touchRecent("agent", agent.id);
 												startDirectMessage(agent.id);
 											}}
 											onSettings={() => {
@@ -2568,6 +2836,9 @@ export function CommonspaceSidebar({
 												: { onViewSessions: onOpenAgentSessions })}
 											onCopy={() => copyText(`@${agent.displayName}`)}
 											copyLabel="Copy mention"
+											onTogglePinned={() => {
+												toggleCollectionPinned("agent", agent.id);
+											}}
 											onRemove={() =>
 												store.mutate({
 													action: "remove-agent",
@@ -2580,7 +2851,6 @@ export function CommonspaceSidebar({
 							</div>
 						);
 					})}
-					{agents.length < 2 && <NavGroupLabel label="Recent" count={0} />}
 					<BrowseButton
 						label="Browse all agents"
 						onClick={() => {

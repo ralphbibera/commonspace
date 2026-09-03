@@ -20,6 +20,7 @@ export interface MessageActionMenuProps {
 	saved: boolean;
 	onReplyInThread?: () => void;
 	onToggleSaved: () => void;
+	onMarkUnread?: () => void;
 	onCopyLink: () => void;
 }
 
@@ -29,12 +30,13 @@ export function MessageActionMenu({
 	saved,
 	onReplyInThread,
 	onToggleSaved,
+	onMarkUnread,
 	onCopyLink,
 }: MessageActionMenuProps) {
 	return (
 		<DropdownMenu>
 			<DropdownMenuTrigger
-				className="grid size-8 place-items-center rounded-sm border-0 bg-transparent text-muted-foreground opacity-0 hover:bg-muted hover:text-foreground group-hover/message:opacity-100 focus:opacity-100 focus-visible:ring-3 focus-visible:ring-ring/30"
+				className="grid size-11 place-items-center rounded-sm border-0 bg-transparent text-muted-foreground opacity-0 hover:bg-muted hover:text-foreground group-hover/message:opacity-100 focus:opacity-100 max-[780px]:opacity-100 focus-visible:ring-3 focus-visible:ring-ring/30"
 				aria-label={`More actions for message from ${authorName}`}
 			>
 				<MoreHorizontalIcon className="size-4" aria-hidden="true" />
@@ -70,6 +72,14 @@ export function MessageActionMenu({
 						<BookmarkIcon aria-hidden="true" />
 						{saved ? "Remove from saved" : "Save for later"}
 					</DropdownMenuItem>
+					{onMarkUnread !== undefined && (
+						<DropdownMenuItem
+							className="min-h-10 px-2.5 text-[13px]"
+							onClick={onMarkUnread}
+						>
+							Mark unread
+						</DropdownMenuItem>
+					)}
 				</DropdownMenuGroup>
 				<DropdownMenuSeparator />
 				<DropdownMenuItem

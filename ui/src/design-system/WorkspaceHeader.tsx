@@ -14,7 +14,7 @@ export function WorkspaceHeader({
 	actions,
 }: WorkspaceHeaderProps) {
 	return (
-		<header className="flex min-h-16 items-center gap-3 border-b bg-background px-[18px] py-2 max-[780px]:pl-[60px]">
+		<header className="flex min-h-16 items-center gap-[11px] border-b bg-background py-2 pr-[14px] pl-[18px] max-[780px]:pl-[60px]">
 			<span
 				className="grid size-[30px] shrink-0 place-items-center rounded-sm border bg-muted font-mono text-[15px] font-semibold text-muted-foreground"
 				aria-hidden="true"

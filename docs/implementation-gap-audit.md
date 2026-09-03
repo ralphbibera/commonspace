@@ -1,6 +1,6 @@
 # Implementation gap audit
 
-Snapshot: 2026-08-31, audited against the current state-v24 implementation on `main`.
+Snapshot: 2026-09-03, audited against the current state-v25 implementation on `main`.
 
 This audit compares the intended behavior in [Product specification](product-spec.md), [Product direction](product-direction.md), and [Product model](product.md) with executable contracts, server behavior, persistence, API routes, UI use, and tests. It deliberately separates product behavior from later UI/UX work.
 
@@ -20,6 +20,7 @@ This audit compares the intended behavior in [Product specification](product-spe
 | Product capability | Status | Current evidence and remaining gap |
 | --- | --- | --- |
 | Local-first standalone workspace | Working | Loopback Express API, separate Vite UI, atomic local state, origin guards, and live browser verification exist. |
+| Desktop visual direction | Partial | Desktop shell and major collection/conversation/Project surfaces are being aligned to the supplied Apple workspace reference. Geometry and borders are in scope; reference colors are not. The maintained rules are in [UI direction](ui-direction.md). |
 | Durable conversation history | Working | Message acceptance, reply append, and startup sanitization preserve the complete conversation transcript. Regression coverage crosses the former 500-message boundary through both restart and new request/reply append. |
 | BYOA Agent identity | Working | Every new Agent represents one explicitly selected supported harness installation—currently Codex or Hermes. Commonspace does not enumerate custom profiles or create personas. Legacy persisted identities remain loadable so existing conversation history is not destroyed. |
 | ACP capability/configuration authority | Working | Runtime-specific configuration endpoints, Hermes CLI/profile mutation, shared native-configuration DTOs, and the native-configuration dashboard are removed. Commonspace limits customization to workspace-local appearance; future capability-dependent controls must originate in ACP. |
@@ -31,9 +32,9 @@ This audit compares the intended behavior in [Product specification](product-spe
 | Explicit mentions and peer handoffs | Working | Mentions are authoritative, can seat an agent, and create bounded non-blocking handoffs in the same visible thread. |
 | Unaddressed agent selection | Working | A configured harness or OpenAI-compatible provider selects the smallest useful Agent set and records the routing decision, start/resolution timestamps, and routing-only duration separately from harness execution. Invalid inference marks the accepted source failed and creates retryable Inbox attention. |
 | Unaddressed routing fan-out | Working | Inference may select up to the visible max-agents setting; the hidden two-Agent cap is removed while unrelated native sessions remain concurrent. |
-| Agent-specific request decomposition | Working | Routing persists one bounded sub-request and Project subset per selected harness, displays each assignment, and delivers only that sub-request to its native session. Legacy decisions migrate deterministically. |
-| Reroute, correction, and routing memory | Working | A user can change one current assignment's Agent and bounded sub-request without restarting unrelated Agents. Targets are restricted to existing Channel members and preserve inferred Project scope. Linked attempts and assignment-bound replies persist without a history cap; explicit corrections compact into bounded per-Channel routing knowledge. |
-| Project-reference inference | Working | New roots without `@@project` tags offer all Projects to inference, persist the inferred union on the message/Thread, scope each assignment independently, and visibly mark inferred Projects. Valid `@@project` tags remain authoritative; there is no parallel Project mode or checkbox UI. |
+| Agent-specific request decomposition | Working | Routing persists one bounded sub-request and Project subset per selected harness, then delivers only that sub-request to its native session. Resolved assignment details stay out of the conversation UI; legacy decisions migrate deterministically. |
+| Reroute, correction, and routing memory | Working | Service/API correction records can change one current assignment's Agent and bounded sub-request without restarting unrelated Agents. Targets are restricted to existing Channel members and preserve inferred Project scope. Linked attempts and assignment-bound replies persist without a history cap; explicit corrections compact into bounded per-Channel routing knowledge. No inline reroute control is exposed. |
+| Project-reference inference | Working | New roots without `@@project` tags offer all Projects to inference, persist the inferred union on the message/Thread, and scope each assignment independently. Valid `@@project` tags remain authoritative; there is no parallel Project mode or checkbox UI. |
 | Shared Channel context projection | Working | Commonspace derives summary, decisions, questions, thread references, source counts, and estimated tokens independently of native sessions. |
 | Editable and compactable Channel context | Working | Read/update/manual-compact APIs, preserved user edits, automatic token-pressure compaction, durable empty/current/stale/compacting/failed states, a Channel editor, manual compaction control, and Channel note-pin management are implemented. |
 | Thread-specific context snapshots | Working | Each new Thread stores an immutable snapshot of Channel context at creation plus independent projected context. Thread context supports human editing, manual/pressure compaction, stale/failure state, scoped MCP inspection, and an inline UI inspector. Legacy Threads derive current memory from their transcripts without inventing a historical Channel snapshot. |
@@ -60,7 +61,7 @@ This audit compares the intended behavior in [Product specification](product-spe
 
 ## Documentation corrections made with this audit
 
-- State documentation now identifies v24 and migrations from versions 1–23.
+- State documentation now identifies v25 and migrations from versions 1–24.
 - Work/result binding moved from `Next` to `Working now` because run attribution, changes, traces, and validation evidence already implement it.
 - Multi-Project references and Channel-context controls are marked backend-ready instead of being implied as either wholly absent or fully surfaced.
 - The roadmap now separates feature behavior, later UI/UX, and scale-dependent storage work.
@@ -70,3 +71,4 @@ This audit compares the intended behavior in [Product specification](product-spe
 - Configurable native notifications now derive from durable Inbox events and deep-link to exact conversation state without changing Inbox retention/read semantics.
 - New-root and DM composition omit hidden first-Project fallback and dedicated Project pickers; inference owns default scope while `@@project` remains the explicit path.
 - Routing latency, routing-failure Inbox attention, public Project-root privacy, and retention busy-state races are now covered by executable contracts.
+- The desktop visual reference, Light-default/System appearance behavior, neutral message focus treatment, and no-mobile-validation boundary are documented in [UI direction](ui-direction.md).

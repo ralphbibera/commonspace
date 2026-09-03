@@ -20,6 +20,7 @@ import { CommonspaceThreads } from "./CommonspaceThreads.tsx";
 import { CommonspaceTopbar } from "./CommonspaceTopbar.tsx";
 import type { CommonspaceStore } from "./commonspace-store.ts";
 import type { CommonspaceCollectionKind } from "./design-system/CollectionActionMenu.tsx";
+import type { CommonspaceColorMode } from "./theme.ts";
 
 export interface CommonspaceAppProps {
 	store: CommonspaceStore;
@@ -30,12 +31,79 @@ type CommonspaceDestination =
 	| "conversation"
 	| "directory"
 	| "inbox"
-	| "threads";
+	| "threads"
+	| "project";
 
 interface ConversationTarget {
 	messageId: string;
 	conversation: ConversationRef;
 	threadId?: string;
+}
+
+function storedUiValue(key: string): string | null {
+	if (typeof window === "undefined") return null;
+	try {
+		return window.localStorage.getItem(key);
+	} catch {
+		return null;
+	}
+}
+
+function storedNavigation(raw: string | null): {
+	kind: "channel" | "dm";
+	id: string;
+	threadId?: string;
+} | null {
+	if (raw === null) return null;
+	try {
+		const value: unknown = JSON.parse(raw);
+		if (typeof value !== "object" || value === null || Array.isArray(value))
+			return null;
+		if (!("kind" in value) || !("id" in value)) return null;
+		if (
+			(value.kind !== "channel" && value.kind !== "dm") ||
+			typeof value.id !== "string" ||
+			value.id === ""
+		)
+			return null;
+		const threadId = "threadId" in value ? value.threadId : undefined;
+		return {
+			kind: value.kind,
+			id: value.id,
+			...(typeof threadId === "string" ? { threadId } : {}),
+		};
+	} catch {
+		return null;
+	}
+}
+
+function initialDestination(): CommonspaceDestination {
+	const saved = storedUiValue("commonspace-view");
+	return saved === "conversation" ||
+		saved === "directory" ||
+		saved === "inbox" ||
+		saved === "threads" ||
+		saved === "project"
+		? saved
+		: "home";
+}
+
+function initialDirectoryKind(): CommonspaceDirectoryKind {
+	const saved = storedUiValue("commonspace-directory-kind");
+	return saved === "channels" || saved === "agents" ? saved : "projects";
+}
+
+function initialColorMode(): CommonspaceColorMode {
+	if (typeof window !== "undefined") {
+		try {
+			const saved = window.localStorage.getItem("commonspace-color-mode");
+			if (saved === "light" || saved === "dark" || saved === "system")
+				return saved;
+		} catch {
+			// Use light mode when local storage is unavailable.
+		}
+	}
+	return "light";
 }
 
 export function CommonspaceApp({ store }: CommonspaceAppProps) {
@@ -46,10 +114,12 @@ export function CommonspaceApp({ store }: CommonspaceAppProps) {
 	);
 	const [navigationOpen, setNavigationOpen] = useState(false);
 	const [searchOpen, setSearchOpen] = useState(false);
+	const [colorMode, setColorMode] =
+		useState<CommonspaceColorMode>(initialColorMode);
 	const [activeDestination, setActiveDestination] =
-		useState<CommonspaceDestination>("home");
+		useState<CommonspaceDestination>(initialDestination);
 	const [directoryKind, setDirectoryKind] =
-		useState<CommonspaceDirectoryKind>("projects");
+		useState<CommonspaceDirectoryKind>(initialDirectoryKind);
 	const [createRequest, setCreateRequest] = useState<{
 		kind: CommonspaceCollectionKind;
 		token: number;
@@ -85,6 +155,121 @@ export function CommonspaceApp({ store }: CommonspaceAppProps) {
 	}, [store]);
 
 	useEffect(() => {
+		const root = document.documentElement;
+		const media =
+			typeof window.matchMedia === "function"
+				? window.matchMedia("(prefers-color-scheme: dark)")
+				: null;
+		const applyMode = () => {
+			const dark =
+				colorMode === "dark" ||
+				(colorMode === "system" && media?.matches === true);
+			root.classList.toggle("dark", dark);
+			root.classList.toggle("light", !dark);
+			root.classList.toggle("system", colorMode === "system");
+		};
+		applyMode();
+		if (colorMode === "system" && media !== null) {
+			media.addEventListener("change", applyMode);
+		}
+		try {
+			window.localStorage.setItem("commonspace-color-mode", colorMode);
+		} catch {
+			// The theme still applies for this session when storage is unavailable.
+		}
+		return () => {
+			if (colorMode === "system" && media !== null)
+				media.removeEventListener("change", applyMode);
+		};
+	}, [colorMode]);
+
+	useEffect(() => {
+		try {
+			window.localStorage.setItem("commonspace-view", activeDestination);
+			window.localStorage.setItem("commonspace-directory-kind", directoryKind);
+		} catch {
+			// Navigation remains available for this session when storage is unavailable.
+		}
+	}, [activeDestination, directoryKind]);
+
+	useEffect(() => {
+		if (snapshot.bootstrap === null) return;
+		if (activeDestination === "project" && activeProjectViewId === null) {
+			const projectId = storedUiValue("commonspace-project");
+			if (
+				projectId !== null &&
+				snapshot.bootstrap.state.projects.some(
+					(project) => project.id === projectId,
+				)
+			)
+				setActiveProjectViewId(projectId);
+			return;
+		}
+		if (
+			activeDestination !== "conversation" ||
+			snapshot.activeConversation !== null
+		)
+			return;
+		const raw = storedUiValue("commonspace-navigation");
+		const fallbackRaw = storedUiValue("commonspace-conversation");
+		if (raw === null && fallbackRaw === null) return;
+		const candidate = storedNavigation(raw ?? fallbackRaw);
+		if (candidate === null) return;
+		const exists =
+			candidate.kind === "channel"
+				? snapshot.bootstrap.state.channels.some(
+						(channel) => channel.id === candidate.id,
+					)
+				: snapshot.bootstrap.state.agents.some(
+						(agent) => agent.id === candidate.id,
+					);
+		if (exists) {
+			store.selectConversation({ kind: candidate.kind, id: candidate.id });
+			if (candidate.threadId !== undefined && candidate.kind === "channel") {
+				const thread = snapshot.bootstrap.state.threads.find(
+					(item) =>
+						item.id === candidate.threadId && item.channelId === candidate.id,
+				);
+				if (thread !== undefined) store.selectThread(thread.id);
+			}
+		}
+	}, [
+		activeDestination,
+		activeProjectViewId,
+		snapshot.activeConversation,
+		snapshot.bootstrap,
+		store,
+	]);
+
+	useEffect(() => {
+		if (snapshot.activeConversation === null) return;
+		try {
+			window.localStorage.setItem(
+				"commonspace-navigation",
+				JSON.stringify({
+					...snapshot.activeConversation,
+					threadId: snapshot.activeThreadId,
+				}),
+			);
+			window.localStorage.setItem(
+				"commonspace-conversation",
+				JSON.stringify(snapshot.activeConversation),
+			);
+		} catch {
+			// Conversation selection remains available for this session.
+		}
+	}, [snapshot.activeConversation, snapshot.activeThreadId]);
+
+	useEffect(() => {
+		if (activeProjectViewId === null) return;
+		try {
+			window.localStorage.setItem("commonspace-project", activeProjectViewId);
+		} catch {
+			// Project selection remains available for this session.
+		}
+	}, [activeProjectViewId]);
+
+	useEffect(() => {
 		if (notificationLinkHandled.current || snapshot.bootstrap === null) return;
 		const parameters = new URLSearchParams(window.location.search);
 		const kind = parameters.get("conversation");
@@ -110,9 +295,14 @@ export function CommonspaceApp({ store }: CommonspaceAppProps) {
 			kind === "channel"
 				? state.channels.some((channel) => channel.id === conversationId)
 				: state.agents.some((agent) => agent.id === conversationId);
+		if (!conversationExists) {
+			notificationLinkHandled.current = true;
+			return;
+		}
 		const message = state.messages[`${kind}:${conversationId}`]?.find(
 			(candidate) => candidate.id === messageId,
 		);
+		if (message === undefined) return;
 		const thread =
 			threadId === null
 				? undefined
@@ -126,7 +316,7 @@ export function CommonspaceApp({ store }: CommonspaceAppProps) {
 						(message?.threadId === thread.id ||
 							thread.rootMessageId === message?.id));
 		notificationLinkHandled.current = true;
-		if (!conversationExists || message === undefined || !threadMatches) return;
+		if (!threadMatches) return;
 		store.selectConversation(conversation);
 		if (thread !== undefined) store.selectThread(thread.id);
 		setActiveProjectViewId(null);
@@ -179,18 +369,7 @@ export function CommonspaceApp({ store }: CommonspaceAppProps) {
 	const openTarget = (target: ConversationTarget) => {
 		store.selectConversation(target.conversation);
 		store.selectThread(target.threadId ?? null);
-		let messageId = target.messageId;
-		if (target.conversation.kind === "channel") {
-			const messages =
-				snapshot.bootstrap?.state.messages[
-					`channel:${target.conversation.id}`
-				] ?? [];
-			const sourceMessage = messages.find(
-				(message) => message.id === target.messageId,
-			);
-			messageId = sourceMessage?.parentMessageId ?? target.messageId;
-		}
-		openConversation(undefined, messageId);
+		openConversation(undefined, target.messageId);
 	};
 
 	const openSession = (session: CommonspaceSessionItem) => {
@@ -224,7 +403,7 @@ export function CommonspaceApp({ store }: CommonspaceAppProps) {
 				rootIndex: result.target.rootIndex,
 				path: result.target.path,
 			});
-			setActiveDestination("conversation");
+			setActiveDestination("project");
 		} else {
 			openConversation({ kind: "dm", id: result.target.agentId });
 		}
@@ -254,6 +433,7 @@ export function CommonspaceApp({ store }: CommonspaceAppProps) {
 			store.selectProject(id);
 			setActiveProjectViewId(id);
 			setTargetProjectFile(null);
+			setActiveDestination("project");
 		} else {
 			store.selectConversation({
 				kind: kind === "channel" ? "channel" : "dm",
@@ -262,7 +442,7 @@ export function CommonspaceApp({ store }: CommonspaceAppProps) {
 			setActiveProjectViewId(null);
 			setTargetProjectFile(null);
 		}
-		setActiveDestination("conversation");
+		if (kind !== "project") setActiveDestination("conversation");
 		setNavigationOpen(false);
 	};
 
@@ -309,7 +489,7 @@ export function CommonspaceApp({ store }: CommonspaceAppProps) {
 				/>
 				<aside
 					className={cn(
-						"relative z-20 min-h-0 min-w-0 overflow-hidden bg-sidebar text-sidebar-foreground max-[780px]:absolute max-[780px]:inset-y-0 max-[780px]:left-0 max-[780px]:w-[min(88vw,320px)] max-[780px]:-translate-x-full max-[780px]:pt-12 max-[780px]:shadow-2xl max-[780px]:transition-transform",
+						"relative z-20 min-h-0 min-w-0 overflow-hidden bg-sidebar text-sidebar-foreground max-[780px]:absolute max-[780px]:inset-y-0 max-[780px]:left-0 max-[780px]:w-[min(88vw,320px)] max-[780px]:-translate-x-full max-[780px]:shadow-2xl max-[780px]:transition-transform",
 						navigationOpen && "max-[780px]:translate-x-0",
 					)}
 				>
@@ -317,6 +497,8 @@ export function CommonspaceApp({ store }: CommonspaceAppProps) {
 						wide
 						expandSidebar={() => undefined}
 						store={store}
+						colorMode={colorMode}
+						onSetColorMode={setColorMode}
 						homeActive={
 							activeDestination === "home" && activeProjectViewId === null
 						}
@@ -348,7 +530,7 @@ export function CommonspaceApp({ store }: CommonspaceAppProps) {
 						onOpenProject={(projectId, file) => {
 							setActiveProjectViewId(projectId);
 							setTargetProjectFile(file ?? null);
-							setActiveDestination("conversation");
+							setActiveDestination("project");
 							setSettingsRequest(null);
 							setNavigationOpen(false);
 						}}
@@ -375,6 +557,7 @@ export function CommonspaceApp({ store }: CommonspaceAppProps) {
 					) : activeDestination === "home" ? (
 						<CommonspaceHome
 							bootstrap={snapshot.bootstrap}
+							onOpenDirectory={openDirectory}
 							onOpenSession={openSession}
 							onOpenConversation={(conversation) => {
 								openConversation(conversation);
@@ -404,7 +587,7 @@ export function CommonspaceApp({ store }: CommonspaceAppProps) {
 								setActiveProjectViewId(projectId);
 								setTargetProjectFile(null);
 								setSettingsRequest(null);
-								setActiveDestination("conversation");
+								setActiveDestination("project");
 							}}
 							onOpenConversation={(conversation) => {
 								openConversation(conversation);

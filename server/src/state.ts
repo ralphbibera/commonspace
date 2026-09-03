@@ -197,6 +197,7 @@ export function createInitialState(): CommonspaceState {
 		revision: 0,
 		inboxReadAt: null,
 		inboxReadMessageIds: [],
+		inboxUnreadMessageIds: [],
 		inboxSavedItemIds: [],
 		followedSessionIds: [],
 		mutedSessionIds: [],
@@ -278,7 +279,8 @@ export function applyMutation(
 			if (
 				state.inboxReadAt !== null &&
 				state.inboxReadAt >= readAt &&
-				state.inboxReadMessageIds.length === 0
+				state.inboxReadMessageIds.length === 0 &&
+				(state.inboxUnreadMessageIds ?? []).length === 0
 			)
 				return state;
 			return {
@@ -286,24 +288,14 @@ export function applyMutation(
 				revision: nextRevision(state),
 				inboxReadAt: readAt,
 				inboxReadMessageIds: [],
+				inboxUnreadMessageIds: [],
 			};
 		}
 		case "mark-inbox-item-read": {
 			const messageId = mutation.messageId.trim();
 			const message = Object.values(state.messages)
 				.flat()
-				.find(
-					(candidate) =>
-						candidate.id === messageId &&
-						(candidate.authorType === "agent" ||
-							(candidate.authorType === "system" &&
-								/\brun failed:/iu.test(candidate.text)) ||
-							candidate.replyStatus === "error" ||
-							candidate.replyStatus === "failed" ||
-							candidate.replyStatus === "timeout" ||
-							candidate.replyStatus === "silent" ||
-							candidate.replyStatus === "needs_input"),
-				);
+				.find((candidate) => candidate.id === messageId);
 			const permission = state.permissions.some(
 				(candidate) =>
 					candidate.status === "pending" &&
@@ -311,11 +303,58 @@ export function applyMutation(
 			);
 			if (message === undefined && !permission)
 				throw new Error("inbox item not found");
-			if (state.inboxReadMessageIds.includes(messageId)) return state;
+			const inboxUnreadMessageIds = (state.inboxUnreadMessageIds ?? []).filter(
+				(id) => id !== messageId,
+			);
+			if (
+				state.inboxReadMessageIds.includes(messageId) &&
+				inboxUnreadMessageIds.length ===
+					(state.inboxUnreadMessageIds ?? []).length
+			)
+				return state;
+			const inboxReadMessageIds = state.inboxReadMessageIds.includes(messageId)
+				? state.inboxReadMessageIds
+				: [...state.inboxReadMessageIds, messageId];
 			return {
 				...state,
 				revision: nextRevision(state),
-				inboxReadMessageIds: [...state.inboxReadMessageIds, messageId],
+				inboxReadMessageIds,
+				inboxUnreadMessageIds,
+			};
+		}
+		case "set-inbox-item-unread": {
+			const messageId = mutation.messageId.trim();
+			if (messageId === "")
+				throw new Error("inbox item message id is required");
+			const messageExists = Object.values(state.messages)
+				.flat()
+				.some((message) => message.id === messageId);
+			const permissionExists = state.permissions.some(
+				(permission) =>
+					permission.status === "pending" &&
+					permission.sourceMessageId === messageId,
+			);
+			if (!messageExists && !permissionExists)
+				throw new Error("inbox item not found");
+			const currentUnread = state.inboxUnreadMessageIds ?? [];
+			const inboxUnreadMessageIds = mutation.unread
+				? [...new Set([...currentUnread, messageId])]
+				: currentUnread.filter((id) => id !== messageId);
+			const inboxReadMessageIds = mutation.unread
+				? state.inboxReadMessageIds.filter((id) => id !== messageId)
+				: [...new Set([...state.inboxReadMessageIds, messageId])];
+			if (
+				JSON.stringify(inboxUnreadMessageIds) ===
+					JSON.stringify(currentUnread) &&
+				JSON.stringify(inboxReadMessageIds) ===
+					JSON.stringify(state.inboxReadMessageIds)
+			)
+				return state;
+			return {
+				...state,
+				revision: nextRevision(state),
+				inboxReadMessageIds,
+				inboxUnreadMessageIds,
 			};
 		}
 		case "set-inbox-item-saved": {

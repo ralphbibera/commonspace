@@ -265,7 +265,7 @@ export function CommonspaceProjectView({
 					)
 						setActiveTab(value);
 				}}
-				className="relative h-full min-h-0 gap-0 overflow-hidden bg-background"
+				className="relative flex h-full min-h-0 flex-col gap-0 overflow-hidden bg-background"
 			>
 				<WorkspaceHeader
 					title={project.name}
@@ -292,7 +292,7 @@ export function CommonspaceProjectView({
 					}
 				/>
 				<nav
-					className="flex min-h-16 flex-wrap items-center gap-2.5 border-b px-5 py-2 max-[640px]:px-3"
+					className="flex min-h-16 shrink-0 items-center gap-2.5 overflow-x-auto border-b px-5 py-2 whitespace-nowrap max-[780px]:px-3"
 					aria-label="Project views"
 				>
 					<Button variant="ghost" onClick={onBack}>
@@ -323,7 +323,7 @@ export function CommonspaceProjectView({
 				</nav>
 				<TabsContent
 					value="conversations"
-					className="min-h-0 overflow-auto bg-muted p-6"
+					className="min-h-0 flex-1 overflow-auto bg-muted p-6"
 				>
 					<ProjectConversations
 						bootstrap={bootstrap}
@@ -334,7 +334,7 @@ export function CommonspaceProjectView({
 				</TabsContent>
 				<TabsContent
 					value="files"
-					className="min-h-0 overflow-hidden bg-background"
+					className="min-h-0 flex-1 overflow-hidden bg-background"
 				>
 					<CommonspaceProjectFiles
 						projectId={project.id}
@@ -345,7 +345,7 @@ export function CommonspaceProjectView({
 				</TabsContent>
 				<TabsContent
 					value="changes"
-					className="min-h-0 overflow-hidden bg-background"
+					className="min-h-0 flex-1 overflow-hidden bg-background"
 				>
 					<CommonspaceProjectChanges projectId={project.id} fetcher={fetcher} />
 				</TabsContent>

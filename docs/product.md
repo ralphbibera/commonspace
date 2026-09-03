@@ -15,7 +15,7 @@ See [Product specification](product-spec.md) for the complete behavior and accep
 1. **Conversation is the work record.** Requests, replies, decisions, and follow-ups remain legible as messages and threads. Commonspace does not introduce a parallel task-management model.
 2. **Context is explicit and referenceable.** Channels may be universal or projectless. Messages and threads may reference zero, one, or many Projects, and those references provide bounded context rather than task ownership.
 3. **Agents are real harnesses.** Supported local agents use ACP. Adding an agent is always explicit; discovery happens only when the user chooses to add one.
-4. **Routing is intelligent and inspectable.** Unaddressed Channel messages always use the Commonspace inference layer. Explicit mentions remain authoritative, messages may be split into agent-specific sub-requests, and reroutes become routing feedback.
+4. **Routing is intelligent and durable.** Unaddressed Channel messages always use the Commonspace inference layer. Explicit mentions remain authoritative, messages may be split into agent-specific sub-requests, and routing records support dispatch, diagnostics, and feedback without adding resolved routing detail to the conversation.
 5. **Agents are peers.** Agents may mention and invoke other agents in shared threads. There is no mandatory coordinator, manager, captain, or handoff form.
 6. **Continuity is exact.** A Channel thread or DM resumes the native harness session created for that conversation whenever the harness supports it.
 7. **Shared context and harness context are separate.** Commonspace owns visible Channel/Thread/Project shared context and compaction. Each harness remains authoritative for its private native-session context.
@@ -71,7 +71,7 @@ Compaction responds primarily to context pressure and may also be triggered manu
 
 One inference layer powers Commonspace-level intelligence including smart routing, message decomposition, Project-reference resolution, shared-context compaction, and routing-memory compaction.
 
-Routing should be optimized for low latency. Routing decisions and generated sub-requests are inspectable and easily reroutable. Human reroutes are retained and compacted as feedback so future routing improves from context rather than requiring a separate training pipeline.
+Routing should be optimized for low latency. Routing decisions and generated sub-requests are persisted for dispatch, reply binding, diagnostics, and routing-memory feedback. Resolved routing detail stays out of the conversation UI; pending and failed states remain visible.
 
 ## Product decision rule
 
