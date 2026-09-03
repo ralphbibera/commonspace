@@ -12,6 +12,20 @@ ui                 Vite/React browser application
 
 The structure borrows mature separation patterns without importing another product's domain. Commonspace remains scoped to Projects, Channels, Direct Messages, Agents, Messages, threads, and context continuity.
 
+## Where changes belong
+
+| Change | Primary owner | Keep synchronized |
+| --- | --- | --- |
+| Cross-process type, API shape, or pure helper | `packages/shared` | Server, UI, tests, and documentation |
+| State transition, migration, persistence, or routing | `server/src/state.ts` or `server/src/service.ts` | Shared contracts, regression tests, and operations docs |
+| HTTP boundary, validation, or response status | `server/src/app.ts` | Shared request types and API tests |
+| ACP process or session lifecycle | `server/src/acp-runtime.ts` and `server/src/service.ts` | Harness tests and security documentation |
+| Scoped Commonspace MCP behavior | `server/src/commonspace-mcp.ts` | Shared contracts, ACP tests, and agent-context docs |
+| Browser state or API coordination | `ui/src/commonspace-store.ts` | Shared contracts and client tests |
+| Visible UI, interaction, or responsive state | `ui/src` and `ui/src/stories` | Storybook story, accessibility checks, and live flow when integrated |
+
+Keep feature logic near its owner. A coordinator may compose a capability, but it should not become a second source of truth for that capability.
+
 ## Request path
 
 The Vite development and preview servers proxy `/api` to the Commonspace API at `127.0.0.1:3100`. A production build places browser assets in `ui/dist`. Source/development operation keeps Vite and Express separate; the installed macOS service supplies that directory to Express so the built client and API share one loopback origin.

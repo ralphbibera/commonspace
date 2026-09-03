@@ -27,7 +27,17 @@ Requirements:
 
 - Node.js 22+
 - pnpm 10.34.5
-- Hermes and/or Codex installed and authenticated
+
+The contributor path does not require agent credentials. It starts the local API and UI with an empty workspace so you can work on the product, tests, and Storybook in isolation.
+
+```bash
+pnpm install --frozen-lockfile
+pnpm dev
+```
+
+Open `http://127.0.0.1:5173` for the UI. The API runs at `http://127.0.0.1:3100`.
+
+To exercise real agent sessions, install and authenticate Hermes and/or Codex separately, then add the discovered harness from the Commonspace UI. Agent credentials remain optional for source development.
 
 On macOS, install the private preview as an owner LaunchAgent directly from `main`:
 
@@ -44,15 +54,6 @@ The installer clones through SSH, builds in an owner-only managed release, start
 ~/.local/bin/commonspace update
 ~/.local/bin/commonspace rollback
 ```
-
-For source development:
-
-```bash
-pnpm install --frozen-lockfile
-pnpm dev
-```
-
-The Vite UI runs at `http://127.0.0.1:5173` and proxies `/api` to the local server on port `3100`.
 
 For the production path:
 
@@ -87,6 +88,7 @@ pnpm storybook              # persistent UI workbench
 pnpm test                   # unit and integration tests
 pnpm test:storybook:smoke   # six representative browser stories
 pnpm test:storybook:watch   # focused browser-test watch mode
+pnpm check:fast             # lint, types, tests, and Storybook smoke
 pnpm lint                   # ESLint
 pnpm typecheck              # workspace TypeScript checks
 pnpm build                  # all production builds
@@ -127,6 +129,8 @@ The Project Files browser refuses to preview known credential-bearing files such
 
 ## Documentation
 
+- [Contributor guide](docs/contributor-guide.md)
+- [Development support matrix](docs/support-matrix.md)
 - [Product specification](docs/product-spec.md)
 - [Product model](docs/product.md)
 - [Architecture](docs/architecture.md)

@@ -1,0 +1,39 @@
+name: Contributor experience
+description: Report friction in setup, testing, architecture discovery, or review.
+title: "[Contributor]: "
+body:
+  - type: textarea
+    id: friction
+    attributes:
+      label: Friction
+      description: What slowed you down or made the repository difficult to change?
+      placeholder: Describe the exact step, command, or missing explanation.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Setup
+        - Architecture discovery
+        - UI or Storybook
+        - Unit or integration tests
+        - Browser verification
+        - AI-assisted contribution
+        - Pull request review
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include OS, Node version, and pnpm version. Do not include private paths or credentials.
+    validations:
+      required: true
+  - type: textarea
+    id: improvement
+    attributes:
+      label: Suggested improvement
+      description: What would make the path clearer or faster?

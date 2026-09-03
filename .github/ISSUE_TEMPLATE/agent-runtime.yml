@@ -1,0 +1,42 @@
+name: Agent runtime integration
+description: Propose or report work related to a supported agent harness or ACP capability.
+title: "[Agent runtime]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Commonspace reflects connected harnesses. It does not replace their credentials, private memory, tools, permissions, or native sessions.
+  - type: textarea
+    id: runtime
+    attributes:
+      label: Runtime or capability
+      description: Name the runtime and the ACP behavior involved.
+      placeholder: Describe the harness, ACP method, or capability.
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: What should a contributor or user be able to do?
+    validations:
+      required: true
+  - type: textarea
+    id: lifecycle
+    attributes:
+      label: Lifecycle and failure behavior
+      description: Describe startup, resumption, cancellation, permissions, timeout, and failure expectations.
+    validations:
+      required: true
+  - type: textarea
+    id: security
+    attributes:
+      label: Security and data boundary
+      description: What data crosses the Commonspace boundary? Do not include real credentials or session identifiers.
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification plan
+      description: Describe deterministic tests and any opt-in live verification required.
