@@ -3,6 +3,8 @@ import {
 	type CommonspaceAgentProfile,
 } from "@commonspace/shared";
 
+const ESCAPE = String.fromCharCode(27);
+
 export interface CommonspaceTags {
 	agents: string[];
 	projects: string[];
@@ -11,6 +13,23 @@ export interface CommonspaceTags {
 
 function unique(values: string[]): string[] {
 	return [...new Set(values.map((value) => value.toLocaleLowerCase()))];
+}
+
+function stripAnsi(input: string): string {
+	return input
+		.split(ESCAPE)
+		.map((part, index) =>
+			index === 0 ? part : part.replace(/^\[[0-9;]*m/u, ""),
+		)
+		.join("");
+}
+
+function profileDisplayName(id: string): string {
+	return id
+		.split(/[-_]/u)
+		.filter(Boolean)
+		.map((part) => `${part.slice(0, 1).toLocaleUpperCase()}${part.slice(1)}`)
+		.join(" ");
 }
 
 export function parseTags(text: string): CommonspaceTags {
@@ -31,6 +50,67 @@ export function parseTags(text: string): CommonspaceTags {
 		projects: unique(projects),
 		channels: unique(channels),
 	};
+}
+
+function hermesProfileFromLine(
+	raw: string,
+): CommonspaceAgentProfile | undefined {
+	const line = raw.trim().replace(/^◆\s?/u, "");
+	if (line === "" || line.startsWith("Profile") || /^[─\-\s]+$/u.test(line))
+		return undefined;
+
+	const primary = /^(.*?)\s+\(default\)\s+(\S+)\s+(running|stopped)\b/u.exec(
+		line,
+	);
+	if (primary !== null) {
+		const [, displayName, model, status] = primary;
+		if (
+			displayName === undefined ||
+			model === undefined ||
+			status === undefined
+		)
+			return undefined;
+		return {
+			id: "default",
+			displayName: displayName.trim(),
+			adapter: "hermes",
+			model,
+			status: status === "running" ? "running" : "stopped",
+		};
+	}
+
+	const named = /^(\S+)\s+(\S+)\s+(running|stopped)\b/u.exec(line);
+	if (named === null) return undefined;
+	const [, id, model, status] = named;
+	if (id === undefined || model === undefined || status === undefined)
+		return undefined;
+	return {
+		id,
+		displayName: profileDisplayName(id),
+		adapter: "hermes",
+		model,
+		status: status === "running" ? "running" : "stopped",
+	};
+}
+
+export function parseHermesProfileList(
+	output: string,
+): CommonspaceAgentProfile[] {
+	return stripAnsi(output)
+		.split(/\r?\n/u)
+		.flatMap((line) => {
+			const profile = hermesProfileFromLine(line);
+			return profile === undefined ? [] : [profile];
+		});
+}
+
+export function parseHermesProfileDescription(
+	output: string,
+): string | undefined {
+	const value = stripAnsi(output).trim();
+	if (value === "" || /\bhas no description\.?$/iu.test(value))
+		return undefined;
+	return value.slice(0, 4_000);
 }
 
 export function mentionedChannelAgents(

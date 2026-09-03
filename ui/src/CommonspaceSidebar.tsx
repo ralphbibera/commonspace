@@ -445,10 +445,12 @@ export function CommonspaceSidebar({
 	const [agentAdapter, setAgentAdapter] = useState<AgentAdapterKind | null>(
 		null,
 	);
+	const [agentFullAccess, setAgentFullAccess] = useState(false);
 	const [editingAgentId, setEditingAgentId] = useState<string | null>(null);
 	const [agentProfileName, setAgentProfileName] = useState("");
 	const [agentAvatarEmoji, setAgentAvatarEmoji] = useState("");
 	const [agentAccentColor, setAgentAccentColor] = useState("#6d5dfc");
+	const [agentProfileFullAccess, setAgentProfileFullAccess] = useState(false);
 	const [editingChannelId, setEditingChannelId] = useState<string | null>(null);
 	const [channelAgentIds, setChannelAgentIds] = useState<string[]>([]);
 	const [channelInstructions, setChannelInstructions] = useState("");
@@ -536,7 +538,10 @@ export function CommonspaceSidebar({
 			setChannelAgentQuery("");
 			setChannelAgentFilter("all");
 		}
-		if (createRequest.kind === "agent") setAgentAdapter(null);
+		if (createRequest.kind === "agent") {
+			setAgentAdapter(null);
+			setAgentFullAccess(false);
+		}
 	}, [createRequest]);
 	useEffect(() => {
 		const openSearch = (event: KeyboardEvent) => {
@@ -998,6 +1003,7 @@ export function CommonspaceSidebar({
 			displayName: agentProfileName,
 			avatarEmoji: agentAvatarEmoji,
 			accentColor: agentAccentColor,
+			fullAccess: agentProfileFullAccess,
 		});
 		setEditingAgentId(null);
 	};
@@ -2763,6 +2769,23 @@ export function CommonspaceSidebar({
 												already added.
 											</span>
 										)}
+									<label className="flex items-start gap-3 rounded-md border bg-muted p-3 text-left">
+										<input
+											type="checkbox"
+											className="mt-0.5 size-4"
+											checked={agentFullAccess}
+											onChange={(event) => {
+												setAgentFullAccess(event.target.checked);
+											}}
+										/>
+										<span>
+											<strong className="block text-sm">Full access</strong>
+											<small className="block text-xs leading-5 text-muted-foreground">
+												Bypass approval prompts for this agent's Commonspace
+												runs.
+											</small>
+										</span>
+									</label>
 									{availableDiscoveredAgents.map((agent) => (
 										<button
 											key={agent.id}
@@ -2773,6 +2796,7 @@ export function CommonspaceSidebar({
 												void store.mutate({
 													action: "add-discovered-agent",
 													agentId: agent.id,
+													fullAccess: agentFullAccess,
 												});
 												setForm(null);
 											}}
@@ -2874,6 +2898,23 @@ export function CommonspaceSidebar({
 												}}
 											/>
 										</label>
+										<label className="flex items-start gap-3 rounded-md border bg-muted p-3">
+											<input
+												type="checkbox"
+												className="mt-0.5 size-4"
+												checked={agentProfileFullAccess}
+												onChange={(event) => {
+													setAgentProfileFullAccess(event.target.checked);
+												}}
+											/>
+											<span>
+												<strong className="block text-sm">Full access</strong>
+												<small className="block text-xs leading-5 text-muted-foreground">
+													Bypass approval prompts for this agent's Commonspace
+													runs.
+												</small>
+											</span>
+										</label>
 										<p className="text-xs text-muted-foreground">
 											The installed {runtimeLabel(editingAgent.adapter)}{" "}
 											harness, routing, and sessions stay unchanged.
@@ -2958,6 +2999,7 @@ export function CommonspaceSidebar({
 												setAgentProfileName(agent.displayName);
 												setAgentAvatarEmoji(agent.avatarEmoji ?? "");
 												setAgentAccentColor(agent.accentColor ?? "#6d5dfc");
+												setAgentProfileFullAccess(agent.fullAccess === true);
 											}}
 										/>
 									) : (
@@ -2979,6 +3021,7 @@ export function CommonspaceSidebar({
 												setAgentProfileName(agent.displayName);
 												setAgentAvatarEmoji(agent.avatarEmoji ?? "");
 												setAgentAccentColor(agent.accentColor ?? "#6d5dfc");
+												setAgentProfileFullAccess(agent.fullAccess === true);
 											}}
 											onStartFreshChat={() => {
 												void store

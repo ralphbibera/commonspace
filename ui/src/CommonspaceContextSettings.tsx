@@ -683,6 +683,7 @@ export function AgentSettingsPane({
 	const [accentColor, setAccentColor] = useState(
 		agent?.accentColor ?? "#4a154b",
 	);
+	const [fullAccess, setFullAccess] = useState(agent?.fullAccess === true);
 	const [saving, setSaving] = useState(false);
 	const [saveState, setSaveState] = useState(
 		"Unsaved changes stay local until verified.",
@@ -694,6 +695,7 @@ export function AgentSettingsPane({
 		setDisplayName(agent.displayName);
 		setAvatarEmoji(agent.avatarEmoji ?? "");
 		setAccentColor(agent.accentColor ?? "#4a154b");
+		setFullAccess(agent.fullAccess === true);
 	}, [agent]);
 
 	if (agent === undefined) return null;
@@ -714,6 +716,7 @@ export function AgentSettingsPane({
 				displayName: displayName.trim(),
 				avatarEmoji,
 				accentColor,
+				fullAccess,
 			});
 			setSaveState(
 				"Workspace identity saved. Native harness profile verified unchanged.",
@@ -842,8 +845,8 @@ export function AgentSettingsPane({
 						</span>
 					</header>
 					<p className="text-xs leading-5 text-muted-foreground">
-						Model, reasoning, credentials, and processing mode stay owned by the
-						selected native profile.
+						Model, reasoning, and credentials stay owned by the selected native
+						profile. Access mode below applies only to Commonspace runs.
 					</p>
 					<div className="mt-4 grid grid-cols-2 gap-3 [&_input]:min-h-11 [&_input]:rounded-sm [&_input]:border [&_input]:bg-muted [&_input]:px-3 [&_label]:grid [&_label]:gap-1.5 [&_label]:text-xs [&_label]:font-semibold">
 						<label>
@@ -863,6 +866,25 @@ export function AgentSettingsPane({
 							/>
 						</label>
 					</div>
+					<label className="mt-4 flex items-start gap-3 rounded-md border bg-muted p-3 text-left">
+						<input
+							type="checkbox"
+							className="mt-0.5 size-4"
+							checked={fullAccess}
+							onChange={(event) => {
+								setFullAccess(event.target.checked);
+								setSaveState("Unsaved changes stay local until verified.");
+							}}
+						/>
+						<span>
+							<strong className="block text-sm">Full access</strong>
+							<small className="block text-xs leading-5 text-muted-foreground">
+								Bypass approval prompts for this agent's Commonspace runs. The
+								agent can execute commands and modify files without asking
+								first.
+							</small>
+						</span>
+					</label>
 					<p className="mt-3 inline-flex items-center gap-2 text-xs text-[var(--status-success)]">
 						<CheckIcon className="size-4" aria-hidden="true" />
 						Configuration verified from the native profile

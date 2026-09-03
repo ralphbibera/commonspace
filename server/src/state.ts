@@ -258,6 +258,7 @@ export function addDiscoveredAgent(
 		model: optionalModel(agent.model, null),
 		createdAt: dependencies.now(),
 	};
+	if (agent.fullAccess === true) discoveredAgent.fullAccess = true;
 	if (agent.nativeProfile !== undefined)
 		discoveredAgent.nativeProfile = agent.nativeProfile;
 	return {
@@ -701,6 +702,7 @@ export function applyMutation(
 					displayName,
 					adapter: agent.adapter,
 					model: agent.model,
+					fullAccess: mutation.fullAccess ?? agent.fullAccess === true,
 					createdAt: agent.createdAt,
 				};
 				if (avatarEmoji !== undefined) updated.avatarEmoji = avatarEmoji;

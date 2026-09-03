@@ -230,6 +230,7 @@ const mutationSchema = requestSchema<CommonspaceMutation>(
 			z.object({
 				action: z.literal("add-discovered-agent"),
 				agentId: z.string(),
+				fullAccess: z.boolean().optional(),
 			}),
 			z.object({
 				action: z.literal("update-agent-profile"),
@@ -237,6 +238,7 @@ const mutationSchema = requestSchema<CommonspaceMutation>(
 				displayName: z.string(),
 				avatarEmoji: z.string().optional(),
 				accentColor: z.string().optional(),
+				fullAccess: z.boolean().optional(),
 			}),
 			z.object({ action: z.literal("remove-agent"), agentId: z.string() }),
 			z.object({ action: z.literal("reset-dm"), agentId: z.string() }),

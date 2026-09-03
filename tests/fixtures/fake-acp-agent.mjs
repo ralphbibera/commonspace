@@ -6,6 +6,7 @@ const sessionId =
 	process.env.FAKE_ACP_SESSION_ID ?? "123e4567-e89b-42d3-a456-426614174000";
 const logPath = process.env.FAKE_ACP_LOG;
 const mcpServersBySession = new Map();
+const loadedSessionIds = new Set();
 let processMcpServers;
 const pendingPrompts = new Map();
 let pendingPermissionPrompt;
@@ -180,6 +181,7 @@ for await (const line of lines) {
 			id: frame.id,
 			result: sessionSettings(),
 		});
+		loadedSessionIds.add(frame.params.sessionId);
 		continue;
 	}
 
@@ -256,6 +258,17 @@ for await (const line of lines) {
 			.filter((part) => part.type === "text")
 			.map((part) => part.text)
 			.join("");
+		if (
+			process.env.FAKE_ACP_EMPTY_AFTER_LOAD === "1" &&
+			loadedSessionIds.has(frame.params.sessionId)
+		) {
+			await writeFrame({
+				jsonrpc: "2.0",
+				id: frame.id,
+				result: { stopReason: "end_turn" },
+			});
+			continue;
+		}
 		const text =
 			process.env.FAKE_ACP_INFERENCE_RESPONSE !== undefined &&
 			promptText.includes("bounded routing classifier")
