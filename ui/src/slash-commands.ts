@@ -20,7 +20,7 @@ export interface ResolvedSlashCommand {
 	args: string;
 }
 
-export const COMMONSPACE_SLASH_COMMANDS: readonly SlashCommandDefinition[] = [
+const COMMONSPACE_SLASH_COMMANDS: readonly SlashCommandDefinition[] = [
 	{
 		id: "help",
 		name: "/help",
