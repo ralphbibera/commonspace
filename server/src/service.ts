@@ -108,6 +108,8 @@ import {
 import {
 	mentionedAgents,
 	mentionedChannelAgents,
+	parseHermesProfileDescription,
+	parseHermesProfileList,
 	parseTags,
 	rankChannelAgents,
 } from "./relay.js";
@@ -852,6 +854,7 @@ function sanitizeAgents(
 			model: model === "" ? null : model,
 			createdAt: agent.createdAt.slice(0, 100),
 		};
+		if (agent.fullAccess === true) sanitizedAgent.fullAccess = true;
 		if (avatarEmoji !== "") sanitizedAgent.avatarEmoji = avatarEmoji;
 		if (accentColor !== undefined) sanitizedAgent.accentColor = accentColor;
 		if (typeof nativeProfile === "string")
@@ -918,6 +921,8 @@ function isMissingNativeSession(cause: unknown): boolean {
 		message,
 	);
 }
+
+class AcpEmptyResponseError extends Error {}
 
 function plainRecord(value: JsonValue | undefined): JsonObject | null {
 	return jsonObject(value);
@@ -4468,7 +4473,10 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 					);
 				}
 				if (agent === undefined) throw new Error("unknown discovered agent");
-				this.state = addDiscoveredAgent(this.state, agent);
+				this.state = addDiscoveredAgent(this.state, {
+					...agent,
+					fullAccess: mutation.fullAccess === true,
+				});
 			} else {
 				const normalized = await this.normalizeMutation(mutation);
 				this.state = applyMutation(this.state, normalized);
@@ -6891,9 +6899,48 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 				).values(),
 			];
 		}
-		const executable = adapter === "hermes" ? this.hermesPath : this.codexPath;
+		if (adapter === "hermes") {
+			try {
+				const { stdout } = await execFileAsync(
+					this.hermesPath,
+					["profile", "list"],
+					{
+						maxBuffer: MAX_HARNESS_DISCOVERY_BYTES,
+						timeout: 30_000,
+						encoding: "utf8",
+					},
+				);
+				const profiles = parseHermesProfileList(stdout);
+				return Promise.all(
+					profiles.map(async (profile) => {
+						try {
+							const result = await execFileAsync(
+								this.hermesPath,
+								["profile", "describe", profile.id],
+								{
+									maxBuffer: MAX_HARNESS_DISCOVERY_BYTES,
+									timeout: 30_000,
+									encoding: "utf8",
+								},
+							);
+							const description = parseHermesProfileDescription(result.stdout);
+							return description === undefined
+								? profile
+								: { ...profile, description };
+						} catch {
+							return profile;
+						}
+					}),
+				);
+			} catch (error) {
+				this.environment.logger?.warn(
+					`Commonspace could not discover Hermes profiles: ${error instanceof Error ? error.message : String(error)}`,
+				);
+				return [];
+			}
+		}
 		try {
-			await execFileAsync(executable, ["--version"], {
+			await execFileAsync(this.codexPath, ["--version"], {
 				maxBuffer: MAX_HARNESS_DISCOVERY_BYTES,
 				timeout: 30_000,
 				encoding: "utf8",
@@ -6906,12 +6953,12 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 		}
 		return [
 			{
-				id: adapter,
-				displayName: adapter === "hermes" ? "Hermes" : "Codex",
-				adapter,
+				id: "codex",
+				displayName: "Codex",
+				adapter: "codex",
 				model: null,
 				status: "stopped",
-				description: `Installed ${adapter === "hermes" ? "Hermes" : "Codex"} harness.`,
+				description: "Installed Codex harness.",
 			},
 		];
 	}
@@ -6933,6 +6980,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 					model: discovered.model,
 					status: discovered.status,
 				};
+				if (agent.fullAccess === true) profile.fullAccess = true;
 				if (agent.avatarEmoji !== undefined)
 					profile.avatarEmoji = agent.avatarEmoji;
 				if (agent.accentColor !== undefined)
@@ -6950,6 +6998,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 				model: agent.model,
 				status: "unknown",
 			};
+			if (agent.fullAccess === true) profile.fullAccess = true;
 			if (agent.avatarEmoji !== undefined)
 				profile.avatarEmoji = agent.avatarEmoji;
 			if (agent.accentColor !== undefined)
@@ -7089,13 +7138,17 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 		let processClient = this.acpProcesses.get(activeScopeKey);
 		if (processClient === undefined) {
 			const hermes = input.agent.adapter === "hermes";
+			const fullAccess =
+				input.agent.fullAccess ||
+				(hermes ? this.hermesYolo : this.externalAgentYolo);
 			processClient = new AcpAgentProcess({
 				command: hermes ? this.hermesAcpCommand : this.codexAcpCommand,
 				args: hermes
 					? [
 							...this.hermesAcpArgs,
+							...(input.agent.id === "hermes" ? [] : ["-p", input.agent.id]),
 							"acp",
-							...(this.hermesYolo ? ["--accept-hooks"] : []),
+							...(fullAccess ? ["--accept-hooks"] : []),
 						]
 					: this.codexAcpArgs,
 				cwd: input.cwd,
@@ -7104,9 +7157,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 					: {
 							...process.env,
 							CODEX_PATH: this.codexPath,
-							INITIAL_AGENT_MODE: this.externalAgentYolo
-								? "agent-full-access"
-								: "agent",
+							INITIAL_AGENT_MODE: fullAccess ? "agent-full-access" : "agent",
 							NO_BROWSER: "1",
 						},
 				requestTimeoutMs: ((this.runBudgetSeconds ?? 3_600) + 30) * 1000,
@@ -7115,6 +7166,11 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 			});
 			this.acpProcesses.set(activeScopeKey, processClient);
 		}
+		const fullAccess =
+			input.agent.fullAccess ||
+			(input.agent.adapter === "hermes"
+				? this.hermesYolo
+				: this.externalAgentYolo);
 		let activeSessionId: string | undefined;
 		try {
 			const acpInput: AcpRunInput = {
@@ -7124,10 +7180,10 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 				mcpServers,
 				modeId:
 					input.agent.adapter === "hermes"
-						? this.hermesYolo
+						? fullAccess
 							? "dont_ask"
 							: "accept_edits"
-						: this.externalAgentYolo
+						: fullAccess
 							? "agent-full-access"
 							: "agent",
 				configOptions,

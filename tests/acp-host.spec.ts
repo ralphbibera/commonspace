@@ -33,6 +33,116 @@ function acpConfig(root: string): CommonspaceHostConfig {
 }
 
 describe("Commonspace ACP host path", () => {
+	it("launches a named Hermes agent with its native profile", async () => {
+		const root = await mkdtemp(join(tmpdir(), "commonspace-hermes-profile-"));
+		roots.push(root);
+		const logPath = join(root, "frames.ndjson");
+		vi.stubEnv("FAKE_ACP_LOG", logPath);
+		vi.stubEnv("FAKE_ACP_CAPTURE_ENV", "1");
+		const service = new CommonspaceHostService(
+			{},
+			{
+				root,
+				hermesAcpCommand: process.execPath,
+				hermesAcpArgs: [fixturePath],
+			},
+			{
+				discoverAgents: async () => [
+					{
+						id: "frontend",
+						displayName: "Frontend",
+						adapter: "hermes",
+						model: "gpt-test",
+						status: "stopped",
+					},
+				],
+			},
+		);
+		await service.initialize();
+		await service.discoverAgents("hermes");
+		await service.mutate({
+			action: "add-discovered-agent",
+			agentId: "frontend",
+		});
+
+		await service.send({
+			conversation: { kind: "dm", id: "frontend" },
+			text: "Inspect the UI.",
+		});
+		await service.whenIdle();
+		await service.close();
+
+		const frames = (await readFile(logPath, "utf8"))
+			.trim()
+			.split("\n")
+			.map((line) => JSON.parse(line));
+		expect(frames.find((frame) => frame.event === "environment")?.argv).toEqual(
+			["-p", "frontend", "acp"],
+		);
+	});
+
+	it("replaces a silent persisted Hermes session and retries the prompt once", async () => {
+		const root = await mkdtemp(
+			join(tmpdir(), "commonspace-hermes-silent-session-"),
+		);
+		roots.push(root);
+		const logPath = join(root, "frames.ndjson");
+		vi.stubEnv("FAKE_ACP_LOG", logPath);
+		const discoverAgents = async () => [
+			{
+				id: "frontend",
+				displayName: "Frontend",
+				adapter: "hermes" as const,
+				model: "gpt-test",
+				status: "stopped" as const,
+			},
+		];
+		const config: CommonspaceHostConfig = {
+			root,
+			hermesAcpCommand: process.execPath,
+			hermesAcpArgs: [fixturePath],
+		};
+		const initial = new CommonspaceHostService({}, config, { discoverAgents });
+		await initial.initialize();
+		await initial.discoverAgents("hermes");
+		await initial.mutate({
+			action: "add-discovered-agent",
+			agentId: "frontend",
+		});
+		await initial.send({
+			conversation: { kind: "dm", id: "frontend" },
+			text: "Create native state.",
+		});
+		await initial.whenIdle();
+		await initial.close();
+
+		vi.stubEnv("FAKE_ACP_EMPTY_AFTER_LOAD", "1");
+		const restarted = new CommonspaceHostService({}, config, {
+			discoverAgents,
+		});
+		await restarted.initialize();
+		await restarted.send({
+			conversation: { kind: "dm", id: "frontend" },
+			text: "Continue after stale native state.",
+		});
+		await restarted.whenIdle();
+		expect(restarted.snapshot().messages["dm:frontend"]?.at(-1)?.text).toBe(
+			"Echo: Continue after stale native state.",
+		);
+		await restarted.close();
+
+		const frames = (await readFile(logPath, "utf8"))
+			.trim()
+			.split("\n")
+			.map((line) => JSON.parse(line));
+		expect(
+			frames.filter((frame) => frame.method === "session/load"),
+		).toHaveLength(1);
+		expect(
+			frames.filter((frame) => frame.method === "session/new"),
+		).toHaveLength(2);
+	});
+
 	it("delivers general files as ACP resource links", async () => {
 		const root = await mkdtemp(join(tmpdir(), "commonspace-acp-file-"));
 		roots.push(root);
@@ -563,6 +673,50 @@ describe("Commonspace ACP host path", () => {
 			frames.find((frame) => frame.method === "session/set_model")?.params
 				.modelId,
 		).toBe("openai:hermes-test");
+	});
+
+	it("uses full-access ACP mode for an agent configured with full access", async () => {
+		const root = await mkdtemp(join(tmpdir(), "commonspace-acp-full-access-"));
+		roots.push(root);
+		const logPath = join(root, "frames.ndjson");
+		vi.stubEnv("FAKE_ACP_LOG", logPath);
+		vi.stubEnv("FAKE_ACP_HERMES_SETTINGS", "1");
+		vi.stubEnv("FAKE_ACP_CAPTURE_ENV", "1");
+		const service = new CommonspaceHostService(
+			{},
+			{
+				root,
+				hermesAcpCommand: process.execPath,
+				hermesAcpArgs: [fixturePath],
+			},
+			{ discoverAgents: discoverTestHarnesses },
+		);
+		await service.initialize();
+		await service.discoverAgents("hermes");
+		await service.mutate({
+			action: "add-discovered-agent",
+			agentId: "hermes",
+			fullAccess: true,
+		});
+
+		await service.send({
+			conversation: { kind: "dm", id: "hermes" },
+			text: "Use full access.",
+		});
+		await service.whenIdle();
+		await service.close();
+
+		const frames = (await readFile(logPath, "utf8"))
+			.trim()
+			.split("\n")
+			.map((line) => JSON.parse(line));
+		expect(frames.find((frame) => frame.event === "environment")?.argv).toEqual(
+			["acp", "--accept-hooks"],
+		);
+		expect(
+			frames.find((frame) => frame.method === "session/set_mode")?.params
+				.modeId,
+		).toBe("dont_ask");
 	});
 
 	it("isolates concurrent harness inference across Channels", async () => {

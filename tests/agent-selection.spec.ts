@@ -4,6 +4,7 @@ import { join } from "node:path";
 import type { CommonspaceMutation } from "@commonspace/shared";
 import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 import { z } from "zod";
+import { parseHermesProfileList } from "../server/src/relay.ts";
 import { CommonspaceHostService } from "../server/src/service.ts";
 import { discoverTestHarnesses } from "./test-harnesses.ts";
 import { mustExist } from "./test-helpers.ts";
@@ -17,6 +18,40 @@ afterEach(async () => {
 });
 
 describe("Commonspace agent selection", () => {
+	it("discovers named Hermes profiles as distinct native agents", () => {
+		expect(
+			parseHermesProfileList(`
+ Profile          Model        Gateway
+ ───────────────  ───────────  ───────
+ ◆AgentOps (default) gpt-5.6-sol  running
+  backend         gpt-5.6-sol  stopped
+  frontend        gpt-5.6-sol  stopped
+`),
+		).toEqual([
+			{
+				id: "default",
+				displayName: "AgentOps",
+				adapter: "hermes",
+				model: "gpt-5.6-sol",
+				status: "running",
+			},
+			{
+				id: "backend",
+				displayName: "Backend",
+				adapter: "hermes",
+				model: "gpt-5.6-sol",
+				status: "stopped",
+			},
+			{
+				id: "frontend",
+				displayName: "Frontend",
+				adapter: "hermes",
+				model: "gpt-5.6-sol",
+				status: "stopped",
+			},
+		]);
+	});
+
 	it("adds the explicitly selected Hermes harness and persists that choice", async () => {
 		const root = await mkdtemp(join(tmpdir(), "commonspace-agent-selection-"));
 		roots.push(root);
@@ -33,8 +68,15 @@ describe("Commonspace agent selection", () => {
 		);
 		expect(discoveredAgent).toMatchObject({ id: "hermes", adapter: "hermes" });
 		expect(discoverAgents).toHaveBeenCalledOnce();
-		await service.mutate({ action: "add-discovered-agent", agentId: "hermes" });
-		expect((await service.bootstrap()).agents).toEqual([discoveredAgent]);
+		await service.mutate({
+			action: "add-discovered-agent",
+			agentId: "hermes",
+			fullAccess: true,
+		});
+		expect((await service.bootstrap()).agents).toEqual([
+			{ ...discoveredAgent, fullAccess: true },
+		]);
+		expect(service.snapshot().agents[0]?.fullAccess).toBe(true);
 		await service.close();
 
 		const restarted = new CommonspaceHostService({}, { root }, dependencies);
@@ -45,11 +87,12 @@ describe("Commonspace agent selection", () => {
 				displayName: "Hermes",
 				adapter: "hermes",
 				model: null,
+				fullAccess: true,
 				status: "unknown",
 			},
 		]);
 		expect((await restarted.discoverAgents("hermes")).agents).toEqual([
-			discoveredAgent,
+			{ ...discoveredAgent, fullAccess: true },
 		]);
 		await restarted.close();
 	});

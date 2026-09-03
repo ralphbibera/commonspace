@@ -14,17 +14,43 @@ afterEach(async () => {
 });
 
 describe("known harness discovery", () => {
-	it("adds installed Codex and Hermes harnesses without importing custom profiles", async () => {
+	it("adds the installed Codex harness and distinct Hermes profiles", async () => {
 		const root = await mkdtemp(
 			join(tmpdir(), "commonspace-harness-discovery-"),
 		);
 		roots.push(root);
 		const service = new CommonspaceHostService(
 			{},
+			{ root },
 			{
-				root,
-				codexPath: process.execPath,
-				hermesPath: process.execPath,
+				discoverAgents: async (adapter) =>
+					adapter === "codex"
+						? [
+								{
+									id: "codex",
+									displayName: "Codex",
+									adapter: "codex",
+									model: null,
+									status: "stopped",
+									description: "Installed Codex harness.",
+								},
+							]
+						: [
+								{
+									id: "default",
+									displayName: "AgentOps",
+									adapter: "hermes",
+									model: "gpt-test",
+									status: "running",
+								},
+								{
+									id: "frontend",
+									displayName: "Frontend",
+									adapter: "hermes",
+									model: "gpt-test",
+									status: "stopped",
+								},
+							],
 			},
 		);
 		await service.initialize();
@@ -43,19 +69,32 @@ describe("known harness discovery", () => {
 		await service.mutate({ action: "add-discovered-agent", agentId: "codex" });
 
 		const hermes = await service.discoverAgents("hermes");
-		expect(hermes.discoveredAgents).toEqual(
-			expect.arrayContaining([
-				{
-					id: "hermes",
-					displayName: "Hermes",
-					adapter: "hermes",
-					model: null,
-					status: "stopped",
-					description: "Installed Hermes harness.",
-				},
-			]),
-		);
-		await service.mutate({ action: "add-discovered-agent", agentId: "hermes" });
+		expect(
+			hermes.discoveredAgents.filter((agent) => agent.adapter === "hermes"),
+		).toEqual([
+			{
+				id: "default",
+				displayName: "AgentOps",
+				adapter: "hermes",
+				model: "gpt-test",
+				status: "running",
+			},
+			{
+				id: "frontend",
+				displayName: "Frontend",
+				adapter: "hermes",
+				model: "gpt-test",
+				status: "stopped",
+			},
+		]);
+		await service.mutate({
+			action: "add-discovered-agent",
+			agentId: "default",
+		});
+		await service.mutate({
+			action: "add-discovered-agent",
+			agentId: "frontend",
+		});
 
 		expect(
 			service.snapshot().agents.map((agent) => ({
@@ -65,7 +104,8 @@ describe("known harness discovery", () => {
 			})),
 		).toEqual([
 			{ id: "codex", adapter: "codex", nativeProfile: undefined },
-			{ id: "hermes", adapter: "hermes", nativeProfile: undefined },
+			{ id: "default", adapter: "hermes", nativeProfile: undefined },
+			{ id: "frontend", adapter: "hermes", nativeProfile: undefined },
 		]);
 		await service.close();
 	});

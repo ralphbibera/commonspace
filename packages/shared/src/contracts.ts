@@ -1,4 +1,4 @@
-export const COMMONSPACE_STATE_VERSION = 25 as const;
+export const COMMONSPACE_STATE_VERSION = 26 as const;
 export const COMMONSPACE_EXPORT_VERSION = 1 as const;
 
 export type AgentAdapterKind = "hermes" | "codex";
@@ -183,6 +183,8 @@ export interface CommonspaceAgentProfile {
 	/** @deprecated Legacy imported profile reference retained only for persisted-history compatibility. */
 	nativeProfile?: string;
 	model: string | null;
+	/** Runs started by Commonspace bypass native approval prompts for this agent. */
+	fullAccess?: boolean;
 	status: "running" | "stopped" | "unknown";
 	description?: string;
 }
@@ -200,6 +202,8 @@ export interface CommonspaceAgentDefinition {
 	/** @deprecated Legacy imported profile reference retained only for persisted-history compatibility. */
 	nativeProfile?: string;
 	model: string | null;
+	/** Runs started by Commonspace bypass native approval prompts for this agent. */
+	fullAccess?: boolean;
 	createdAt: string;
 }
 
@@ -636,13 +640,14 @@ export type CommonspaceMutation =
 			maxAgentsPerTurn?: number;
 			memoryThreads?: number;
 	  }
-	| { action: "add-discovered-agent"; agentId: string }
+	| { action: "add-discovered-agent"; agentId: string; fullAccess?: boolean }
 	| {
 			action: "update-agent-profile";
 			agentId: string;
 			displayName: string;
 			avatarEmoji?: string;
 			accentColor?: string;
+			fullAccess?: boolean;
 	  }
 	| { action: "remove-agent"; agentId: string }
 	| { action: "reset-dm"; agentId: string }
