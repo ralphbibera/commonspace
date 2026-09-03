@@ -10,20 +10,20 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CommonspaceDirectory } from "../ui/src/CommonspaceDirectory.tsx";
 import {
-	createStoryStore,
-	storyBootstrap,
-} from "../ui/src/storybook-fixtures.ts";
+	createTestStore,
+	testBootstrap,
+} from "../ui/src/test-fixtures.ts";
 
 afterEach(cleanup);
 
 describe("Commonspace collection directory", () => {
 	it("filters and opens the complete desktop project directory", () => {
-		const store = createStoryStore();
+		const store = createTestStore();
 		const onOpenProject = vi.fn();
 		render(
 			<CommonspaceDirectory
 				kind="projects"
-				bootstrap={storyBootstrap}
+				bootstrap={testBootstrap}
 				store={store}
 				onAdd={vi.fn()}
 				onOpenProject={onOpenProject}
@@ -51,11 +51,11 @@ describe("Commonspace collection directory", () => {
 
 	it("uses a shadcn action menu and confirmation before removal", async () => {
 		const mutate = vi.fn(async () => undefined);
-		const store = { ...createStoryStore(), mutate };
+		const store = { ...createTestStore(), mutate };
 		render(
 			<CommonspaceDirectory
 				kind="channels"
-				bootstrap={storyBootstrap}
+				bootstrap={testBootstrap}
 				store={store}
 				onAdd={vi.fn()}
 				onOpenProject={vi.fn()}

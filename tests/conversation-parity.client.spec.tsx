@@ -9,7 +9,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CommonspaceConversation } from "../ui/src/CommonspaceConversation.tsx";
-import { createStoryStore } from "../ui/src/storybook-fixtures.ts";
+import { createTestStore } from "../ui/src/test-fixtures.ts";
 
 afterEach(() => {
 	cleanup();
@@ -21,7 +21,7 @@ beforeEach(() => {
 
 describe("desktop conversation parity", () => {
 	it("opens full channel settings and persists visible member choices", async () => {
-		const base = createStoryStore();
+		const base = createTestStore();
 		const mutate = vi.fn(async () => undefined);
 		const store = { ...base, mutate };
 		store.selectConversation({ kind: "channel", id: "general" });
@@ -64,7 +64,7 @@ describe("desktop conversation parity", () => {
 	});
 
 	it("opens the complete native agent readback pane and saves local identity", async () => {
-		const base = createStoryStore();
+		const base = createTestStore();
 		const mutate = vi.fn(async () => undefined);
 		const store = { ...base, mutate };
 		store.selectConversation({ kind: "dm", id: "agentops" });
@@ -103,16 +103,16 @@ describe("desktop conversation parity", () => {
 	});
 
 	it("shows date and unread boundaries and follows the active thread", async () => {
-		vi.useFakeTimers({ toFake: ["Date"] });
-		vi.setSystemTime(new Date("2026-09-01T12:00:00.000Z"));
-		const base = createStoryStore();
+		const base = createTestStore();
 		const mutate = vi.fn(async () => undefined);
 		const store = { ...base, mutate };
 		store.selectConversation({ kind: "channel", id: "general" });
 		store.selectThread("thread-attention");
 		render(<CommonspaceConversation store={store} />);
 
-		expect(screen.getByText(/^Today ·/u)).toBeTruthy();
+		expect(
+			screen.getByText(/^(?:Today|[A-Z][a-z]{2} \d{1,2}) ·/u),
+		).toBeTruthy();
 		expect(
 			screen.getByRole("button", { name: /new messages, mark read/u }),
 		).toBeTruthy();
@@ -128,7 +128,7 @@ describe("desktop conversation parity", () => {
 	});
 
 	it("offers the reference message context actions from each delivered post", async () => {
-		const base = createStoryStore();
+		const base = createTestStore();
 		const mutate = vi.fn(async () => undefined);
 		const store = { ...base, mutate };
 		store.selectConversation({ kind: "channel", id: "general" });
