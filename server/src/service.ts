@@ -3190,9 +3190,6 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 			const canonicalWorkspace: CommonspaceWorkspaceArchive["workspace"] = {
 				inboxReadAt: imported.inboxReadAt,
 				inboxReadMessageIds: imported.inboxReadMessageIds,
-				...(workspace.inboxUnreadMessageIds === undefined
-					? {}
-					: { inboxUnreadMessageIds: imported.inboxUnreadMessageIds ?? [] }),
 				inboxSavedItemIds: imported.inboxSavedItemIds,
 				followedSessionIds: imported.followedSessionIds,
 				mutedSessionIds: imported.mutedSessionIds,
@@ -3211,6 +3208,9 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 				permissions: imported.permissions,
 				messages: imported.messages,
 			};
+			if (workspace.inboxUnreadMessageIds !== undefined)
+				canonicalWorkspace.inboxUnreadMessageIds =
+					imported.inboxUnreadMessageIds ?? [];
 			if (!isDeepStrictEqual(canonicalWorkspace, workspace))
 				throw new Error("workspace archive failed structural validation");
 			const expected = new Map<
@@ -5853,13 +5853,16 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 	}
 
 	private async processReplies(
-		prepared: PreparedSend,
-		response: SendMessageResponse,
+		initialPrepared: PreparedSend,
+		initialResponse: SendMessageResponse,
 	): Promise<void> {
-		const routed = await this.resolvePendingRouting(prepared, response);
+		const routed = await this.resolvePendingRouting(
+			initialPrepared,
+			initialResponse,
+		);
 		if (routed === null) return;
-		prepared = routed.prepared;
-		response = routed.response;
+		const prepared = routed.prepared;
+		const response = routed.response;
 		const thread = response.thread;
 		const explicitlyTargetsAll =
 			prepared.request.conversation.kind === "channel" &&
