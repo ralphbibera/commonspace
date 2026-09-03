@@ -1,8 +1,8 @@
 # Commonspace design system
 
-## Direction: Buzz's shell, Commonspace's model
+## Direction: Commonspace's visual language
 
-Commonspace should feel like a focused working surface for conversations with agents. Its desktop visual direction deliberately adapts [Buzz](https://github.com/block/buzz): a tinted navigation canvas, inset conversation surface, dense flat rows, and chat-first composer. Commonspace retains its own constellation mark and product model.
+Commonspace should feel like a focused, local-first working surface for conversations with agents. Its visual language prioritizes orientation, legibility, and trust: a stable navigation shell, an inset conversation surface, dense but calm rows, and a chat-first composer. The constellation mark, semantic tokens, and state colors give Commonspace its own identity.
 
 ## Principles
 
@@ -11,7 +11,7 @@ Commonspace should feel like a focused working surface for conversations with ag
 3. **Structure before decoration.** Selection, hierarchy, labels, and metadata explain where context lives.
 4. **Quiet selection.** Neutral translucent fills identify active context; the constellation accent is reserved for identity, links, and focus.
 5. **Theme from tokens.** Standalone root variables feed the existing `--csp-*` semantic layer.
-6. **One structural gradient.** Buzz's yellow-to-blue wash belongs to the outer shell and navigation only; conversation surfaces stay flat.
+6. **Purposeful accents.** Use restrained accent treatments for identity, focus, and meaningful state changes. Keep conversation surfaces calm; decoration must not compete with the work.
 
 ## Application shell
 
