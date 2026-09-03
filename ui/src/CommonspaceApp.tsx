@@ -504,6 +504,7 @@ export function CommonspaceApp({ store }: CommonspaceAppProps) {
 						}
 						inboxActive={activeDestination === "inbox"}
 						threadsActive={activeDestination === "threads"}
+						activeProjectViewId={activeProjectViewId}
 						createRequest={createRequest}
 						onOpenHome={openHome}
 						onOpenSearch={() => {

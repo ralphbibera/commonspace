@@ -1,4 +1,5 @@
 import { SearchIcon } from "lucide-react";
+import { CommonspaceLogo } from "@/design-system/CommonspaceLogo";
 
 export interface CommonspaceTopbarProps {
 	homeActive: boolean;
@@ -20,12 +21,7 @@ export function CommonspaceTopbar({
 				onClick={onOpenHome}
 				className="flex min-h-11 w-fit items-center gap-2 rounded-sm border-0 bg-transparent px-2 text-left text-sidebar-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sidebar-foreground max-[780px]:px-2"
 			>
-				<span
-					className="grid size-6 place-items-center rounded-sm border border-sidebar-foreground/25 bg-sidebar-foreground/10 font-heading text-xs font-bold"
-					aria-hidden="true"
-				>
-					C
-				</span>
+				<CommonspaceLogo decorative className="size-6" />
 				<strong className="font-heading text-[13px] font-semibold max-[780px]:sr-only">
 					Commonspace
 				</strong>

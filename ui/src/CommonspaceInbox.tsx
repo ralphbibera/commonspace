@@ -11,6 +11,7 @@ import {
 	ChevronRightIcon,
 	Clock3Icon,
 	InboxIcon,
+	MessageSquareTextIcon,
 } from "lucide-react";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import {
@@ -108,7 +109,9 @@ export function CommonspaceInbox({
 		store.getSnapshot,
 		store.getSnapshot,
 	);
-	const [view, setView] = useState<"attention" | "sessions">("attention");
+	const [view, setView] = useState<"attention" | "activity" | "sessions">(
+		"attention",
+	);
 	const [filter, setFilter] = useState<"all" | "unread" | "saved">("all");
 	const [sessionFilter, setSessionFilter] = useState<
 		"all" | CommonspaceSessionItem["status"]
@@ -123,6 +126,10 @@ export function CommonspaceInbox({
 		[state],
 	);
 	const attentionItems = useMemo(() => items.filter(isAttentionItem), [items]);
+	const activityItems = useMemo(
+		() => items.filter((item) => !isAttentionItem(item)),
+		[items],
+	);
 	const sessions = useMemo(
 		() =>
 			state === undefined
@@ -140,12 +147,14 @@ export function CommonspaceInbox({
 	const runningCount = sessions.filter(
 		(session) => session.status === "running",
 	).length;
+	const currentItems = view === "attention" ? attentionItems : activityItems;
+	const currentUnreadCount = currentItems.filter((item) => item.unread).length;
 	const visibleItems =
 		filter === "unread"
-			? attentionItems.filter((item) => item.unread)
+			? currentItems.filter((item) => item.unread)
 			: filter === "saved"
-				? attentionItems.filter((item) => item.saved)
-				: attentionItems;
+				? currentItems.filter((item) => item.saved)
+				: currentItems;
 	const visibleSessions =
 		sessionFilter === "all"
 			? sessions
@@ -214,8 +223,8 @@ export function CommonspaceInbox({
 					/>
 					{String(runningCount)} running
 				</span>
-				{view === "attention" && (
-					<button
+				{view !== "sessions" && (
+						<button
 						type="button"
 						className="ml-auto inline-flex min-h-9 shrink-0 items-center gap-2 rounded-sm border bg-background px-3 text-xs font-semibold hover:bg-muted disabled:text-muted-foreground max-[480px]:size-11 max-[480px]:justify-center max-[480px]:px-0"
 						disabled={unreadCount === 0 || markingRead}
@@ -244,13 +253,27 @@ export function CommonspaceInbox({
 						}}
 						className="inline-flex min-h-9 items-center gap-1.5 rounded-sm border border-transparent px-2.5 text-xs font-semibold text-muted-foreground hover:bg-muted hover:text-foreground aria-pressed:border-border aria-pressed:bg-muted aria-pressed:text-foreground"
 					>
-						<InboxIcon className="size-4" aria-hidden="true" />
-						Attention{" "}
+							<InboxIcon className="size-4" aria-hidden="true" />
+							Attention{" "}
 						<span className="grid size-5 place-items-center rounded-full border bg-background font-mono">
 							{String(attentionItems.length)}
 						</span>
-					</button>
-					<button
+						</button>
+						<button
+							type="button"
+							aria-pressed={view === "activity"}
+							onClick={() => {
+								setView("activity");
+							}}
+							className="inline-flex min-h-9 items-center gap-1.5 rounded-sm border border-transparent px-2.5 text-xs font-semibold text-muted-foreground hover:bg-muted hover:text-foreground aria-pressed:border-border aria-pressed:bg-muted aria-pressed:text-foreground"
+						>
+							<MessageSquareTextIcon className="size-4" aria-hidden="true" />
+							Activity{" "}
+							<span className="grid size-5 place-items-center rounded-full border bg-background font-mono">
+								{String(activityItems.length)}
+							</span>
+						</button>
+						<button
 						type="button"
 						aria-pressed={view === "sessions"}
 						onClick={() => {
@@ -265,7 +288,7 @@ export function CommonspaceInbox({
 						</span>
 					</button>
 				</fieldset>
-				{view === "attention" ? (
+					{view !== "sessions" ? (
 					<fieldset
 						aria-label="Inbox filter"
 						className="m-0 flex min-w-0 items-center gap-0.5 border-0 p-0"
@@ -283,7 +306,7 @@ export function CommonspaceInbox({
 								{value === "all" ? (
 									"All"
 								) : value === "unread" ? (
-									`Unread${unreadCount === 0 ? "" : ` ${String(unreadCount)}`}`
+										`Unread${currentUnreadCount === 0 ? "" : ` ${String(currentUnreadCount)}`}`
 								) : (
 									<>
 										<BookmarkIcon className="size-3.5" aria-hidden="true" />
@@ -322,16 +345,20 @@ export function CommonspaceInbox({
 			</div>
 
 			<div className="min-h-0 flex-1 overflow-y-auto" aria-live="polite">
-				{view === "attention" ? (
-					visibleItems.length === 0 ? (
-						<Empty className="min-h-72 border-0">
-							<EmptyHeader>
-								<EmptyMedia variant="icon">
-									<CheckCheckIcon aria-hidden="true" />
-								</EmptyMedia>
-								<EmptyTitle>You’re all caught up.</EmptyTitle>
-								<EmptyDescription>
-									New agent activity will appear here.
+					{view !== "sessions" ? (
+						visibleItems.length === 0 ? (
+							<Empty className="min-h-72 border-0">
+								<EmptyHeader>
+									<EmptyMedia variant="icon">
+										<CheckCheckIcon aria-hidden="true" />
+									</EmptyMedia>
+									<EmptyTitle>
+										{view === "activity" ? "No replies yet." : "You’re all caught up."}
+									</EmptyTitle>
+									<EmptyDescription>
+										{view === "activity"
+											? "Agent replies will appear here."
+											: "New requests and failures will appear here."}
 								</EmptyDescription>
 							</EmptyHeader>
 						</Empty>

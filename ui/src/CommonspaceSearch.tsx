@@ -117,6 +117,23 @@ function resultGlyph(kind: CommonspaceSearchKind): string {
 	return "↳";
 }
 
+function resultReceiptLabel(result: CommonspaceSearchResult): string {
+	const location = result.receipt.split(" · ")[0]?.trim();
+	const occurredAt = result.occurredAt;
+	const time =
+		occurredAt === undefined
+			? undefined
+			: new Intl.DateTimeFormat(undefined, {
+					month: "short",
+					day: "numeric",
+					hour: "numeric",
+					minute: "2-digit",
+				}).format(new Date(occurredAt));
+	return [location, time]
+		.filter((value): value is string => value !== undefined)
+		.join(" · ");
+}
+
 export function CommonspaceSearchDialog({
 	projects,
 	onClose,
@@ -192,7 +209,7 @@ export function CommonspaceSearchDialog({
 			<DialogContent
 				showCloseButton
 				aria-describedby={undefined}
-				className="top-[10vh] max-h-[80vh] -translate-y-0 sm:max-w-[640px]"
+				className="top-[10vh] max-h-[80vh] -translate-y-0 sm:max-w-[720px]"
 			>
 				<DialogHeader className="sr-only">
 					<DialogTitle>Search Commonspace</DialogTitle>
@@ -209,7 +226,7 @@ export function CommonspaceSearchDialog({
 								? undefined
 								: `${resultsId}-${String(boundedActiveIndex)}`
 						}
-						placeholder="Search messages, files, runs, traces…"
+						placeholder="Search messages, channels, agents, files, or runs…"
 						value={query}
 						className="h-11 min-w-0 border-0 bg-transparent text-[17px] tracking-[-0.01em] outline-none placeholder:text-muted-foreground"
 						onChange={(event) => {
@@ -234,7 +251,7 @@ export function CommonspaceSearchDialog({
 					</kbd>
 				</div>
 				<section
-					className="flex items-center gap-2 overflow-x-auto px-3.5 py-2"
+					className="flex flex-wrap items-center gap-2 px-3.5 py-2"
 					aria-label="Search filters"
 				>
 					<select
@@ -268,6 +285,7 @@ export function CommonspaceSearchDialog({
 							setActiveIndex(0);
 						}}
 						aria-label="Search result types"
+						className="w-full flex-wrap gap-1"
 					>
 						{COMMONSPACE_SEARCH_KINDS.map((kind) => (
 							<ToggleGroupItem key={kind} value={kind}>
@@ -353,8 +371,12 @@ export function CommonspaceSearchDialog({
 										highlights={result.highlights}
 									/>
 								</small>
-								<small className="block truncate font-mono text-xs text-muted-foreground/80">
-									{result.receipt}
+								<small
+									className="block truncate text-xs text-muted-foreground/80"
+									title={result.receipt}
+									aria-label={`Source: ${result.receipt}`}
+								>
+									{resultReceiptLabel(result)}
 								</small>
 							</span>
 							<span className="max-w-32 truncate text-xs text-muted-foreground">

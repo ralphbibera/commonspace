@@ -79,6 +79,7 @@ export interface CommonspaceSidebarProps {
 	homeActive?: boolean;
 	inboxActive?: boolean;
 	threadsActive?: boolean;
+	activeProjectViewId?: string | null;
 	createRequest?: { kind: CommonspaceCollectionKind; token: number } | null;
 	onOpenHome?: () => void;
 	onOpenSearch?: () => void;
@@ -172,28 +173,18 @@ function BrowseButton({
 }
 
 function SettingsSectionHeading({
-	number,
 	title,
 	description,
 }: {
-	number: number;
 	title: string;
 	description: string;
 }) {
 	return (
-		<div className="mb-5 flex items-start gap-3">
-			<span
-				className="grid size-7 shrink-0 place-items-center rounded-full bg-primary font-mono text-xs font-bold text-primary-foreground"
-				aria-hidden="true"
-			>
-				{number}
-			</span>
-			<div>
-				<h2 className="font-heading text-[17px] font-bold tracking-[-0.01em]">
-					{title}
-				</h2>
-				<p className="mt-1 text-xs text-muted-foreground">{description}</p>
-			</div>
+		<div className="mb-5 border-b border-border/70 pb-4">
+			<h2 className="font-heading text-[17px] font-bold tracking-[-0.01em]">
+				{title}
+			</h2>
+			<p className="mt-1 text-xs text-muted-foreground">{description}</p>
 		</div>
 	);
 }
@@ -332,6 +323,7 @@ export function CommonspaceSidebar({
 	homeActive = false,
 	inboxActive = false,
 	threadsActive = false,
+	activeProjectViewId = null,
 	createRequest = null,
 	onOpenHome,
 	onOpenSearch,
@@ -1074,7 +1066,7 @@ export function CommonspaceSidebar({
 								</section>
 								<div className="relative pb-5">
 									<span className="font-mono text-xs tracking-[0.06em] text-primary">
-										Commonspace inference
+										Workspace intelligence
 									</span>
 									<span className="absolute top-0 right-0 inline-flex min-h-[30px] items-center gap-2 rounded-full border px-2.5 font-mono text-xs text-muted-foreground">
 										<i
@@ -1084,19 +1076,18 @@ export function CommonspaceSidebar({
 										Saved configuration
 									</span>
 									<h2 className="mt-2 max-w-[700px] font-heading text-[36px] leading-[1.12] font-bold tracking-[-0.025em]">
-										Choose how the workspace thinks
+										Configure routing and context
 									</h2>
 									<p className="mt-2 max-w-[780px] text-sm leading-6 text-muted-foreground">
-										Configure the model Commonspace uses for routing, context
-										compaction, and other workspace intelligence. Native agent
-										profiles keep their own model settings.
+										Choose how Commonspace routes messages and compacts shared
+										context. Native agent profiles keep their own model
+										settings.
 									</p>
 								</div>
 								<section className="pt-2">
 									<SettingsSectionHeading
-										number={1}
-										title="Inference source"
-										description="Use your own OpenAI-compatible endpoint or delegate utility inference to a native agent."
+										title="Routing source"
+										description="Choose where Commonspace gets routing and context decisions."
 									/>
 									<fieldset
 										aria-label="Routing engine"
@@ -1200,7 +1191,6 @@ export function CommonspaceSidebar({
 								{routingProvider === "openai-compatible" && (
 									<section className="mt-8 border-t pt-8">
 										<SettingsSectionHeading
-											number={2}
 											title="Connection"
 											description="Credentials stay on this device and are never included in public workspace configuration."
 										/>
@@ -1303,7 +1293,6 @@ export function CommonspaceSidebar({
 								<fieldset className="mt-8 border-t pt-8">
 									<legend className="sr-only">Agent run defaults</legend>
 									<SettingsSectionHeading
-										number={3}
 										title="Agent run defaults"
 										description="Defaults apply when a channel or agent profile does not override them."
 									/>
@@ -1861,7 +1850,7 @@ export function CommonspaceSidebar({
 						<NavGroupLabel label="Pinned" count={projectItems.pinnedCount} />
 					)}
 					{projectItems.items.map((project, index) => {
-						const active = snapshot.activeProjectId === project.id;
+						const active = activeProjectViewId === project.id;
 						const folderSummary =
 							project.paths.length === 1
 								? "1 folder · working directory"
