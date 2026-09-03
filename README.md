@@ -87,15 +87,11 @@ The split keeps product contracts, server behavior, and the browser interface in
 pnpm dev                    # server + UI development
 pnpm storybook              # persistent UI workbench
 pnpm test                   # unit and integration tests
-pnpm test:storybook:smoke   # six representative browser stories
-pnpm test:storybook:watch   # focused browser-test watch mode
-pnpm check:fast             # lint, types, tests, and Storybook smoke
-pnpm lint                   # ESLint
+pnpm lint                   # Biome lint
 pnpm typecheck              # workspace TypeScript checks
-pnpm build                  # all production builds
-pnpm check:ui               # full UI type, Storybook, and build gate
-pnpm check                  # complete local gate
-pnpm verify:live            # build, boot API + UI preview, and exercise the browser path
+pnpm check                  # fast local gate: Biome, types, and tests
+pnpm build                  # production builds; release verification only
+pnpm verify:live            # final release-path check: build, boot API + UI preview, and exercise the browser path
 pnpm verify:service         # isolated real clone/build/update/rollback lifecycle on macOS
 pnpm service:install        # install current committed main checkout as a macOS LaunchAgent
 pnpm service:status         # inspect installed service and health
