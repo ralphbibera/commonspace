@@ -6,6 +6,7 @@ import type {
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, fn, userEvent, within } from "storybook/test";
 import { CommonspaceSearchDialog } from "../CommonspaceSearch";
+import { errorSearchFetcher, pendingSearchFetcher } from "./story-fixtures";
 
 const project: CommonspaceProject = {
 	id: "platform",
@@ -115,5 +116,34 @@ export const QueryAndKeyboardSelection: Story = {
 				name: /Open Message: Review the visual baseline/iu,
 			}),
 		).toHaveAttribute("aria-selected", "true");
+	},
+};
+
+export const NoResults: Story = {
+	play: async ({ canvasElement }) => {
+		const body = within(canvasElement.ownerDocument.body);
+		await userEvent.type(
+			body.getByRole("searchbox", { name: "Search Commonspace" }),
+			"missing result",
+		);
+		await expect(body.getByText("No results for “missing result”.")).toBeVisible();
+	},
+};
+
+export const Pending: Story = {
+	args: { fetcher: pendingSearchFetcher },
+	play: async ({ canvasElement }) => {
+		const body = within(canvasElement.ownerDocument.body);
+		await expect(body.getByText("Searching…")).toBeVisible();
+	},
+};
+
+export const RequestFailed: Story = {
+	args: { fetcher: errorSearchFetcher },
+	play: async ({ canvasElement }) => {
+		const body = within(canvasElement.ownerDocument.body);
+		await expect(await body.findByRole("alert")).toHaveTextContent(
+			"Search is temporarily unavailable.",
+		);
 	},
 };

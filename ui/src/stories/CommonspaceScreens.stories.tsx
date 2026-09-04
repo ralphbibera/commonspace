@@ -1,0 +1,599 @@
+import type { ConversationRef } from "@commonspace/shared";
+import type { Meta, StoryObj } from "@storybook/react-vite";
+import { expect, userEvent, within } from "storybook/test";
+import { CommonspaceApp } from "../CommonspaceApp";
+import type { CommonspaceDirectoryKind } from "../CommonspaceDirectory";
+import type { CommonspaceStore } from "../commonspace-store";
+import {
+	createStoryStore,
+	denseStoryBootstrap,
+	discoveryStoryBootstrap,
+	emptySearchFetcher,
+	emptyBootstrap,
+	errorSearchFetcher,
+	failedStoryBootstrap,
+	pendingSearchFetcher,
+	primaryProject,
+	runtimeStoryBootstrap,
+	storyBootstrap,
+	storyProjectFetcher,
+	storySearchFetcher,
+} from "./story-fixtures";
+
+type ScreenDestination =
+	| "conversation"
+	| "directory"
+	| "inbox"
+	| "project"
+	| "threads";
+
+interface CommonspaceScreenProps {
+	destination: ScreenDestination;
+	store: CommonspaceStore;
+	directoryKind?: CommonspaceDirectoryKind;
+	projectId?: string;
+	conversation?: ConversationRef;
+	threadId?: string;
+	projectFetcher?: typeof globalThis.fetch;
+	searchFetcher?: typeof globalThis.fetch;
+}
+
+function CommonspaceScreen({
+	destination,
+	store,
+	directoryKind = "projects",
+	projectId,
+	conversation,
+	threadId,
+	projectFetcher,
+	searchFetcher,
+}: CommonspaceScreenProps) {
+	window.localStorage.setItem("commonspace-view", destination);
+	window.localStorage.setItem("commonspace-directory-kind", directoryKind);
+	if (projectId === undefined) window.localStorage.removeItem("commonspace-project");
+	else window.localStorage.setItem("commonspace-project", projectId);
+	if (conversation === undefined) {
+		window.localStorage.removeItem("commonspace-navigation");
+		window.localStorage.removeItem("commonspace-conversation");
+	} else {
+		const navigation = JSON.stringify({ ...conversation, threadId });
+		window.localStorage.setItem("commonspace-navigation", navigation);
+		window.localStorage.setItem(
+			"commonspace-conversation",
+			JSON.stringify(conversation),
+		);
+	}
+	return (
+		<CommonspaceApp
+			store={store}
+			{...(projectFetcher === undefined ? {} : { projectFetcher })}
+			{...(searchFetcher === undefined ? {} : { searchFetcher })}
+		/>
+	);
+}
+
+const meta = {
+	title: "Screens/Workspace",
+	component: CommonspaceScreen,
+	parameters: { layout: "fullscreen" },
+	decorators: [
+		(Story) => (
+			<div className="h-dvh w-full">
+				<Story />
+			</div>
+		),
+	],
+	args: {
+		destination: "inbox",
+		store: createStoryStore(storyBootstrap),
+		searchFetcher: storySearchFetcher,
+	},
+} satisfies Meta<typeof CommonspaceScreen>;
+
+export default meta;
+type Story = StoryObj<typeof meta>;
+
+const channel = { kind: "channel" as const, id: "channel-design" };
+const directMessage = { kind: "dm" as const, id: "agent-hermes" };
+
+export const InboxAttention: Story = {};
+
+export const InboxActivity: Story = {
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		const activity = canvas.getByRole("button", { name: /Activity/iu });
+		await userEvent.click(activity);
+		await expect(activity).toHaveAttribute("aria-pressed", "true");
+	},
+};
+
+export const InboxSessions: Story = {
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		const sessions = canvas.getByRole("button", { name: /Sessions/iu });
+		await userEvent.click(sessions);
+		await expect(sessions).toHaveAttribute("aria-pressed", "true");
+	},
+};
+
+export const FailedSession: Story = {
+	args: { store: createStoryStore(failedStoryBootstrap) },
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		await userEvent.click(canvas.getByRole("button", { name: /Sessions/iu }));
+		await expect(canvas.getByText(/local agent process exited/iu)).toBeVisible();
+	},
+};
+
+export const DenseInboxActivity: Story = {
+	args: { store: createStoryStore(denseStoryBootstrap) },
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		await userEvent.click(canvas.getByRole("button", { name: /Activity/iu }));
+		await expect(canvas.getAllByRole("button", { name: /Open/iu }).length).toBeGreaterThan(4);
+	},
+};
+
+export const DenseInboxUnread: Story = {
+	args: { store: createStoryStore(denseStoryBootstrap) },
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		await userEvent.click(canvas.getByRole("button", { name: /Activity/iu }));
+		const filters = canvas.getByRole("group", { name: "Inbox filter" });
+		const unread = within(filters).getByRole("button", { name: /Unread/iu });
+		await userEvent.click(unread);
+		await expect(unread).toHaveAttribute("aria-pressed", "true");
+	},
+};
+
+export const InboxSaved: Story = {
+	args: { store: createStoryStore(denseStoryBootstrap) },
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		await userEvent.click(canvas.getByRole("button", { name: /Activity/iu }));
+		const filters = canvas.getByRole("group", { name: "Inbox filter" });
+		const saved = within(filters).getByRole("button", { name: /Saved/iu });
+		await userEvent.click(saved);
+		await expect(saved).toHaveAttribute("aria-pressed", "true");
+	},
+};
+
+export const Threads: Story = {
+	args: { destination: "threads" },
+};
+
+export const DenseThreads: Story = {
+	args: {
+		destination: "threads",
+		store: createStoryStore(denseStoryBootstrap),
+	},
+};
+
+export const UnreadThreads: Story = {
+	args: {
+		destination: "threads",
+		store: createStoryStore(denseStoryBootstrap),
+	},
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		const filters = canvas.getByRole("group", { name: "Thread filter" });
+		const unread = within(filters).getByRole("button", { name: /Unread/iu });
+		await userEvent.click(unread);
+		await expect(unread).toHaveAttribute("aria-pressed", "true");
+	},
+};
+
+export const FollowingThreads: Story = {
+	args: {
+		destination: "threads",
+		store: createStoryStore(denseStoryBootstrap),
+	},
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		const following = canvas.getByRole("button", { name: /Following/iu });
+		await userEvent.click(following);
+		await expect(following).toHaveAttribute("aria-pressed", "true");
+	},
+};
+
+export const ProjectsDirectory: Story = {
+	args: { destination: "directory", directoryKind: "projects" },
+};
+
+export const ChannelsDirectory: Story = {
+	args: { destination: "directory", directoryKind: "channels" },
+};
+
+export const AgentsDirectory: Story = {
+	args: { destination: "directory", directoryKind: "agents" },
+};
+
+export const ChannelConversation: Story = {
+	args: {
+		destination: "conversation",
+		conversation: channel,
+		store: createStoryStore(storyBootstrap, {
+			activeConversation: channel,
+			activeProjectId: primaryProject.id,
+		}),
+	},
+};
+
+export const ThreadConversation: Story = {
+	args: {
+		destination: "conversation",
+		conversation: channel,
+		threadId: "thread-review",
+		store: createStoryStore(storyBootstrap, {
+			activeConversation: channel,
+			activeProjectId: primaryProject.id,
+			activeThreadId: "thread-review",
+		}),
+	},
+};
+
+export const DirectMessage: Story = {
+	args: {
+		destination: "conversation",
+		conversation: directMessage,
+		store: createStoryStore(storyBootstrap, {
+			activeConversation: directMessage,
+			activeProjectId: primaryProject.id,
+		}),
+	},
+};
+
+export const DirectMessageRuntime: Story = {
+	args: {
+		destination: "conversation",
+		conversation: directMessage,
+		store: createStoryStore(runtimeStoryBootstrap, {
+			activeConversation: directMessage,
+			activeProjectId: primaryProject.id,
+		}),
+	},
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		await expect(
+			canvas.getByRole("region", { name: "Permission request from Review Bot" }),
+		).toBeVisible();
+		await expect(canvas.getByRole("region", { name: "Queued follow-ups" })).toBeVisible();
+	},
+};
+
+export const DirectMessageFailure: Story = {
+	args: {
+		destination: "conversation",
+		conversation: directMessage,
+		store: createStoryStore(failedStoryBootstrap, {
+			activeConversation: directMessage,
+			activeProjectId: primaryProject.id,
+		}),
+	},
+};
+
+export const SlashCommandSuggestions: Story = {
+	args: {
+		destination: "conversation",
+		conversation: directMessage,
+		store: createStoryStore(storyBootstrap, {
+			activeConversation: directMessage,
+			activeProjectId: primaryProject.id,
+		}),
+	},
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		await userEvent.type(canvas.getByRole("textbox", { name: "Message Review Bot" }), "/");
+		await expect(canvas.getByRole("listbox", { name: "Slash commands" })).toBeVisible();
+	},
+};
+
+export const ProjectReferenceSuggestions: Story = {
+	args: {
+		destination: "conversation",
+		conversation: channel,
+		store: createStoryStore(storyBootstrap, {
+			activeConversation: channel,
+			activeProjectId: primaryProject.id,
+		}),
+	},
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		await userEvent.type(
+			canvas.getByRole("textbox", { name: "Post in design-review" }),
+			"@@",
+		);
+		await expect(canvas.getByRole("listbox", { name: "Tag suggestions" })).toBeVisible();
+	},
+};
+
+export const DirectMessageNewChatConfirmation: Story = {
+	args: {
+		destination: "conversation",
+		conversation: directMessage,
+		store: createStoryStore(storyBootstrap, {
+			activeConversation: directMessage,
+			activeProjectId: primaryProject.id,
+		}),
+	},
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		const composer = canvas.getByRole("textbox", { name: "Message Review Bot" });
+		await userEvent.type(composer, "/new");
+		await userEvent.keyboard("{Enter}");
+		await expect(canvas.getByRole("status", { name: "Command result" })).toBeVisible();
+		await expect(canvas.getByRole("button", { name: "Start new chat" })).toBeVisible();
+	},
+};
+
+export const ThreadContextOpen: Story = {
+	args: {
+		destination: "conversation",
+		conversation: channel,
+		threadId: "thread-review",
+		store: createStoryStore(storyBootstrap, {
+			activeConversation: channel,
+			activeProjectId: primaryProject.id,
+			activeThreadId: "thread-review",
+		}),
+	},
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		await userEvent.click(canvas.getByRole("button", { name: "Open thread context" }));
+		await expect(canvas.getByRole("region", { name: "Thread context" })).toBeVisible();
+	},
+};
+
+export const ProjectFiles: Story = {
+	args: {
+		destination: "project",
+		projectId: primaryProject.id,
+		projectFetcher: storyProjectFetcher,
+	},
+};
+
+export const ProjectConversations: Story = {
+	args: {
+		destination: "project",
+		projectId: primaryProject.id,
+		projectFetcher: storyProjectFetcher,
+	},
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		await userEvent.click(canvas.getByRole("tab", { name: "Conversations" }));
+		await expect(canvas.getByRole("tab", { name: "Conversations" })).toHaveAttribute(
+			"aria-selected",
+			"true",
+		);
+	},
+};
+
+export const ProjectChanges: Story = {
+	args: {
+		destination: "project",
+		projectId: primaryProject.id,
+		projectFetcher: storyProjectFetcher,
+	},
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		await userEvent.click(canvas.getByRole("tab", { name: "Changes" }));
+		await expect(canvas.getByRole("tab", { name: "Changes" })).toHaveAttribute(
+			"aria-selected",
+			"true",
+		);
+	},
+};
+
+export const ProjectSettings: Story = {
+	args: {
+		destination: "project",
+		projectId: primaryProject.id,
+		projectFetcher: storyProjectFetcher,
+	},
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		await userEvent.click(
+			canvas.getByRole("button", { name: "Open project settings" }),
+		);
+		await expect(
+			canvas.getByRole("complementary", { name: "Project settings" }),
+		).toBeVisible();
+	},
+};
+
+export const GlobalSearch: Story = {
+	play: async ({ canvasElement }) => {
+		const page = within(canvasElement.ownerDocument.body);
+		await userEvent.keyboard("{Control>}k{/Control}");
+		await expect(
+			page.getByRole("dialog", { name: "Search Commonspace" }),
+		).toBeVisible();
+		await expect(
+			page.getByRole("option", { name: /Open Channel: #design-review/iu }),
+		).toBeVisible();
+	},
+};
+
+export const GlobalSearchNoResults: Story = {
+	args: { searchFetcher: emptySearchFetcher },
+	play: async ({ canvasElement }) => {
+		const page = within(canvasElement.ownerDocument.body);
+		await userEvent.keyboard("{Control>}k{/Control}");
+		await userEvent.type(
+			page.getByRole("searchbox", { name: "Search Commonspace" }),
+			"missing result",
+		);
+		await expect(page.getByText("No results for “missing result”.")).toBeVisible();
+	},
+};
+
+export const GlobalSearchFailure: Story = {
+	args: { searchFetcher: errorSearchFetcher },
+	play: async ({ canvasElement }) => {
+		const page = within(canvasElement.ownerDocument.body);
+		await userEvent.keyboard("{Control>}k{/Control}");
+		await expect(page.getByRole("alert")).toHaveTextContent(
+			"Search is temporarily unavailable.",
+		);
+	},
+};
+
+export const GlobalSearchPending: Story = {
+	args: { searchFetcher: pendingSearchFetcher },
+	play: async ({ canvasElement }) => {
+		const page = within(canvasElement.ownerDocument.body);
+		await userEvent.keyboard("{Control>}k{/Control}");
+		await expect(page.getByText("Searching…")).toBeVisible();
+	},
+};
+
+export const WorkspaceSettings: Story = {
+	play: async ({ canvasElement }) => {
+		const page = within(canvasElement.ownerDocument.body);
+		await userEvent.click(
+			page.getByRole("button", { name: "Commonspace settings" }),
+		);
+		await expect(
+			page.getByRole("form", { name: "Workspace settings" }),
+		).toBeVisible();
+	},
+};
+
+export const AddProject: Story = {
+	play: async ({ canvasElement }) => {
+		const page = within(canvasElement.ownerDocument.body);
+		await userEvent.click(page.getByRole("button", { name: "Add project" }));
+		await expect(
+			page.getByRole("dialog", { name: "Add a project" }),
+		).toBeVisible();
+	},
+};
+
+export const AddChannel: Story = {
+	play: async ({ canvasElement }) => {
+		const page = within(canvasElement.ownerDocument.body);
+		await userEvent.click(page.getByRole("button", { name: "Add channel" }));
+		await expect(
+			page.getByRole("dialog", { name: "Add a channel" }),
+		).toBeVisible();
+	},
+};
+
+export const AddAgent: Story = {
+	play: async ({ canvasElement }) => {
+		const page = within(canvasElement.ownerDocument.body);
+		await userEvent.click(page.getByRole("button", { name: "Add agent" }));
+		await expect(
+			page.getByRole("dialog", { name: "Add an agent" }),
+		).toBeVisible();
+	},
+};
+
+export const AddAgentDiscoveredResults: Story = {
+	args: { store: createStoryStore(discoveryStoryBootstrap) },
+	play: async ({ canvasElement }) => {
+		const page = within(canvasElement.ownerDocument.body);
+		await userEvent.click(page.getByRole("button", { name: "Add agent" }));
+		await userEvent.click(page.getByRole("button", { name: /Hermes/iu }));
+		await expect(
+			page.getByRole("button", { name: "Add discovered agent Hermes Reviewer" }),
+		).toBeVisible();
+	},
+};
+
+export const EmptyWorkspace: Story = {
+	args: { store: createStoryStore(emptyBootstrap) },
+};
+
+export const LoadingWorkspace: Story = {
+	args: { store: createStoryStore(null, { loading: true }) },
+};
+
+export const DisconnectedWorkspace: Story = {
+	args: {
+		store: createStoryStore(storyBootstrap, {
+			error: "Live updates disconnected; retrying…",
+		}),
+	},
+};
+
+export const NarrowInbox: Story = {
+	parameters: {
+		viewport: { defaultViewport: "mobile1" },
+	},
+};
+
+export const NarrowNavigation: Story = {
+	parameters: {
+		viewport: { defaultViewport: "mobile1" },
+	},
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		await userEvent.click(
+			canvas.getByRole("button", { name: "Open navigation" }),
+		);
+		await expect(
+			canvas.getAllByRole("button", { name: "Close navigation" })[0],
+		).toBeVisible();
+	},
+};
+
+export const NarrowChannelConversation: Story = {
+	parameters: { viewport: { defaultViewport: "mobile1" } },
+	args: {
+		destination: "conversation",
+		conversation: channel,
+		store: createStoryStore(storyBootstrap, {
+			activeConversation: channel,
+			activeProjectId: primaryProject.id,
+		}),
+	},
+};
+
+export const NarrowThreadConversation: Story = {
+	parameters: { viewport: { defaultViewport: "mobile1" } },
+	args: {
+		destination: "conversation",
+		conversation: channel,
+		threadId: "thread-review",
+		store: createStoryStore(storyBootstrap, {
+			activeConversation: channel,
+			activeProjectId: primaryProject.id,
+			activeThreadId: "thread-review",
+		}),
+	},
+};
+
+export const NarrowProjectFiles: Story = {
+	parameters: { viewport: { defaultViewport: "mobile1" } },
+	args: {
+		destination: "project",
+		projectId: primaryProject.id,
+		projectFetcher: storyProjectFetcher,
+	},
+};
+
+export const NarrowProjectSettings: Story = {
+	args: {
+		destination: "project",
+		projectId: primaryProject.id,
+		projectFetcher: storyProjectFetcher,
+	},
+	parameters: {
+		viewport: { defaultViewport: "mobile1" },
+	},
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		await userEvent.click(canvas.getByRole("button", { name: "Open project settings" }));
+		await expect(canvas.getByRole("complementary", { name: "Project settings" })).toBeVisible();
+	},
+};
+
+export const NarrowSearch: Story = {
+	parameters: { viewport: { defaultViewport: "mobile1" } },
+	play: async ({ canvasElement }) => {
+		const page = within(canvasElement.ownerDocument.body);
+		await userEvent.keyboard("{Control>}k{/Control}");
+		await expect(page.getByRole("dialog", { name: "Search Commonspace" })).toBeVisible();
+	},
+};

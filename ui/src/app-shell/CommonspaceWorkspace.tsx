@@ -11,12 +11,14 @@ import type { CommonspaceNavigation } from "./useCommonspaceNavigation.ts";
 
 interface CommonspaceWorkspaceProps {
 	navigation: CommonspaceNavigation;
+	projectFetcher?: typeof globalThis.fetch;
 	snapshot: CommonspaceClientSnapshot;
 	store: CommonspaceStore;
 }
 
 export function CommonspaceWorkspace({
 	navigation,
+	projectFetcher,
 	snapshot,
 	store,
 }: CommonspaceWorkspaceProps) {
@@ -50,6 +52,7 @@ export function CommonspaceWorkspace({
 				projectId={activeProjectViewId}
 				targetFile={targetProjectFile}
 				store={store}
+				{...(projectFetcher === undefined ? {} : { fetcher: projectFetcher })}
 				{...(projectSettingsRequest === undefined
 					? {}
 					: { settingsRequest: projectSettingsRequest })}

@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { expect, userEvent, within } from "storybook/test";
 import { CommonspaceProjectFiles } from "../CommonspaceProjectFiles";
 import {
 	emptyProjectFetcher,
@@ -32,6 +33,28 @@ export const BrowseWorkspace: Story = {};
 
 export const OpenTextFile: Story = {
 	args: { targetFile: { rootIndex: 0, path: "README.md" } },
+};
+
+export const SensitiveFileBlocked: Story = {
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		await userEvent.click(
+			await canvas.findByRole("button", { name: /Open file \.env/iu }),
+		);
+		await expect(canvas.getByText("Sensitive file")).toBeVisible();
+	},
+};
+
+export const NestedFolder: Story = {
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		await userEvent.click(
+			await canvas.findByRole("button", { name: /Open folder ui/iu }),
+		);
+		await expect(
+			await canvas.findByRole("button", { name: /Open folder src/iu }),
+		).toBeVisible();
+	},
 };
 
 export const EmptyFolder: Story = {
