@@ -88,7 +88,8 @@ pnpm storybook              # persistent UI workbench
 pnpm test                   # unit and integration tests
 pnpm test:storybook:smoke   # six representative browser stories
 pnpm test:storybook:watch   # focused browser-test watch mode
-pnpm check:fast             # lint, types, tests, and Storybook smoke
+pnpm check:fast             # Biome, ESLint, types, tests, and Storybook smoke
+pnpm biome:check            # Biome lint, format, and import-organization checks
 pnpm lint                   # ESLint
 pnpm typecheck              # workspace TypeScript checks
 pnpm build                  # all production builds

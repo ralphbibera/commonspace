@@ -57,11 +57,11 @@ The development server runs behind a stable local supervisor. Changes under `ser
 5. Run the full gates:
 
 ```bash
-pnpm check                 # Biome, TypeScript, and tests
+pnpm check                 # Biome, ESLint, TypeScript, tests, and builds
 pnpm verify:live           # final release-path build and browser verification
 ```
 
-`pnpm check` is the fast local gate and does not build production artifacts. `verify:live` creates a fresh production build, starts the built server, and exercises the application through a real desktop browser.
+`pnpm check` is the complete local gate, including Biome, ESLint, TypeScript, tests, and production builds. `verify:live` creates a fresh production build, starts the built server, and exercises the application through a real desktop browser.
 
 On macOS, run `pnpm verify:notifications` to hand a safe test alert to
 Notification Center. The command verifies that the native notifier accepted the
@@ -74,7 +74,7 @@ During iteration, use the smaller gate:
 pnpm check:fast
 ```
 
-It runs lint, type checks, the full unit/integration suite, and the representative Storybook browser suite. Use `pnpm check` before requesting review.
+It runs Biome, ESLint, type checks, the full unit/integration suite, and the representative Storybook browser suite. Use `pnpm check` before requesting review.
 
 ## Fast UI loop
 
@@ -101,7 +101,7 @@ The Storybook Vitest suite validates rendering, interactions, and accessibility 
 
 `verify:live` is the production-wiring smoke test. It builds and boots the API and UI, exercises desktop and narrow layouts, and verifies the installed single-origin path. Do not put component permutations there when a deterministic Storybook story can cover them faster.
 
-CI runs static checks, unit/integration tests, and browser checks in parallel. Browser jobs use the Chrome already present on the GitHub runner, while local browser tests continue to use Playwright's managed Chromium unless `COMMONSPACE_USE_SYSTEM_CHROME=1` is set.
+CI runs required Biome/ESLint static checks, unit/integration tests, and browser checks in parallel. Its aggregate `check` job fails unless every gate succeeds, so a failing Biome run blocks the merge. Browser jobs use the Chrome already present on the GitHub runner, while local browser tests continue to use Playwright's managed Chromium unless `COMMONSPACE_USE_SYSTEM_CHROME=1` is set.
 
 The macOS lifecycle manager can install the current committed `main` checkout through `pnpm service:install`. Use `pnpm service:status`, `service:stop`, `service:start`, `service:update`, and `service:rollback` to exercise the packaged path. It writes only the managed paths documented in [Operations](operations.md); normal development does not register a background service.
 

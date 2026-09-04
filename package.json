@@ -25,7 +25,7 @@
 		"test:e2e:headed": "pnpm build && playwright test --config tests/e2e/playwright.config.ts --headed",
 		"check:ui:smoke": "pnpm --filter @commonspace/ui typecheck && pnpm test:storybook:smoke",
 		"check:ui": "pnpm --filter @commonspace/ui typecheck && pnpm test:storybook && pnpm --filter @commonspace/ui build",
-		"check:fast": "pnpm lint && pnpm typecheck && pnpm test && pnpm test:storybook:smoke",
+		"check:fast": "pnpm biome:check && pnpm lint && pnpm typecheck && pnpm test && pnpm test:storybook:smoke",
 		"verify:acp": "COMMONSPACE_LIVE_ACP=1 vitest run tests/live-acp.spec.ts --testTimeout=240000",
 		"verify:acp:hermes": "COMMONSPACE_LIVE_ACP=1 vitest run tests/live-acp.spec.ts -t 'Hermes sessions' --testTimeout=240000",
 		"verify:acp:codex": "COMMONSPACE_LIVE_ACP=1 vitest run tests/live-acp.spec.ts -t 'Codex sessions' --testTimeout=240000",
@@ -46,7 +46,7 @@
 		"biome:check": "biome check .",
 		"biome:lint": "biome lint .",
 		"biome:format": "biome format .",
-		"check": "pnpm lint && pnpm typecheck && pnpm test && pnpm test:storybook && pnpm build && pnpm build:storybook",
+		"check": "pnpm biome:check && pnpm lint && pnpm typecheck && pnpm test && pnpm test:storybook && pnpm build && pnpm build:storybook",
 		"start": "pnpm --filter @commonspace/server start"
 	},
 	"devDependencies": {
