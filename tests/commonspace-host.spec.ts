@@ -9,7 +9,8 @@ import {
 	writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
 	COMMONSPACE_STATE_VERSION,
 	deriveCommonspaceInboxItems,
@@ -35,6 +36,11 @@ import { addTestHarness, discoverTestHarnesses } from "./test-harnesses.ts";
 import { mustExist } from "./test-helpers.ts";
 
 const roots: string[] = [];
+const fakeAcpAgentPath = join(
+	dirname(fileURLToPath(import.meta.url)),
+	"fixtures",
+	"fake-acp-agent.mjs",
+);
 const completionRequestSchema = z.object({
 	messages: z.array(z.object({ role: z.string(), content: z.string() })),
 });
@@ -115,6 +121,7 @@ async function addDiscoveredAgents(
 
 afterEach(async () => {
 	vi.unstubAllGlobals();
+	vi.unstubAllEnvs();
 	await Promise.all(
 		roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
 	);
@@ -1686,7 +1693,7 @@ describe("Commonspace host authority", () => {
 			},
 		];
 		const runAgent = vi.fn(async (input: AgentRunInput) =>
-			input.sessionName.startsWith("Commonspace Inference: ")
+			input.sessionName.startsWith("Commonspace Routing: ")
 				? '{"assignments":[{"agentId":"frontend","subRequest":"Fix the CSS layout.","projectIds":[]}],"confidence":0.93,"reason":"CSS work"}'
 				: "Handled.",
 		);
@@ -1719,11 +1726,256 @@ describe("Commonspace host authority", () => {
 
 		expect(runAgent.mock.calls[0]?.[0]).toMatchObject({
 			agent: expect.objectContaining({ id: "backend" }),
-			sessionName: expect.stringMatching(/^Commonspace Inference: /u),
+			sessionName: `Commonspace Routing: ${channel.id}`,
 			reasoning: "minimal",
 		});
 		expect(runAgent.mock.calls[0]?.[0].model).toBeUndefined();
 		expect(runAgent.mock.calls[1]?.[0].agent.id).toBe("frontend");
+	});
+
+	it("reuses one native routing session across threads in the same channel", async () => {
+		const root = await mkdtemp(join(tmpdir(), "commonspace-shared-router-"));
+		roots.push(root);
+		const frameLog = join(root, "acp-frames.ndjson");
+		vi.stubEnv("FAKE_ACP_LOG", frameLog);
+		vi.stubEnv("FAKE_ACP_SESSION_ID", "123e4567-e89b-42d3-a456-426614174000");
+		vi.stubEnv(
+			"FAKE_ACP_INFERENCE_RESPONSE",
+			'{"assignments":[{"agentId":"hermes","subRequest":"Handle it.","projectIds":[]}],"confidence":0.9,"reason":"Hermes owns the request."}',
+		);
+		const service = new CommonspaceHostService(
+			{},
+			{
+				root,
+				hermesAcpCommand: process.execPath,
+				hermesAcpArgs: [fakeAcpAgentPath],
+			},
+			{ discoverAgents: discoverTestHarnesses },
+		);
+		await service.initialize();
+		await addTestHarness(service, "hermes");
+		const channel = mustExist(
+			(
+				await service.mutate({
+					action: "create-channel",
+					name: "engineering",
+					agentIds: ["hermes"],
+				})
+			).channels[0],
+		);
+		await service.updateRoutingConfiguration({
+			provider: "harness",
+			harnessAgentId: "hermes",
+		});
+		let restarted: CommonspaceHostService | undefined;
+
+		try {
+			const first = await service.send({
+				conversation: { kind: "channel", id: channel.id },
+				text: "First request.",
+			});
+			await service.whenIdle();
+			await service.send({
+				conversation: { kind: "channel", id: channel.id },
+				threadId: mustExist(first.thread).id,
+				text: "Second request in the same thread.",
+			});
+			await service.whenIdle();
+			await service.send({
+				conversation: { kind: "channel", id: channel.id },
+				text: "Third request in another thread.",
+			});
+			await service.whenIdle();
+
+			const routingSessionName = `Commonspace Routing: ${channel.id}`;
+			expect(service.snapshot().agentSessions.hermes).toMatchObject({
+				[routingSessionName]: "123e4567-e89b-42d3-a456-426614174000",
+			});
+			const frames = (await readFile(frameLog, "utf8"))
+				.trim()
+				.split("\n")
+				.map((line) => JSON.parse(line) as { method?: string; params?: unknown });
+			expect(
+				frames.filter((frame) => frame.method === "session/load"),
+			).toEqual([]);
+			const routingPrompts = frames.filter((frame) => {
+				if (frame.method !== "session/prompt") return false;
+				return JSON.stringify(frame.params).includes("bounded routing classifier");
+			});
+				expect(JSON.stringify(routingPrompts[1]?.params)).toContain(
+					"First request.",
+				);
+				expect(JSON.stringify(routingPrompts[2]?.params)).not.toContain(
+					"First request.",
+				);
+
+			await service.close();
+			restarted = new CommonspaceHostService(
+				{},
+				{
+					root,
+					hermesAcpCommand: process.execPath,
+					hermesAcpArgs: [fakeAcpAgentPath],
+				},
+				{ discoverAgents: discoverTestHarnesses },
+			);
+			await restarted.initialize();
+			expect(restarted.snapshot().agentSessions.hermes).toMatchObject({
+				[routingSessionName]: "123e4567-e89b-42d3-a456-426614174000",
+			});
+			await restarted.send({
+				conversation: { kind: "channel", id: channel.id },
+				threadId: mustExist(first.thread).id,
+				text: "Fourth request after restart.",
+			});
+			await restarted.whenIdle();
+			const resumedFrames = (await readFile(frameLog, "utf8"))
+				.trim()
+				.split("\n")
+				.map((line) => JSON.parse(line) as { method?: string });
+			expect(
+				resumedFrames.filter((frame) => frame.method === "session/load"),
+			).toHaveLength(2);
+
+			await restarted.mutate({ action: "remove-channel", channelId: channel.id });
+			expect(restarted.snapshot().agentSessions.hermes).toBeUndefined();
+		} finally {
+			await restarted?.close();
+			await service.close();
+		}
+	});
+
+	it("closes isolated harness inference processes after compaction", async () => {
+		const root = await mkdtemp(join(tmpdir(), "commonspace-isolated-router-"));
+		roots.push(root);
+		const frameLog = join(root, "acp-frames.ndjson");
+		vi.stubEnv("FAKE_ACP_LOG", frameLog);
+		vi.stubEnv("FAKE_ACP_SESSION_ID", "123e4567-e89b-42d3-a456-426614174000");
+		vi.stubEnv(
+			"FAKE_ACP_INFERENCE_RESPONSE",
+			'{"assignments":[{"agentId":"hermes","subRequest":"Handle it.","projectIds":[]}],"confidence":0.9,"reason":"Hermes owns the request."}',
+		);
+		vi.stubEnv(
+			"FAKE_ACP_COMPACTION_RESPONSE",
+			'{"summary":"Compacted Channel context.","decisions":[],"openQuestions":[]}',
+		);
+		const service = new CommonspaceHostService(
+			{},
+			{
+				root,
+				hermesAcpCommand: process.execPath,
+				hermesAcpArgs: [fakeAcpAgentPath],
+			},
+			{ discoverAgents: discoverTestHarnesses },
+		);
+		await service.initialize();
+		await addTestHarness(service, "hermes");
+		const channel = mustExist(
+			(
+				await service.mutate({
+					action: "create-channel",
+					name: "engineering",
+					agentIds: ["hermes"],
+				})
+			).channels[0],
+		);
+		await service.updateRoutingConfiguration({
+			provider: "harness",
+			harnessAgentId: "hermes",
+		});
+
+		try {
+			await service.send({
+				conversation: { kind: "channel", id: channel.id },
+				text: "Create context to compact.",
+			});
+			await service.whenIdle();
+
+			await expect(service.compactChannelContext(channel.id)).resolves.toMatchObject({
+				summary: "Compacted Channel context.",
+			});
+			const processKeys = [
+				...(service as unknown as {
+					acpProcesses: Map<string, unknown>;
+				}).acpProcesses.keys(),
+			];
+			expect(
+				processKeys.some((key) =>
+					key.includes("\u0000Commonspace Inference: "),
+				),
+			).toBe(false);
+		} finally {
+			await service.close();
+		}
+	});
+
+	it("does not recreate a queued routing session after Channel removal", async () => {
+		const root = await mkdtemp(join(tmpdir(), "commonspace-removed-router-"));
+		roots.push(root);
+		const frameLog = join(root, "acp-frames.ndjson");
+		vi.stubEnv("FAKE_ACP_LOG", frameLog);
+		vi.stubEnv("FAKE_ACP_HANG_PROMPT", "1");
+		vi.stubEnv("FAKE_ACP_SESSION_ID", "123e4567-e89b-42d3-a456-426614174000");
+		vi.stubEnv(
+			"FAKE_ACP_INFERENCE_RESPONSE",
+			'{"assignments":[{"agentId":"hermes","subRequest":"Handle it.","projectIds":[]}],"confidence":0.9,"reason":"Hermes owns the request."}',
+		);
+		const service = new CommonspaceHostService(
+			{ warn: () => undefined },
+			{
+				root,
+				hermesAcpCommand: process.execPath,
+				hermesAcpArgs: [fakeAcpAgentPath],
+			},
+			{ discoverAgents: discoverTestHarnesses },
+		);
+		await service.initialize();
+		await addTestHarness(service, "hermes");
+		const channel = mustExist(
+			(
+				await service.mutate({
+					action: "create-channel",
+					name: "engineering",
+					agentIds: ["hermes"],
+				})
+			).channels[0],
+		);
+		await service.updateRoutingConfiguration({
+			provider: "harness",
+			harnessAgentId: "hermes",
+		});
+
+		try {
+			await Promise.all([
+				service.send({
+					conversation: { kind: "channel", id: channel.id },
+					text: "First request.",
+				}),
+				service.send({
+					conversation: { kind: "channel", id: channel.id },
+					text: "Second request.",
+				}),
+			]);
+			await vi.waitFor(async () => {
+				const frames = await readFile(frameLog, "utf8");
+				expect(frames.match(/"method":"session\/prompt"/gu)).toHaveLength(1);
+			});
+			vi.stubEnv("FAKE_ACP_HANG_PROMPT", "0");
+
+			await service.mutate({ action: "remove-channel", channelId: channel.id });
+			await service.whenIdle();
+
+			const frames = (await readFile(frameLog, "utf8"))
+				.trim()
+				.split("\n")
+				.map((line) => JSON.parse(line) as { method?: string });
+			expect(
+				frames.filter((frame) => frame.method === "initialize"),
+			).toHaveLength(1);
+			expect(service.snapshot().agentSessions.hermes).toBeUndefined();
+		} finally {
+			await service.close();
+		}
 	});
 
 	it("marks an accepted channel message failed when inference routing fails", async () => {

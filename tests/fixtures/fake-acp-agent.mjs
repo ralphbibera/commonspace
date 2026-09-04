@@ -269,13 +269,18 @@ for await (const line of lines) {
 			});
 			continue;
 		}
+		const configuredInferenceResponse = promptText.includes(
+			"bounded routing classifier",
+		)
+			? process.env.FAKE_ACP_INFERENCE_RESPONSE
+			: promptText.includes("compact bounded shared workspace context")
+				? process.env.FAKE_ACP_COMPACTION_RESPONSE
+				: undefined;
 		const text =
-			process.env.FAKE_ACP_INFERENCE_RESPONSE !== undefined &&
-			promptText.includes("bounded routing classifier")
-				? process.env.FAKE_ACP_INFERENCE_RESPONSE
-				: process.env.FAKE_ACP_LARGE_CHUNK === undefined
-					? promptText
-					: "x".repeat(Number(process.env.FAKE_ACP_LARGE_CHUNK));
+			configuredInferenceResponse ??
+			(process.env.FAKE_ACP_LARGE_CHUNK === undefined
+				? promptText
+				: "x".repeat(Number(process.env.FAKE_ACP_LARGE_CHUNK)));
 		let contextPrefix = "";
 		if (process.env.FAKE_ACP_USE_MCP === "1") {
 			const mcpServers =

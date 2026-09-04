@@ -477,13 +477,15 @@ describe("Commonspace ACP host path", () => {
 			).channels[0],
 		);
 
-		await service.send({
+		const initial = await service.send({
 			conversation: { kind: "channel", id: channel.id },
 			text: "Historical room message.",
 		});
+		const thread = mustExist(initial.thread);
 		await service.whenIdle();
 		await service.send({
 			conversation: { kind: "channel", id: channel.id },
+			threadId: thread.id,
 			text: "is the acp finished for @@commonspace",
 		});
 		await service.whenIdle();
@@ -506,6 +508,15 @@ describe("Commonspace ACP host path", () => {
 		]);
 		expect(deliveredText.join("\n")).not.toContain("Recent room history:");
 		expect(deliveredText.join("\n")).not.toContain("Execution contract:");
+		expect(frames.filter((frame) => frame.method === "initialize")).toHaveLength(
+			1,
+		);
+		expect(frames.filter((frame) => frame.method === "session/new")).toHaveLength(
+			1,
+		);
+		expect(frames.filter((frame) => frame.method === "session/load")).toEqual(
+			[],
+		);
 		expect(frames.find((frame) => frame.event === "environment")).toMatchObject(
 			{
 				noBrowser: "1",
@@ -1028,5 +1039,8 @@ describe("Commonspace ACP host path", () => {
 		expect(
 			frames.filter((frame) => frame.method === "session/new"),
 		).toHaveLength(2);
+		expect(
+			frames.filter((frame) => frame.method === "initialize"),
+		).toHaveLength(3);
 	});
 });
