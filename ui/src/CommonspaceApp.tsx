@@ -11,9 +11,15 @@ import type { CommonspaceStore } from "./commonspace-store.ts";
 
 export interface CommonspaceAppProps {
 	store: CommonspaceStore;
+	projectFetcher?: typeof globalThis.fetch;
+	searchFetcher?: typeof globalThis.fetch;
 }
 
-export function CommonspaceApp({ store }: CommonspaceAppProps) {
+export function CommonspaceApp({
+	store,
+	projectFetcher,
+	searchFetcher,
+}: CommonspaceAppProps) {
 	const snapshot = useSyncExternalStore(
 		store.subscribe,
 		store.getSnapshot,
@@ -79,7 +85,7 @@ export function CommonspaceApp({ store }: CommonspaceAppProps) {
 				/>
 				<aside
 					className={cn(
-						"relative z-20 min-h-0 min-w-0 overflow-hidden bg-sidebar text-sidebar-foreground max-[780px]:absolute max-[780px]:inset-y-0 max-[780px]:left-0 max-[780px]:w-[min(88vw,320px)] max-[780px]:-translate-x-full max-[780px]:shadow-2xl max-[780px]:transition-transform",
+						"relative z-20 min-h-0 min-w-0 overflow-hidden bg-sidebar text-sidebar-foreground max-[780px]:absolute max-[780px]:inset-y-0 max-[780px]:left-0 max-[780px]:w-[min(88vw,320px)] max-[780px]:-translate-x-full max-[780px]:pt-12 max-[780px]:shadow-2xl max-[780px]:transition-transform",
 						navigationOpen && "max-[780px]:translate-x-0",
 					)}
 				>
@@ -113,6 +119,7 @@ export function CommonspaceApp({ store }: CommonspaceAppProps) {
 						navigation={navigation}
 						snapshot={snapshot}
 						store={store}
+						{...(projectFetcher === undefined ? {} : { projectFetcher })}
 					/>
 				</section>
 			</div>
@@ -121,6 +128,7 @@ export function CommonspaceApp({ store }: CommonspaceAppProps) {
 					projects={snapshot.bootstrap.state.projects}
 					onClose={closeSearch}
 					onSelect={openSearchResult}
+					{...(searchFetcher === undefined ? {} : { fetcher: searchFetcher })}
 				/>
 			)}
 			{snapshot.error !== null && (

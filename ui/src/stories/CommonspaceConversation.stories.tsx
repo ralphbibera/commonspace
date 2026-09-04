@@ -1,9 +1,10 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { fn } from "storybook/test";
+import { expect, fn, userEvent, within } from "storybook/test";
 import { CommonspaceConversation } from "../CommonspaceConversation";
 import {
 	createStoryStore,
 	primaryProject,
+	runtimeStoryBootstrap,
 	storyBootstrap,
 } from "./story-fixtures";
 
@@ -44,6 +45,65 @@ export const DirectMessage: Story = {
 	},
 };
 
+const activeRunSend = fn();
+const activeRunStore = new Proxy(
+	createStoryStore(runtimeStoryBootstrap, {
+		activeConversation: directMessage,
+		activeProjectId: primaryProject.id,
+	}),
+	{
+		get(target, property, receiver) {
+			if (property === "send") return activeRunSend;
+			return Reflect.get(target, property, receiver);
+		},
+	},
+);
+
+export const NarrowActiveRunComposer: Story = {
+	args: { store: activeRunStore },
+	decorators: [
+		(Story) => (
+			<div className="h-[720px] w-[320px] overflow-hidden border">
+				<Story />
+			</div>
+		),
+	],
+	play: async ({ canvasElement }) => {
+		activeRunSend.mockClear();
+		const canvas = within(canvasElement);
+		const composer = canvas.getByRole("textbox", { name: "Message Review Bot" });
+		await userEvent.type(composer, "Use the new direction instead.");
+		await userEvent.click(canvas.getByRole("button", { name: "Stop and send" }));
+		await expect(activeRunSend).toHaveBeenNthCalledWith(
+			1,
+			"Use the new direction instead.",
+			undefined,
+			[],
+			"stop-and-send",
+		);
+
+		await userEvent.type(composer, "Wait for the current run.");
+		await userEvent.click(canvas.getByRole("button", { name: "Queue" }));
+		await expect(activeRunSend).toHaveBeenNthCalledWith(
+			2,
+			"Wait for the current run.",
+			undefined,
+			[],
+			"queue",
+		);
+
+		await userEvent.type(composer, "Adjust the current direction.");
+		await userEvent.click(canvas.getByRole("button", { name: "Steer" }));
+		await expect(activeRunSend).toHaveBeenNthCalledWith(
+			3,
+			"Adjust the current direction.",
+			undefined,
+			[],
+			"steer",
+		);
+	},
+};
+
 export const FocusedReply: Story = {
 	args: {
 		store: createStoryStore(storyBootstrap, {
@@ -62,5 +122,26 @@ export const ChannelSettings: Story = {
 			activeProjectId: primaryProject.id,
 		}),
 		settingsRequest: { kind: "channel", id: "channel-design", token: 1 },
+	},
+};
+
+export const EditingDeliveredMessage: Story = {
+	args: {
+		store: createStoryStore(storyBootstrap, {
+			activeConversation: channel,
+			activeProjectId: primaryProject.id,
+		}),
+	},
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		await userEvent.click(
+			canvas.getByRole("button", { name: "Edit message from Ralph" }),
+		);
+		await expect(
+			canvas.getByRole("form", { name: "Edit delivered message" }),
+		).toBeVisible();
+		await expect(canvas.getByRole("textbox", { name: "Edited message" })).toHaveValue(
+			"Review the visual baseline and document the next component states.",
+		);
 	},
 };

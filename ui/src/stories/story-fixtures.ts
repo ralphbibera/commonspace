@@ -6,8 +6,14 @@ import {
 	type CommonspaceBootstrap,
 	type CommonspaceChannel,
 	type CommonspaceMessage,
+	type CommonspaceLiveAgentActivity,
+	type CommonspacePermissionRequest,
+	type CommonspaceNotificationVerification,
 	type CommonspaceProject,
+	type CommonspaceQueuedFollowup,
 	type CommonspaceRunAttribution,
+	type CommonspaceSearchResponse,
+	type CommonspaceSearchResult,
 	type CommonspaceState,
 	type CommonspaceThread,
 	type CommonspaceTraceEntry,
@@ -366,6 +372,184 @@ export function createStoryBootstrap(
 }
 
 export const storyBootstrap = createStoryBootstrap();
+
+const denseThreadRoots: CommonspaceMessage[] = Array.from({ length: 7 }, (_, index) => ({
+	id: `message-dense-root-${String(index + 1)}`,
+	conversation: { kind: "channel", id: designChannel.id },
+	authorType: "user",
+	authorId: "ralph",
+	authorName: "Ralph",
+	text: [
+		"Audit the responsive workspace shell and record any clipping or focus issues.",
+		"Compare the dense Inbox and Threads layouts against the current visual contract.",
+		"Verify keyboard navigation through search, composer suggestions, and settings.",
+		"Review the project file previews for text, image, video, and blocked content.",
+		"Exercise agent permission requests and queued follow-up controls.",
+		"Check long titles, metadata, and status labels at desktop and narrow widths.",
+		"Summarize the remaining visual risks with exact Storybook evidence.",
+	][index] ?? "Review the remaining interface state.",
+	createdAt: `2026-09-03T09:${String(40 + index).padStart(2, "0")}:00.000Z`,
+	projectIds: [primaryProject.id],
+	projectId: primaryProject.id,
+}));
+
+const denseThreads: CommonspaceThread[] = denseThreadRoots.map((message, index) => ({
+	id: `thread-dense-${String(index + 1)}`,
+	channelId: designChannel.id,
+	projectIds: [primaryProject.id],
+	projectId: primaryProject.id,
+	rootMessageId: message.id,
+	agentIds: index % 2 === 0 ? [hermesAgent.id] : [hermesAgent.id, codexAgent.id],
+	context: {
+		channelSnapshot: {
+			...memory("Dense Storybook thread inherited from the design review channel."),
+			capturedAt: now,
+		},
+		memory: {
+			...memory("Dense Storybook thread context."),
+			origin: "automatic",
+		},
+	},
+	createdAt: message.createdAt,
+}));
+
+const denseThreadReplies: CommonspaceMessage[] = denseThreadRoots.map(
+	(message, index) => ({
+		id: `message-dense-reply-${String(index + 1)}`,
+		conversation: message.conversation,
+		authorType: "agent",
+		authorId: hermesAgent.id,
+		authorName: hermesAgent.displayName,
+		text: `Completed review ${String(index + 1)} with reproducible interaction evidence and follow-up notes.`,
+		createdAt: `2026-09-03T09:${String(48 + index).padStart(2, "0")}:30.000Z`,
+		projectIds: [primaryProject.id],
+		projectId: primaryProject.id,
+		threadId: `thread-dense-${String(index + 1)}`,
+		parentMessageId: message.id,
+		sourceMessageId: message.id,
+		replyStatus: "complete",
+	}),
+);
+
+export const denseStoryBootstrap = (() => {
+	const state = createStoryState();
+	const denseUnreadIds = denseThreadReplies.slice(0, 4).map((message) => message.id);
+	return createStoryBootstrap({
+		state: {
+			...state,
+			threads: [...state.threads, ...denseThreads],
+			inboxUnreadMessageIds: [agentReply.id, ...denseUnreadIds],
+			messages: {
+				...state.messages,
+				[`channel:${designChannel.id}`]: [
+					rootMessage,
+					agentReply,
+					...denseThreadRoots,
+					...denseThreadReplies,
+				],
+			},
+		},
+	});
+})();
+
+const liveActivity: CommonspaceLiveAgentActivity = {
+	id: "activity-live-review",
+	sourceMessageId: dmUserMessage.id,
+	agentId: hermesAgent.id,
+	agentName: hermesAgent.displayName,
+	adapter: "hermes",
+	conversation: { kind: "dm", id: hermesAgent.id },
+	startedAt: "2026-09-03T09:59:10.000Z",
+	entries: traceEntries.slice(0, 2),
+};
+
+const pendingPermission: CommonspacePermissionRequest = {
+	id: "permission-run-tests",
+	sourceMessageId: dmUserMessage.id,
+	agentId: hermesAgent.id,
+	conversation: { kind: "dm", id: hermesAgent.id },
+	toolCallId: "tool-run-tests",
+	title: "Run the complete browser test suite?",
+	kind: "execute",
+	options: [
+		{ optionId: "allow-once", name: "Allow once", kind: "allow_once" },
+		{ optionId: "reject", name: "Reject", kind: "reject" },
+	],
+	status: "pending",
+	createdAt: now,
+	resolvedAt: null,
+};
+
+const queuedFollowups: CommonspaceQueuedFollowup[] = [
+	{
+		messageId: "followup-responsive",
+		conversation: { kind: "dm", id: hermesAgent.id },
+		agentIds: [hermesAgent.id],
+		text: "After that, verify the narrow conversation layout.",
+		position: 0,
+		createdAt: now,
+		delivery: "queue",
+	},
+	{
+		messageId: "followup-search",
+		conversation: { kind: "dm", id: hermesAgent.id },
+		agentIds: [hermesAgent.id],
+		text: "Then confirm search empty and error states.",
+		position: 1,
+		createdAt: now,
+		delivery: "steer",
+	},
+];
+
+export const runtimeStoryBootstrap = (() => {
+	const state = createStoryState({ permissions: [pendingPermission] });
+	return createStoryBootstrap({
+		state,
+		liveActivities: [liveActivity],
+		queuedFollowups,
+	});
+})();
+
+export const discoveryStoryBootstrap = createStoryBootstrap({
+	discoveredAgents: [
+		{
+			...hermesAgent,
+			id: "discovered-hermes-reviewer",
+			displayName: "Hermes Reviewer",
+			status: "stopped",
+			description: "Available from the local Hermes installation.",
+		},
+		{
+			...codexAgent,
+			id: "discovered-codex-builder",
+			displayName: "Codex Builder",
+			status: "stopped",
+			description: "Available from the local Codex installation.",
+		},
+	],
+});
+
+export const failedStoryBootstrap = (() => {
+	const state = createStoryState();
+	const failedReply: CommonspaceMessage = {
+		...dmReply,
+		id: "message-dm-failed",
+		text: "",
+		replyStatus: "failed",
+		replyError: "The local agent process exited before replying.",
+	};
+	return createStoryBootstrap({
+		state: {
+			...state,
+			inboxUnreadMessageIds: [failedReply.id],
+			messages: {
+				...state.messages,
+				[`dm:${hermesAgent.id}`]: [dmUserMessage, failedReply],
+			},
+		},
+	});
+})();
+
 export const emptyBootstrap = createStoryBootstrap({
 	state: createStoryState({
 		projects: [],
@@ -383,6 +567,7 @@ export function createStoryStore(
 		activeThreadId?: string | null;
 		loading?: boolean;
 		error?: string | null;
+		notificationVerification?: CommonspaceNotificationVerification;
 	} = {},
 ): CommonspaceStore {
 	const snapshot: CommonspaceClientSnapshot = {
@@ -423,6 +608,13 @@ export function createStoryStore(
 			if (property === "selectProject")
 				return () => undefined;
 			if (property === "selectDirectory") return async () => null;
+			if (property === "verifyDesktopNotifications")
+				return async () =>
+					options.notificationVerification ?? {
+						status: "delivered" as const,
+						message:
+							"Test notification delivered. Click it to verify Commonspace opens.",
+					};
 			return async () => undefined;
 		},
 	});
@@ -436,6 +628,7 @@ type StoryResponseBody =
 	| ProjectDirectoryResponse
 	| ProjectGitDiffResponse
 	| ProjectGitStatusResponse
+	| CommonspaceSearchResponse
 	| StoryErrorResponse;
 
 function jsonResponse(value: StoryResponseBody, status = 200): Response {
@@ -586,3 +779,77 @@ export const emptyProjectFetcher: typeof globalThis.fetch = async (input) => {
 
 export const errorProjectFetcher: typeof globalThis.fetch = async () =>
 	jsonResponse({ error: "Project files are temporarily unavailable." }, 503);
+
+const searchResults: CommonspaceSearchResult[] = [
+	{
+		id: "channel-design",
+		kind: "channel",
+		title: "#design-review",
+		detail: "Channel · 2 agents",
+		receipt: "Channel",
+		occurredAt: now,
+		highlights: [],
+		target: { kind: "conversation", conversation: { kind: "channel", id: designChannel.id } },
+	},
+	{
+		id: "message-root",
+		kind: "message",
+		title: "Review the visual baseline",
+		detail: "Ralph · design-review",
+		receipt: "design-review",
+		occurredAt: rootMessage.createdAt,
+		highlights: [],
+		target: {
+			kind: "conversation",
+			conversation: { kind: "channel", id: designChannel.id },
+			messageId: rootMessage.id,
+		},
+	},
+	{
+		id: "file-readme",
+		kind: "file",
+		title: "README.md",
+		detail: "text/markdown · 12 KB",
+		receipt: primaryProject.name,
+		highlights: [],
+		target: {
+			kind: "project-file",
+			projectId: primaryProject.id,
+			rootIndex: 0,
+			path: "README.md",
+		},
+	},
+];
+
+export const storySearchFetcher: typeof globalThis.fetch = async (input) => {
+	const url = new URL(String(input), "http://storybook.local");
+	const query = url.searchParams.get("q")?.trim().toLocaleLowerCase() ?? "";
+	const results =
+		query === ""
+			? searchResults
+			: searchResults.filter((result) =>
+					`${result.title} ${result.detail}`.toLocaleLowerCase().includes(query),
+				);
+	return jsonResponse({
+		query,
+		results,
+		appliedFilters: { kinds: [], projectId: null },
+		truncated: false,
+	});
+};
+
+export const emptySearchFetcher: typeof globalThis.fetch = async (input) => {
+	const url = new URL(String(input), "http://storybook.local");
+	return jsonResponse({
+		query: url.searchParams.get("q") ?? "",
+		results: [],
+		appliedFilters: { kinds: [], projectId: null },
+		truncated: false,
+	});
+};
+
+export const errorSearchFetcher: typeof globalThis.fetch = async () =>
+	jsonResponse({ error: "Search is temporarily unavailable." }, 503);
+
+export const pendingSearchFetcher: typeof globalThis.fetch = async () =>
+	new Promise<Response>(() => undefined);

@@ -149,6 +149,39 @@ export const WorkspaceSettingsNotifications: Story = {
 		await expect(page.getByRole("status")).toHaveTextContent(
 			"Notification settings saved.",
 		);
+		await userEvent.click(
+			page.getByRole("button", { name: "Send test notification" }),
+		);
+		await expect(
+			page.getByText(
+				"Test notification delivered. Click it to verify Commonspace opens.",
+			),
+		).toBeVisible();
+	},
+};
+
+export const WorkspaceSettingsNotificationFallback: Story = {
+	args: {
+		store: createStoryStore(storyBootstrap, {
+			notificationVerification: {
+				status: "failed",
+				message:
+					"Native alert delivery failed. Inbox notifications remain available; check System Settings > Notifications for Commonspace.",
+			},
+		}),
+	},
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		await userEvent.click(
+			canvas.getByRole("button", { name: "Commonspace settings" }),
+		);
+		const page = within(document.body);
+		await userEvent.click(
+			page.getByRole("button", { name: "Send test notification" }),
+		);
+		await expect(
+			page.getByText(/Inbox notifications remain available/iu),
+		).toBeVisible();
 	},
 };
 
