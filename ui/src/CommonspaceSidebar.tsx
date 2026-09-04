@@ -398,7 +398,7 @@ function orderedSidebarItems<Item extends { id: string }>(
 			(item, index, values) =>
 				values.findIndex((candidate) => candidate.id === item.id) === index,
 		)
-		.slice(0, 3);
+		.slice(0, 10);
 	return { items: [...pinned, ...recent], pinnedCount: pinned.length };
 }
 
