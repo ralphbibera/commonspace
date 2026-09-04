@@ -19,6 +19,59 @@ afterEach(async () => {
 });
 
 describe("desktop notification delivery", () => {
+	it("exercises the configured native notifier with a safe test alert", async () => {
+		const root = await mkdtemp(
+			join(tmpdir(), "commonspace-notification-verification-"),
+		);
+		roots.push(root);
+		const notify = vi.fn(async () => undefined);
+		const service = new CommonspaceHostService({}, { root }, { notify });
+		await service.initialize();
+		service.attachClientUrl("http://127.0.0.1:3100");
+
+		await expect(service.verifyDesktopNotifications()).resolves.toEqual({
+			status: "delivered",
+			message: "Test notification delivered. Click it to verify Commonspace opens.",
+		});
+		expect(notify).toHaveBeenCalledWith({
+			category: "reply",
+			title: "Commonspace notifications are working",
+			body: "Native alerts are connected. Your Inbox remains the durable fallback.",
+			url: "http://127.0.0.1:3100/",
+			sound: false,
+		});
+		await service.close();
+	});
+
+	it("reports durable Inbox fallback guidance when native verification fails", async () => {
+		const root = await mkdtemp(
+			join(tmpdir(), "commonspace-notification-verification-failure-"),
+		);
+		roots.push(root);
+		const warn = vi.fn();
+		const service = new CommonspaceHostService(
+			{ logger: { warn } },
+			{ root },
+			{
+				notify: async () => {
+					throw new Error("notification center unavailable");
+				},
+			},
+		);
+		await service.initialize();
+		service.attachClientUrl("http://127.0.0.1:3100");
+
+		await expect(service.verifyDesktopNotifications()).resolves.toEqual({
+			status: "failed",
+			message:
+				"Native alert delivery failed. Inbox notifications remain available; check System Settings > Notifications for Commonspace.",
+		});
+		expect(warn).toHaveBeenCalledWith(
+			expect.stringContaining("notification center unavailable"),
+		);
+		await service.close();
+	});
+
 	it("delivers only new enabled Inbox events and does not replay them after restart", async () => {
 		const root = await mkdtemp(join(tmpdir(), "commonspace-notifications-"));
 		roots.push(root);

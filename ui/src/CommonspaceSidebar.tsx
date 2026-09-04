@@ -3,6 +3,7 @@ import {
 	type CommonspaceAgentProfile,
 	type CommonspaceDiagnostics,
 	type CommonspaceMutation,
+	type CommonspaceNotificationVerification,
 	type CommonspaceNotificationSettings,
 	type CommonspaceReasoning,
 	type CommonspaceRetentionPreview,
@@ -506,6 +507,9 @@ export function CommonspaceSidebar({
 		});
 	const [savingNotifications, setSavingNotifications] = useState(false);
 	const [notificationsSaved, setNotificationsSaved] = useState(false);
+	const [verifyingNotifications, setVerifyingNotifications] = useState(false);
+	const [notificationVerification, setNotificationVerification] =
+		useState<CommonspaceNotificationVerification | null>(null);
 
 	useEffect(() => {
 		void store.refresh();
@@ -871,6 +875,23 @@ export function CommonspaceSidebar({
 		}
 	};
 
+	const verifyNotifications = async () => {
+		if (verifyingNotifications) return;
+		setVerifyingNotifications(true);
+		setNotificationVerification(null);
+		try {
+			setNotificationVerification(await store.verifyDesktopNotifications());
+		} catch {
+			setNotificationVerification({
+				status: "failed",
+				message:
+					"Native alert verification could not reach Commonspace. Inbox notifications remain available; reconnect and try again.",
+			});
+		} finally {
+			setVerifyingNotifications(false);
+		}
+	};
+
 	const runDiagnostics = async () => {
 		if (diagnosticsLoading) return;
 		setDiagnosticsLoading(true);
@@ -1077,6 +1098,7 @@ export function CommonspaceSidebar({
 						<WorkspaceHeader
 							title="Workspace settings"
 							mark={<SettingsIcon className="size-4" aria-hidden="true" />}
+							landmark={false}
 							actions={
 								<button
 									type="button"
@@ -1628,25 +1650,44 @@ export function CommonspaceSidebar({
 											),
 										)}
 									</div>
-									<div className="mt-4 flex min-h-11 items-center justify-between gap-4">
+									<div className="mt-4 flex min-h-11 items-center justify-between gap-4 max-[640px]:items-start">
 										<p
-											className="text-xs text-[var(--status-success)]"
+											className={cn(
+												"text-xs",
+												notificationVerification?.status === "failed"
+													? "text-destructive"
+													: "text-[var(--status-success)]",
+											)}
 											role="status"
 											aria-live="polite"
 										>
-											{notificationsSaved ? "Notification settings saved." : ""}
+											{notificationVerification?.message ??
+												(notificationsSaved ? "Notification settings saved." : "")}
 										</p>
-										<button
-											type="button"
-											aria-label="Save notification settings"
-											disabled={savingNotifications}
-											className="border-primary bg-primary font-semibold text-primary-foreground hover:bg-[color-mix(in_srgb,var(--primary)_88%,black)] disabled:cursor-wait disabled:opacity-60"
-											onClick={() => {
-												void saveNotifications();
-											}}
-										>
-											{savingNotifications ? "Saving…" : "Save notifications"}
-										</button>
+										<div className="flex shrink-0 gap-2 max-[640px]:flex-col">
+											<button
+												type="button"
+												disabled={verifyingNotifications}
+												onClick={() => {
+													void verifyNotifications();
+												}}
+											>
+												{verifyingNotifications
+													? "Sending test…"
+													: "Send test notification"}
+											</button>
+											<button
+												type="button"
+												aria-label="Save notification settings"
+												disabled={savingNotifications}
+												className="border-primary bg-primary font-semibold text-primary-foreground hover:bg-[color-mix(in_srgb,var(--primary)_88%,black)] disabled:cursor-wait disabled:opacity-60"
+												onClick={() => {
+													void saveNotifications();
+												}}
+											>
+												{savingNotifications ? "Saving…" : "Save notifications"}
+											</button>
+										</div>
 									</div>
 								</fieldset>
 								<section

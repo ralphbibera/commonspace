@@ -84,6 +84,11 @@ export interface CommonspaceDesktopNotification {
 	sound: boolean;
 }
 
+export interface CommonspaceNotificationVerification {
+	status: "delivered" | "failed";
+	message: string;
+}
+
 export interface CommonspacePortableProject {
 	id: string;
 	name: string;

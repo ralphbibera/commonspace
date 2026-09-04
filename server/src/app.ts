@@ -507,6 +507,10 @@ export function createCommonspaceApp({
 		}
 	});
 
+	app.post("/api/notifications/verify", requireSameOrigin, async (_req, res) => {
+		res.json(await service.verifyDesktopNotifications());
+	});
+
 	app.get("/api/export", requireSameOrigin, async (_req, res) => {
 		try {
 			res.setHeader(

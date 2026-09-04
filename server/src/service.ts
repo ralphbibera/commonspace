@@ -33,6 +33,7 @@ import type {
 	CommonspaceLiveAgentActivity,
 	CommonspaceMessage,
 	CommonspaceMutation,
+	CommonspaceNotificationVerification,
 	CommonspacePermissionOption,
 	CommonspacePermissionRequest,
 	CommonspacePin,
@@ -2930,6 +2931,38 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 			queuedFollowups: this.queuedFollowups(),
 			routing: this.publicRoutingConfiguration(),
 		};
+	}
+
+	async verifyDesktopNotifications(): Promise<CommonspaceNotificationVerification> {
+		if (this.clientUrl === undefined) {
+			return {
+				status: "failed",
+				message:
+					"Native alert delivery is not ready. Inbox notifications remain available; restart Commonspace and try again.",
+			};
+		}
+		try {
+			await this.notifyDesktop({
+				category: "reply",
+				title: "Commonspace notifications are working",
+				body: "Native alerts are connected. Your Inbox remains the durable fallback.",
+				url: this.clientUrl,
+				sound: false,
+			});
+			return {
+				status: "delivered",
+				message: "Test notification delivered. Click it to verify Commonspace opens.",
+			};
+		} catch (error) {
+			this.environment.logger?.warn(
+				`Commonspace desktop notification verification failed: ${error instanceof Error ? error.message : String(error)}`,
+			);
+			return {
+				status: "failed",
+				message:
+					"Native alert delivery failed. Inbox notifications remain available; check System Settings > Notifications for Commonspace.",
+			};
+		}
 	}
 
 	async diagnostics(): Promise<CommonspaceDiagnostics> {

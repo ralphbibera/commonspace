@@ -6,6 +6,7 @@ import type {
 	CommonspaceLiveAgentActivity,
 	CommonspaceMessage,
 	CommonspaceMutation,
+	CommonspaceNotificationVerification,
 	CommonspacePermissionRequest,
 	CommonspacePin,
 	CommonspaceQueuedFollowup,
@@ -814,6 +815,13 @@ export class CommonspaceClientStore {
 			});
 			throw error;
 		}
+	}
+
+	async verifyDesktopNotifications(): Promise<CommonspaceNotificationVerification> {
+		return requestJson<CommonspaceNotificationVerification>(
+			"/api/notifications/verify",
+			{ method: "POST" },
+		);
 	}
 
 	async exportWorkspace(): Promise<CommonspaceWorkspaceArchive> {

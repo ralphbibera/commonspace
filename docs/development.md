@@ -63,6 +63,11 @@ pnpm verify:live           # final release-path build and browser verification
 
 `pnpm check` is the fast local gate and does not build production artifacts. `verify:live` creates a fresh production build, starts the built server, and exercises the application through a real desktop browser.
 
+On macOS, run `pnpm verify:notifications` to hand a safe test alert to
+Notification Center. The command verifies that the native notifier accepted the
+alert. Use **Send test notification** in Workspace settings to verify visible
+delivery and get durable Inbox fallback guidance when macOS rejects it.
+
 During iteration, use the smaller gate:
 
 ```bash

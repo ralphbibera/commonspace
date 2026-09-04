@@ -1,3 +1,10 @@
+import { readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type {
+	CommonspaceBootstrap,
+	CommonspaceDesktopNotification,
+} from "@commonspace/shared";
 import { expect, type Locator, type Page, test } from "@playwright/test";
 
 const VERIFICATION_PROJECT = "Select project Verification Project";
@@ -118,6 +125,102 @@ test("sends a channel message and keeps composer state correct", async ({
 	await postVerificationMessage(page, messageText);
 });
 
+test("refreshes the Inbox, captures native delivery, and opens the exact notification target", async ({
+	page,
+}) => {
+	const e2ePort = process.env.COMMONSPACE_E2E_PORT ?? "3199";
+	const capturePath =
+		process.env.COMMONSPACE_E2E_NOTIFICATION_CAPTURE ??
+		join(tmpdir(), `commonspace-e2e-notification-${e2ePort}.json`);
+	await page.goto("/");
+	await page.getByRole("button", { name: "Commonspace settings" }).click();
+	const settings = page.getByRole("form", { name: "Workspace settings" });
+	const masterSwitch = settings.getByRole("switch", {
+		name: "Allow native notifications",
+	});
+	if ((await masterSwitch.getAttribute("aria-checked")) !== "true")
+		await masterSwitch.click();
+	await settings
+		.getByRole("button", { name: "Save notification settings" })
+		.click();
+	await expect(settings.getByRole("status")).toContainText(
+		"Notification settings saved.",
+	);
+	await settings
+		.getByRole("button", { name: "Send test notification" })
+		.click();
+	await expect(settings.getByRole("status")).toContainText(
+		"Test notification delivered.",
+	);
+	await expect
+		.poll(async () => {
+			try {
+				const notification = JSON.parse(
+					await readFile(capturePath, "utf8"),
+				) as CommonspaceDesktopNotification;
+				return notification.title;
+			} catch {
+				return null;
+			}
+		})
+		.toBe("Commonspace notifications are working");
+	await settings.getByRole("button", { name: "Close settings" }).first().click();
+
+	await page.getByRole("button", { name: /Open Inbox/iu }).click();
+	await page.getByRole("button", { name: /Activity/iu }).click();
+	const bootstrap = await page.request
+		.get("/api/bootstrap", { headers: { origin: page.url() } })
+		.then(async (response) => (await response.json()) as CommonspaceBootstrap);
+	const channel = bootstrap.state.channels.find(
+		(candidate) => candidate.name === "verification",
+	);
+	if (channel === undefined) throw new Error("verification channel fixture missing");
+	const responseText = "Review Bot completed the seeded workspace checkpoint.";
+	const previousReplies = await page.getByText(responseText, { exact: true }).count();
+
+	const send = await page.request.post("/api/send", {
+		headers: { origin: page.url() },
+		data: {
+			conversation: { kind: "channel", id: channel.id },
+			text: "@review-bot Verify the complete notification path.",
+		},
+	});
+	expect(send.ok()).toBe(true);
+	await expect(page.getByText(responseText, { exact: true })).toHaveCount(
+		previousReplies + 1,
+	);
+
+	await expect
+		.poll(async () => {
+			try {
+				const notification = JSON.parse(
+					await readFile(capturePath, "utf8"),
+				) as CommonspaceDesktopNotification;
+				return notification.body;
+			} catch {
+				return null;
+			}
+		})
+		.toBe(responseText);
+	const notification = JSON.parse(
+		await readFile(capturePath, "utf8"),
+	) as CommonspaceDesktopNotification;
+	const target = new URL(notification.url);
+	const messageId = target.searchParams.get("messageId");
+	if (messageId === null) throw new Error("notification message target missing");
+
+	await page.goto(notification.url);
+	await expect(page.locator(`[id="commonspace-message-${messageId}"]`)).toBeVisible();
+	await expect
+		.poll(async () => {
+			const current = await page.request
+				.get("/api/bootstrap", { headers: { origin: page.url() } })
+				.then(async (response) => (await response.json()) as CommonspaceBootstrap);
+			return current.state.inboxReadMessageIds.includes(messageId);
+		})
+		.toBe(true);
+});
+
 test("opens a seeded thread, replies, and uses thread context", async ({
 	page,
 }) => {
@@ -221,8 +324,12 @@ test("copies a message link from action menu", async ({ page }) => {
 
 	const copiedText = await page.evaluate(() => navigator.clipboard.readText());
 	expect(typeof copiedText).toBe("string");
-	expect(copiedText).toContain("commonspace://");
-	expect(copiedText).toContain("/message/");
+	const copiedUrl = new URL(copiedText);
+	expect(copiedUrl.origin).toBe("http://127.0.0.1:3199");
+	expect(copiedUrl.searchParams.get("conversation")).toBe("channel");
+	expect(copiedUrl.searchParams.get("conversationId")).toBeTruthy();
+	expect(copiedUrl.searchParams.get("messageId")).toBeTruthy();
+	expect(copiedUrl.searchParams.get("threadId")).toBeTruthy();
 });
 
 test("opens thread from the message action menu", async ({ page }) => {

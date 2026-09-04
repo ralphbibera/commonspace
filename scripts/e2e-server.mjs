@@ -1,5 +1,5 @@
 import { rmSync } from "node:fs";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath, URL } from "node:url";
@@ -13,6 +13,9 @@ const stateRoot =
 	(await mkdtemp(join(tmpdir(), "commonspace-e2e-home-")));
 const projectRoot = join(stateRoot, "verification-project");
 const referenceRoot = join(stateRoot, "reference-project");
+const notificationCapturePath =
+	process.env.COMMONSPACE_E2E_NOTIFICATION_CAPTURE ??
+	join(tmpdir(), `commonspace-e2e-notification-${String(port)}.json`);
 await mkdir(projectRoot, { recursive: true });
 await mkdir(referenceRoot, { recursive: true });
 
@@ -128,6 +131,7 @@ async function shutdown(code = 0) {
 	if (stopping) return;
 	stopping = true;
 	await running?.close().catch(() => undefined);
+	await rm(notificationCapturePath, { force: true });
 	await rm(stateRoot, { recursive: true, force: true });
 	cleanupStateSync();
 	process.exitCode = code;
@@ -142,6 +146,13 @@ try {
 		defaultCwd: repoRoot,
 		uiRoot,
 		dependencies: {
+			notify: async (notification) => {
+				await writeFile(
+					notificationCapturePath,
+					JSON.stringify(notification),
+					"utf8",
+				);
+			},
 			discoverAgents: async (adapter) =>
 				fixtureAgents.filter((agent) => agent.adapter === adapter),
 			routeAgents: async (input) => {
