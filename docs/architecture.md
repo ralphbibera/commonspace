@@ -81,7 +81,8 @@ Server-sent revision events prompt the UI store to refresh persisted state. Sepa
 - editable Channel context plus manual and token-pressure compaction through the configured inference provider;
 - immutable Thread snapshots, independently editable/compactable Thread context, and prospective per-reply Project defaults;
 - native session mapping and stale-session recovery;
-- one long-lived provider-neutral ACP stdio process per Hermes or Codex agent;
+- one durable harness-backed routing session per Channel, shared across that Channel's Threads while each routing prompt still carries only the current Thread's bounded context;
+- one long-lived provider-neutral ACP stdio process per active native-session scope, closed on reset, removal, shutdown, or stale-session recovery;
 - delta-only ACP delivery and exact opaque-session `session/load` resumption;
 - ephemeral, session-scoped MCP capabilities for bounded context reads and visible progress;
 - immediate message acceptance, concurrent cross-agent delivery, and same-native-session serialization;

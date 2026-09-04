@@ -190,6 +190,7 @@ const THREAD_SESSION_SCOPE_PATTERN =
 	/^Commonspace Thread: [0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const DM_SESSION_SCOPE_PATTERN =
 	/^Commonspace DM: [0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const ROUTING_SESSION_SCOPE_PREFIX = "Commonspace Routing: ";
 const IMAGE_ATTACHMENT_ID_PATTERN =
 	/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const IMAGE_MIME_TYPES: ReadonlySet<string> = new Set([
@@ -887,6 +888,7 @@ function sanitizeAgentSessions(
 	value: JsonValue | undefined,
 	allowedAgentIds: ReadonlySet<string>,
 	dmSessions: CommonspaceState["dmSessions"],
+	allowedChannelIds: ReadonlySet<string>,
 ): CommonspaceState["agentSessions"] {
 	if (typeof value !== "object" || value === null || Array.isArray(value))
 		return {};
@@ -905,6 +907,10 @@ function sanitizeAgentSessions(
 					(entry): entry is [string, string] =>
 						((entry[0] === "Bot Chat" && dmSessions[agentId] === undefined) ||
 							THREAD_SESSION_SCOPE_PATTERN.test(entry[0]) ||
+							(entry[0].startsWith(ROUTING_SESSION_SCOPE_PREFIX) &&
+								allowedChannelIds.has(
+									entry[0].slice(ROUTING_SESSION_SCOPE_PREFIX.length),
+								)) ||
 							dmSessions[agentId] === entry[0]) &&
 						isNativeSessionId(entry[1]),
 				)
@@ -2309,6 +2315,7 @@ function sanitizeLoadedState(value: JsonValue): CommonspaceState {
 			record.agentSessions,
 			agentIds,
 			dmSessions,
+			new Set(channels.map((channel) => channel.id)),
 		),
 		projects,
 		channels,
@@ -3848,6 +3855,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 							"You compact bounded shared workspace context. Return only the requested JSON object.",
 							buildThreadContextCompactionPrompt(this.state, threadId),
 							2_000,
+							{ kind: "isolated" },
 						),
 					);
 					const inferred = inferredThreadMemory(projection, compacted, now());
@@ -4469,11 +4477,12 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 						);
 			const removedChannelSessionNames =
 				mutation.action === "remove-channel"
-					? new Set(
-							this.state.threads
+					? new Set([
+							...this.state.threads
 								.filter((thread) => thread.channelId === mutation.channelId)
 								.map((thread) => `Commonspace Thread: ${thread.id}`),
-						)
+							`${ROUTING_SESSION_SCOPE_PREFIX}${mutation.channelId}`,
+						])
 					: undefined;
 			const activeRemovedChannelSessions =
 				removedChannelSessionNames === undefined
@@ -5575,7 +5584,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 		try {
 			const result =
 				this.overrides.routeAgents === undefined
-					? await this.routeAgents(input)
+					? await this.routeAgents(request.conversation.id, input)
 					: await this.overrides.routeAgents(input);
 			const allowed = new Set(candidates.map((candidate) => candidate.id));
 			const allowedProjects = new Set(projects.map((project) => project.id));
@@ -6551,6 +6560,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 				"You compact bounded shared workspace context. Return only the requested JSON object.",
 				buildChannelContextCompactionPrompt(this.state, channelId, projection),
 				2_000,
+				{ kind: "isolated" },
 			),
 		);
 		return inferredChannelMemory(projection, compacted, now());
@@ -6566,6 +6576,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 						"You compact bounded routing feedback. Return only the requested JSON object.",
 						source.prompt,
 						1_000,
+						{ kind: "isolated" },
 					),
 				);
 				if (!this.state.channels.some((channel) => channel.id === channelId))
@@ -6735,6 +6746,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 							"You compact bounded shared workspace context. Return only the requested JSON object.",
 							buildThreadContextCompactionPrompt(this.state, threadId),
 							2_000,
+							{ kind: "isolated" },
 						),
 					);
 					const inferred = inferredThreadMemory(projection, compacted, now());
@@ -7050,6 +7062,9 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 		system: string,
 		prompt: string,
 		maxTokens: number,
+		scope:
+			| { kind: "channel-routing"; channelId: string }
+			| { kind: "isolated" },
 	): Promise<string> {
 		if (this.routingConfiguration.provider === "openai-compatible") {
 			const apiKey =
@@ -7078,21 +7093,67 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 			);
 			if (agent === undefined)
 				throw new Error("routing harness is unavailable");
-			const result = await this.runAgent({
-				agent,
-				cwd: this.defaultCwd,
-				additionalCwds: [],
-				sessionName: `Commonspace Inference: ${crypto.randomUUID()}`,
-				message: `${system}\n\n${prompt}`,
-				reasoning: "minimal",
-				signal: AbortSignal.timeout(30_000),
-			});
-			return result.text;
+			const sessionName =
+				scope.kind === "channel-routing"
+					? `${ROUTING_SESSION_SCOPE_PREFIX}${scope.channelId}`
+					: `Commonspace Inference: ${crypto.randomUUID()}`;
+			const signal = AbortSignal.timeout(30_000);
+			const scopeIsActive = (): boolean =>
+				!signal.aborted &&
+				(scope.kind === "isolated" ||
+					this.state.channels.some(
+						(channel) => channel.id === scope.channelId,
+					));
+			const scopeExpiredError = (): Error =>
+				signal.aborted && signal.reason instanceof Error
+					? signal.reason
+					: new Error("routing session scope expired");
+			const run = async (): Promise<string> => {
+				if (!scopeIsActive()) throw scopeExpiredError();
+				const runInput: AgentRunInput = {
+					agent,
+					cwd: this.defaultCwd,
+					additionalCwds: [],
+					sessionName,
+					message: `${system}\n\n${prompt}`,
+					reasoning: "minimal",
+					signal,
+				};
+				if (scope.kind === "channel-routing") {
+					const sessionId = this.state.agentSessions[agent.id]?.[sessionName];
+					if (sessionId !== undefined) runInput.sessionId = sessionId;
+				}
+				const result = await this.runAgentWithSessionRecovery(
+					runInput,
+					scopeIsActive,
+				);
+				if (result === null || !scopeIsActive()) throw scopeExpiredError();
+				if (scope.kind === "channel-routing" && result.sessionId !== undefined) {
+					this.rememberAgentSession(agent.id, sessionName, result.sessionId);
+					await this.persist();
+				}
+				return result.text;
+			};
+			if (scope.kind === "channel-routing")
+				return this.withAgentSessionLock(agent.id, sessionName, run);
+			try {
+				return await run();
+			} finally {
+				const scopeKey = `${agent.id}\u0000${sessionName}`;
+				const processClient = this.acpProcesses.get(scopeKey);
+				if (processClient !== undefined) {
+					this.acpProcesses.delete(scopeKey);
+					await processClient.close().catch((closeError) => {
+						this.environment.logger?.warn(closeError);
+					});
+				}
+			}
 		}
 		throw new Error("unsupported routing provider");
 	}
 
 	private async routeAgents(
+		channelId: string,
 		input: CommonspaceRouteInput,
 	): Promise<CommonspaceRouteResult> {
 		return parseRoutingResponse(
@@ -7100,6 +7161,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 				"You are a bounded routing classifier. Return only the requested JSON object.",
 				buildRoutingPrompt(input),
 				250,
+				{ kind: "channel-routing", channelId },
 			),
 		);
 	}
@@ -7259,11 +7321,6 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 			) {
 				this.activeAcpSessions.delete(activeScopeKey);
 			}
-			if (this.acpProcesses.get(activeScopeKey) === processClient)
-				this.acpProcesses.delete(activeScopeKey);
-			await processClient.close().catch((error) => {
-				this.environment.logger?.warn(error);
-			});
 		}
 	}
 
@@ -7339,6 +7396,14 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 				input.sessionId,
 			);
 			if (!shouldContinue()) return null;
+			const scopeKey = `${input.agent.id}\u0000${input.sessionName}`;
+			const processClient = this.acpProcesses.get(scopeKey);
+			if (processClient !== undefined) {
+				this.acpProcesses.delete(scopeKey);
+				await processClient.close().catch((closeError) => {
+					this.environment.logger?.warn(closeError);
+				});
+			}
 			const replacement = { ...input };
 			delete replacement.sessionId;
 			return this.runAgent(replacement);

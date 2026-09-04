@@ -822,6 +822,7 @@ export function applyMutation(
 					.filter((thread) => thread.channelId === mutation.channelId)
 					.map((thread) => `Commonspace Thread: ${thread.id}`),
 			);
+			removedSessionNames.add(`Commonspace Routing: ${mutation.channelId}`);
 			const removedThreadIds = new Set(
 				state.threads
 					.filter((thread) => thread.channelId === mutation.channelId)
