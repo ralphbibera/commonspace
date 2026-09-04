@@ -5,14 +5,14 @@
 | Product | Commonspace |
 | Positioning | The workspace for the agents you already use |
 | Spec version | 1.0 |
-| Decision state | Implementation-ready; product behavior is locked unless Ralph amends it |
+| Decision state | Approved baseline; changes require an explicit product decision |
 | Last updated | 2026-09-03 |
 | License | MIT |
 | Primary release | v0.1 local private preview |
 
-This is the canonical product-behavior specification for Commonspace. [Product direction](product-direction.md) defines the boundary and decision filter, [Product model](product.md) summarizes the domain, [UI direction](ui-direction.md) defines the current visual contract, [Implementation gap audit](implementation-gap-audit.md) tracks current code against this specification, and [Roadmap](roadmap.md) sequences delivery.
+This is the canonical product-behavior specification for Commonspace. [Product direction](product-direction.md) defines the boundary and decision filter, [Product model](product.md) summarizes the domain, [Implementation gap audit](implementation-gap-audit.md) tracks current code against this specification, and [Roadmap](roadmap.md) sequences delivery.
 
-UI details are maintained separately in [UI direction](ui-direction.md); this document defines what the product must do and what every UI must make possible.
+UI layouts, visual styling, and interaction polish are intentionally not specified here. This document defines what the product must do and what every later UI must make possible.
 
 Reference research is evidence, not scope. Commonspace is defined by its own user problem and product principles. Any pattern adopted from research must first be justified, named, and specified in Commonspace's own terms. Named comparisons do not belong in canonical product documents or user-facing product language.
 
@@ -87,7 +87,7 @@ A user can open Commonspace, talk naturally in a Channel or DM, and trust that:
 
 1. **Conversation is the work record.** Execution state belongs to messages and replies, not to a parallel task object.
 2. **Agents are real harnesses.** Commonspace reflects supported local ACP agents and never pretends to be their runtime.
-3. **Context is explicit.** Project references, shared context, routing decisions, and compaction state must remain accurate and available at their owning service boundaries.
+3. **Context is explicit.** Project references, shared context, routing decisions, and compaction state must be inspectable and correctable.
 4. **Native continuity is exact.** A thread or DM resumes its mapped native session whenever the harness supports it.
 5. **Agents are peers.** A visible mention is the handoff. No coordinator is required.
 6. **Inference is infrastructure.** One configured Commonspace inference layer handles routing, decomposition, Project resolution, context compaction, and routing-memory compaction.
@@ -139,10 +139,6 @@ flowchart TD
 
 ## 5. Primary experience
 
-### Navigation and first surface
-
-Opening Commonspace takes the user directly to the attention-focused Inbox. The product has no separate Workspace landing page or Agent-runs dashboard. Replies, mentions, permission requests, needs-input outcomes, failures, and timeouts remain discoverable through Inbox items and the conversation or Thread that owns them. A previously saved legacy `home` view is treated as Inbox so an upgrade cannot reopen the removed surface.
-
 ### 5.1 First run and Agent addition
 
 1. The local Commonspace service starts and the browser or desktop client connects to it.
@@ -166,7 +162,7 @@ Opening Commonspace takes the user directly to the attention-focused Inbox. The 
 2. Commonspace persists and displays the message immediately.
 3. The message creates a Thread.
 4. The inference layer resolves missing Project references, selects the smallest useful set of Agents, and decomposes the message when responsibilities differ.
-5. Routing metadata remains persisted for dispatch, reply binding, diagnostics, and correction history; resolved destinations and assignment details are not rendered in the conversation.
+5. The user can inspect which Agents were selected, each generated sub-request, its Project references, and the routing reason.
 6. Commonspace dispatches each sub-request to that Agent's native session in the Thread.
 7. Different Agent sessions run concurrently. Calls to the same native session are serialized.
 8. Replies, activity, results, and attention states appear under the same Thread.
@@ -293,8 +289,8 @@ Opening Commonspace takes the user directly to the attention-focused Inbox. The 
 | INF-04 | v0.1 | Select the smallest useful Agent set. | One Agent is preferred when sufficient; distinct responsibilities may select any necessary set. |
 | INF-05 | v0.1 | Remove hidden product-wide Agent fan-out caps. | Explicit or inferred requests are not silently limited to two Agents; any safety ceiling is visible and user-controlled. |
 | INF-06 | v0.1 | Generate one bounded sub-request per selected Agent. | Each Agent's new native turn contains only its assigned request; the original remains accessible through bounded context tools. |
-| INF-07 | v0.1 | Persist routing metadata. | The selected Agents, sub-requests, Project references, reason, and confidence where available are stored with the source message for dispatch, reply binding, diagnostics, and correction history; resolved details are not rendered inline. |
-| INF-08 | v0.1 | Support service-level sub-request correction. | A correction can redirect one assignment without resending unrelated assignments. Prior attempts remain durable, while no inline reroute control is exposed. |
+| INF-07 | v0.1 | Make routing inspectable. | The selected Agents, sub-requests, Project references, reason, and confidence where available are stored with the source message. |
+| INF-08 | v0.1 | Support sub-request rerouting and correction. | A user can redirect one assignment without resending unrelated assignments. Prior attempts remain visible. |
 | INF-09 | v0.1 | Learn from explicit corrections. | Reroutes are stored as feedback and compacted into bounded routing knowledge used by later decisions. |
 | INF-10 | v0.1 | Fail visibly when inference is unavailable or invalid. | The message remains accepted and receives a retryable needs-attention state; Commonspace does not silently broadcast it. |
 | INF-11 | v0.1 | Target effectively immediate routing. | The routing stage targets sub-second completion where the configured provider permits and reports separately from harness execution time. |
@@ -412,8 +408,8 @@ The original human message remains canonical and visible. Sub-requests are routi
 ### Reroute semantics
 
 - A reroute targets one sub-request.
-- The original assignment and any response remain retained in durable routing/transcript history.
-- A service/API correction may change the Agent, sub-request wording, or Project references.
+- The original assignment and any response remain visible.
+- The user may change the Agent, sub-request wording, or Project references.
 - The new Agent receives the corrected sub-request plus scoped shared context.
 - The correction event becomes routing feedback.
 - Feedback compaction may generalize patterns but cannot edit historical routing records.
@@ -486,7 +482,7 @@ The implementation order is behavior-first. UI/UX work begins after the underlyi
 
 - Agent-specific sub-requests.
 - Project-reference inference and per-sub-request references.
-- Durable reroute/correction records.
+- Visible reroute/correction events.
 - Compacted routing memory.
 - Removal of the hidden two-Agent inference cap.
 
@@ -513,11 +509,11 @@ The implementation order is behavior-first. UI/UX work begins after the underlyi
 ### Slice E: UI/UX implementation
 
 - Visible inferred references and `@@project` autocomplete without dedicated Project-scope controls.
-- Minimal routing status: pending and failed states remain visible; resolved routing detail stays out of the conversation.
+- Routing/sub-request inspection and rerouting.
 - Channel/Thread context inspector, editor, pins, and compaction controls.
 - Message branch/version navigation and deletion surfaces.
 - File, permission, diagnostics, notification, and data-management surfaces.
-- Keyboard, desktop Light/Dark/System acceptance coverage; narrow-screen validation is deferred to a later UI slice.
+- Keyboard, narrow-screen, light, and dark acceptance coverage.
 
 ## 12. End-to-end acceptance scenarios
 
@@ -544,7 +540,7 @@ Commonspace v0.1 is product-complete when:
 2. Capability-dependent behavior is tested against each supported harness that advertises it.
 3. All end-to-end acceptance scenarios pass on a clean supported machine.
 4. Existing state versions migrate without dropping conversations, context, references, attachments, or read state, including transcripts beyond legacy count windows.
-5. The browser client works on desktop with keyboard-only operation and Light/Dark/System appearance. Narrow-screen layout is a later UI slice.
+5. The browser client works across desktop and narrow layouts, keyboard-only operation, and light/dark appearance.
 6. The local service can be installed, started, stopped, updated, and recovered without repository knowledge.
 7. No portable or browser-visible payload leaks credentials, absolute paths, native session IDs, or ephemeral capabilities.
 8. Product documentation, the implementation audit, and the roadmap agree on shipped behavior.
