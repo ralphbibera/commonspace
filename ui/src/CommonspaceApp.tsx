@@ -75,8 +75,7 @@ export function CommonspaceApp({
 					type="button"
 					className={cn(
 						"pointer-events-none absolute inset-0 z-10 hidden border-0 bg-black/30 opacity-0 transition-opacity max-[780px]:block",
-						navigationOpen &&
-							"pointer-events-auto max-[780px]:opacity-100",
+						navigationOpen && "pointer-events-auto max-[780px]:opacity-100",
 					)}
 					aria-label="Close navigation"
 					aria-hidden={!navigationOpen}

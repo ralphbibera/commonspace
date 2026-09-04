@@ -508,12 +508,12 @@ describe("Commonspace ACP host path", () => {
 		]);
 		expect(deliveredText.join("\n")).not.toContain("Recent room history:");
 		expect(deliveredText.join("\n")).not.toContain("Execution contract:");
-		expect(frames.filter((frame) => frame.method === "initialize")).toHaveLength(
-			1,
-		);
-		expect(frames.filter((frame) => frame.method === "session/new")).toHaveLength(
-			1,
-		);
+		expect(
+			frames.filter((frame) => frame.method === "initialize"),
+		).toHaveLength(1);
+		expect(
+			frames.filter((frame) => frame.method === "session/new"),
+		).toHaveLength(1);
 		expect(frames.filter((frame) => frame.method === "session/load")).toEqual(
 			[],
 		);

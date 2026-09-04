@@ -5,10 +5,10 @@ import {
 	type CommonspaceAgentTrace,
 	type CommonspaceBootstrap,
 	type CommonspaceChannel,
-	type CommonspaceMessage,
 	type CommonspaceLiveAgentActivity,
-	type CommonspacePermissionRequest,
+	type CommonspaceMessage,
 	type CommonspaceNotificationVerification,
+	type CommonspacePermissionRequest,
 	type CommonspaceProject,
 	type CommonspaceQueuedFollowup,
 	type CommonspaceRunAttribution,
@@ -236,6 +236,26 @@ const rootMessage: CommonspaceMessage = {
 	createdAt: "2026-09-03T09:58:00.000Z",
 	projectIds: [primaryProject.id],
 	projectId: primaryProject.id,
+	routing: {
+		source: "ai",
+		status: "resolved",
+		startedAt: "2026-09-03T09:58:00.000Z",
+		resolvedAt: "2026-09-03T09:58:00.125Z",
+		durationMs: 125,
+		agentIds: [hermesAgent.id],
+		assignments: [
+			{
+				id: "assignment-design-review",
+				agentId: hermesAgent.id,
+				subRequest: "Inspect only the desktop UI boundary.",
+				projectIds: [primaryProject.id],
+			},
+		],
+		corrections: [],
+		inferredProjectIds: [primaryProject.id],
+		confidence: 0.94,
+		reason: "Design review matches Hermes.",
+	},
 };
 
 const agentReply: CommonspaceMessage = {
@@ -373,45 +393,54 @@ export function createStoryBootstrap(
 
 export const storyBootstrap = createStoryBootstrap();
 
-const denseThreadRoots: CommonspaceMessage[] = Array.from({ length: 7 }, (_, index) => ({
-	id: `message-dense-root-${String(index + 1)}`,
-	conversation: { kind: "channel", id: designChannel.id },
-	authorType: "user",
-	authorId: "ralph",
-	authorName: "Ralph",
-	text: [
-		"Audit the responsive workspace shell and record any clipping or focus issues.",
-		"Compare the dense Inbox and Threads layouts against the current visual contract.",
-		"Verify keyboard navigation through search, composer suggestions, and settings.",
-		"Review the project file previews for text, image, video, and blocked content.",
-		"Exercise agent permission requests and queued follow-up controls.",
-		"Check long titles, metadata, and status labels at desktop and narrow widths.",
-		"Summarize the remaining visual risks with exact Storybook evidence.",
-	][index] ?? "Review the remaining interface state.",
-	createdAt: `2026-09-03T09:${String(40 + index).padStart(2, "0")}:00.000Z`,
-	projectIds: [primaryProject.id],
-	projectId: primaryProject.id,
-}));
+const denseThreadRoots: CommonspaceMessage[] = Array.from(
+	{ length: 7 },
+	(_, index) => ({
+		id: `message-dense-root-${String(index + 1)}`,
+		conversation: { kind: "channel", id: designChannel.id },
+		authorType: "user",
+		authorId: "ralph",
+		authorName: "Ralph",
+		text:
+			[
+				"Audit the responsive workspace shell and record any clipping or focus issues.",
+				"Compare the dense Inbox and Threads layouts against the current visual contract.",
+				"Verify keyboard navigation through search, composer suggestions, and settings.",
+				"Review the project file previews for text, image, video, and blocked content.",
+				"Exercise agent permission requests and queued follow-up controls.",
+				"Check long titles, metadata, and status labels at desktop and narrow widths.",
+				"Summarize the remaining visual risks with exact Storybook evidence.",
+			][index] ?? "Review the remaining interface state.",
+		createdAt: `2026-09-03T09:${String(40 + index).padStart(2, "0")}:00.000Z`,
+		projectIds: [primaryProject.id],
+		projectId: primaryProject.id,
+	}),
+);
 
-const denseThreads: CommonspaceThread[] = denseThreadRoots.map((message, index) => ({
-	id: `thread-dense-${String(index + 1)}`,
-	channelId: designChannel.id,
-	projectIds: [primaryProject.id],
-	projectId: primaryProject.id,
-	rootMessageId: message.id,
-	agentIds: index % 2 === 0 ? [hermesAgent.id] : [hermesAgent.id, codexAgent.id],
-	context: {
-		channelSnapshot: {
-			...memory("Dense Storybook thread inherited from the design review channel."),
-			capturedAt: now,
+const denseThreads: CommonspaceThread[] = denseThreadRoots.map(
+	(message, index) => ({
+		id: `thread-dense-${String(index + 1)}`,
+		channelId: designChannel.id,
+		projectIds: [primaryProject.id],
+		projectId: primaryProject.id,
+		rootMessageId: message.id,
+		agentIds:
+			index % 2 === 0 ? [hermesAgent.id] : [hermesAgent.id, codexAgent.id],
+		context: {
+			channelSnapshot: {
+				...memory(
+					"Dense Storybook thread inherited from the design review channel.",
+				),
+				capturedAt: now,
+			},
+			memory: {
+				...memory("Dense Storybook thread context."),
+				origin: "automatic",
+			},
 		},
-		memory: {
-			...memory("Dense Storybook thread context."),
-			origin: "automatic",
-		},
-	},
-	createdAt: message.createdAt,
-}));
+		createdAt: message.createdAt,
+	}),
+);
 
 const denseThreadReplies: CommonspaceMessage[] = denseThreadRoots.map(
 	(message, index) => ({
@@ -433,7 +462,9 @@ const denseThreadReplies: CommonspaceMessage[] = denseThreadRoots.map(
 
 export const denseStoryBootstrap = (() => {
 	const state = createStoryState();
-	const denseUnreadIds = denseThreadReplies.slice(0, 4).map((message) => message.id);
+	const denseUnreadIds = denseThreadReplies
+		.slice(0, 4)
+		.map((message) => message.id);
 	return createStoryBootstrap({
 		state: {
 			...state,
@@ -568,6 +599,7 @@ export function createStoryStore(
 		loading?: boolean;
 		error?: string | null;
 		notificationVerification?: CommonspaceNotificationVerification;
+		send?: CommonspaceStore["send"];
 	} = {},
 ): CommonspaceStore {
 	const snapshot: CommonspaceClientSnapshot = {
@@ -588,6 +620,8 @@ export function createStoryStore(
 				return () => "[object CommonspaceStoryStore]";
 			if (property === "valueOf") return () => target;
 			if (property === "getSnapshot") return () => snapshot;
+			if (property === "send" && options.send !== undefined)
+				return options.send;
 			if (property === "messages") {
 				return () => {
 					const conversation = snapshot.activeConversation;
@@ -599,14 +633,11 @@ export function createStoryStore(
 					);
 				};
 			}
-			if (property === "subscribe")
-				return () => () => undefined;
+			if (property === "subscribe") return () => () => undefined;
 			if (property === "connectEvents" || property === "disconnectEvents")
 				return () => undefined;
-			if (property === "selectConversation")
-				return () => undefined;
-			if (property === "selectProject")
-				return () => undefined;
+			if (property === "selectConversation") return () => undefined;
+			if (property === "selectProject") return () => undefined;
 			if (property === "selectDirectory") return async () => null;
 			if (property === "verifyDesktopNotifications")
 				return async () =>
@@ -789,7 +820,10 @@ const searchResults: CommonspaceSearchResult[] = [
 		receipt: "Channel",
 		occurredAt: now,
 		highlights: [],
-		target: { kind: "conversation", conversation: { kind: "channel", id: designChannel.id } },
+		target: {
+			kind: "conversation",
+			conversation: { kind: "channel", id: designChannel.id },
+		},
 	},
 	{
 		id: "message-root",
@@ -828,7 +862,9 @@ export const storySearchFetcher: typeof globalThis.fetch = async (input) => {
 		query === ""
 			? searchResults
 			: searchResults.filter((result) =>
-					`${result.title} ${result.detail}`.toLocaleLowerCase().includes(query),
+					`${result.title} ${result.detail}`
+						.toLocaleLowerCase()
+						.includes(query),
 				);
 	return jsonResponse({
 		query,

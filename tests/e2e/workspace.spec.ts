@@ -1,17 +1,31 @@
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type {
-	CommonspaceBootstrap,
-	CommonspaceDesktopNotification,
-} from "@commonspace/shared";
 import { expect, type Locator, type Page, test } from "@playwright/test";
+import { z } from "zod";
 
 const VERIFICATION_PROJECT = "Select project Verification Project";
 const VERIFICATION_CHANNEL = "Open channel verification";
 const GENERAL_CHANNEL = "Open channel general";
 const VERIFICATION_MESSAGE_SNIPPET =
 	"Review the workspace hierarchy and report a concise checkpoint.";
+const desktopNotificationSchema = z.object({
+	title: z.string(),
+	body: z.string(),
+	url: z.string(),
+});
+const bootstrapSchema = z.object({
+	state: z.object({
+		channels: z.array(z.object({ id: z.string(), name: z.string() })),
+		inboxReadMessageIds: z.array(z.string()),
+	}),
+});
+
+async function readCapturedNotification(capturePath: string) {
+	return desktopNotificationSchema.parse(
+		JSON.parse(await readFile(capturePath, "utf8")),
+	);
+}
 
 function verificationPosts(page: Page) {
 	return page.getByRole("region", { name: "verification posts" });
@@ -155,28 +169,32 @@ test("refreshes the Inbox, captures native delivery, and opens the exact notific
 	await expect
 		.poll(async () => {
 			try {
-				const notification = JSON.parse(
-					await readFile(capturePath, "utf8"),
-				) as CommonspaceDesktopNotification;
+				const notification = await readCapturedNotification(capturePath);
 				return notification.title;
 			} catch {
 				return null;
 			}
 		})
 		.toBe("Commonspace notifications are working");
-	await settings.getByRole("button", { name: "Close settings" }).first().click();
+	await settings
+		.getByRole("button", { name: "Close settings" })
+		.first()
+		.click();
 
 	await page.getByRole("button", { name: /Open Inbox/iu }).click();
 	await page.getByRole("button", { name: /Activity/iu }).click();
 	const bootstrap = await page.request
 		.get("/api/bootstrap", { headers: { origin: page.url() } })
-		.then(async (response) => (await response.json()) as CommonspaceBootstrap);
+		.then(async (response) => bootstrapSchema.parse(await response.json()));
 	const channel = bootstrap.state.channels.find(
 		(candidate) => candidate.name === "verification",
 	);
-	if (channel === undefined) throw new Error("verification channel fixture missing");
+	if (channel === undefined)
+		throw new Error("verification channel fixture missing");
 	const responseText = "Review Bot completed the seeded workspace checkpoint.";
-	const previousReplies = await page.getByText(responseText, { exact: true }).count();
+	const previousReplies = await page
+		.getByText(responseText, { exact: true })
+		.count();
 
 	const send = await page.request.post("/api/send", {
 		headers: { origin: page.url() },
@@ -193,29 +211,28 @@ test("refreshes the Inbox, captures native delivery, and opens the exact notific
 	await expect
 		.poll(async () => {
 			try {
-				const notification = JSON.parse(
-					await readFile(capturePath, "utf8"),
-				) as CommonspaceDesktopNotification;
+				const notification = await readCapturedNotification(capturePath);
 				return notification.body;
 			} catch {
 				return null;
 			}
 		})
 		.toBe(responseText);
-	const notification = JSON.parse(
-		await readFile(capturePath, "utf8"),
-	) as CommonspaceDesktopNotification;
+	const notification = await readCapturedNotification(capturePath);
 	const target = new URL(notification.url);
 	const messageId = target.searchParams.get("messageId");
-	if (messageId === null) throw new Error("notification message target missing");
+	if (messageId === null)
+		throw new Error("notification message target missing");
 
 	await page.goto(notification.url);
-	await expect(page.locator(`[id="commonspace-message-${messageId}"]`)).toBeVisible();
+	const targetMessage = page.locator(`[id="commonspace-message-${messageId}"]`);
+	await expect(targetMessage).toBeVisible();
+	await expect(targetMessage).toHaveAttribute("aria-current", "true");
 	await expect
 		.poll(async () => {
 			const current = await page.request
 				.get("/api/bootstrap", { headers: { origin: page.url() } })
-				.then(async (response) => (await response.json()) as CommonspaceBootstrap);
+				.then(async (response) => bootstrapSchema.parse(await response.json()));
 			return current.state.inboxReadMessageIds.includes(messageId);
 		})
 		.toBe(true);

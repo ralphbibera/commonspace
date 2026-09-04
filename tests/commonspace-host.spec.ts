@@ -52,6 +52,9 @@ const persistedStateSchema = z.object({
 	version: z.number().optional(),
 	defaults: z.object({ reasoning: z.string().optional() }).optional(),
 });
+const acpFrameSchema = z
+	.object({ method: z.string().optional(), params: z.unknown().optional() })
+	.passthrough();
 
 beforeEach(() => {
 	vi.stubGlobal(
@@ -253,7 +256,10 @@ describe("Commonspace host authority", () => {
 		).toBe(true);
 		expect(
 			requestIsSameOrigin(
-				request({ host: "attacker.example:3080", origin: "http://attacker.example:3080" }),
+				request({
+					host: "attacker.example:3080",
+					origin: "http://attacker.example:3080",
+				}),
 			),
 		).toBe(false);
 		expect(
@@ -1794,20 +1800,22 @@ describe("Commonspace host authority", () => {
 			const frames = (await readFile(frameLog, "utf8"))
 				.trim()
 				.split("\n")
-				.map((line) => JSON.parse(line) as { method?: string; params?: unknown });
-			expect(
-				frames.filter((frame) => frame.method === "session/load"),
-			).toEqual([]);
+				.map((line) => acpFrameSchema.parse(JSON.parse(line)));
+			expect(frames.filter((frame) => frame.method === "session/load")).toEqual(
+				[],
+			);
 			const routingPrompts = frames.filter((frame) => {
 				if (frame.method !== "session/prompt") return false;
-				return JSON.stringify(frame.params).includes("bounded routing classifier");
+				return JSON.stringify(frame.params).includes(
+					"bounded routing classifier",
+				);
 			});
-				expect(JSON.stringify(routingPrompts[1]?.params)).toContain(
-					"First request.",
-				);
-				expect(JSON.stringify(routingPrompts[2]?.params)).not.toContain(
-					"First request.",
-				);
+			expect(JSON.stringify(routingPrompts[1]?.params)).toContain(
+				"First request.",
+			);
+			expect(JSON.stringify(routingPrompts[2]?.params)).not.toContain(
+				"First request.",
+			);
 
 			await service.close();
 			restarted = new CommonspaceHostService(
@@ -1832,12 +1840,15 @@ describe("Commonspace host authority", () => {
 			const resumedFrames = (await readFile(frameLog, "utf8"))
 				.trim()
 				.split("\n")
-				.map((line) => JSON.parse(line) as { method?: string });
+				.map((line) => acpFrameSchema.parse(JSON.parse(line)));
 			expect(
 				resumedFrames.filter((frame) => frame.method === "session/load"),
 			).toHaveLength(2);
 
-			await restarted.mutate({ action: "remove-channel", channelId: channel.id });
+			await restarted.mutate({
+				action: "remove-channel",
+				channelId: channel.id,
+			});
 			expect(restarted.snapshot().agentSessions.hermes).toBeUndefined();
 		} finally {
 			await restarted?.close();
@@ -1891,14 +1902,19 @@ describe("Commonspace host authority", () => {
 			});
 			await service.whenIdle();
 
-			await expect(service.compactChannelContext(channel.id)).resolves.toMatchObject({
+			await expect(
+				service.compactChannelContext(channel.id),
+			).resolves.toMatchObject({
 				summary: "Compacted Channel context.",
 			});
-			const processKeys = [
-				...(service as unknown as {
-					acpProcesses: Map<string, unknown>;
-				}).acpProcesses.keys(),
-			];
+			const processCache: unknown = Object.entries(service).find(
+				([key]) => key === "acpProcesses",
+			)?.[1];
+			if (!(processCache instanceof Map))
+				throw new Error("ACP process cache is unavailable");
+			const processKeys = [...processCache.keys()].filter(
+				(key): key is string => typeof key === "string",
+			);
 			expect(
 				processKeys.some((key) =>
 					key.includes("\u0000Commonspace Inference: "),
@@ -1968,7 +1984,7 @@ describe("Commonspace host authority", () => {
 			const frames = (await readFile(frameLog, "utf8"))
 				.trim()
 				.split("\n")
-				.map((line) => JSON.parse(line) as { method?: string });
+				.map((line) => acpFrameSchema.parse(JSON.parse(line)));
 			expect(
 				frames.filter((frame) => frame.method === "initialize"),
 			).toHaveLength(1);

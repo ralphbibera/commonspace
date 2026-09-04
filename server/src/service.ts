@@ -2958,7 +2958,8 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 			});
 			return {
 				status: "delivered",
-				message: "Test notification delivered. Click it to verify Commonspace opens.",
+				message:
+					"Test notification delivered. Click it to verify Commonspace opens.",
 			};
 		} catch (error) {
 			this.environment.logger?.warn(
@@ -3607,10 +3608,14 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 		return {
 			provider: candidate.provider,
 			location:
-				candidate.provider === "harness" || localRoutingHost ? "local" : "remote",
+				candidate.provider === "harness" || localRoutingHost
+					? "local"
+					: "remote",
 			configured:
 				candidate.provider === "harness"
-					? this.state.agents.some((agent) => agent.id === candidate.harnessAgentId)
+					? this.state.agents.some(
+							(agent) => agent.id === candidate.harnessAgentId,
+						)
 					: candidate.model !== "",
 			sends: [
 				"message text",
@@ -7128,7 +7133,10 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 					scopeIsActive,
 				);
 				if (result === null || !scopeIsActive()) throw scopeExpiredError();
-				if (scope.kind === "channel-routing" && result.sessionId !== undefined) {
+				if (
+					scope.kind === "channel-routing" &&
+					result.sessionId !== undefined
+				) {
 					this.rememberAgentSession(agent.id, sessionName, result.sessionId);
 					await this.persist();
 				}

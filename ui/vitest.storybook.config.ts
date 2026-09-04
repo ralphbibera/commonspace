@@ -1,5 +1,5 @@
-import { fileURLToPath } from "node:url";
 import process from "node:process";
+import { fileURLToPath } from "node:url";
 import { storybookTest } from "@storybook/addon-vitest/vitest-plugin";
 import { playwright } from "@vitest/browser-playwright";
 import { defineConfig } from "vitest/config";
@@ -25,7 +25,7 @@ export default defineConfig({
 	test: {
 		name: "storybook",
 		fileParallelism: true,
-		...(process.env.CI === "true" ? { maxWorkers: 2 } : {}),
+		maxWorkers: process.env.CI === "true" ? 2 : undefined,
 		browser: {
 			enabled: true,
 			headless: true,

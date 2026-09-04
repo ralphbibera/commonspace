@@ -52,6 +52,44 @@ export const WorkspaceNavigationFlow: Story = {
 	},
 };
 
+export const WorkspaceColorModes: Story = {
+	args: { store: createStoryStore(storyBootstrap) },
+	decorators: [
+		(Story) => {
+			window.localStorage.removeItem("commonspace-color-mode");
+			document.documentElement.classList.remove("dark", "light", "system");
+			return <Story />;
+		},
+	],
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		const page = within(canvasElement.ownerDocument.body);
+		await expect(canvasElement.ownerDocument.documentElement).toHaveClass(
+			"light",
+		);
+		await userEvent.click(
+			canvas.getByRole("button", { name: "Commonspace settings" }),
+		);
+
+		const system = page.getByRole("radio", { name: /^System/u });
+		await userEvent.click(system);
+		await expect(system).toBeChecked();
+		await expect(canvasElement.ownerDocument.documentElement).toHaveClass(
+			"system",
+		);
+		await expect(window.localStorage.getItem("commonspace-color-mode")).toBe(
+			"system",
+		);
+
+		const light = page.getByRole("radio", { name: /^Light/u });
+		await userEvent.click(light);
+		await expect(light).toBeChecked();
+		await expect(canvasElement.ownerDocument.documentElement).toHaveClass(
+			"light",
+		);
+	},
+};
+
 export const KeyboardSearchFlow: Story = {
 	args: { store: createStoryStore(storyBootstrap) },
 	play: async ({ canvasElement }) => {

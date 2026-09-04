@@ -38,7 +38,9 @@ export const SelectedTextDiff: Story = {
 				name: /Open change ui\/src\/CommonspaceApp\.tsx/iu,
 			}),
 		);
-		await expect(await canvas.findByText(/Conversation-first startup/iu)).toBeVisible();
+		await expect(
+			await canvas.findByText(/Conversation-first startup/iu),
+		).toBeVisible();
 	},
 };
 

@@ -31,7 +31,8 @@ describe("desktop notification delivery", () => {
 
 		await expect(service.verifyDesktopNotifications()).resolves.toEqual({
 			status: "delivered",
-			message: "Test notification delivered. Click it to verify Commonspace opens.",
+			message:
+				"Test notification delivered. Click it to verify Commonspace opens.",
 		});
 		expect(notify).toHaveBeenCalledWith({
 			category: "reply",

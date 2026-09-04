@@ -1,8 +1,11 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { useMemo, useState } from "react";
 import { expect, fn, userEvent, within } from "storybook/test";
 import { CommonspaceConversation } from "../CommonspaceConversation";
+import type { CommonspaceStore } from "../commonspace-store";
 import {
 	createStoryStore,
+	denseStoryBootstrap,
 	primaryProject,
 	runtimeStoryBootstrap,
 	storyBootstrap,
@@ -27,12 +30,153 @@ type Story = StoryObj<typeof meta>;
 const channel = { kind: "channel" as const, id: "channel-design" };
 const directMessage = { kind: "dm" as const, id: "agent-hermes" };
 
+function FocusTransitionPreview() {
+	const [conversationKind, setConversationKind] = useState<"channel" | "dm">(
+		"channel",
+	);
+	const [activeThreadId, setActiveThreadId] = useState<string | null>(
+		"thread-review",
+	);
+	const [targetMessageId, setTargetMessageId] = useState<string | null>(
+		"message-reply",
+	);
+	const store = useMemo(
+		() =>
+			createStoryStore(denseStoryBootstrap, {
+				activeConversation:
+					conversationKind === "channel" ? channel : directMessage,
+				activeProjectId: primaryProject.id,
+				activeThreadId,
+			}),
+		[activeThreadId, conversationKind],
+	);
+	return (
+		<div className="grid h-full grid-rows-[auto_minmax(0,1fr)]">
+			<div>
+				<button
+					type="button"
+					disabled={targetMessageId !== null}
+					onClick={() => {
+						setActiveThreadId("thread-dense-1");
+					}}
+				>
+					Switch to another thread
+				</button>
+				<button
+					type="button"
+					onClick={() => {
+						setConversationKind((current) => {
+							if (current === "channel") {
+								setActiveThreadId(null);
+								return "dm";
+							}
+							return "channel";
+						});
+					}}
+				>
+					{conversationKind === "channel"
+						? "Open direct message"
+						: "Return to channel"}
+				</button>
+			</div>
+			<CommonspaceConversation
+				store={store}
+				targetMessageId={targetMessageId}
+				onTargetMessageHandled={() => {
+					setTargetMessageId(null);
+				}}
+			/>
+		</div>
+	);
+}
+
 export const ChannelConversation: Story = {
 	args: {
 		store: createStoryStore(storyBootstrap, {
 			activeConversation: channel,
 			activeProjectId: primaryProject.id,
 		}),
+	},
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		await expect(
+			canvas.getByText(
+				"Review the visual baseline and document the next component states.",
+			),
+		).toBeVisible();
+		await expect(
+			canvas.queryByText("Inspect only the desktop UI boundary."),
+		).not.toBeInTheDocument();
+		await expect(
+			canvas.queryByText("Design review matches Hermes."),
+		).not.toBeInTheDocument();
+		await expect(
+			canvas.queryByRole("list", { name: "Routing assignments" }),
+		).not.toBeInTheDocument();
+	},
+};
+
+export const FocusClearsOnThreadChange: Story = {
+	args: {
+		store: createStoryStore(denseStoryBootstrap, {
+			activeConversation: channel,
+			activeProjectId: primaryProject.id,
+			activeThreadId: "thread-review",
+		}),
+	},
+	render: () => <FocusTransitionPreview />,
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		const switchThread = canvas.getByRole("button", {
+			name: "Switch to another thread",
+		});
+		await expect(switchThread).toBeEnabled();
+		await expect(
+			canvasElement.querySelector("#commonspace-message-message-root"),
+		).toHaveAttribute("aria-current", "true");
+
+		await userEvent.click(switchThread);
+
+		await expect(
+			canvasElement.querySelector("#commonspace-message-message-dense-root-1"),
+		).toHaveAttribute("aria-current", "true");
+		await expect(
+			canvasElement.querySelector("#commonspace-message-message-root"),
+		).not.toHaveAttribute("aria-current");
+	},
+};
+
+export const FocusClearsOnConversationChange: Story = {
+	args: {
+		store: createStoryStore(denseStoryBootstrap, {
+			activeConversation: channel,
+			activeProjectId: primaryProject.id,
+			activeThreadId: "thread-review",
+		}),
+	},
+	render: () => <FocusTransitionPreview />,
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		await expect(
+			canvas.getByRole("button", { name: "Switch to another thread" }),
+		).toBeEnabled();
+		await expect(
+			canvasElement.querySelector("#commonspace-message-message-root"),
+		).toHaveAttribute("aria-current", "true");
+
+		await userEvent.click(
+			canvas.getByRole("button", { name: "Open direct message" }),
+		);
+		await expect(
+			canvas.getByRole("textbox", { name: "Message Review Bot" }),
+		).toBeVisible();
+		await userEvent.click(
+			canvas.getByRole("button", { name: "Return to channel" }),
+		);
+
+		await expect(
+			canvasElement.querySelector("#commonspace-message-message-root"),
+		).not.toHaveAttribute("aria-current");
 	},
 };
 
@@ -45,19 +189,12 @@ export const DirectMessage: Story = {
 	},
 };
 
-const activeRunSend = fn();
-const activeRunStore = new Proxy(
-	createStoryStore(runtimeStoryBootstrap, {
-		activeConversation: directMessage,
-		activeProjectId: primaryProject.id,
-	}),
-	{
-		get(target, property, receiver) {
-			if (property === "send") return activeRunSend;
-			return Reflect.get(target, property, receiver);
-		},
-	},
-);
+const activeRunSend = fn<CommonspaceStore["send"]>();
+const activeRunStore = createStoryStore(runtimeStoryBootstrap, {
+	activeConversation: directMessage,
+	activeProjectId: primaryProject.id,
+	send: activeRunSend,
+});
 
 export const NarrowActiveRunComposer: Story = {
 	args: { store: activeRunStore },
@@ -71,9 +208,13 @@ export const NarrowActiveRunComposer: Story = {
 	play: async ({ canvasElement }) => {
 		activeRunSend.mockClear();
 		const canvas = within(canvasElement);
-		const composer = canvas.getByRole("textbox", { name: "Message Review Bot" });
+		const composer = canvas.getByRole("textbox", {
+			name: "Message Review Bot",
+		});
 		await userEvent.type(composer, "Use the new direction instead.");
-		await userEvent.click(canvas.getByRole("button", { name: "Stop and send" }));
+		await userEvent.click(
+			canvas.getByRole("button", { name: "Stop and send" }),
+		);
 		await expect(activeRunSend).toHaveBeenNthCalledWith(
 			1,
 			"Use the new direction instead.",
@@ -140,7 +281,9 @@ export const EditingDeliveredMessage: Story = {
 		await expect(
 			canvas.getByRole("form", { name: "Edit delivered message" }),
 		).toBeVisible();
-		await expect(canvas.getByRole("textbox", { name: "Edited message" })).toHaveValue(
+		await expect(
+			canvas.getByRole("textbox", { name: "Edited message" }),
+		).toHaveValue(
 			"Review the visual baseline and document the next component states.",
 		);
 	},

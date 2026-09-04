@@ -3,15 +3,15 @@ import {
 	type CommonspaceAgentProfile,
 	type CommonspaceDiagnostics,
 	type CommonspaceMutation,
-	type CommonspaceNotificationVerification,
 	type CommonspaceNotificationSettings,
+	type CommonspaceNotificationVerification,
 	type CommonspaceReasoning,
 	type CommonspaceRetentionPreview,
 	type CommonspaceRoutingProvider,
 	type CommonspaceSearchResult,
-	type UpdateRoutingConfigurationRequest,
 	DEFAULT_COMMONSPACE_NOTIFICATION_SETTINGS,
 	deriveCommonspaceInboxItems,
+	type UpdateRoutingConfigurationRequest,
 } from "@commonspace/shared";
 import {
 	ArrowRightIcon,
@@ -1662,7 +1662,9 @@ export function CommonspaceSidebar({
 											aria-live="polite"
 										>
 											{notificationVerification?.message ??
-												(notificationsSaved ? "Notification settings saved." : "")}
+												(notificationsSaved
+													? "Notification settings saved."
+													: "")}
 										</p>
 										<div className="flex shrink-0 gap-2 max-[640px]:flex-col">
 											<button

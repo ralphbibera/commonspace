@@ -44,7 +44,8 @@ describe("notification verification API", () => {
 		expect(response.status).toBe(200);
 		await expect(response.json()).resolves.toEqual({
 			status: "delivered",
-			message: "Test notification delivered. Click it to verify Commonspace opens.",
+			message:
+				"Test notification delivered. Click it to verify Commonspace opens.",
 		});
 		expect(notify).toHaveBeenCalledOnce();
 	});
