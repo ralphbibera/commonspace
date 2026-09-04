@@ -8,8 +8,8 @@ import {
 	createStoryStore,
 	denseStoryBootstrap,
 	discoveryStoryBootstrap,
-	emptySearchFetcher,
 	emptyBootstrap,
+	emptySearchFetcher,
 	errorSearchFetcher,
 	failedStoryBootstrap,
 	pendingSearchFetcher,
@@ -50,7 +50,8 @@ function CommonspaceScreen({
 }: CommonspaceScreenProps) {
 	window.localStorage.setItem("commonspace-view", destination);
 	window.localStorage.setItem("commonspace-directory-kind", directoryKind);
-	if (projectId === undefined) window.localStorage.removeItem("commonspace-project");
+	if (projectId === undefined)
+		window.localStorage.removeItem("commonspace-project");
 	else window.localStorage.setItem("commonspace-project", projectId);
 	if (conversation === undefined) {
 		window.localStorage.removeItem("commonspace-navigation");
@@ -121,7 +122,9 @@ export const FailedSession: Story = {
 	play: async ({ canvasElement }) => {
 		const canvas = within(canvasElement);
 		await userEvent.click(canvas.getByRole("button", { name: /Sessions/iu }));
-		await expect(canvas.getByText(/local agent process exited/iu)).toBeVisible();
+		await expect(
+			canvas.getByText(/local agent process exited/iu),
+		).toBeVisible();
 	},
 };
 
@@ -130,7 +133,9 @@ export const DenseInboxActivity: Story = {
 	play: async ({ canvasElement }) => {
 		const canvas = within(canvasElement);
 		await userEvent.click(canvas.getByRole("button", { name: /Activity/iu }));
-		await expect(canvas.getAllByRole("button", { name: /Open/iu }).length).toBeGreaterThan(4);
+		await expect(
+			canvas.getAllByRole("button", { name: /Open/iu }).length,
+		).toBeGreaterThan(4);
 	},
 };
 
@@ -255,9 +260,13 @@ export const DirectMessageRuntime: Story = {
 	play: async ({ canvasElement }) => {
 		const canvas = within(canvasElement);
 		await expect(
-			canvas.getByRole("region", { name: "Permission request from Review Bot" }),
+			canvas.getByRole("region", {
+				name: "Permission request from Review Bot",
+			}),
 		).toBeVisible();
-		await expect(canvas.getByRole("region", { name: "Queued follow-ups" })).toBeVisible();
+		await expect(
+			canvas.getByRole("region", { name: "Queued follow-ups" }),
+		).toBeVisible();
 	},
 };
 
@@ -283,8 +292,13 @@ export const SlashCommandSuggestions: Story = {
 	},
 	play: async ({ canvasElement }) => {
 		const canvas = within(canvasElement);
-		await userEvent.type(canvas.getByRole("textbox", { name: "Message Review Bot" }), "/");
-		await expect(canvas.getByRole("listbox", { name: "Slash commands" })).toBeVisible();
+		await userEvent.type(
+			canvas.getByRole("textbox", { name: "Message Review Bot" }),
+			"/",
+		);
+		await expect(
+			canvas.getByRole("listbox", { name: "Slash commands" }),
+		).toBeVisible();
 	},
 };
 
@@ -303,7 +317,9 @@ export const ProjectReferenceSuggestions: Story = {
 			canvas.getByRole("textbox", { name: "Post in design-review" }),
 			"@@",
 		);
-		await expect(canvas.getByRole("listbox", { name: "Tag suggestions" })).toBeVisible();
+		await expect(
+			canvas.getByRole("listbox", { name: "Tag suggestions" }),
+		).toBeVisible();
 	},
 };
 
@@ -318,11 +334,17 @@ export const DirectMessageNewChatConfirmation: Story = {
 	},
 	play: async ({ canvasElement }) => {
 		const canvas = within(canvasElement);
-		const composer = canvas.getByRole("textbox", { name: "Message Review Bot" });
+		const composer = canvas.getByRole("textbox", {
+			name: "Message Review Bot",
+		});
 		await userEvent.type(composer, "/new");
 		await userEvent.keyboard("{Enter}");
-		await expect(canvas.getByRole("status", { name: "Command result" })).toBeVisible();
-		await expect(canvas.getByRole("button", { name: "Start new chat" })).toBeVisible();
+		await expect(
+			canvas.getByRole("status", { name: "Command result" }),
+		).toBeVisible();
+		await expect(
+			canvas.getByRole("button", { name: "Start new chat" }),
+		).toBeVisible();
 	},
 };
 
@@ -339,8 +361,12 @@ export const ThreadContextOpen: Story = {
 	},
 	play: async ({ canvasElement }) => {
 		const canvas = within(canvasElement);
-		await userEvent.click(canvas.getByRole("button", { name: "Open thread context" }));
-		await expect(canvas.getByRole("region", { name: "Thread context" })).toBeVisible();
+		await userEvent.click(
+			canvas.getByRole("button", { name: "Open thread context" }),
+		);
+		await expect(
+			canvas.getByRole("region", { name: "Thread context" }),
+		).toBeVisible();
 	},
 };
 
@@ -361,10 +387,9 @@ export const ProjectConversations: Story = {
 	play: async ({ canvasElement }) => {
 		const canvas = within(canvasElement);
 		await userEvent.click(canvas.getByRole("tab", { name: "Conversations" }));
-		await expect(canvas.getByRole("tab", { name: "Conversations" })).toHaveAttribute(
-			"aria-selected",
-			"true",
-		);
+		await expect(
+			canvas.getByRole("tab", { name: "Conversations" }),
+		).toHaveAttribute("aria-selected", "true");
 	},
 };
 
@@ -423,7 +448,9 @@ export const GlobalSearchNoResults: Story = {
 			page.getByRole("searchbox", { name: "Search Commonspace" }),
 			"missing result",
 		);
-		await expect(page.getByText("No results for “missing result”.")).toBeVisible();
+		await expect(
+			page.getByText("No results for “missing result”."),
+		).toBeVisible();
 	},
 };
 
@@ -496,7 +523,9 @@ export const AddAgentDiscoveredResults: Story = {
 		await userEvent.click(page.getByRole("button", { name: "Add agent" }));
 		await userEvent.click(page.getByRole("button", { name: /Hermes/iu }));
 		await expect(
-			page.getByRole("button", { name: "Add discovered agent Hermes Reviewer" }),
+			page.getByRole("button", {
+				name: "Add discovered agent Hermes Reviewer",
+			}),
 		).toBeVisible();
 	},
 };
@@ -584,8 +613,12 @@ export const NarrowProjectSettings: Story = {
 	},
 	play: async ({ canvasElement }) => {
 		const canvas = within(canvasElement);
-		await userEvent.click(canvas.getByRole("button", { name: "Open project settings" }));
-		await expect(canvas.getByRole("complementary", { name: "Project settings" })).toBeVisible();
+		await userEvent.click(
+			canvas.getByRole("button", { name: "Open project settings" }),
+		);
+		await expect(
+			canvas.getByRole("complementary", { name: "Project settings" }),
+		).toBeVisible();
 	},
 };
 
@@ -594,6 +627,8 @@ export const NarrowSearch: Story = {
 	play: async ({ canvasElement }) => {
 		const page = within(canvasElement.ownerDocument.body);
 		await userEvent.keyboard("{Control>}k{/Control}");
-		await expect(page.getByRole("dialog", { name: "Search Commonspace" })).toBeVisible();
+		await expect(
+			page.getByRole("dialog", { name: "Search Commonspace" }),
+		).toBeVisible();
 	},
 };

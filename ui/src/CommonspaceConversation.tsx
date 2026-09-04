@@ -80,7 +80,10 @@ type FollowupDelivery = "queue" | "steer" | "stop-and-send";
 function submittedFollowupDelivery(
 	event: FormEvent<HTMLFormElement>,
 ): FollowupDelivery {
-	const submitter = (event.nativeEvent as SubmitEvent).submitter;
+	const submitter =
+		event.nativeEvent instanceof SubmitEvent
+			? event.nativeEvent.submitter
+			: null;
 	if (submitter instanceof HTMLButtonElement) {
 		const delivery = submitter.value;
 		if (
@@ -203,15 +206,16 @@ function readAttachedFile(file: File): Promise<SendFileAttachment> {
 	});
 }
 
-
 function blobBase64(blob: Blob): Promise<string> {
 	return new Promise((resolve, reject) => {
 		const reader = new FileReader();
-		reader.onerror = () => reject(new Error("Could not read stored attachment."));
+		reader.onerror = () =>
+			reject(new Error("Could not read stored attachment."));
 		reader.onload = () => {
 			const result = reader.result;
 			const marker = ";base64,";
-			const markerIndex = typeof result === "string" ? result.indexOf(marker) : -1;
+			const markerIndex =
+				typeof result === "string" ? result.indexOf(marker) : -1;
 			if (typeof result !== "string" || markerIndex < 0) {
 				reject(new Error("Could not read stored attachment."));
 				return;
@@ -1022,6 +1026,10 @@ export function CommonspaceConversation({
 		store.getSnapshot,
 		store.getSnapshot,
 	);
+	const activeFocusScopeKey =
+		snapshot.activeConversation === null
+			? null
+			: `${snapshot.activeConversation.kind}:${snapshot.activeConversation.id}\u0000${snapshot.activeThreadId ?? ""}`;
 	const [draft, setDraft] = useState("");
 	const [threadDraft, setThreadDraft] = useState("");
 	const [pendingImages, setPendingImages] = useState<SendImageAttachment[]>([]);
@@ -1054,6 +1062,7 @@ export function CommonspaceConversation({
 	const [focusedRootMessageId, setFocusedRootMessageId] = useState<
 		string | null
 	>(targetMessageId ?? null);
+	const previousFocusScopeKey = useRef(activeFocusScopeKey);
 	const [threadWidth, setThreadWidth] = useState(initialThreadWidth);
 	const [resizingThread, setResizingThread] = useState(false);
 	const [contextSettingsOpen, setContextSettingsOpen] = useState(false);
@@ -1320,10 +1329,20 @@ export function CommonspaceConversation({
 		) {
 			setContextSettingsOpen(false);
 		}
-		if (targetMessageId !== null) return;
+	}, [settingsRequest, snapshot.activeConversation]);
+	useEffect(() => {
+		const previous = previousFocusScopeKey.current;
+		previousFocusScopeKey.current = activeFocusScopeKey;
+		if (
+			targetMessageId !== null ||
+			previous === null ||
+			activeFocusScopeKey === null ||
+			previous === activeFocusScopeKey
+		)
+			return;
 		setFocusedMessageId(null);
 		setFocusedRootMessageId(null);
-	}, [settingsRequest, snapshot.activeConversation, targetMessageId]);
+	}, [activeFocusScopeKey, targetMessageId]);
 	useEffect(() => {
 		if (composerInsertRequest === null || !isChannel) return;
 		setDraft(
@@ -1659,8 +1678,16 @@ export function CommonspaceConversation({
 							undefined,
 							projectIds,
 						);
-					else if (projectIds.length === 0) await store.send(previous.text, threadId);
-					else await store.send(previous.text, threadId, [], undefined, projectIds);
+					else if (projectIds.length === 0)
+						await store.send(previous.text, threadId);
+					else
+						await store.send(
+							previous.text,
+							threadId,
+							[],
+							undefined,
+							projectIds,
+						);
 				} else {
 					await store.send(
 						previous.text,
@@ -2526,35 +2553,35 @@ export function CommonspaceConversation({
 								)}
 								{(directMessageActivities.length === 0 || isChannel) && (
 									<button
-									type="submit"
-									aria-label={
-										rootIsCommand
-											? "Run command"
-											: isChannel
-												? "Post message"
-												: "Send message"
-									}
-									title={
-										rootIsCommand
-											? "Run command"
-											: isChannel
-												? "Post message"
-												: "Send message"
-									}
-									className="inline-flex min-h-9 min-w-[72px] items-center justify-center rounded-sm border-0 bg-primary px-3 text-sm font-semibold text-primary-foreground disabled:opacity-45"
-									disabled={
-										snapshot.sending ||
-										(draft.trim() === "" &&
-											pendingImages.length === 0 &&
-											pendingFiles.length === 0)
-									}
-								>
-									<span className="sr-only" aria-hidden="true">
-										↑
-									</span>
-									<span>
-										{rootIsCommand ? "Run" : isChannel ? "Post" : "Send"}
-									</span>
+										type="submit"
+										aria-label={
+											rootIsCommand
+												? "Run command"
+												: isChannel
+													? "Post message"
+													: "Send message"
+										}
+										title={
+											rootIsCommand
+												? "Run command"
+												: isChannel
+													? "Post message"
+													: "Send message"
+										}
+										className="inline-flex min-h-9 min-w-[72px] items-center justify-center rounded-sm border-0 bg-primary px-3 text-sm font-semibold text-primary-foreground disabled:opacity-45"
+										disabled={
+											snapshot.sending ||
+											(draft.trim() === "" &&
+												pendingImages.length === 0 &&
+												pendingFiles.length === 0)
+										}
+									>
+										<span className="sr-only" aria-hidden="true">
+											↑
+										</span>
+										<span>
+											{rootIsCommand ? "Run" : isChannel ? "Post" : "Send"}
+										</span>
 									</button>
 								)}
 							</div>
@@ -3062,11 +3089,65 @@ export function CommonspaceConversation({
 									)}
 								</div>
 								<div className="flex flex-wrap items-center gap-2">
-								{activeThreadActivities.length > 0 &&
-									threadReplyTarget === null && (
-										<fieldset
-											className="order-2 m-0 ml-auto flex min-w-0 flex-wrap items-center gap-1 border-0 p-0 [&_button]:min-h-9 [&_button]:rounded-sm [&_button]:border [&_button]:px-2 [&_button]:text-xs [&_button]:font-semibold [&_button]:hover:bg-muted [&_button]:disabled:opacity-45"
-											aria-label="Active thread run delivery"
+									{activeThreadActivities.length > 0 &&
+										threadReplyTarget === null && (
+											<fieldset
+												className="order-2 m-0 ml-auto flex min-w-0 flex-wrap items-center gap-1 border-0 p-0 [&_button]:min-h-9 [&_button]:rounded-sm [&_button]:border [&_button]:px-2 [&_button]:text-xs [&_button]:font-semibold [&_button]:hover:bg-muted [&_button]:disabled:opacity-45"
+												aria-label="Active thread run delivery"
+												disabled={
+													snapshot.sending ||
+													(threadDraft.trim() === "" &&
+														pendingThreadImages.length === 0 &&
+														pendingThreadFiles.length === 0)
+												}
+											>
+												<button
+													type="submit"
+													name="delivery"
+													value="queue"
+													title="Send after the current run finishes"
+												>
+													Queue
+												</button>
+												<button
+													type="submit"
+													name="delivery"
+													value="steer"
+													title="Interrupt with new guidance"
+												>
+													Steer
+												</button>
+												<button
+													type="submit"
+													name="delivery"
+													value="stop-and-send"
+													aria-label="Stop and send thread follow-up"
+													title="Stop the current run and send this next"
+												>
+													Stop + send
+												</button>
+											</fieldset>
+										)}
+									<label className="relative inline-flex min-h-9 w-fit items-center rounded-sm border px-2 text-xs font-semibold">
+										Attach
+										<input
+											className="absolute inset-0 opacity-0"
+											type="file"
+											multiple
+											aria-label="Attach files to Thread"
+											onChange={(event) => {
+												const files = Array.from(event.target.files ?? []);
+												if (files.length > 0)
+													void attachFiles(files, setPendingThreadFiles);
+												event.target.value = "";
+											}}
+										/>
+									</label>
+									{(activeThreadActivities.length === 0 ||
+										threadReplyTarget !== null) && (
+										<button
+											className="min-h-9 justify-self-end rounded-sm border-0 bg-primary px-3 text-sm font-semibold text-primary-foreground disabled:opacity-45"
+											type="submit"
 											disabled={
 												snapshot.sending ||
 												(threadDraft.trim() === "" &&
@@ -3074,63 +3155,9 @@ export function CommonspaceConversation({
 													pendingThreadFiles.length === 0)
 											}
 										>
-											<button
-												type="submit"
-												name="delivery"
-												value="queue"
-												title="Send after the current run finishes"
-											>
-												Queue
-											</button>
-											<button
-												type="submit"
-												name="delivery"
-												value="steer"
-												title="Interrupt with new guidance"
-											>
-												Steer
-											</button>
-											<button
-												type="submit"
-												name="delivery"
-												value="stop-and-send"
-												aria-label="Stop and send thread follow-up"
-												title="Stop the current run and send this next"
-											>
-												Stop + send
-											</button>
-										</fieldset>
+											{threadIsCommand ? "Run" : "Reply"}
+										</button>
 									)}
-								<label className="relative inline-flex min-h-9 w-fit items-center rounded-sm border px-2 text-xs font-semibold">
-									Attach
-									<input
-										className="absolute inset-0 opacity-0"
-										type="file"
-										multiple
-										aria-label="Attach files to Thread"
-										onChange={(event) => {
-											const files = Array.from(event.target.files ?? []);
-											if (files.length > 0)
-												void attachFiles(files, setPendingThreadFiles);
-											event.target.value = "";
-										}}
-									/>
-								</label>
-								{(activeThreadActivities.length === 0 ||
-									threadReplyTarget !== null) && (
-									<button
-									className="min-h-9 justify-self-end rounded-sm border-0 bg-primary px-3 text-sm font-semibold text-primary-foreground disabled:opacity-45"
-									type="submit"
-									disabled={
-										snapshot.sending ||
-										(threadDraft.trim() === "" &&
-											pendingThreadImages.length === 0 &&
-											pendingThreadFiles.length === 0)
-									}
-								>
-									{threadIsCommand ? "Run" : "Reply"}
-									</button>
-								)}
 								</div>
 							</form>
 						</aside>

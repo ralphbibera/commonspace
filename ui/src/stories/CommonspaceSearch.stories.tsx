@@ -126,7 +126,9 @@ export const NoResults: Story = {
 			body.getByRole("searchbox", { name: "Search Commonspace" }),
 			"missing result",
 		);
-		await expect(body.getByText("No results for “missing result”.")).toBeVisible();
+		await expect(
+			body.getByText("No results for “missing result”."),
+		).toBeVisible();
 	},
 };
 

@@ -337,7 +337,9 @@ function requestBrowserHost(
 function requestHostIsLoopback(host: string): boolean {
 	try {
 		const hostname = new URL(`http://${host}`).hostname.toLocaleLowerCase();
-		return hostname === "127.0.0.1" || hostname === "localhost" || hostname === "::1";
+		return (
+			hostname === "127.0.0.1" || hostname === "localhost" || hostname === "::1"
+		);
 	} catch {
 		return false;
 	}
@@ -507,9 +509,13 @@ export function createCommonspaceApp({
 		}
 	});
 
-	app.post("/api/notifications/verify", requireSameOrigin, async (_req, res) => {
-		res.json(await service.verifyDesktopNotifications());
-	});
+	app.post(
+		"/api/notifications/verify",
+		requireSameOrigin,
+		async (_req, res) => {
+			res.json(await service.verifyDesktopNotifications());
+		},
+	);
 
 	app.get("/api/export", requireSameOrigin, async (_req, res) => {
 		try {

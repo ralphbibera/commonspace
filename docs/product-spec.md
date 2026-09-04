@@ -162,7 +162,7 @@ flowchart TD
 2. Commonspace persists and displays the message immediately.
 3. The message creates a Thread.
 4. The inference layer resolves missing Project references, selects the smallest useful set of Agents, and decomposes the message when responsibilities differ.
-5. The user can inspect which Agents were selected, each generated sub-request, its Project references, and the routing reason.
+5. Commonspace retains selected Agents, generated sub-requests, Project references, and the routing reason as service-side metadata for dispatch, reply binding, diagnostics, and correction history. The conversation shows pending and failed routing states but omits resolved routing detail.
 6. Commonspace dispatches each sub-request to that Agent's native session in the Thread.
 7. Different Agent sessions run concurrently. Calls to the same native session are serialized.
 8. Replies, activity, results, and attention states appear under the same Thread.
@@ -407,12 +407,13 @@ The original human message remains canonical and visible. Sub-requests are routi
 
 ### Reroute semantics
 
-- A reroute targets one sub-request.
-- The original assignment and any response remain visible.
-- The user may change the Agent, sub-request wording, or Project references.
+- A service-level correction targets one sub-request.
+- The original assignment and any response remain retained in routing history.
+- A correction may change the Agent or sub-request wording while preserving its inferred Project references.
 - The new Agent receives the corrected sub-request plus scoped shared context.
 - The correction event becomes routing feedback.
 - Feedback compaction may generalize patterns but cannot edit historical routing records.
+- Resolved correction receipts and inline reroute controls remain deferred from the conversation UI.
 
 ### Inference failure semantics
 
@@ -482,7 +483,7 @@ The implementation order is behavior-first. UI/UX work begins after the underlyi
 
 - Agent-specific sub-requests.
 - Project-reference inference and per-sub-request references.
-- Visible reroute/correction events.
+- Durable service-side reroute/correction events.
 - Compacted routing memory.
 - Removal of the hidden two-Agent inference cap.
 
@@ -509,7 +510,7 @@ The implementation order is behavior-first. UI/UX work begins after the underlyi
 ### Slice E: UI/UX implementation
 
 - Visible inferred references and `@@project` autocomplete without dedicated Project-scope controls.
-- Routing/sub-request inspection and rerouting.
+- Pending and failed routing presentation while resolved metadata and correction controls remain service-side.
 - Channel/Thread context inspector, editor, pins, and compaction controls.
 - Message branch/version navigation and deletion surfaces.
 - File, permission, diagnostics, notification, and data-management surfaces.

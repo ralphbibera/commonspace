@@ -45,9 +45,9 @@ describe("workspace settings", () => {
 			configured: true,
 		});
 		expect(service.routing()).toEqual(before);
-		await expect(readFile(join(root, "routing.json"), "utf8")).rejects.toMatchObject(
-			{ code: "ENOENT" },
-		);
+		await expect(
+			readFile(join(root, "routing.json"), "utf8"),
+		).rejects.toMatchObject({ code: "ENOENT" });
 	});
 
 	it("persists routing and agent defaults as one workspace operation", async () => {
@@ -81,15 +81,15 @@ describe("workspace settings", () => {
 			maxAgentsPerTurn: 3,
 			memoryThreads: 8,
 		});
-		expect(JSON.parse(await readFile(join(root, "routing.json"), "utf8"))).toEqual(
-			{
-				provider: "openai-compatible",
-				model: "workspace-router",
-				harnessAgentId: null,
-				baseUrl: "https://example.test/v1",
-				apiKey: "workspace-secret",
-			},
-		);
+		expect(
+			JSON.parse(await readFile(join(root, "routing.json"), "utf8")),
+		).toEqual({
+			provider: "openai-compatible",
+			model: "workspace-router",
+			harnessAgentId: null,
+			baseUrl: "https://example.test/v1",
+			apiKey: "workspace-secret",
+		});
 		expect(
 			JSON.parse(await readFile(join(root, "state.json"), "utf8")).defaults,
 		).toEqual({
@@ -127,13 +127,13 @@ describe("workspace settings", () => {
 
 		expect(service.snapshot()).toEqual(beforeState);
 		expect(service.routing()).toEqual(beforeRouting);
-		expect(JSON.parse(await readFile(join(root, "routing.json"), "utf8"))).toEqual(
-			{
-				provider: beforeRouting.provider,
-				model: beforeRouting.model,
-				harnessAgentId: beforeRouting.harnessAgentId,
-				baseUrl: beforeRouting.baseUrl,
-			},
-		);
+		expect(
+			JSON.parse(await readFile(join(root, "routing.json"), "utf8")),
+		).toEqual({
+			provider: beforeRouting.provider,
+			model: beforeRouting.model,
+			harnessAgentId: beforeRouting.harnessAgentId,
+			baseUrl: beforeRouting.baseUrl,
+		});
 	});
 });

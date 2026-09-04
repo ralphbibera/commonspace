@@ -21,6 +21,8 @@ describeLiveNotifications("live macOS desktop notifications", () => {
 			sound: false,
 		};
 
-		await expect(createDesktopNotifier()(notification)).resolves.toBeUndefined();
+		await expect(
+			createDesktopNotifier()(notification),
+		).resolves.toBeUndefined();
 	});
 });
