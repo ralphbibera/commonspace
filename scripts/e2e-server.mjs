@@ -2,7 +2,7 @@ import { rmSync } from "node:fs";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, URL } from "node:url";
 import { startCommonspaceServer } from "../server/src/index.ts";
 
 const repoRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));

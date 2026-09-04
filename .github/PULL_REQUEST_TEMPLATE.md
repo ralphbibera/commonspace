@@ -1,57 +1,42 @@
-## Decision path
+## Thinking path
 
-<!-- Explain the change from product context to concrete outcome. Keep each bullet factual. -->
+<!-- Explain the reasoning from the product problem to this change. Keep it short and concrete. -->
 
-- Commonspace needs:
-- Current behavior:
-- User or maintainer impact:
-- This change:
-- Resulting benefit:
+1. Commonspace should ...
+2. But ...
+3. Therefore this change ...
 
 ## What changed
 
-<!-- List the smallest meaningful implementation slices. -->
-
--
+<!-- Describe the implementation and name the owning package or boundary. -->
 
 ## Verification
 
-<!-- Include every command you ran and the observed result. Do not claim checks you did not run. -->
+### Automated
 
-| Check     | Result                              |
-| --------- | ----------------------------------- |
-| `command` | Pass / fail / not run — explanation |
+- [ ] Focused test or existing coverage: <!-- command and result -->
+- [ ] `pnpm check:fast`
+- [ ] `pnpm check`
+- [ ] `pnpm verify:live` <!-- required for server, API, routing, persistence, or integrated UI changes -->
 
-## Visual evidence
+### Manual
 
-<!-- Required for visible UI changes. Include the affected light/dark and interaction states. Remove this section when not applicable. -->
+<!-- Describe the path you checked. For visible changes, include screenshots or a short recording. -->
 
-## Risks and rollback
+## Risks and follow-up
 
-<!-- State remaining risks, compatibility concerns, and how to revert or disable the change. Write "None identified" only after considering them. -->
+<!-- List migration, compatibility, security, performance, or rollout risks. Write "None" when there are none. -->
 
-## AI assistance
+## Model used
 
-<!-- Give the provider, exact model identifier when known, what it did, and relevant limitations. Write "None — human-authored" when applicable. Never include private prompts, reasoning, secrets, session IDs, or host paths. -->
-
-- Provider and model:
-- Role in this change:
-- Limitations:
-
-## Related public work
-
-<!-- Use Fixes #123, Closes #123, or Refs #123. If there is no issue, make the problem statement above self-contained. Do not include private task or local workspace references. -->
+<!-- State the provider and exact model used, or write: None, human-authored. -->
 
 ## Checklist
 
-- [ ] I searched open issues and pull requests for duplicate or related work.
-- [ ] This pull request contains one logical, scoped change.
-- [ ] I linked relevant public issues and pull requests, or explained the problem fully here.
-- [ ] I added focused tests for changed behavior, or explained why no test is useful.
-- [ ] I ran `pnpm check` when code or behavior changed.
-- [ ] I ran `pnpm verify:live` when server, API, or visible UI behavior changed.
-- [ ] I included real rendered-state evidence for visible UI changes.
-- [ ] I updated contracts, migrations, and documentation where applicable.
-- [ ] I disclosed AI assistance accurately.
-- [ ] I included no credentials, private task IDs, local links, native session IDs, host paths, generated builds, or unrelated artifacts.
-- [ ] CI is green, or this pull request is still a draft.
+- [ ] I searched for related issues and pull requests.
+- [ ] This pull request contains one logical change.
+- [ ] The change follows the Commonspace product model.
+- [ ] Shared contracts and affected consumers are synchronized.
+- [ ] I added or updated focused coverage, or explained why it is not needed.
+- [ ] I checked for credentials, private paths, native session data, and generated artifacts.
+- [ ] I reviewed the complete diff and ran `git diff --check`.

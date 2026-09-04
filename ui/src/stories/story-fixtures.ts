@@ -415,13 +415,13 @@ export function createStoryStore(
 				};
 			}
 			if (property === "subscribe")
-				return (_listener: () => void) => () => undefined;
+				return () => () => undefined;
 			if (property === "connectEvents" || property === "disconnectEvents")
 				return () => undefined;
 			if (property === "selectConversation")
-				return (_conversation: ConversationRef) => undefined;
+				return () => undefined;
 			if (property === "selectProject")
-				return (_projectId: string) => undefined;
+				return () => undefined;
 			if (property === "selectDirectory") return async () => null;
 			return async () => undefined;
 		},

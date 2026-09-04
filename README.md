@@ -12,7 +12,6 @@ Commonspace is a local-first workspace for durable conversations with coding age
 - **Channels** provide shared, optionally projectless conversations with explicit agent rosters and editable compacted context.
 - **Direct Messages** preserve one-to-one continuity with a chosen agent.
 - **Inbox** collects actual agent replies from Channels and Direct Messages, with unread filtering and exact thread navigation.
-- **Startup** opens directly to the attention-focused Inbox. There is no separate Workspace landing page or Agent-runs dashboard; runtime outcomes remain attached to their replies and Inbox items.
 - **Agents** are explicitly chosen from discovered supported harness installations. Workspace names and appearance stay local and never rename or reconfigure the harness.
 - **Messages and threads** are the work record. Native agent session references keep every continuation attached to the correct context.
 
@@ -20,7 +19,7 @@ Commonspace is conversation-first. Hermes and Codex receive only the newly deliv
 
 Optional native notifications mirror new durable Inbox events for replies, mentions, permissions, failures, and timeouts. Their category/sound settings are independent from Inbox state, and clicks open the exact loopback conversation item.
 
-Unaddressed Channel messages always use configured inference—either an agent harness or a BYO OpenAI-compatible model—to select the smallest useful harness set and persist one bounded sub-request for each selection. When a new root has no `@@project` tag, the same decision infers visible Project scope; each harness receives only its assigned sub-request and Project subset. Routing records remain durable for dispatch and diagnostics, but resolved destinations and assignment details are not rendered in the conversation. Explicit `@agent` and `@@project` tags remain authoritative; there is no deterministic/no-inference routing mode or separate Project picker.
+Unaddressed Channel messages always use configured inference—either an agent harness or a BYO OpenAI-compatible model—to select the smallest useful harness set and create an inspectable sub-request for each selection. When a new root has no `@@project` tag, the same decision infers visible Project scope; each harness receives only its assigned sub-request and Project subset. Explicit `@agent` and `@@project` tags remain authoritative; there is no deterministic/no-inference routing mode or separate Project picker.
 
 ## Quick start
 
@@ -87,11 +86,15 @@ The split keeps product contracts, server behavior, and the browser interface in
 pnpm dev                    # server + UI development
 pnpm storybook              # persistent UI workbench
 pnpm test                   # unit and integration tests
-pnpm lint                   # Biome lint
+pnpm test:storybook:smoke   # six representative browser stories
+pnpm test:storybook:watch   # focused browser-test watch mode
+pnpm check:fast             # lint, types, tests, and Storybook smoke
+pnpm lint                   # ESLint
 pnpm typecheck              # workspace TypeScript checks
-pnpm check                  # fast local gate: Biome, types, and tests
-pnpm build                  # production builds; release verification only
-pnpm verify:live            # final release-path check: build, boot API + UI preview, and exercise the browser path
+pnpm build                  # all production builds
+pnpm check:ui               # full UI type, Storybook, and build gate
+pnpm check                  # complete local gate
+pnpm verify:live            # build, boot API + UI preview, and exercise the browser path
 pnpm verify:service         # isolated real clone/build/update/rollback lifecycle on macOS
 pnpm service:install        # install current committed main checkout as a macOS LaunchAgent
 pnpm service:status         # inspect installed service and health

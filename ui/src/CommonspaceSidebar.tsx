@@ -490,7 +490,6 @@ export function CommonspaceSidebar({
 	const [inferenceCheckStatus, setInferenceCheckStatus] = useState<
 		string | null
 	>(null);
-	const [inferenceCheckOk, setInferenceCheckOk] = useState<boolean | null>(null);
 	const [importArchive, setImportArchive] =
 		useState<WorkspaceImportCandidate | null>(null);
 	const [importMappings, setImportMappings] = useState<
@@ -777,12 +776,24 @@ export function CommonspaceSidebar({
 	const saveChannelAgents = async (event: FormEvent, channelId: string) => {
 		event.preventDefault();
 		await store.mutate({
-			action: "set-channel-configuration",
+			action: "set-channel-agents",
 			channelId,
 			agentIds: channelAgentIds,
+		});
+		await store.mutate({
+			action: "set-channel-context",
+			channelId,
 			instructions: channelInstructions,
+		});
+		await store.mutate({
+			action: "set-channel-settings",
+			channelId,
 			model: channelModel || null,
 			reasoning: channelReasoning || null,
+		});
+		await store.mutate({
+			action: "set-channel-memory",
+			channelId,
 			summary: channelSummary,
 			decisions: channelDecisions
 				.split("\n")
@@ -816,20 +827,6 @@ export function CommonspaceSidebar({
 		});
 		setChannelPinNote("");
 	};
-
-	const routingUpdateRequest = (): UpdateRoutingConfigurationRequest =>
-		routingProvider === "harness"
-			? { provider: "harness", harnessAgentId: routingHarnessAgentId }
-			: {
-					provider: "openai-compatible",
-					model: routingModel,
-					baseUrl: routingBaseUrl,
-					...(clearRoutingApiKey
-						? { apiKey: null }
-						: routingApiKey.trim() === ""
-							? {}
-							: { apiKey: routingApiKey }),
-				};
 
 	const saveDefaults = async (event: FormEvent) => {
 		event.preventDefault();
@@ -893,21 +890,15 @@ export function CommonspaceSidebar({
 	const checkInferenceConfiguration = async () => {
 		if (inferenceChecking) return;
 		setInferenceChecking(true);
-		setInferenceCheckOk(null);
-		setInferenceCheckStatus("Checking unsaved configuration…");
+		setInferenceCheckStatus("Checking configuration…");
 		try {
-			const result =
-				typeof store.validateRoutingConfiguration === "function"
-					? await store.validateRoutingConfiguration(routingUpdateRequest())
-					: (await store.diagnostics()).inference;
-			setInferenceCheckOk(result.configured);
+			const result = await store.diagnostics();
 			setInferenceCheckStatus(
-				result.configured
-					? `Configuration verified · ${result.provider}`
+				result.inference.configured
+					? `Configuration verified · ${result.inference.provider}`
 					: "Configuration needs attention",
 			);
 		} catch {
-			setInferenceCheckOk(false);
 			setInferenceCheckStatus("Configuration check failed");
 		} finally {
 			setInferenceChecking(false);
@@ -1205,10 +1196,10 @@ export function CommonspaceSidebar({
 									</span>
 									<span className="absolute top-0 right-0 inline-flex min-h-[30px] items-center gap-2 rounded-full border px-2.5 font-mono text-xs text-muted-foreground">
 										<i
-											className="size-[7px] rounded-full bg-muted-foreground"
+											className="size-[7px] rounded-full bg-[var(--status-success)]"
 											aria-hidden="true"
 										/>
-										Saved configuration
+										Configured
 									</span>
 									<h2 className="mt-2 max-w-[700px] font-heading text-[36px] leading-[1.12] font-bold tracking-[-0.025em]">
 										Configure routing and context
