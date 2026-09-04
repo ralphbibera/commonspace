@@ -5,6 +5,7 @@ export interface WorkspaceHeaderProps {
 	subtitle?: string;
 	mark: ReactNode;
 	actions?: ReactNode;
+	landmark?: boolean;
 }
 
 export function WorkspaceHeader({
@@ -12,9 +13,11 @@ export function WorkspaceHeader({
 	subtitle,
 	mark,
 	actions,
+	landmark = true,
 }: WorkspaceHeaderProps) {
+	const Header = landmark ? "header" : "div";
 	return (
-		<header className="flex min-h-14 items-center gap-2.5 border-b bg-background py-2 pr-3 pl-4 max-[780px]:pl-[60px]">
+		<Header className="flex min-h-14 items-center gap-2.5 border-b bg-background py-2 pr-3 pl-4 max-[780px]:pl-[60px]">
 			<span
 				className="grid size-6 shrink-0 place-items-center rounded-sm border-0 bg-transparent font-mono text-sm font-semibold text-muted-foreground"
 				aria-hidden="true"
@@ -32,6 +35,6 @@ export function WorkspaceHeader({
 				)}
 			</div>
 			{actions}
-		</header>
+		</Header>
 	);
 }
