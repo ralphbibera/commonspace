@@ -82,7 +82,7 @@ The health response is `{"status":"ok"}`. The live verifier builds the workspace
 
 OS notifications are off by default. In Commonspace settings, enable them and independently choose replies/input requests, mentions, permission requests, failures/timeouts, and sound. Saving notification preferences does not depend on inference configuration and never changes durable Inbox items.
 
-The service delivers only Inbox events created after the current service baseline; restart and archive import do not replay historical alerts. Session mute suppresses the matching native alert without deleting its Inbox record. Clicking an alert opens `http://127.0.0.1:3100` at the validated exact conversation, Thread, and message. Native delivery errors remain in service logs and do not change the Agent result.
+The service delivers only Inbox events created after the current service baseline; restart and archive import do not replay historical alerts. Session mute suppresses the matching native alert without deleting its Inbox record. Clicking an alert opens `http://127.0.0.1:3100` at the validated exact conversation, Thread, and message. Use **Send test notification** to verify the macOS delivery boundary. When native delivery fails, Commonspace reports the failure with System Settings guidance while preserving the event in the durable Inbox; the Agent result is unchanged.
 
 ## Common failures
 

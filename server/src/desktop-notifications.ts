@@ -17,7 +17,7 @@ interface NotificationCenterInstance {
 			message: string;
 			open: string;
 			sound: false | string;
-			wait: boolean;
+			wait?: boolean;
 			timeout: number;
 		},
 		callback: (error: Error | null) => void,
@@ -98,7 +98,7 @@ export function createDesktopNotifier(): DesktopNotifier {
 	return async (notification) => {
 		if (center === undefined) {
 			const loaded: NodeNotifierModule = moduleRequire("node-notifier");
-			center = new loaded.NotificationCenter({ withFallback: false });
+			center = new loaded.NotificationCenter({ withFallback: true });
 		}
 		await new Promise<void>((resolve, reject) => {
 			center?.notify(
@@ -108,7 +108,6 @@ export function createDesktopNotifier(): DesktopNotifier {
 					message: notification.body,
 					open: notification.url,
 					sound: notification.sound ? "Glass" : false,
-					wait: false,
 					timeout: 10,
 				},
 				(error) => {
