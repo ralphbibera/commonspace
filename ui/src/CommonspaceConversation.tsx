@@ -75,6 +75,24 @@ const messageMarkdownFallback = (
 const messageActionButtonClassName =
 	"grid size-7 place-items-center rounded-sm border-0 bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40";
 
+type FollowupDelivery = "queue" | "steer" | "stop-and-send";
+
+function submittedFollowupDelivery(
+	event: FormEvent<HTMLFormElement>,
+): FollowupDelivery {
+	const submitter = (event.nativeEvent as SubmitEvent).submitter;
+	if (submitter instanceof HTMLButtonElement) {
+		const delivery = submitter.value;
+		if (
+			delivery === "queue" ||
+			delivery === "steer" ||
+			delivery === "stop-and-send"
+		)
+			return delivery;
+	}
+	return "queue";
+}
+
 export interface CommonspaceConversationProps {
 	store: CommonspaceStore;
 	targetMessageId?: string | null;
@@ -1005,12 +1023,6 @@ export function CommonspaceConversation({
 		store.getSnapshot,
 	);
 	const [draft, setDraft] = useState("");
-	const [activeDelivery, setActiveDelivery] = useState<
-		"queue" | "steer" | "stop-and-send"
-	>("queue");
-	const [threadDelivery, setThreadDelivery] = useState<
-		"queue" | "steer" | "stop-and-send"
-	>("queue");
 	const [threadDraft, setThreadDraft] = useState("");
 	const [pendingImages, setPendingImages] = useState<SendImageAttachment[]>([]);
 	const [pendingThreadImages, setPendingThreadImages] = useState<
@@ -1712,13 +1724,17 @@ export function CommonspaceConversation({
 		}
 	};
 
-	const sendRoot = async (event: FormEvent) => {
+	const sendRoot = async (event: FormEvent<HTMLFormElement>) => {
 		event.preventDefault();
 		const text = draft.trim();
 		if (text === "" && pendingImages.length === 0 && pendingFiles.length === 0)
 			return;
 		const attachments = pendingImages;
 		const files = pendingFiles;
+		const delivery =
+			directMessageActivities.length > 0 && !isChannel
+				? submittedFollowupDelivery(event)
+				: undefined;
 		setDraft("");
 		if (rootIsCommand) {
 			await executeSlashCommand(text);
@@ -1733,14 +1749,12 @@ export function CommonspaceConversation({
 					text,
 					undefined,
 					attachments,
-					directMessageActivities.length > 0 && !isChannel
-						? activeDelivery
-						: undefined,
+					delivery,
 					undefined,
 					files,
 				);
-			else if (directMessageActivities.length > 0 && !isChannel)
-				await store.send(text, undefined, attachments, activeDelivery);
+			else if (delivery !== undefined)
+				await store.send(text, undefined, attachments, delivery);
 			else if (attachments.length > 0)
 				await store.send(text, undefined, attachments);
 			else await store.send(text);
@@ -1751,7 +1765,7 @@ export function CommonspaceConversation({
 		}
 	};
 
-	const sendThreadReply = async (event: FormEvent) => {
+	const sendThreadReply = async (event: FormEvent<HTMLFormElement>) => {
 		event.preventDefault();
 		const text = threadDraft.trim();
 		if (
@@ -1763,6 +1777,10 @@ export function CommonspaceConversation({
 			return;
 		const attachments = pendingThreadImages;
 		const files = pendingThreadFiles;
+		const delivery =
+			activeThreadActivities.length > 0 && threadReplyTarget === null
+				? submittedFollowupDelivery(event)
+				: undefined;
 		setThreadDraft("");
 		if (threadIsCommand) {
 			setThreadReplyTarget(null);
@@ -1780,12 +1798,12 @@ export function CommonspaceConversation({
 						text,
 						activeThread.id,
 						attachments,
-						activeThreadActivities.length > 0 ? threadDelivery : undefined,
+						delivery,
 						undefined,
 						files,
 					);
-				else if (activeThreadActivities.length > 0)
-					await store.send(text, activeThread.id, attachments, threadDelivery);
+				else if (delivery !== undefined)
+					await store.send(text, activeThread.id, attachments, delivery);
 				else await store.send(text, activeThread.id, attachments);
 			} else {
 				if (files.length > 0)
@@ -2445,37 +2463,40 @@ export function CommonspaceConversation({
 									/>
 								)}
 							</div>
-							<div className="flex min-h-[52px] items-center gap-2 pt-1">
+							<div className="flex min-h-[52px] flex-wrap items-center gap-2 pt-1">
 								{directMessageActivities.length > 0 && !isChannel && (
 									<fieldset
-										className="m-0 flex min-w-0 flex-wrap items-center gap-1 border-0 p-0 [&_button]:min-h-9 [&_button]:rounded-sm [&_button]:border [&_button]:px-2 [&_button]:text-xs [&_button[aria-pressed=true]]:bg-muted"
+										className="order-2 m-0 ml-auto flex min-w-0 flex-wrap items-center gap-1 border-0 p-0 [&_button]:min-h-9 [&_button]:rounded-sm [&_button]:border [&_button]:px-2 [&_button]:text-xs [&_button]:font-semibold [&_button]:hover:bg-muted [&_button]:disabled:opacity-45"
 										aria-label="Active run delivery"
+										disabled={
+											snapshot.sending ||
+											(draft.trim() === "" &&
+												pendingImages.length === 0 &&
+												pendingFiles.length === 0)
+										}
 									>
 										<button
-											type="button"
-											aria-pressed={activeDelivery === "queue"}
-											onClick={() => {
-												setActiveDelivery("queue");
-											}}
+											type="submit"
+											name="delivery"
+											value="queue"
+											title="Send after the current run finishes"
 										>
 											Queue
 										</button>
 										<button
-											type="button"
-											aria-pressed={activeDelivery === "steer"}
-											onClick={() => {
-												setActiveDelivery("steer");
-											}}
+											type="submit"
+											name="delivery"
+											value="steer"
+											title="Interrupt with new guidance"
 										>
 											Steer
 										</button>
 										<button
-											type="button"
+											type="submit"
+											name="delivery"
+											value="stop-and-send"
 											aria-label="Stop and send"
-											aria-pressed={activeDelivery === "stop-and-send"}
-											onClick={() => {
-												setActiveDelivery("stop-and-send");
-											}}
+											title="Stop the current run and send this next"
 										>
 											Stop + send
 										</button>
@@ -2496,12 +2517,15 @@ export function CommonspaceConversation({
 										}}
 									/>
 								</label>
-								<span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-									{isChannel
-										? "@ agent · @@ project · # channel · files · / commands"
-										: "Enter to send · files · / commands"}
-								</span>
-								<button
+								{(directMessageActivities.length === 0 || isChannel) && (
+									<span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+										{isChannel
+											? "@ agent · @@ project · # channel · files · / commands"
+											: "Enter to send · files · / commands"}
+									</span>
+								)}
+								{(directMessageActivities.length === 0 || isChannel) && (
+									<button
 									type="submit"
 									aria-label={
 										rootIsCommand
@@ -2531,7 +2555,8 @@ export function CommonspaceConversation({
 									<span>
 										{rootIsCommand ? "Run" : isChannel ? "Post" : "Send"}
 									</span>
-								</button>
+									</button>
+								)}
 							</div>
 						</form>
 					</section>
@@ -3036,37 +3061,41 @@ export function CommonspaceConversation({
 										/>
 									)}
 								</div>
+								<div className="flex flex-wrap items-center gap-2">
 								{activeThreadActivities.length > 0 &&
 									threadReplyTarget === null && (
 										<fieldset
-											className="m-0 flex min-w-0 flex-wrap items-center gap-1 border-0 p-0 [&_button]:min-h-9 [&_button]:rounded-sm [&_button]:border [&_button]:px-2 [&_button]:text-xs"
+											className="order-2 m-0 ml-auto flex min-w-0 flex-wrap items-center gap-1 border-0 p-0 [&_button]:min-h-9 [&_button]:rounded-sm [&_button]:border [&_button]:px-2 [&_button]:text-xs [&_button]:font-semibold [&_button]:hover:bg-muted [&_button]:disabled:opacity-45"
 											aria-label="Active thread run delivery"
+											disabled={
+												snapshot.sending ||
+												(threadDraft.trim() === "" &&
+													pendingThreadImages.length === 0 &&
+													pendingThreadFiles.length === 0)
+											}
 										>
 											<button
-												type="button"
-												aria-pressed={threadDelivery === "queue"}
-												onClick={() => {
-													setThreadDelivery("queue");
-												}}
+												type="submit"
+												name="delivery"
+												value="queue"
+												title="Send after the current run finishes"
 											>
 												Queue
 											</button>
 											<button
-												type="button"
-												aria-pressed={threadDelivery === "steer"}
-												onClick={() => {
-													setThreadDelivery("steer");
-												}}
+												type="submit"
+												name="delivery"
+												value="steer"
+												title="Interrupt with new guidance"
 											>
 												Steer
 											</button>
 											<button
-												type="button"
+												type="submit"
+												name="delivery"
+												value="stop-and-send"
 												aria-label="Stop and send thread follow-up"
-												aria-pressed={threadDelivery === "stop-and-send"}
-												onClick={() => {
-													setThreadDelivery("stop-and-send");
-												}}
+												title="Stop the current run and send this next"
 											>
 												Stop + send
 											</button>
@@ -3087,7 +3116,9 @@ export function CommonspaceConversation({
 										}}
 									/>
 								</label>
-								<button
+								{(activeThreadActivities.length === 0 ||
+									threadReplyTarget !== null) && (
+									<button
 									className="min-h-9 justify-self-end rounded-sm border-0 bg-primary px-3 text-sm font-semibold text-primary-foreground disabled:opacity-45"
 									type="submit"
 									disabled={
@@ -3098,7 +3129,9 @@ export function CommonspaceConversation({
 									}
 								>
 									{threadIsCommand ? "Run" : "Reply"}
-								</button>
+									</button>
+								)}
+								</div>
 							</form>
 						</aside>
 					)}

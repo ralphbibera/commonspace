@@ -295,9 +295,14 @@ export function CommonspaceProjectView({
 					className="flex min-h-16 shrink-0 items-center gap-2.5 overflow-x-auto border-b px-5 py-2 whitespace-nowrap max-[780px]:px-3"
 					aria-label="Project views"
 				>
-					<Button variant="ghost" onClick={onBack}>
+					<Button
+						variant="ghost"
+						aria-label="Workspace"
+						onClick={onBack}
+						className="max-[480px]:size-10 max-[480px]:px-0"
+					>
 						<ArrowLeftIcon data-icon="inline-start" aria-hidden="true" />
-						Workspace
+						<span className="max-[480px]:sr-only">Workspace</span>
 					</Button>
 					<TabsList variant="project" aria-label="Project views">
 						{(["conversations", "files", "changes"] as const).map((tab) => (
@@ -310,6 +315,7 @@ export function CommonspaceProjectView({
 					<span className="flex-1" />
 					<Button
 						variant="outline"
+						className="max-[780px]:hidden"
 						aria-label="Add local folder"
 						disabled={addingFolder}
 						onClick={() => {
@@ -319,7 +325,9 @@ export function CommonspaceProjectView({
 						<FolderPlusIcon data-icon="inline-start" aria-hidden="true" />
 						{addingFolder ? "Choosing…" : "Add context folder"}
 					</Button>
-					<Badge variant="outline">Files read only</Badge>
+					<Badge variant="outline" className="max-[780px]:hidden">
+						Files read only
+					</Badge>
 				</nav>
 				<TabsContent
 					value="conversations"

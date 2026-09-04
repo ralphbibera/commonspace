@@ -2,7 +2,23 @@ import type {
 	ProjectDirectoryResponse,
 	ProjectFileEntry,
 } from "@commonspace/shared";
-import { useEffect, useMemo, useState } from "react";
+import {
+	FileIcon,
+	FileLock2Icon,
+	FileSearchIcon,
+	FileTextIcon,
+	FolderIcon,
+	ImageIcon,
+	VideoIcon,
+} from "lucide-react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
+import {
+	Empty,
+	EmptyDescription,
+	EmptyHeader,
+	EmptyMedia,
+	EmptyTitle,
+} from "@/components/ui/empty";
 import { ResourceActionMenu } from "@/design-system/ResourceActionMenu";
 import {
 	fetchProjectJson,
@@ -19,13 +35,13 @@ export interface CommonspaceProjectFilesProps {
 	fetcher?: typeof globalThis.fetch;
 }
 
-function entryGlyph(entry: ProjectFileEntry): string {
-	if (entry.kind === "directory") return "›";
-	if (entry.preview === "image") return "IMG";
-	if (entry.preview === "video") return "VID";
-	if (entry.preview === "text") return "TXT";
-	if (entry.preview === "blocked") return "LOCK";
-	return "BIN";
+function entryIcon(entry: ProjectFileEntry): ReactNode {
+	if (entry.kind === "directory") return <FolderIcon />;
+	if (entry.preview === "image") return <ImageIcon />;
+	if (entry.preview === "video") return <VideoIcon />;
+	if (entry.preview === "text") return <FileTextIcon />;
+	if (entry.preview === "blocked") return <FileLock2Icon />;
+	return <FileIcon />;
 }
 
 export function CommonspaceProjectFiles({
@@ -119,14 +135,17 @@ export function CommonspaceProjectFiles({
 
 	if (roots.length === 0) {
 		return (
-			<div className="grid h-full place-items-center text-center">
-				<div>
-					<strong>No project folder</strong>
-					<p className="mt-1 text-xs text-muted-foreground">
+			<Empty className="h-full rounded-none border-0">
+				<EmptyHeader>
+					<EmptyMedia variant="icon" className="size-10 rounded-md">
+						<FolderIcon aria-hidden="true" />
+					</EmptyMedia>
+					<EmptyTitle>No project folder</EmptyTitle>
+					<EmptyDescription>
 						Add a local folder to browse files.
-					</p>
-				</div>
-			</div>
+					</EmptyDescription>
+				</EmptyHeader>
+			</Empty>
 		);
 	}
 
@@ -229,10 +248,10 @@ export function CommonspaceProjectFiles({
 									onClick={openEntry}
 								>
 									<span
-										className="grid size-7 place-items-center font-mono text-[10px] text-muted-foreground"
+										className="grid size-7 place-items-center rounded-sm bg-muted text-muted-foreground [&_svg]:size-4"
 										aria-hidden="true"
 									>
-										{entryGlyph(entry)}
+										{entryIcon(entry)}
 									</span>
 									<span className="truncate text-xs font-semibold">
 										{entry.name}
@@ -272,20 +291,20 @@ export function CommonspaceProjectFiles({
 
 			<div className="min-h-0 min-w-0 overflow-auto bg-background">
 				{selected === null ? (
-					<div className="grid min-h-full place-items-center text-center">
-						<div>
-							<span
-								className="font-mono text-muted-foreground"
-								aria-hidden="true"
+					<Empty className="min-h-full rounded-none border-0 bg-[radial-gradient(circle_at_center,color-mix(in_oklch,var(--muted)_55%,transparent),transparent_42%)]">
+						<EmptyHeader className="rounded-xl border bg-background/85 px-10 py-9 shadow-sm backdrop-blur-sm">
+							<EmptyMedia
+								variant="icon"
+								className="size-12 rounded-xl border bg-background text-primary shadow-sm [&_svg]:size-5"
 							>
-								⌁
-							</span>
-							<strong className="mt-3 block text-[13px]">Select a file</strong>
-							<p className="mt-1 text-xs text-muted-foreground">
+								<FileSearchIcon aria-hidden="true" />
+							</EmptyMedia>
+							<EmptyTitle>Select a file to preview</EmptyTitle>
+							<EmptyDescription>
 								Text, images, and videos render here.
-							</p>
-						</div>
-					</div>
+							</EmptyDescription>
+						</EmptyHeader>
+					</Empty>
 				) : (
 					<>
 						<header className="flex min-h-[66px] items-center justify-between gap-3 border-b px-3 py-2">
