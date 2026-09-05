@@ -65,7 +65,7 @@
 		"biome-anti-slop": "^0.1.0",
 		"eslint": "9.39.1",
 		"eslint-plugin-storybook": "^10.6.0",
-		"jsdom": "27.4.0",
+		"jsdom": "30.0.1",
 		"playwright": "1.61.1",
 		"prettier": "3.8.2",
 		"react": "19.2.8",
