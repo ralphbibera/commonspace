@@ -1,59 +1,45 @@
 # Commonspace UI direction
 
-Status: current direction, 2026-09-03.
-
-This document is the visual contract for the current desktop web application. [Product specification](product-spec.md) remains the behavior contract.
-
-## Reference
-
-The active design contract is local [design.md](design.md).
-
-When changing the shell, collections, conversations, Inbox, Threads, or Project panes, preserve the geometry, spacing, borders, hierarchy, row behavior, and pane composition defined there.
-
-Do not copy the reference file's color settings. Preserve the active Tweakcn/Darkmatter semantic palette in `ui/src/index.css` and Commonspace's user appearance controls.
+Commonspace's desktop UI should keep conversations, context, and agent responses easy to follow. This guide applies the [design contract](design.md) to the main product surfaces. Use the [Product specification](product-spec.md) for behavior and the [Design system](design-system.md) for component and token ownership.
 
 ## Shell and navigation
 
-- With no saved destination, the desktop shell opens directly to the attention-focused Inbox.
-- Do not add a separate Workspace landing page, welcome dashboard, or Agent-runs overview.
-- Runtime outcomes remain represented by Inbox items and their owning conversation or Thread; do not duplicate them in a second dashboard surface.
-- Workspace branding is non-navigating. Returning from a Project pane goes back to Inbox.
-- Treat a legacy `commonspace-view=home` value as Inbox so upgrades cannot reopen the removed surface.
+The shell uses a 52px title bar, a 260px navigation rail, a flexible working area, 64px pane headers, and 8px pane dividers. Preserve consistent spacing, borders, and alignment across collections and conversations.
 
-## Implementation rules
+With no saved destination, the shell opens to Inbox. Workspace branding does not navigate, and returning from a Project pane goes to Inbox. A legacy `commonspace-view=home` value also resolves to Inbox.
 
-- Target the desktop web application first. Narrow/mobile validation is deferred until desktop parity is accepted.
-- Use the existing Tailwind v4, shadcn primitives, and semantic tokens in `ui/src/index.css`.
-- Do not add a parallel custom CSS naming layer or invented selectors such as `cs-titlebar-status`.
-- Keep visual changes in the UI. Do not create product objects or runtime behavior to explain a visual treatment.
+Inbox and each owning conversation or Thread show runtime outcomes. Keep this model intact: the current product has no separate Workspace landing page or Agent-runs dashboard.
+
+## Collections and context
+
+Projects, Channels, Agents, Inbox, and Threads use clear titles, compact rows, and visible selection. Show the metadata that helps users decide where to go next. Keep secondary controls quiet but discoverable.
+
+Project files and Git changes provide context for conversation. Channel and Thread context should be inspectable without exposing native session identifiers or absolute host paths. Use visible `@@project` references in composers; do not introduce separate Project-scope pickers for roots, Threads, branches, or reroutes.
+
+## Conversations
+
+Ordinary messages stay flat. Highlight an active or deep-linked message with a neutral surface, border, or ring. Keep its highlight card; do not use an orange left rail, border, or tint.
+
+Opening a reply focuses the exact reply in its Thread pane. Its Channel root remains the navigation anchor. Keep agent activity collapsed until requested so that it does not interrupt the readable conversation.
+
+Pending routing and failures remain visible. Resolved routing metadata supports dispatch, reply binding, diagnostics, and correction history at the service boundary; resolved assignment cards and inline reroute controls are outside the current conversation UI.
 
 ## Appearance
 
-- With no saved preference, Commonspace starts in Light mode.
-- The user can choose Light, Dark, or System mode.
-- System mode follows the operating-system preference and the selected mode persists locally.
-- User-facing copy uses Light, Dark, and System. Darkmatter remains a swappable theme source, not explanatory product copy.
+The default appearance is Light. Users can choose Light, Dark, or System, and the choice persists locally. System follows the operating-system preference.
 
-To swap themes, run `pnpm dlx shadcn@latest add "<tweakcn-theme-url>" --cwd ui --yes`. React components and layout must not need theme-specific edits. Stable aliases at the end of `ui/src/index.css` adapt Commonspace-only names such as `surface`, status colors, sidebar depth, radius tiers, control sizing, shadows, and motion to the incoming shadcn variables.
+Colors come from semantic tokens in [`ui/src/index.css`](../ui/src/index.css). A palette change must not require theme-specific React components or alter the layout. Product copy uses the appearance labels above and does not explain the underlying theme implementation.
 
-## Radius roles
+## Implementation rules
 
-- `rounded-sm` is for compact controls, nav rows, and small inline status surfaces.
-- `rounded-md` is the default for fields, cards, panels, dialogs, menus, message highlights, and composers.
-- `rounded-full` is reserved for circular avatars, status dots, and pill badges.
-- `rounded-none` is reserved for full-bleed strips such as line tabs and table-like separators.
-- Do not introduce `rounded-lg`, `rounded-xl`, or larger radii for core Commonspace surfaces without a component-specific reason.
+Use Tailwind CSS v4, the existing shadcn primitives, and Commonspace's shared components. Keep styles close to the component that owns them. Avoid a second custom selector or token system.
 
-## Conversation focus
+Keep visual changes within the UI unless the requested behavior requires a shared or server change. A new visual treatment does not justify a new product object or runtime capability.
 
-- Ordinary messages stay visually flat.
-- A deep-linked or active message keeps its highlight card: a quiet surface, border, or ring using semantic neutral tokens.
-- The focus treatment has no orange left rail, orange border, or orange tint.
-- Opening a reply keeps the exact reply focused in the Thread pane while its Channel root remains the navigational card.
-- Resolved routing remains stored at the service boundary for dispatch, reply binding, diagnostics, and future correction work. The conversation currently shows only pending and failed routing state; resolved assignment cards and inline reroute controls are intentionally deferred.
+Desktop is the supported design target. Mobile design and validation require a separate product decision.
 
 ## Verification
 
-Tests should protect user-visible behavior, accessibility semantics, state transitions, and API contracts. They should not assert private `data-*` styling hooks, exact utility-class strings, or computed CSS values.
+Tests protect user-visible behavior, accessibility, state transitions, and API contracts. Avoid assertions against private styling hooks, exact utility-class strings, or CSS implementation details.
 
-Use the in-app browser at a desktop viewport for visual proof. Keep screenshot comparisons against the reference focused on layout and component structure; do not turn reference colors into acceptance criteria. Swap-test by changing only the Tweakcn URL and rebuilding.
+Review the actual desktop rendering against [design.md](design.md), including relevant before-and-after interaction states. Check Light and Dark appearance, focus, overflow, and overlay placement. Use the [visual verification loop](visual-verification.md) to distinguish automated evidence from visual acceptance.

@@ -1,127 +1,154 @@
 # Architecture
 
+Commonspace is a local service with a browser UI. The server owns durable conversation state and connects to supported agent harnesses; the browser presents that state through shared API contracts. This guide explains where behavior belongs and which boundaries a change must preserve.
+
+Read the [Product model](product.md) for the domain and [Development](development.md) for setup and verification.
+
 ## Shape
 
-Commonspace is a pnpm workspace with three explicit boundaries:
+The pnpm workspace has three packages:
 
-```text
-packages/shared    Domain contracts and pure shared helpers
-server             Express API, durable state, local relay, ACP/MCP, and execution
-ui                 Vite/React browser application
-```
+| Package | Responsibility |
+| --- | --- |
+| `packages/shared` | Domain contracts and pure helpers used by both server and UI |
+| `server` | Express API, persistence, routing, context, and local agent execution |
+| `ui` | Vite/React browser application |
 
-The structure borrows mature separation patterns without importing another product's domain. Commonspace remains scoped to Projects, Channels, Direct Messages, Agents, Messages, threads, and context continuity.
+The product consists of Projects, Channels, Direct Messages, Agents, messages, Threads, and their shared context. Keep feature logic near its owner and use `packages/shared` as the single source for cross-process types.
+
+Two protocols connect agent work to the workspace. Agent Client Protocol (ACP) carries native session requests, responses, activity, and permission choices over local child-process input/output. Model Context Protocol (MCP) exposes scoped Commonspace context and progress tools over authenticated loopback HTTP.
 
 ## Where changes belong
 
-| Change | Primary owner | Keep synchronized |
+| Change | Primary owner | Update together |
 | --- | --- | --- |
 | Cross-process type, API shape, or pure helper | `packages/shared` | Server, UI, tests, and documentation |
 | State transition, migration, persistence, or routing | `server/src/state.ts` or `server/src/service.ts` | Shared contracts, regression tests, and operations docs |
-| HTTP boundary, validation, or response status | `server/src/app.ts` | Shared request types and API tests |
-| ACP process or session lifecycle | `server/src/acp-runtime.ts` and `server/src/service.ts` | Harness tests and security documentation |
-| Scoped Commonspace MCP behavior | `server/src/commonspace-mcp.ts` | Shared contracts, ACP tests, and agent-context docs |
+| HTTP validation or response status | `server/src/app.ts` | Shared request types and API tests |
+| ACP process or native-session lifecycle | `server/src/acp-runtime.ts` and `server/src/service.ts` | Harness tests and security documentation |
+| Scoped MCP behavior | `server/src/commonspace-mcp.ts` | Shared contracts, ACP tests, and context documentation |
 | Browser state or API coordination | `ui/src/commonspace-store.ts` | Shared contracts and client tests |
-| Visible UI, interaction, or responsive state | `ui/src` and `ui/src/stories` | Storybook story, accessibility checks, and live flow when integrated |
+| Desktop UI and interaction | `ui/src` and `ui/src/stories` | Storybook states, accessibility checks, and integrated browser flows |
 
-Keep feature logic near its owner. A coordinator may compose a capability, but it should not become a second source of truth for that capability.
+A coordinator can call another feature's capability, but should not duplicate its rules or state.
 
 ## Request path
 
-The Vite development and preview servers proxy `/api` to the Commonspace API at `127.0.0.1:3100`. A production build places browser assets in `ui/dist`. Source/development operation keeps Vite and Express separate; the installed macOS service supplies that directory to Express so the built client and API share one loopback origin.
+A typical Channel send follows this sequence:
 
-Endpoints:
+1. The UI sends a request to `/api/send`.
+2. The server validates the request and persists the accepted message and any new Thread.
+3. For an unaddressed message, inference selects agents and bounded sub-requests. Explicit `@agent` mentions remain authoritative.
+4. The server sends each assignment to its native session. Different sessions may run concurrently; work for the same session is serialized.
+5. ACP updates provide activity, permissions, and replies. Durable outcomes are persisted, and revision events tell the browser to refresh.
 
-- `GET /api/health`
-- `GET /api/bootstrap`
-- `GET /api/diagnostics`
-- `GET /api/export`
-- `POST /api/import`
-- `POST /api/retention/preview|apply`
-- `GET|PUT /api/routing`
-- `GET|PUT /api/channels/:channelId/context`
-- `POST /api/channels/:channelId/context/compact`
-- `GET|PUT /api/threads/:threadId/context`
-- `POST /api/threads/:threadId/context/compact`
-- `GET /api/projects/:projectId/files|file|changes|diff`
-- `POST /api/discover-agents`
-- `POST /api/reroute`
-- `POST /api/messages/:messageId/edit|delete`
-- `POST /api/pins`
-- `POST /api/pins/:pinId/remove`
-- `POST /api/permissions/:permissionId/respond`
-- `POST /api/stop`
-- `GET /api/attachments/:attachmentId`
-- `GET /api/files/:fileId`
-- `GET /api/events`
-- `POST /api/mcp` (bearer-scoped ACP clients only)
-- `POST /api/select-directory`
-- `POST /api/mutate`
-- `POST /api/send`
+A routing or execution failure after acceptance leaves the source message in history. The browser displays the resulting attention state instead of losing the user's request.
 
-Server-sent revision events prompt the UI store to refresh persisted state. Separate activity events carry ephemeral provider-emitted entries for turns still running; state revisions prevent an older response from replacing newer browser state.
+In development and preview, Vite forwards `/api` to `127.0.0.1:3100`. Production browser assets are built into `ui/dist`. The archive launcher and installed macOS service give this directory to Express so that the UI and API share one loopback origin.
+
+### API groups
+
+The HTTP boundary is implemented in [`server/src/app.ts`](../server/src/app.ts). The following groups locate the main capabilities; request and response shapes live in `packages/shared`.
+
+| Capability | Endpoints |
+| --- | --- |
+| Health and state | `GET /api/health`, `GET /api/bootstrap`, `GET /api/diagnostics`, `GET /api/events` |
+| Conversation | `POST /api/send`, `POST /api/mutate`, `POST /api/stop`, `POST /api/reroute` |
+| Message history | `POST /api/messages/:messageId/edit`, `POST /api/messages/:messageId/delete` |
+| Context | `GET` and `PUT /api/channels/:channelId/context`, `GET` and `PUT /api/threads/:threadId/context`; `POST` to either path with `/compact` |
+| Routing configuration | `GET` and `PUT /api/routing` |
+| Pins and permissions | `POST /api/pins`, `POST /api/pins/:pinId/remove`, `POST /api/permissions/:permissionId/respond` |
+| Projects | `GET /api/projects/:projectId/files`, `/file`, `/changes`, `/diff` |
+| Attachments | `GET /api/attachments/:attachmentId`, `GET /api/files/:fileId` |
+| Workspace data | `GET /api/export`, `POST /api/import`, `POST /api/retention/preview`, `POST /api/retention/apply` |
+| Local discovery | `POST /api/discover-agents`, `POST /api/select-directory` |
+| Agent context tools | `POST /api/mcp`, restricted to bearer-scoped ACP clients |
+
+Server-sent events carry durable state revisions and separate temporary activity updates. The browser rejects older revisions so a slower response cannot replace newer state.
 
 ## Server
 
-`server/src/service.ts` owns domain behavior:
+`server/src/service.ts` coordinates the workspace's durable behavior:
 
-- versioned state loading and structural sanitization;
-- canonical Project paths;
-- atomic persistence under `~/.commonspace`;
-- message acceptance and thread creation;
-- linked single-assignment rerouting that retains prior attempts and dispatches only the corrected assignment;
-- message-version branches, deletion-marker redaction, and durable scoped pins;
-- bounded general-file persistence, credential-name rejection, ACP resource links, and permitted-root Agent artifact imports;
-- durable normalized ACP permission requests with exact option responses and per-session blocking;
-- path-safe harness/service readiness diagnostics and inference data-flow disclosure;
-- browser-safe Project folder labels while canonical roots remain private to server-side file/search/execution paths;
-- durable opt-in notification settings and new-Inbox-item native delivery with validated exact-item loopback deep links;
-- sanitized versioned archive export, clean-workspace import with explicit local-root mapping, and revision-guarded scoped retention;
-- zero-to-many Project references on messages and threads, with a compatibility mirror for older clients;
-- editable Channel context plus manual and token-pressure compaction through the configured inference provider;
-- immutable Thread snapshots, independently editable/compactable Thread context, and prospective per-reply Project defaults;
-- native session mapping and stale-session recovery;
-- one durable harness-backed routing session per Channel, shared across that Channel's Threads while each routing prompt still carries only the current Thread's bounded context;
-- one long-lived provider-neutral ACP stdio process per active native-session scope, closed on reset, removal, shutdown, or stale-session recovery;
-- delta-only ACP delivery and exact opaque-session `session/load` resumption;
-- ephemeral, session-scoped MCP capabilities for bounded context reads and visible progress;
-- immediate message acceptance, concurrent cross-agent delivery, and same-native-session serialization;
-- bounded agent-authored mention handoffs carrying only the newly delivered handoff message;
-- bounded ACP frames and responses;
-- generation-safe DM resets;
-- native turn cancellation on reset, Channel removal, agent removal, timeout, and shutdown;
-- revision subscriptions.
+- It validates and persists messages, versions, branches, deletion markers, pins, permissions, and conversation outcomes.
+- It maintains Channel context, immutable starting snapshots for Threads, independently editable Thread context, and pressure-triggered or manual compaction.
+- It resolves zero, one, or many Project references per message and Thread. Canonical roots stay private; browser responses use folder labels and root indexes.
+- It stores native-session mappings, resumes exact sessions, and recovers sessions only when a harness explicitly reports them missing.
+- It accepts work immediately, coordinates independent sessions concurrently, and serializes work targeting the same native session.
+- It retains routing assignments and corrections, binds replies to those assignments, and preserves prior attempts.
+- It stores bounded image and general-file attachments, rejects known credential-bearing names, and imports harness artifacts only from permitted roots.
+- It exposes readiness diagnostics, inference data-flow information, notifications, portable archives, and explicit retention.
 
-`server/src/app.ts` owns HTTP concerns: JSON limits, loopback and same-origin guards, SSE framing, API status codes, health checks, security headers, and optional installed-build static delivery.
+`server/src/app.ts` owns HTTP limits, loopback and same-origin guards, event framing, status codes, health checks, security headers, and optional static UI delivery. `server/src/acp-runtime.ts` owns the ACP client and subprocess lifecycle. `server/src/commonspace-mcp.ts` owns temporary capabilities and scoped tools. `server/src/index.ts` owns configuration, startup, signals, and graceful shutdown.
 
-`server/src/acp-runtime.ts` owns the provider-neutral ACP client and subprocess lifecycle. `server/src/commonspace-mcp.ts` owns the stateless loopback MCP transport, ephemeral capabilities, and scoped tools. `server/src/index.ts` owns process startup, configuration, signal handling, and graceful shutdown.
+### Service and release lifecycle
 
-`scripts/commonspace-service.mjs` is the standalone macOS lifecycle boundary. It invokes Git, Corepack, pnpm, `plutil`, and `launchctl` with argument arrays; builds an owner-only staging release; preserves one rollback release; writes the LaunchAgent atomically; health-gates activation; and exposes install, update, start, stop, restart, status, and rollback commands. Workspace state remains outside release directories, so swapping code never replaces user data.
+`scripts/commonspace-service.mjs` manages the macOS service. It stages source builds or extracted runtime archives in owner-only storage, writes the LaunchAgent atomically, requires a successful health check before accepting an update, and keeps one rollback release. It invokes external commands with argument arrays.
 
-In development, `server/src/dev-supervisor.ts` is the stable watcher process. It requests an idle-gated generation swap over child-process IPC instead of signaling the server directly. The serving generation keeps its ACP children and MCP endpoint alive until every accepted turn completes; edit bursts collapse into one replacement. Explicit process signals retain forced-shutdown semantics.
+Workspace state lives outside the release directories. Switching application versions never replaces user data, and rolling back application code does not reverse a state migration. See [Operations](operations.md#backup-and-rollback).
 
-The relay is deliberately local: ACP runs over child-process stdio and Commonspace MCP runs over authenticated loopback HTTP. No Nostr or remote relay transport participates in the first local-only architecture.
+### Development lifecycle
+
+`server/src/dev-supervisor.ts` watches for backend changes and requests a restart through child-process messages. The running server keeps its ACP processes and MCP endpoint alive until every accepted turn finishes. Multiple edits become one replacement at the next all-idle boundary. Explicit process signals still cancel active work and shut down.
 
 ## Shared contracts
 
-`packages/shared` defines the state and API shapes consumed by both server and UI. Native session names and IDs remain in host-private state and are removed from browser snapshots.
+`packages/shared` defines the state and API shapes consumed by the server and UI. Internal state may contain host-private native-session references; browser snapshots remove them. A shared contract change must update every affected consumer, validation or migration rule, test, and document in the same change.
+
+Messages and Threads use zero-to-many Project references. A singular compatibility field remains for older consumers, but new browser state must not invent a Project fallback from it.
 
 ## Agent runtimes
 
-Hermes launches its installed harness through `hermes acp`; Codex uses its bundled ACP bridge against the installed Codex CLI. Commonspace exposes one workspace Agent identity per supported harness, while each Thread or DM generation retains its own native session. Native sessions receive exactly one new Commonspace message per turn plus baseline ACP resource links for attached files. Shared room context stays available through native MCP tools. Commonspace projects ACP reasoning, plan, tool-call, usage, resource-link artifacts, and permission requests into bounded provider-neutral contracts; it does not reinterpret or synthesize harness reasoning, files, or permission choices.
+Hermes runs through its installed `hermes acp` harness. Codex uses the bundled ACP bridge with the installed Codex CLI. Commonspace exposes one workspace Agent identity per supported harness, while each Thread or DM generation keeps its own native session.
+
+A native turn receives the newly delivered message or assigned sub-request and ACP resource links for attached files. Shared room context is available through scoped MCP tools instead of being replayed inside every user message. Agent-authored mention handoffs deliver only the new handoff message.
+
+Each active native-session scope has one long-lived ACP process. Commonspace closes it on reset, removal, shutdown, or stale-session recovery. `/new` is a hard context boundary: cancellation and generation checks prevent an old reply from entering the replacement conversation.
+
+Resumption uses the saved opaque native-session reference through ACP `session/load`. ACP frames and responses are bounded. Activity, reasoning summaries, plans, tool calls, usage, artifact links, and permission requests come from the harness. Commonspace normalizes those updates without synthesizing missing output or permission choices. A pending permission blocks only its own session. Native turn cancellation covers reset, Channel or Agent removal, timeout, and shutdown.
 
 ## UI
 
-`ui/src/main.tsx` mounts a normal React root and shared styles. `CommonspaceApp` composes the responsive navigation and conversation surface, opening directly to the attention-focused Inbox when no destination is saved and treating legacy `commonspace-view=home` values as Inbox. The shell has no separate Workspace landing page or Agent-runs dashboard. Project scope is inference-first: composers expose no root, Thread, branch, or reroute Project picker. A user may provide explicit context only through visible `@@project` tags. `CommonspaceClientStore` owns bootstrap state, selection, sends, mutations, and revision-event refreshes without injecting a singular Project compatibility fallback.
+`ui/src/main.tsx` mounts React and shared styles. `CommonspaceApp` composes the desktop navigation and conversation surfaces. With no saved destination, it opens Inbox; legacy `commonspace-view=home` values also resolve there. The shell has no separate Workspace landing page or Agent-runs dashboard.
+
+`CommonspaceClientStore` owns bootstrap state, selection, sends, mutations, and revision refreshes. The browser communicates with the server only through shared contracts and `/api`.
+
+Project scope is inferred unless the user supplies visible `@@project` references. Composers do not have separate Project pickers for roots, Threads, branches, or reroutes. [UI direction](ui-direction.md) describes the current visual treatment.
 
 ## Persistence
 
-State v25 persists the roster, local appearance, opaque native-session references, sanitized activity traces, Inbox read state, manual unread overrides, native-notification preferences, image/general-file metadata, routing decisions/corrections, Channel routing memory, zero-to-many Project references, Channel/Thread context, scoped pin history, message-version branches, deletion markers, normalized permission requests, and current Channel/DM execution state. Versions 1–24 migrate on load through structural sanitization; legacy routing receives deterministic assignments, legacy Threads receive honest empty inherited snapshots plus transcript-derived current memory, and older workspaces receive empty pin/permission history plus opt-in notification defaults. Loaded pending permissions become interrupted because no native request survives process restart. Accepted messages, branches, routing attempts, pin tombstones, and permission outcomes are retained without an implicit count window; bounds apply to derived context and activity rather than the canonical record. Deleting delivered content redacts its body, routing wording, attachment metadata/bytes, traces, and automatic projections while preserving delivery and branch metadata. Attachment bytes and the managed projectless workspace use owner-only local storage. Writes use a `0600` temporary file and atomic rename while retaining the previous valid state as `state.backup.json`. If the primary is invalid and the backup is valid, startup preserves the primary as `state.corrupt.json` and recovers the backup. Trace payloads are bounded and host details are redacted before persistence; MCP capabilities, source file URIs, and native session references are removed from browser snapshots.
+The current internal state version is 26, defined by `COMMONSPACE_STATE_VERSION`. Versions 1–25 migrate during load through structural validation and sanitization.
 
-Native notification delivery is derived from new durable Inbox items after their state revision is persisted. Existing items become the baseline at startup and import, so they are not replayed. Settings select categories independently from Inbox read state; delivery failure is logged and cannot fail the originating Agent result. Notification URLs contain only public conversation/Thread/message IDs and are accepted by the client only when they resolve to matching current state on the loopback origin.
+Persisted state includes the roster, appearance, workspace and Channel model/reasoning settings, host-private native sessions, bounded activity, Inbox read/unread/saved state, notification preferences, attachments, routing decisions and memory, Project references, Channel/Thread context, pins, message versions, deletion markers, permissions, and execution state.
 
-Portable archive version 1 is independent of the internal state version. Export embeds sanitized public workspace records and exact attachment bytes while replacing Project roots with counts and omitting native-session maps. Import accepts only a clean workspace, requires explicit existing local roots, validates all records and bytes, and starts with empty native continuity. Retention is owner-triggered only: a revision-bound preview reports impact before one inactive Channel or DM is purged. See [Workspace archive format](workspace-archive-format.md).
+Migration preserves conversation history while supplying explicit defaults for older shapes. Older routing receives deterministic assignments. Older Threads receive an empty inherited snapshot and current memory derived from their transcript, rather than an invented historical snapshot. Workspaces without pin, permission, or notification fields receive empty history and opt-in notification defaults. Loaded pending permissions become interrupted because their native requests do not survive a process restart.
+
+### Durability and privacy
+
+Accepted messages, branches, routing attempts, pin removal records, and permission outcomes have no implicit count limit. Bounds apply to derived context and activity, not to the canonical conversation record.
+
+Deleting delivered content removes its body, routing wording, attachment metadata and bytes, traces, and automatic projections while retaining delivery and branch metadata. Attachment bytes and the managed projectless workspace use owner-only storage.
+
+State writes use a `0600` temporary file followed by atomic rename. The prior valid state is kept as `state.backup.json`. If the primary is invalid and the backup is valid, startup preserves the invalid file as `state.corrupt.json` and restores the backup. Bounded traces redact host details before persistence. Browser snapshots remove MCP capabilities, source file URIs, and native-session references.
+
+### Notifications and archives
+
+Native alerts are derived from new durable Inbox items after persistence. Existing items become the baseline at startup and import, so historical alerts are not replayed. Notification categories are independent of Inbox read state. Delivery failure cannot fail the originating Agent result.
+
+Notification links contain public conversation, Thread, and message IDs. The client accepts them only when they match current state on the loopback origin.
+
+Portable archive version 1 is independent of internal state version 26. Export contains sanitized workspace records and exact attachment bytes, replaces Project roots with counts, and omits native sessions. Import requires an empty workspace and explicit existing local roots. Retention requires an owner-triggered, revision-bound preview for one inactive conversation. See [Workspace archive format](workspace-archive-format.md).
 
 ## Routing inference
 
-Every unaddressed Channel message is classified by inference after durable acceptance. The decision stores one bounded sub-request and Project subset per selected harness; delivery sends only that assignment while the original message remains canonical and available through scoped context. A new root without `@@project` tags offers all configured Projects to inference and persists the inferred union on its message/Thread. Valid `@@project` tags constrain the available set, including replacing inherited scope on an edited branch. Existing correction records can supersede one assignment when the service/API receives a corrected Agent or wording; the target must already belong to the Channel and the inferred Project subset is preserved. Commonspace retains both attempts, binds replies to their assignment IDs, and does not restart unrelated Agents. Each decision persists routing-stage start/resolution timestamps and bounded duration separately from harness work. Resolved routing destinations, assignment cards, reasons, latency, and reroute controls are not rendered in conversation; pending and failed routing states remain visible. A failed decision marks the accepted source failed with a retryable durable Inbox item instead of silently broadcasting. Each correction is compacted into bounded per-Channel routing knowledge and supplied to later decisions without rewriting history. The same Commonspace inference layer performs routing, routing-memory compaction, and Channel-context compaction. Commonspace supports either a configured agent harness or an OpenAI-compatible endpoint; there is no deterministic/no-inference provider mode. Explicit `@agent` addressing remains authoritative. Stored API keys are never returned to the browser, are cleared when the configured endpoint origin changes, and `OPENAI_API_KEY` is used only for the canonical OpenAI origin.
+Inference classifies each unaddressed Channel message after durable acceptance. It stores one bounded sub-request and Project subset per selected harness. Only that assignment is delivered; the original human message remains the canonical record and is available through scoped context.
+
+For a new root without `@@project` tags, inference may select from all configured Projects. The message and Thread retain the union of the selected references. Explicit valid tags constrain the available set, including replacing inherited scope on an edited branch. Explicit `@agent` addressing always remains authoritative.
+
+A service-level correction can replace the Agent or wording of one assignment. The target Agent must already belong to the Channel, and the inferred Project subset is preserved. Commonspace retains both attempts, binds replies to their assignment IDs, and does not restart unrelated Agents. Corrections contribute to bounded per-Channel routing memory without rewriting historical decisions.
+
+Routing stores its own start time, resolution time, and duration separately from harness execution. The conversation shows pending and failed routing, while resolved assignments, reasons, timings, and inline correction controls stay outside the current UI. A failed decision marks the accepted source failed and creates a durable retryable Inbox item; it never silently broadcasts the message.
+
+One Commonspace inference layer handles routing, routing-memory compaction, and Channel/Thread context compaction. It supports a configured agent harness or an OpenAI-compatible endpoint. Harness-backed routing keeps one durable session per Channel, shared across its Threads; each request still supplies only that Thread's bounded context. There is no deterministic provider mode.
+
+Stored API keys are never returned to the browser. Changing the endpoint origin clears its stored key. `OPENAI_API_KEY` is used only for the canonical OpenAI origin; other endpoints require their own explicit key when authentication is needed.

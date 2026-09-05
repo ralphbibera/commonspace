@@ -1,38 +1,74 @@
 # Commonspace design system
 
-## Direction: Commonspace's visual language
+The design system gives Commonspace one consistent set of colors, typography, spacing, and components. Use it when building or changing the desktop UI. The [design contract](design.md) defines the intended appearance; this document explains how to implement it without creating competing styles.
 
-Commonspace should feel like a focused, local-first working surface for conversations with agents. Its visual language prioritizes orientation, legibility, and trust: a stable navigation shell, an inset conversation surface, dense but calm rows, and a chat-first composer. The constellation mark, semantic tokens, and state colors give Commonspace its own identity.
+## Ownership
 
-## Principles
+| Location | Responsibility |
+| --- | --- |
+| [`ui/src/index.css`](../ui/src/index.css) | Semantic theme variables, font roles, radius aliases, base styles, and reduced-motion behavior |
+| [`ui/components.json`](../ui/components.json) | shadcn configuration and component aliases |
+| `ui/src/components/ui` | Shared UI primitives |
+| `ui/src` | Product components and screen composition |
+| `ui/src/stories` | Isolated component and screen states |
 
-1. **Screen first.** Show the application itself without device frames or presentation chrome.
-2. **Dense, not cramped.** Navigation supports scanning; conversations preserve readable rhythm.
-3. **Structure before decoration.** Selection, hierarchy, labels, and metadata explain where context lives.
-4. **Quiet selection.** Neutral translucent fills identify active context; the constellation accent is reserved for identity, links, and focus.
-5. **Theme from tokens.** Standalone root variables feed the existing `--csp-*` semantic layer.
-6. **Purposeful accents.** Use restrained accent treatments for identity, focus, and meaningful state changes. Keep conversation surfaces calm; decoration must not compete with the work.
+Use Tailwind CSS v4 and the existing shadcn primitives. Prefer an existing component for a repeated control or layout. Add a shared component when it has a clear reusable responsibility; avoid a new abstraction for one small styling change.
 
-## Application shell
+## Semantic tokens
 
-The desktop layout uses a 256px navigation canvas and a flexible, inset conversation surface with rounded corners. A compact decorative desktop chrome completes the shell. At narrow widths, navigation becomes a dismissible overlay with an explicit menu control and backdrop. The product remains usable without a desktop wrapper.
+Semantic tokens describe purpose instead of a fixed color. For example, `foreground` is readable content and `muted-foreground` is secondary content. Components should depend on those roles so that Light, Dark, and future palette changes remain consistent.
 
-## Components
+The stable aliases in `ui/src/index.css` connect Commonspace's needs to the theme:
 
-- Projects show canonical filesystem children.
-- Channels expose roster count and shared context.
-- DMs prioritize agent identity and continuity.
-- Messages distinguish user, agent, and system authors without turning every message into a card.
-- Agent activity stays collapsed beneath the reply until requested, then expands into a quiet timeline of harness-emitted reasoning, plans, tool calls, and usage.
-- Threads make native execution boundaries inspectable.
-- The composer exposes slash commands and references without hiding the active context.
+| Token or alias | Purpose |
+| --- | --- |
+| `--font-display`, `--font-body`, `--font-code` | Heading, prose, and code typography |
+| `--surface`, `--surface-raised` | Ordinary and raised content surfaces |
+| `--radius-control`, `--radius-field`, `--radius-panel` | Component corner roles derived from the base radius |
+| `--sidebar-deep` | Additional sidebar depth within the same palette |
+| `--status-success`, `--status-warning`, `--status-danger` | Semantic status colors |
+| `--control` | Shared control sizing |
+| `--shadow-soft`, `--shadow-high` | Subtle and elevated shadows |
+| `--motion-fast`, `--motion-base`, `--ease-standard` | Consistent transition timing and easing |
+
+Do not hardcode a second palette in React components. Keep the stable aliases when updating theme variables, and use the radius roles in [design.md](design.md#shapes-and-elevation).
+
+To apply a compatible theme, run the following from the repository root, replacing `<theme-url>` with its registry address:
+
+```bash
+pnpm --filter @commonspace/ui exec shadcn add "<theme-url>" --yes
+```
+
+Review the resulting diff, preserve the stable aliases, and inspect every affected component in Light and Dark modes. A theme update must not change screen structure or behavior.
+
+## Component behavior
+
+The same visual treatment should mean the same thing across screens. Selected rows need a clear state, primary actions need clear labels, and secondary actions should remain discoverable without competing with conversation text.
+
+| Surface | Design responsibility |
+| --- | --- |
+| Project pane | Show files and changes with clear location and selection. |
+| Channel | Make membership and shared context easy to inspect. |
+| Direct Message | Keep the chosen agent and conversation continuity clear. |
+| Message | Distinguish authors and outcomes while keeping ordinary messages flat. |
+| Agent activity | Present only harness-emitted activity, collapsed by default. |
+| Thread | Keep the root, focused reply, and continuation understandable. |
+| Composer | Keep active context visible and provide slash-command and reference suggestions. |
+
+The desktop shell uses the dimensions in [design.md](design.md#layout). Screen components should compose those shared rules rather than define alternate shell geometry.
 
 ## Accessibility
 
-- Every icon-only control has an accessible name.
-- Selection uses semantic state in addition to color.
-- Keyboard focus uses a visible accent ring.
-- Pickers and suggestions use listbox/option semantics.
-- Errors and command outcomes use alert or status roles.
-- Motion is minimized under `prefers-reduced-motion`.
-- All primary flows must remain usable at 320px width.
+Every component must support its intended keyboard interaction. Icon-only controls need accessible names, selected items need semantic state, and focus must remain visible. Pickers and suggestions use the appropriate listbox and option semantics. Errors and command outcomes use alert or status roles where appropriate.
+
+Respect `prefers-reduced-motion`. Use text, icons, and semantic state alongside color so that color is never the only way to understand an outcome. Check accessibility in Storybook and the integrated desktop flow.
+
+## Changing the system
+
+1. Identify whether the change belongs to a token, shared primitive, product component, or screen.
+2. Update the smallest owner and preserve existing behavior.
+3. Add or update the Storybook states that demonstrate the change, including affected empty, loading, error, and selected states.
+4. Inspect the rendered result in Light and Dark modes.
+5. Run the appropriate [development checks](development.md#development-workflow) and complete the [visual review](visual-verification.md).
+
+Keep [design.md](design.md) and [UI direction](ui-direction.md) current when changing a visual requirement. Product documentation should explain what users can do; token names and implementation details belong here.

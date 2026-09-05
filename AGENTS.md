@@ -18,7 +18,7 @@ Use the [product model](docs/product.md) when the change affects Projects, Chann
 
 The product owns Projects, Channels, Direct Messages, Agents, Messages, threads, native agent-session continuity, and visible context handoffs. Conversation is the primary work record. Do not add a parallel ticket, issue, goal, company, org-chart, approval, or work-queue domain unless Ralph explicitly changes the product direction.
 
-Commonspace may reuse proven infrastructure patterns, but it must not inherit another product's feature model.
+Feature decisions must follow Commonspace's documented product direction.
 
 ## Architecture boundaries
 
@@ -26,7 +26,7 @@ Commonspace may reuse proven infrastructure patterns, but it must not inherit an
 - `server` owns the Express API, local persistence, validation, routing, concurrency, and subprocess lifecycle.
 - `ui` owns the Vite/React application and may communicate with the server only through shared contracts and `/api`.
 - Hermes and Codex own their credentials and native session stores.
-- Commonspace must not depend on DeepSeek Harness, Cordis, OpenAgents, Hermes Kanban, or another hidden agent runtime.
+- Commonspace must not depend on an undeclared agent runtime or another application's backend.
 
 ## Repository map
 
@@ -80,6 +80,14 @@ If a request changes a shared contract, update the shared type, every affected c
 - Real ACP checks are opt-in and require local harness credentials.
 
 Do not replace a deterministic unit or Storybook check with a slower live-agent test.
+
+## Documentation
+
+- Write about Commonspace directly. Do not use other projects as comparisons, inspiration, or authorities for product decisions.
+- Keep names of actual dependencies and supported integrations when readers need them to follow instructions.
+- Use complete sentences, familiar words, and descriptive headings. Explain necessary terms before using them.
+- Organize guides around the reader's task. State prerequisites, give steps in order, and describe the expected result.
+- Keep implementation details in technical references and label historical verification with its date or revision. Check related documents, links, and commands after an edit.
 
 ## AI-assisted changes
 

@@ -1,123 +1,152 @@
 # Development guide
 
-## Contributor start
-
-The default development path is credential-free:
-
-```bash
-pnpm install --frozen-lockfile
-pnpm dev
-```
-
-Open the Vite UI at `http://127.0.0.1:5173`. The API runs at `http://127.0.0.1:3100`. The workspace starts empty. This is intentional: contributors can work on the application and its tests without installing or authenticating an agent harness.
-
-Read [the contributor guide](contributor-guide.md) before making a cross-cutting change. It explains which boundary owns each kind of work and which verification layer should cover it.
+Use this guide to run Commonspace from source, choose the right verification loop, and change shared or runtime behavior safely. Start with [Contributing](../CONTRIBUTING.md) for the contribution process and [Installation](install.md) if you only want to run the application.
 
 ## Setup
 
+Use Node.js 22 or newer, Git, and the pnpm version pinned by `packageManager` in [`package.json`](../package.json). Corepack can provide that pnpm version.
+
+From the repository root:
+
 ```bash
 pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-Development services:
+Open the UI at `http://127.0.0.1:5173`. The API runs at `http://127.0.0.1:3100`. Vite forwards `/api` requests to the server, so browser code uses relative, same-origin API paths. The development API server does not serve the browser application; use the Vite URL.
 
-- UI: `http://127.0.0.1:5173`
-- API: `http://127.0.0.1:3100`
+A new workspace starts empty. Agent credentials are optional for application development: unit tests, Storybook, and the standard live verifier do not require an authenticated harness. Use `COMMONSPACE_HOME` to keep development data separate from an existing workspace; see [runtime configuration](operations.md#runtime-configuration).
 
-Vite proxies `/api` to the server, so browser code always uses same-origin relative paths.
-The development API server does not serve `ui/dist`; open the Vite URL for the UI.
+Install the browser used by local checks after installing dependencies:
 
-## Self-development hot reload
-
-The development server runs behind a stable local supervisor. Changes under `server/src` or `packages/shared/src` request a new server generation without terminating active agent turns. The old generation keeps its ACP processes and Commonspace MCP endpoint alive, continues accepting concurrent work, and exits at the first all-idle boundary. Multiple edits made while agents are working are coalesced into one restart. The browser reconnects its revision stream after the replacement server is healthy.
-
-`SIGINT` and `SIGTERM` remain explicit forced shutdowns: they cancel active work instead of waiting for a development reload boundary.
+```bash
+pnpm exec playwright install chromium
+```
 
 ## Workspace map
 
-- `packages/shared/src` — versioned contracts and pure shared helpers.
-- `server/src/state.ts` — deterministic mutations.
-- `server/src/service.ts` — persistence, routing, sessions, and process lifecycle.
-- `server/src/app.ts` — Express API, loopback/origin guards, SSE, and media streaming.
-- `server/src/dev.ts` and `dev-supervisor.ts` — coalesced, idle-gated development restarts.
-- `server/src/index.ts` — process startup and shutdown.
-- `ui/src/commonspace-store.ts` — observable API client state.
-- `ui/src/CommonspaceSidebar.tsx` — Projects, Channels, DMs, and Agents.
-- `ui/src/CommonspaceConversation.tsx` — messages, threads, commands, and composer.
-- `ui/src/AgentTrace.tsx` — expandable provider-emitted reasoning, plan, tool, and usage activity.
-- `ui/src/main.tsx` — standalone browser mount.
+| Location | Responsibility |
+| --- | --- |
+| `packages/shared/src` | Versioned contracts and pure shared helpers |
+| `server/src/state.ts` | Deterministic state transitions and migration rules |
+| `server/src/service.ts` | Persistence, routing, context, and native-session coordination |
+| `server/src/app.ts` | Express API, origin guards, event streams, and media responses |
+| `server/src/dev.ts`, `server/src/dev-supervisor.ts` | Development restarts |
+| `server/src/index.ts` | Process startup, configuration, and shutdown |
+| `ui/src/commonspace-store.ts` | Browser state and API coordination |
+| `ui/src/CommonspaceSidebar.tsx` | Workspace navigation |
+| `ui/src/CommonspaceConversation.tsx` | Messages, Threads, commands, and composer |
+| `ui/src/AgentTrace.tsx` | Expandable harness activity |
+| `ui/src/stories` | Isolated screen and component states |
+| `ui/src/main.tsx` | Browser entry point |
+
+Read [Architecture](architecture.md) before a change that crosses these boundaries.
 
 ## Development workflow
 
-1. For backend/runtime changes, add a focused failing behavior test.
-2. For frontend changes, verify the real desktop browser flow and avoid styling-only click/assertion specs.
-3. Confirm the evidence describes the missing behavior.
-4. Implement the smallest change.
-5. Run the full gates:
+1. Describe the user-visible problem, the product rule involved, and the owning boundary.
+2. For behavior changes, add a focused failing test that demonstrates the missing behavior. For visual-only changes, identify the Storybook states and desktop interactions that need review.
+3. Implement the smallest change and rerun the focused verification.
+4. Update the affected user and developer documentation.
+5. Run the complete local check. Run the live verifier for server or visible end-to-end changes.
 
 ```bash
-pnpm check                 # Biome, ESLint, TypeScript, tests, and builds
-pnpm verify:live           # final release-path build and browser verification
+pnpm check
+pnpm verify:live
 ```
 
-`pnpm check` is the complete local gate, including Biome, ESLint, TypeScript, tests, and production builds. `verify:live` creates a fresh production build, starts the built server, and exercises the application through a real desktop browser.
+Choose checks by the evidence you need:
 
-On macOS, run `pnpm verify:notifications` to hand a safe test alert to
-Notification Center. The command verifies that the native notifier accepted the
-alert. Use **Send test notification** in Workspace settings to verify visible
-delivery and get durable Inbox fallback guidance when macOS rejects it.
+| Command | What it verifies |
+| --- | --- |
+| `pnpm check:fast` | Formatting, lint, types, unit/integration tests, and representative Storybook browser tests during iteration |
+| `pnpm check` | The full local gate, including all Storybook browser tests and production application and Storybook builds |
+| `pnpm verify:live` | A fresh production build and the integrated desktop browser flow through both separate development-style servers and the installed single-origin path |
+| `pnpm check:ui` | UI types, the complete Storybook browser suite, and the production UI build |
 
-During iteration, use the smaller gate:
-
-```bash
-pnpm check:fast
-```
-
-It runs Biome, ESLint, type checks, the full unit/integration suite, and the representative Storybook browser suite. Use `pnpm check` before requesting review.
+The live verifier uses temporary workspace data and test runtimes. It proves production wiring without proving that an authenticated external agent works. Real harness checks are a separate opt-in step described below.
 
 ## Fast UI loop
 
-Keep Storybook running while working on visible UI:
+Run Storybook while editing components:
 
 ```bash
 pnpm storybook
 ```
 
-The Storybook testing panel can watch the selected story and rerun only its component, interaction, and accessibility checks after an edit. The equivalent focused terminal loop accepts a story-file filter:
+Open `http://localhost:6006`. Stories use local fixtures, so they do not need the Commonspace API. The testing panel can rerun the selected story's interactions and accessibility checks after an edit.
+
+For a focused terminal loop, pass a story-file filter:
 
 ```bash
 pnpm test:storybook:watch -- Conversation
 ```
 
-Use the six representative screen stories for a quick cross-screen check, then run the complete browser suite before handing off visible work:
+Use the representative screen suite for a quick check, then the full UI gate before handing off visible work:
 
 ```bash
 pnpm test:storybook:smoke
 pnpm check:ui
 ```
 
-The Storybook Vitest suite validates rendering, interactions, and accessibility in a real browser. It does not compare pixels. The Chromatic panel provides optional visual-regression baselines after the repository is linked to a Chromatic project. Chromatic, docs rendering, and React docgen stay enabled in the normal Storybook workbench but are excluded from the headless test process.
+Storybook's Vitest suite checks rendering, interactions, and accessibility in a real browser. Pixel comparisons use the separate `pnpm test:visual` command. The optional Chromatic integration also needs a configured project; it is not required for the local workflow.
 
-`verify:live` is the production-wiring smoke test. It builds and boots the API and UI, exercises desktop and narrow layouts, and verifies the installed single-origin path. Do not put component permutations there when a deterministic Storybook story can cover them faster.
+Inspect the actual rendering in Light and Dark modes. Follow [Visual verification](visual-verification.md) for screenshot review and baseline changes. Keep component permutations in Storybook and use `verify:live` for behavior that depends on the assembled application.
 
-CI runs required Biome/ESLint static checks, unit/integration tests, and browser checks in parallel. Its aggregate `check` job fails unless every gate succeeds, so a failing Biome run blocks the merge. Browser jobs use the Chrome already present on the GitHub runner, while local browser tests continue to use Playwright's managed Chromium unless `COMMONSPACE_USE_SYSTEM_CHROME=1` is set.
+## Self-development hot reload
 
-The macOS lifecycle manager can install the current committed `main` checkout through `pnpm service:install`. Use `pnpm service:status`, `service:stop`, `service:start`, `service:update`, and `service:rollback` to exercise the packaged path. It writes only the managed paths documented in [Operations](operations.md); normal development does not register a background service.
+A stable supervisor watches `server/src` and `packages/shared/src`. After an edit, the running server keeps its agent processes and context endpoint alive until all accepted turns finish. Multiple edits during active work become one restart. The browser reconnects after the replacement server is healthy.
+
+The server continues accepting work while waiting, so continuous activity can delay a reload. `SIGINT` and `SIGTERM` are explicit shutdowns: they cancel active work rather than wait for this idle boundary.
+
+## CI and service verification
+
+CI runs static/build checks, unit/integration tests, browser checks, and a Linux release-package smoke test in parallel. The aggregate `check` job succeeds only when all four jobs pass. GitHub enforces it as a merge requirement only after a maintainer configures branch protection; see [Maintaining](maintaining.md).
+
+CI browser jobs use the runner's installed Chrome. Local checks use Playwright's managed Chromium unless `COMMONSPACE_USE_SYSTEM_CHROME=1` is set.
+
+Normal development does not register a background service. To exercise source-based macOS installation, use `pnpm service:install` with a committed `main` checkout. The service commands and managed paths are documented in [Operations](operations.md#installed-macos-service).
+
+## Release packaging
+
+Packaging requires Git and Corepack in addition to Node.js and pnpm. To build and verify an archive for the current operating system and architecture:
+
+```bash
+pnpm release:pack
+pnpm verify:release
+```
+
+`release:pack` includes a production build. `release:pack:built` packages an existing build. Output goes to the ignored `artifacts/release/` directory. The verifier extracts and runs the archive outside the source checkout without agent credentials.
+
+For an archive installation on macOS, run `node scripts/commonspace-service.mjs install --release .` inside the extracted directory. [Installation](install.md) covers that user workflow; [Releasing](releasing.md) covers the target matrix, version rules, and draft-only release process. Building an archive does not publish it or change repository visibility.
 
 ## Contract changes
 
-Cross-process shapes have one writer: `packages/shared`. When changing persisted state:
+`packages/shared` owns every shape exchanged between the server and UI. Update the shared contract, all consumers, tests, and documentation together.
+
+When a persisted shape changes:
 
 1. Increment `COMMONSPACE_STATE_VERSION` when compatibility changes.
-2. Sanitize every loaded field.
-3. Migrate during initialization and persist the result.
-4. Redact host-private session references from API snapshots.
-5. Add malformed-state, migration, and rollback tests.
-6. Update architecture and operations documentation.
+2. Validate and sanitize every field loaded from disk.
+3. Migrate during initialization and persist the migrated result.
+4. Remove host-private paths and native-session references from browser snapshots.
+5. Cover malformed state, migration, and recovery with focused tests.
+6. Update [Architecture](architecture.md) and [Operations](operations.md).
 
 ## Agent runtime changes
 
-Hermes and Codex ACP lifecycle code lives in the server. Activity traces must remain provider-neutral, bounded, and derived only from ACP updates the native runtime emits. Real runtime smoke tests are opt-in because they use local credentials and model access.
+The server owns Agent Client Protocol (ACP) integration. ACP connects Commonspace to a supported local harness and reports its session capabilities, activity, and permission choices. Commonspace must reflect those reports without inventing capabilities or changing provider-specific profiles.
 
-Commonspace must not inspect or mutate runtime-specific Agent configuration through provider CLIs or profile files. Agent capabilities and controls belong in shared contracts only after the connected harness advertises them through ACP.
+Keep activity provider-neutral, bounded, and based only on emitted ACP updates. Runtime-specific credentials, configuration, and native transcripts remain owned by Hermes or Codex.
+
+Real harness checks use local credentials and model access, so run only those relevant to the integration being changed:
+
+```bash
+pnpm verify:acp:hermes
+pnpm verify:acp:codex
+pnpm verify:acp:mcp
+```
+
+The first two check native session startup and resumption. The MCP check also requires real harnesses to read scoped context and post visible progress. These checks complement deterministic tests; they do not replace them.
+
+On macOS, `pnpm verify:notifications` checks whether the native notifier accepts a safe test alert. Use **Send test notification** in Workspace settings to check visible delivery and follow any operating-system guidance.
