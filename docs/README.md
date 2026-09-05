@@ -31,7 +31,7 @@ Start with the guide that matches what you want to do. Installation and contribu
 | Find a specific behavior requirement | [Product specification](product-spec.md) |
 | See release priorities and deferred work | [Roadmap](roadmap.md) |
 | Review the recorded implementation assessment | [Implementation audit](implementation-gap-audit.md) |
-| Find recorded evidence for v0.1 requirements | [Acceptance ledger](v0.1-acceptance.md) |
+| Find recorded evidence for v0.0.1 requirements | [Acceptance ledger](v0.0.1-acceptance.md) |
 
 The audit and acceptance ledger identify the dates and revisions they cover. Use them to find relevant evidence, then run the required checks against the version you plan to release.
 

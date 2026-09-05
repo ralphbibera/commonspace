@@ -110,7 +110,7 @@ Commonspace may stop repeated mention cycles that would otherwise loop indefinit
 
 Projects are references and context containers, not task containers.
 
-A Project identifies resources the agents can use as context. v0.1 supports local folders. The model should leave room for other resource types later.
+A Project identifies resources the agents can use as context. v0.0.1 supports local folders. The model should leave room for other resource types later.
 
 Channels do not need to belong permanently to one Project. A message or thread may reference zero, one, or many Projects. Project references are context for the conversation.
 
@@ -143,7 +143,7 @@ Users must be able to read and edit the summary, see which source messages it co
 
 The UI should make it possible to inspect what Commonspace-level Project, Channel, and Thread context is available to an agent.
 
-Agent-suggested durable context is not a v0.1 requirement.
+Agent-suggested durable context is not a v0.0.1 requirement.
 
 ## Messages and attachments
 
@@ -153,7 +153,7 @@ Editing a delivered human message creates a visible conversation branch from tha
 
 Deleting a delivered message should leave a visible deletion marker because the runtime has already received it.
 
-Reactions are not required for v0.1.
+Reactions are not required for v0.0.1.
 
 ## Harness activity and controls
 

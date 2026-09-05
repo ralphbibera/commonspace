@@ -47,6 +47,16 @@ describe("ACP agent process", () => {
 				.split("\n")
 				.map((line) => JSON.parse(line));
 			const prompt = frames.find((frame) => frame.method === "session/prompt");
+			const manifest = JSON.parse(
+				await readFile(
+					new URL("../server/package.json", import.meta.url),
+					"utf8",
+				),
+			);
+			expect(
+				frames.find((frame) => frame.method === "initialize")?.params
+					.clientInfo,
+			).toEqual({ name: "Commonspace", version: manifest.version });
 			expect(prompt?.params.prompt).toEqual([
 				{ type: "text", text: "Only this new message." },
 			]);

@@ -1,12 +1,27 @@
 # Releasing Commonspace
 
-This guide is for maintainers preparing an installable Commonspace release. The release workflow builds and checks archives, then creates a draft prerelease on GitHub.
+This guide is for maintainers preparing an installable Commonspace release. The release workflow builds and checks archives, then creates a draft release on GitHub.
 
 The repository owner reviews and approves the verified draft before a maintainer publishes it.
 
 ## Choose the version
 
-The root `package.json` contains the release version. Its Git tag must match exactly as `v<version>`. For example, version `X.Y.Z` uses tag `vX.Y.Z`.
+Commonspace follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html), starting at `0.0.1`. Keep one identical version in the root, `packages/shared`, `server`, and `ui` package manifests.
+
+Compatibility covers documented HTTP and MCP interfaces, CLI behavior, and the workspace archive format. The internal saved-state schema has a separate version and requires its own migration and recovery coverage.
+
+| Change | Version update |
+| --- | --- |
+| Compatible bug or security fix | Increment the patch version. |
+| Compatible feature or deprecation | Increment the minor version and reset the patch to zero. |
+| Breaking change before `1.0.0` | Increment the minor version, reset the patch to zero, and include migration notes. |
+| Breaking change from `1.0.0` onward | Increment the major version, reset minor and patch to zero, and include migration notes. |
+
+Version `1.0.0` establishes stable supported interfaces. Before then, interfaces are under initial development and breaking changes follow the minor-version policy above.
+
+Use a prerelease suffix for candidates, such as `0.0.2-rc.1`. Build metadata is supported, such as `0.0.2+build.1`, and does not affect version precedence. Store the complete version without a prefix in each manifest. Git tags add only `v` and must match exactly, including any suffix or metadata: version `0.0.2-rc.1` uses tag `v0.0.2-rc.1`.
+
+The workflow always creates a draft. It marks the GitHub release as a prerelease only when the version contains a prerelease suffix; `0.0.1` and versions with build metadata alone are not prereleases.
 
 Update the version and move the relevant [changelog](../CHANGELOG.md) entries into a dated release section through the normal contribution workflow. Release only a reviewed commit. Do not move an existing release tag to another commit.
 
@@ -56,7 +71,7 @@ The workflow:
 3. Builds and tests archives on macOS ARM64, macOS x64, and Linux x64.
 4. Checks each archive's recorded version, commit, operating system, CPU architecture, and clean source state.
 5. Rechecks all checksums and confirms the tag still points to the verified commit.
-6. Creates a draft prerelease with the archives and checksum files attached.
+6. Creates a draft release with the archives and checksum files attached, using the version's prerelease suffix to set the prerelease flag.
 
 The workflow refuses to overwrite any existing draft or published release. If a failed run left a draft, inspect it and the failure before removing that draft for a retry. Do not silently replace a published release's files. A code fix requires a new reviewed commit and release version.
 

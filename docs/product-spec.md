@@ -1,6 +1,6 @@
 # Commonspace product specification
 
-This specification defines the requirements for Commonspace v0.1 and the conditions that demonstrate each behavior. Use it when designing a change, implementing a feature, or reviewing a release.
+This specification defines the requirements for Commonspace v0.0.1 and the conditions that demonstrate each behavior. Use it when designing a change, implementing a feature, or reviewing a release.
 
 Start with the [Product model](product.md) for an introduction to the concepts. The [Product direction](product-direction.md) explains scope, the [Implementation gap audit](implementation-gap-audit.md) records a dated implementation snapshot, and the [Roadmap](roadmap.md) identifies release work and later plans.
 
@@ -29,7 +29,7 @@ Commonspace solves this by providing:
 
 ### Primary user
 
-The v0.1 user is one technical person who already uses supported local ACP runtimes. They want several agents to work across one or more codebases while keeping the conversation and results together.
+The v0.0.1 user is one technical person who already uses supported local ACP runtimes. They want several agents to work across one or more codebases while keeping the conversation and results together.
 
 ### Core job to be done
 
@@ -60,13 +60,13 @@ A user can open Commonspace, talk naturally in a Channel or DM, and trust that:
 | G7 | Surface normalized harness activity, results, and permission choices without replacing the harness. |
 | G8 | Remain local-first, recoverable, portable, and fully open source. |
 
-### Explicit non-goals for v0.1
+### Explicit non-goals for v0.0.1
 
 - Tasks, tickets, goals, objectives, priorities, assignees, workflows, kanban, budgets, or approval pipelines.
 - Company simulation, org charts, agent employees, managers, captains, or a required coordinator agent.
 - Multi-human accounts, roles, remote workspace sync, or hosted collaboration.
 - Replacing agent runtimes, models, tools, credentials, private memory, or native sessions.
-- Wrapping arbitrary unsupported CLIs. v0.1 supports known ACP harnesses through first-party integrations.
+- Wrapping arbitrary unsupported CLIs. v0.0.1 supports known ACP harnesses through first-party integrations.
 - Agent-created Channels, Projects, or workspace structure.
 - A standalone agent-management dashboard or agent profile pages.
 - A full Git client, terminal, execution manager, or raw harness debugger.
@@ -104,9 +104,9 @@ flowchart TD
 
 | Object | Product meaning | Key rule |
 | --- | --- | --- |
-| Workspace | One local Commonspace installation and its durable state. | One human is the authority in v0.1. |
+| Workspace | One local Commonspace installation and its durable state. | One human is the authority in v0.0.1. |
 | Agent | A supported local ACP runtime explicitly added to the workspace. | The same Agent is reused across Projects and conversations; Commonspace does not clone it per Project. |
-| Project | A named context container with one or more resources. | Projects are references, not task owners. Local folders are the only v0.1 resource type. |
+| Project | A named context container with one or more resources. | Projects are references, not task owners. Local folders are the only v0.0.1 resource type. |
 | Channel | A shared conversation with a chosen set of agents, instructions, and shared context. | A Channel may be projectless and does not permanently belong to one Project. Model and reasoning configuration is workspace-wide. |
 | DM | A persistent conversation between the human and exactly one chosen Agent. | Smart routing never substitutes another Agent. |
 | Message | Human, Agent, or system conversation content with references and attachments. | Accepted messages are persisted before inference or agent execution. |
@@ -223,109 +223,109 @@ Compaction summarizes context so it fits within input limits. It does not delete
 
 ## 6. Functional requirements
 
-Each row gives a stable requirement ID, its release target, the required behavior, and the condition that proves it. Cite these IDs in implementation plans and reviews. The [acceptance ledger](v0.1-acceptance.md) maps requirements to recorded evidence.
+Each row gives a stable requirement ID, its release target, the required behavior, and the condition that proves it. Cite these IDs in implementation plans and reviews. The [acceptance ledger](v0.0.1-acceptance.md) maps requirements to recorded evidence.
 
 | Target | Meaning |
 | --- | --- |
-| v0.1 | Required for the complete v0.1 product. |
+| v0.0.1 | Required for the complete v0.0.1 product. |
 | Capability-dependent | Required only when the connected runtime advertises the relevant ACP capability. |
-| Later | Deliberately outside the v0.1 release gate. |
+| Later | Deliberately outside the v0.0.1 release gate. |
 
 ### 6.1 Workspace and lifecycle
 
 | ID | Target | Requirement | Acceptance condition |
 | --- | --- | --- | --- |
-| WRK-01 | v0.1 | Run as a local service with browser clients over loopback. | The workspace remains usable without a hosted Commonspace account or cloud control plane. |
-| WRK-02 | v0.1 | Keep the service independent from the visible client. | Closing every client does not terminate an accepted or active turn. |
-| WRK-03 | v0.1 | Limit structural workspace mutations to the human. | Agents cannot create/delete Projects, Channels, DMs, or Agents through v0.1 context tools. |
-| WRK-04 | v0.1 | Restore durable state after service or machine restart. | Conversations, context, read state, and resumable native-session mappings survive restart. |
-| WRK-05 | v0.1 | Support a one-command local installation/update path. | A clean supported machine can install, start, stop, and update Commonspace without repository knowledge. |
+| WRK-01 | v0.0.1 | Run as a local service with browser clients over loopback. | The workspace remains usable without a hosted Commonspace account or cloud control plane. |
+| WRK-02 | v0.0.1 | Keep the service independent from the visible client. | Closing every client does not terminate an accepted or active turn. |
+| WRK-03 | v0.0.1 | Limit structural workspace mutations to the human. | Agents cannot create/delete Projects, Channels, DMs, or Agents through v0.0.1 context tools. |
+| WRK-04 | v0.0.1 | Restore durable state after service or machine restart. | Conversations, context, read state, and resumable native-session mappings survive restart. |
+| WRK-05 | v0.0.1 | Support a one-command local installation/update path. | A clean supported machine can install, start, stop, and update Commonspace without repository knowledge. |
 | WRK-06 | Later | Offer a desktop application over the same service contract. | The desktop distribution does not fork the domain or persistence model. |
 
 ### 6.2 Agents and harnesses
 
 | ID | Target | Requirement | Acceptance condition |
 | --- | --- | --- | --- |
-| AGT-01 | v0.1 | Add Agents only through an explicit user-initiated discovery flow. | Startup does not silently add Agents. Discovery returns the installed Codex harness and existing Hermes profiles; Commonspace does not create native profiles or synthetic personas. |
-| AGT-02 | v0.1 | Support known ACP harnesses through first-party adapters. | Unsupported arbitrary CLIs are rejected rather than represented as partially functional Agents. |
-| AGT-03 | v0.1 | Reuse one Agent identity across Projects, Channels, DMs, and Threads. | No per-Project Agent clone or hidden Project-specific memory identity is created. |
-| AGT-04 | v0.1 | Allow workspace-local display name, avatar/emoji, and accent changes. | Native harness identity and configuration remain unchanged; Commonspace does not create synthetic personas or behavior profiles. |
+| AGT-01 | v0.0.1 | Add Agents only through an explicit user-initiated discovery flow. | Startup does not silently add Agents. Discovery returns the installed Codex harness and existing Hermes profiles; Commonspace does not create native profiles or synthetic personas. |
+| AGT-02 | v0.0.1 | Support known ACP harnesses through first-party adapters. | Unsupported arbitrary CLIs are rejected rather than represented as partially functional Agents. |
+| AGT-03 | v0.0.1 | Reuse one Agent identity across Projects, Channels, DMs, and Threads. | No per-Project Agent clone or hidden Project-specific memory identity is created. |
+| AGT-04 | v0.0.1 | Allow workspace-local display name, avatar/emoji, and accent changes. | Native harness identity and configuration remain unchanged; Commonspace does not create synthetic personas or behavior profiles. |
 | AGT-05 | Capability-dependent | Expose models, reasoning, steering, stopping, tools, and permissions only when advertised through ACP. | Configuration controls use ACP and do not synthesize unsupported choices. Discovery may read identity metadata through the supported harness CLI; Commonspace does not mutate native profile configuration. |
-| AGT-06 | v0.1 | Avoid standalone Agent profile/dashboard requirements. | Agent discovery and context remain available through addition, DMs, Channel membership, mentions, and session indicators. |
+| AGT-06 | v0.0.1 | Avoid standalone Agent profile/dashboard requirements. | Agent discovery and context remain available through addition, DMs, Channel membership, mentions, and session indicators. |
 
 ### 6.3 Projects and references
 
 | ID | Target | Requirement | Acceptance condition |
 | --- | --- | --- | --- |
-| PRJ-01 | v0.1 | Support Projects with one or more canonical local folders. | The first root becomes the primary working directory and remaining roots are delivered as additional working directories. |
-| PRJ-02 | v0.1 | Allow messages, sub-requests, and Threads to reference zero, one, or many Projects. | Search, context, attribution, and execution recognize every reference, not only the first. |
-| PRJ-03 | v0.1 | Treat explicit Project references as authoritative. | Inference cannot silently remove or replace an explicit reference. |
-| PRJ-04 | v0.1 | Infer Project references when none are explicit. | Every inferred reference is marked as inferred and can be corrected before or after dispatch through a new branch/reroute. |
-| PRJ-05 | v0.1 | Assign Project references per sub-request. | A split request can give different Agents different relevant Project roots. |
-| PRJ-06 | v0.1 | Let Thread references evolve prospectively. | A reply can supply `@@project` context for that turn and future defaults without a separate Project picker or rewriting earlier deliveries. |
-| PRJ-07 | v0.1 | Keep projectless conversation genuinely projectless. | An Agent in a no-Project turn receives no Project filesystem roots and starts in a neutral configured working directory. |
+| PRJ-01 | v0.0.1 | Support Projects with one or more canonical local folders. | The first root becomes the primary working directory and remaining roots are delivered as additional working directories. |
+| PRJ-02 | v0.0.1 | Allow messages, sub-requests, and Threads to reference zero, one, or many Projects. | Search, context, attribution, and execution recognize every reference, not only the first. |
+| PRJ-03 | v0.0.1 | Treat explicit Project references as authoritative. | Inference cannot silently remove or replace an explicit reference. |
+| PRJ-04 | v0.0.1 | Infer Project references when none are explicit. | Every inferred reference is marked as inferred and can be corrected before or after dispatch through a new branch/reroute. |
+| PRJ-05 | v0.0.1 | Assign Project references per sub-request. | A split request can give different Agents different relevant Project roots. |
+| PRJ-06 | v0.0.1 | Let Thread references evolve prospectively. | A reply can supply `@@project` context for that turn and future defaults without a separate Project picker or rewriting earlier deliveries. |
+| PRJ-07 | v0.0.1 | Keep projectless conversation genuinely projectless. | An Agent in a no-Project turn receives no Project filesystem roots and starts in a neutral configured working directory. |
 | PRJ-08 | Later | Add non-folder Project resource kinds. | New resource kinds extend the Project resource contract without turning Projects into tasks. |
 
 ### 6.4 Channels, DMs, messages, and Threads
 
 | ID | Target | Requirement | Acceptance condition |
 | --- | --- | --- | --- |
-| CON-01 | v0.1 | Allow universal/projectless Channels with explicit Agent rosters. | Channel creation does not require a Project or Agent. |
-| CON-02 | v0.1 | Persist every accepted message before inference or execution. | A routing or harness failure cannot erase the human's request. |
-| CON-03 | v0.1 | Create one Thread from every Channel root message. | All routed sub-requests, replies, handoffs, and activity remain navigable from that root. |
-| CON-04 | v0.1 | Map one native session per participating Agent per Thread. | The same Agent resumes the same Thread session and uses a different session in another Thread. |
-| CON-05 | v0.1 | Keep DMs bound to exactly one chosen Agent. | Unaddressed DM messages never trigger Agent selection. |
-| CON-06 | v0.1 | Enforce hard `/new` DM generation boundaries. | Old context and late in-flight replies cannot enter the new generation. |
-| CON-07 | v0.1 | Invoke visible Agent mentions as peer handoffs in the same Thread. | Mentioned Agents receive the handoff without a coordinator or private Agent DM. |
-| CON-08 | v0.1 | Run different native sessions concurrently and serialize only the same session. | A slow Agent does not block unrelated Agents or Threads. |
-| CON-09 | v0.1 | Bound pathological Agent-to-Agent cycles. | Repeated cycles stop with a visible outcome rather than silently looping. |
-| CON-10 | v0.1 | Preserve queued follow-ups while a native session is busy. | The user can inspect, reorder, remove, steer where supported, or stop-and-send queued input. |
-| CON-11 | v0.1 | Apply one workspace model and reasoning configuration to every conversation. | Channels do not expose, persist, or apply per-Channel model or reasoning overrides. |
+| CON-01 | v0.0.1 | Allow universal/projectless Channels with explicit Agent rosters. | Channel creation does not require a Project or Agent. |
+| CON-02 | v0.0.1 | Persist every accepted message before inference or execution. | A routing or harness failure cannot erase the human's request. |
+| CON-03 | v0.0.1 | Create one Thread from every Channel root message. | All routed sub-requests, replies, handoffs, and activity remain navigable from that root. |
+| CON-04 | v0.0.1 | Map one native session per participating Agent per Thread. | The same Agent resumes the same Thread session and uses a different session in another Thread. |
+| CON-05 | v0.0.1 | Keep DMs bound to exactly one chosen Agent. | Unaddressed DM messages never trigger Agent selection. |
+| CON-06 | v0.0.1 | Enforce hard `/new` DM generation boundaries. | Old context and late in-flight replies cannot enter the new generation. |
+| CON-07 | v0.0.1 | Invoke visible Agent mentions as peer handoffs in the same Thread. | Mentioned Agents receive the handoff without a coordinator or private Agent DM. |
+| CON-08 | v0.0.1 | Run different native sessions concurrently and serialize only the same session. | A slow Agent does not block unrelated Agents or Threads. |
+| CON-09 | v0.0.1 | Bound pathological Agent-to-Agent cycles. | Repeated cycles stop with a visible outcome rather than silently looping. |
+| CON-10 | v0.0.1 | Preserve queued follow-ups while a native session is busy. | The user can inspect, reorder, remove, steer where supported, or stop-and-send queued input. |
+| CON-11 | v0.0.1 | Apply one workspace model and reasoning configuration to every conversation. | Channels do not expose, persist, or apply per-Channel model or reasoning overrides. |
 
 ### 6.5 Commonspace inference, routing, and correction
 
 | ID | Target | Requirement | Acceptance condition |
 | --- | --- | --- | --- |
-| INF-01 | v0.1 | Use one configured inference provider for routing, decomposition, Project resolution, context compaction, and routing-memory compaction. | These functions do not require a visible coordinator Agent or separate provider configurations. |
-| INF-02 | v0.1 | Route every unaddressed Channel message through inference. | There is no deterministic/no-inference fallback that silently guesses an Agent. |
-| INF-03 | v0.1 | Treat explicit Agent mentions as authoritative. | Inference may split work among mentioned Agents but cannot substitute unmentioned Agents. |
-| INF-04 | v0.1 | Select the smallest useful Agent set. | One Agent is preferred when sufficient; distinct responsibilities may select any necessary set. |
-| INF-05 | v0.1 | Remove hidden product-wide Agent fan-out caps. | Explicit or inferred requests are not silently limited to two Agents; any safety ceiling is visible and user-controlled. |
-| INF-06 | v0.1 | Generate one bounded sub-request per selected Agent. | Each Agent's new native turn contains only its assigned request; the original remains accessible through bounded context tools. |
-| INF-07 | v0.1 | Make routing inspectable. | The selected Agents, sub-requests, Project references, reason, and confidence where available are stored with the source message. |
-| INF-08 | v0.1 | Support sub-request rerouting and correction. | A user can redirect one assignment without resending unrelated assignments. Prior attempts remain visible. |
-| INF-09 | v0.1 | Learn from explicit corrections. | Reroutes are stored as feedback and compacted into bounded routing knowledge used by later decisions. |
-| INF-10 | v0.1 | Fail visibly when inference is unavailable or invalid. | The message remains accepted and receives a retryable needs-attention state; Commonspace does not silently broadcast it. |
-| INF-11 | v0.1 | Target effectively immediate routing. | The routing stage targets sub-second completion where the configured provider permits and reports separately from harness execution time. |
+| INF-01 | v0.0.1 | Use one configured inference provider for routing, decomposition, Project resolution, context compaction, and routing-memory compaction. | These functions do not require a visible coordinator Agent or separate provider configurations. |
+| INF-02 | v0.0.1 | Route every unaddressed Channel message through inference. | There is no deterministic/no-inference fallback that silently guesses an Agent. |
+| INF-03 | v0.0.1 | Treat explicit Agent mentions as authoritative. | Inference may split work among mentioned Agents but cannot substitute unmentioned Agents. |
+| INF-04 | v0.0.1 | Select the smallest useful Agent set. | One Agent is preferred when sufficient; distinct responsibilities may select any necessary set. |
+| INF-05 | v0.0.1 | Remove hidden product-wide Agent fan-out caps. | Explicit or inferred requests are not silently limited to two Agents; any safety ceiling is visible and user-controlled. |
+| INF-06 | v0.0.1 | Generate one bounded sub-request per selected Agent. | Each Agent's new native turn contains only its assigned request; the original remains accessible through bounded context tools. |
+| INF-07 | v0.0.1 | Make routing inspectable. | The selected Agents, sub-requests, Project references, reason, and confidence where available are stored with the source message. |
+| INF-08 | v0.0.1 | Support sub-request rerouting and correction. | A user can redirect one assignment without resending unrelated assignments. Prior attempts remain visible. |
+| INF-09 | v0.0.1 | Learn from explicit corrections. | Reroutes are stored as feedback and compacted into bounded routing knowledge used by later decisions. |
+| INF-10 | v0.0.1 | Fail visibly when inference is unavailable or invalid. | The message remains accepted and receives a retryable needs-attention state; Commonspace does not silently broadcast it. |
+| INF-11 | v0.0.1 | Target effectively immediate routing. | The routing stage targets sub-second completion where the configured provider permits and reports separately from harness execution time. |
 
 ### 6.6 Shared context and compaction
 
 | ID | Target | Requirement | Acceptance condition |
 | --- | --- | --- | --- |
-| CTX-01 | v0.1 | Maintain canonical Commonspace context separately from private native-session context. | Shared context can be inspected without exposing native session internals. |
-| CTX-02 | v0.1 | Store Channel summary, decisions, open questions, pins, source boundary, origin, estimated pressure, and compaction state. | The current representation has enough metadata to explain whether it is empty, current, stale, compacting, or failed. |
-| CTX-03 | v0.1 | Snapshot Channel context when a Thread begins. | Later Channel changes do not silently rewrite the Thread's inherited starting context. |
-| CTX-04 | v0.1 | Maintain Thread-specific context after the snapshot. | A Thread can compact its own history and still inspect newer Channel context separately. |
-| CTX-05 | v0.1 | Include recent verbatim messages alongside compacted context within bounded reads. | Agents can distinguish source conversation from inferred summaries. |
-| CTX-06 | v0.1 | Trigger automatic compaction primarily from context/token pressure. | A fixed message count alone is not the authoritative trigger. |
-| CTX-07 | v0.1 | Allow manual compaction and direct human editing. | A user can update the canonical summary, decisions, and questions without changing private harness memory. |
-| CTX-08 | v0.1 | Preserve human-authored context. | Automatic projection marks human context stale when needed and never silently replaces it. |
-| CTX-09 | v0.1 | Expose bounded context through scoped tools. | An Agent can read only the conversation and Project scope granted to its current native session. |
-| CTX-10 | Later | Accept Agent-suggested durable context. | No v0.1 Agent response can silently promote itself into canonical memory. |
+| CTX-01 | v0.0.1 | Maintain canonical Commonspace context separately from private native-session context. | Shared context can be inspected without exposing native session internals. |
+| CTX-02 | v0.0.1 | Store Channel summary, decisions, open questions, pins, source boundary, origin, estimated pressure, and compaction state. | The current representation has enough metadata to explain whether it is empty, current, stale, compacting, or failed. |
+| CTX-03 | v0.0.1 | Snapshot Channel context when a Thread begins. | Later Channel changes do not silently rewrite the Thread's inherited starting context. |
+| CTX-04 | v0.0.1 | Maintain Thread-specific context after the snapshot. | A Thread can compact its own history and still inspect newer Channel context separately. |
+| CTX-05 | v0.0.1 | Include recent verbatim messages alongside compacted context within bounded reads. | Agents can distinguish source conversation from inferred summaries. |
+| CTX-06 | v0.0.1 | Trigger automatic compaction primarily from context/token pressure. | A fixed message count alone is not the authoritative trigger. |
+| CTX-07 | v0.0.1 | Allow manual compaction and direct human editing. | A user can update the canonical summary, decisions, and questions without changing private harness memory. |
+| CTX-08 | v0.0.1 | Preserve human-authored context. | Automatic projection marks human context stale when needed and never silently replaces it. |
+| CTX-09 | v0.0.1 | Expose bounded context through scoped tools. | An Agent can read only the conversation and Project scope granted to its current native session. |
+| CTX-10 | Later | Accept Agent-suggested durable context. | No v0.0.1 Agent response can silently promote itself into canonical memory. |
 
 ### 6.7 Message versions, deletion, pins, and files
 
 | ID | Target | Requirement | Acceptance condition |
 | --- | --- | --- | --- |
-| MSG-01 | v0.1 | Edit delivered human messages through visible branching/versioning. | Editing creates a new branch and new downstream native turns; the old branch remains navigable. |
-| MSG-02 | v0.1 | Preserve deletion markers for delivered messages. | The transcript records that content was delivered even when its body is removed. |
-| MSG-03 | v0.1 | Keep Agent replies immutable as harness output. | A human cannot edit an Agent reply and misrepresent it as native output. |
-| MSG-04 | v0.1 | Pin messages, files, and human notes into shared context. | Pins identify their source, scope, and removal state and are available to scoped context reads. |
-| FIL-01 | v0.1 | Allow humans to attach general local files to messages. | Supported files persist, render or download safely, and reach the intended Agent session. |
+| MSG-01 | v0.0.1 | Edit delivered human messages through visible branching/versioning. | Editing creates a new branch and new downstream native turns; the old branch remains navigable. |
+| MSG-02 | v0.0.1 | Preserve deletion markers for delivered messages. | The transcript records that content was delivered even when its body is removed. |
+| MSG-03 | v0.0.1 | Keep Agent replies immutable as harness output. | A human cannot edit an Agent reply and misrepresent it as native output. |
+| MSG-04 | v0.0.1 | Pin messages, files, and human notes into shared context. | Pins identify their source, scope, and removal state and are available to scoped context reads. |
+| FIL-01 | v0.0.1 | Allow humans to attach general local files to messages. | Supported files persist, render or download safely, and reach the intended Agent session. |
 | FIL-02 | Capability-dependent | Accept harness-generated files as Agent attachments. | A supported ACP artifact becomes a durable Commonspace attachment whose managed metadata omits its source host path. File contents remain unchanged. |
-| FIL-03 | v0.1 | Bind attachments to exact message versions. | Editing/branching does not silently move an attachment to another version. |
-| FIL-04 | v0.1 | Block known credential-bearing files. | Common secret, key, token, and credential containers cannot be attached or previewed. |
-| FIL-05 | v0.1 | Keep Project file/Git surfaces read-oriented. | Commonspace may show files, changes, diffs, and emitted verification but does not become a Git client or execution manager. |
+| FIL-03 | v0.0.1 | Bind attachments to exact message versions. | Editing/branching does not silently move an attachment to another version. |
+| FIL-04 | v0.0.1 | Block known credential-bearing files. | Common secret, key, token, and credential containers cannot be attached or previewed. |
+| FIL-05 | v0.0.1 | Keep Project file/Git surfaces read-oriented. | Commonspace may show files, changes, diffs, and emitted verification but does not become a Git client or execution manager. |
 
 ### 6.8 Harness activity, controls, and outcomes
 
@@ -334,30 +334,30 @@ Each row gives a stable requirement ID, its release target, the required behavio
 | ACT-01 | Capability-dependent | Stream and persist normalized ACP reasoning summaries, plans, tool calls/results, usage, and model information. | Activity stays expandable and collapsed by default; raw terminal output is not synthesized into it. |
 | ACT-02 | Capability-dependent | Render native permission requests with only harness-provided choices. | Selecting a choice returns that exact response to the affected harness session. |
 | ACT-03 | Capability-dependent | Support native stop and steering controls. | Unsupported controls are absent, not disabled promises. |
-| ACT-04 | v0.1 | Bind results and evidence to the originating request and sub-request. | Replies can expose changed files, Project/root attribution, activity, and harness-emitted validation evidence. |
-| ACT-05 | v0.1 | Surface explicit run outcomes. | Completed, needs input, failed, silent, cancelled, timed out, and interrupted states remain distinguishable. |
-| ACT-06 | v0.1 | Scope blocking to the affected native session. | A permission request or slow turn does not block the Channel or other Agent sessions. |
+| ACT-04 | v0.0.1 | Bind results and evidence to the originating request and sub-request. | Replies can expose changed files, Project/root attribution, activity, and harness-emitted validation evidence. |
+| ACT-05 | v0.0.1 | Surface explicit run outcomes. | Completed, needs input, failed, silent, cancelled, timed out, and interrupted states remain distinguishable. |
+| ACT-06 | v0.0.1 | Scope blocking to the affected native session. | A permission request or slow turn does not block the Channel or other Agent sessions. |
 
 ### 6.9 Inbox, search, and notifications
 
 | ID | Target | Requirement | Acceptance condition |
 | --- | --- | --- | --- |
-| DSC-01 | v0.1 | Track durable unread state for Agent replies and relevant system outcomes. | Read state survives restart and opens the exact conversation location. |
-| DSC-02 | v0.1 | Provide an attention-focused Inbox. | Replies, mentions, permission requests, needs-input outcomes, and failures can be filtered and navigated exactly. |
-| DSC-03 | v0.1 | Search messages, Threads, Channels, Agents, Projects, and attachments. | Project filters match any referenced Project, not only the primary compatibility reference. |
-| DSC-04 | v0.1 | Support desktop notifications for replies, mentions, permissions, and failures. | Each notification identifies the event type and opens the exact message/activity. |
-| DSC-05 | v0.1 | Make notifications configurable without muting durable Inbox state. | Disabling OS notifications does not hide attention items inside Commonspace. |
+| DSC-01 | v0.0.1 | Track durable unread state for Agent replies and relevant system outcomes. | Read state survives restart and opens the exact conversation location. |
+| DSC-02 | v0.0.1 | Provide an attention-focused Inbox. | Replies, mentions, permission requests, needs-input outcomes, and failures can be filtered and navigated exactly. |
+| DSC-03 | v0.0.1 | Search messages, Threads, Channels, Agents, Projects, and attachments. | Project filters match any referenced Project, not only the primary compatibility reference. |
+| DSC-04 | v0.0.1 | Support desktop notifications for replies, mentions, permissions, and failures. | Each notification identifies the event type and opens the exact message/activity. |
+| DSC-05 | v0.0.1 | Make notifications configurable without muting durable Inbox state. | Disabling OS notifications does not hide attention items inside Commonspace. |
 
 ### 6.10 Persistence, privacy, and portability
 
 | ID | Target | Requirement | Acceptance condition |
 | --- | --- | --- | --- |
-| DAT-01 | v0.1 | Persist versioned, sanitized state atomically with rollback recovery. | A partial/invalid write does not replace the previous valid state. |
-| DAT-02 | v0.1 | Keep Commonspace-managed credential, MCP capability, native-session, and absolute host-path fields private. | Browser, activity, search, and portable archive metadata omit these managed values. This guarantee does not cover sensitive information supplied in conversation text or attachment contents. |
-| DAT-03 | v0.1 | Provide an open, versioned export of workspace data and attachments with managed private fields omitted. | The archive format is documented and usable without Commonspace cloud services. It preserves conversation text and exact attachment bytes and is unencrypted private user data. |
-| DAT-04 | v0.1 | Validate imports and resolve local resource mappings explicitly. | Import cannot overwrite current state or assume that exported absolute paths exist. |
-| DAT-05 | v0.1 | Keep data indefinitely by default and provide explicit retention controls. | No fixed append/load window silently drops accepted messages; destructive cleanup is scoped, previewable, and does not silently rewrite delivered history. |
-| DAT-06 | v0.1 | Disclose configured inference data flow. | The user can see whether inference is local or remote and what categories of conversation/context may be sent. |
+| DAT-01 | v0.0.1 | Persist versioned, sanitized state atomically with rollback recovery. | A partial/invalid write does not replace the previous valid state. |
+| DAT-02 | v0.0.1 | Keep Commonspace-managed credential, MCP capability, native-session, and absolute host-path fields private. | Browser, activity, search, and portable archive metadata omit these managed values. This guarantee does not cover sensitive information supplied in conversation text or attachment contents. |
+| DAT-03 | v0.0.1 | Provide an open, versioned export of workspace data and attachments with managed private fields omitted. | The archive format is documented and usable without Commonspace cloud services. It preserves conversation text and exact attachment bytes and is unencrypted private user data. |
+| DAT-04 | v0.0.1 | Validate imports and resolve local resource mappings explicitly. | Import cannot overwrite current state or assume that exported absolute paths exist. |
+| DAT-05 | v0.0.1 | Keep data indefinitely by default and provide explicit retention controls. | No fixed append/load window silently drops accepted messages; destructive cleanup is scoped, previewable, and does not silently rewrite delivered history. |
+| DAT-06 | v0.0.1 | Disclose configured inference data flow. | The user can see whether inference is local or remote and what categories of conversation/context may be sent. |
 | DAT-07 | Later | Migrate transcripts to a relational store only after measured need. | The product model and export format do not depend on the current JSON persistence implementation. |
 
 ## 7. Context model
@@ -539,11 +539,11 @@ These slices record the implementation sequence: establish the service behavior 
 | E2E-11 | Restart after a conversation exceeds the legacy 500-message boundary | Every accepted message and its context restore, resumable sessions continue exactly, and unrecoverable in-flight work is marked interrupted. |
 | E2E-12 | Export and import into a clean workspace | Conversation data and exact attachment bytes import safely. Managed private fields are omitted from the archive, and local Project roots require explicit remapping. |
 
-## 13. v0.1 definition of done
+## 13. v0.0.1 definition of done
 
-Commonspace v0.1 is product-complete when:
+Commonspace v0.0.1 is product-complete when:
 
-1. Every `v0.1` requirement above has automated contract/service coverage and a verified user-facing path.
+1. Every `v0.0.1` requirement above has automated contract/service coverage and a verified user-facing path.
 2. Capability-dependent behavior is tested against each supported harness that advertises it.
 3. All end-to-end acceptance scenarios pass on a clean supported machine.
 4. Existing state versions migrate without dropping conversations, context, references, attachments, or read state, including transcripts beyond legacy count windows.
@@ -554,7 +554,7 @@ Commonspace v0.1 is product-complete when:
 
 ## 14. Deliberately deferred decisions
 
-These decisions do not block v0.1 behavior and should be made only when their release slice begins:
+These decisions do not block v0.0.1 behavior and should be made only when their release slice begins:
 
 - Desktop packaging technology.
 - Additional ACP harnesses beyond the first-party supported set.
@@ -563,4 +563,4 @@ These decisions do not block v0.1 behavior and should be made only when their re
 - Plugin/extension architecture.
 - Hosted or multi-human collaboration.
 
-These are technical or later-scope choices, not unresolved v0.1 product behavior.
+These are technical or later-scope choices, not unresolved v0.0.1 product behavior.

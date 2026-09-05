@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -132,6 +132,16 @@ describe("Commonspace MCP gateway", () => {
 			requestInit: { headers: { authorization: `Bearer ${credential.token}` } },
 		});
 		await client.connect(exactOptionalTransport(transport));
+		const manifest = JSON.parse(
+			await readFile(
+				new URL("../server/package.json", import.meta.url),
+				"utf8",
+			),
+		);
+		expect(client.getServerVersion()).toEqual({
+			name: "commonspace",
+			version: manifest.version,
+		});
 		const tools = await client.listTools();
 		expect(tools.tools.map((tool) => tool.name)).toEqual([
 			"commonspace_get_context",

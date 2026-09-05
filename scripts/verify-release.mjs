@@ -220,6 +220,14 @@ async function main() {
 		assert.equal(metadata.platform, process.platform);
 		assert.equal(metadata.arch, process.arch);
 		assert.equal(metadata.distribution, "archive");
+		const runtimeManifest = JSON.parse(
+			await readFile(join(root, "server/package.json"), "utf8"),
+		);
+		assert.equal(
+			runtimeManifest.version,
+			version,
+			"Packaged server version mismatch",
+		);
 		const notices = await readFile(
 			join(root, "THIRD_PARTY_NOTICES.txt"),
 			"utf8",

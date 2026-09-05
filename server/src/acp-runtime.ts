@@ -29,6 +29,7 @@ import type {
 } from "@commonspace/shared";
 import { z } from "zod";
 import type { JsonValue } from "./json.js";
+import { COMMONSPACE_VERSION } from "./version.js";
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 3_630_000;
 const DEFAULT_MAX_RESPONSE_CHARS = 1024 * 1024;
@@ -644,7 +645,7 @@ export class AcpAgentProcess {
 							session: { configOptions: { boolean: {} } },
 							plan: {},
 						},
-						clientInfo: { name: "Commonspace", version: "0.1.0" },
+						clientInfo: { name: "Commonspace", version: COMMONSPACE_VERSION },
 					},
 					{ cancellationSignal: signal },
 				),

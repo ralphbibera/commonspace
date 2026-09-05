@@ -14,21 +14,13 @@ import {
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath, URL } from "node:url";
 import { parseArgs, promisify } from "node:util";
+import { parseReleaseVersion } from "./release-version.mjs";
 
 const run = promisify(execFile);
 const repoRoot = fileURLToPath(new URL("../", import.meta.url));
 
 export function releaseName(version, platform, arch) {
-	if (
-		typeof version !== "string" ||
-		!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*)?$/u.test(
-			version,
-		)
-	) {
-		throw new Error(
-			"Release version must be a semantic version without a v prefix",
-		);
-	}
+	parseReleaseVersion(version);
 	const target = `${platform}-${arch}`;
 	if (!["darwin-arm64", "darwin-x64", "linux-x64"].includes(target)) {
 		throw new Error(`Unsupported release target: ${target}`);
@@ -41,6 +33,7 @@ export async function copyReleaseAssets(source, target) {
 		["ui/dist", "ui/dist"],
 		["scripts/commonspace-run.mjs", "commonspace.mjs"],
 		["scripts/commonspace-service.mjs", "scripts/commonspace-service.mjs"],
+		["scripts/release-version.mjs", "scripts/release-version.mjs"],
 		["docs/install.md", "README.md"],
 		["LICENSE", "LICENSE"],
 	];
@@ -116,10 +109,19 @@ async function main() {
 	const { version } = JSON.parse(
 		await readFile(join(repoRoot, "package.json"), "utf8"),
 	);
+	const { prerelease } = parseReleaseVersion(version);
+	for (const directory of ["packages/shared", "server", "ui"]) {
+		const manifest = JSON.parse(
+			await readFile(join(repoRoot, directory, "package.json"), "utf8"),
+		);
+		if (manifest.version !== version)
+			throw new Error(`${directory}/package.json version must be ${version}`);
+	}
 	const name = releaseName(version, process.platform, process.arch);
 	if (values["check-tag"] !== undefined) {
 		if (values["check-tag"] !== `v${version}`)
 			throw new Error(`Release tag must be v${version}`);
+		process.stdout.write(`prerelease=${String(prerelease)}\n`);
 		return;
 	}
 	const output = resolve(values.output ?? join(repoRoot, "artifacts/release"));
