@@ -12,8 +12,6 @@ Harassment, discrimination, threats, doxxing, sexualized attention, sustained di
 
 Contact a maintainer through an existing private channel. If you do not have one, ask how to submit a confidential report before sharing personal details. Do not publish conduct reports in issues or profile comments.
 
-The repository owner must provide a monitored private contact before public launch. The [maintainer launch checklist](docs/maintaining.md#public-launch-checklist) tracks that requirement.
-
 ## Enforcement
 
 Maintainers will review reports fairly, protect reporter privacy where possible, and respond in proportion to the behavior. They may remove content or restrict participation when someone violates this policy.

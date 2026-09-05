@@ -27,7 +27,7 @@ The first command should report version 22 or newer. Choose the archive target p
 
 ## Download a release
 
-Commonspace is currently a private preview. Sign in to GitHub with an account that has repository access, then open the [Releases page](https://github.com/ralphbibera/commonspace/releases). If no release is available to your account, use [the source setup](https://github.com/ralphbibera/commonspace/blob/main/CONTRIBUTING.md) or ask a maintainer for a verified archive.
+For packaged builds, check the [Releases page](https://github.com/ralphbibera/commonspace/releases). To build and run Commonspace locally, follow [the source setup](https://github.com/ralphbibera/commonspace/blob/main/CONTRIBUTING.md).
 
 Download both the archive for your target and its matching `.tar.gz.sha256` file. Keep them in the same folder.
 

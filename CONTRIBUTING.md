@@ -10,11 +10,12 @@ Read the relevant parts of the [product direction](docs/product-direction.md), [
 
 ## Set up your checkout
 
-You need Node.js 22 or newer, pnpm 10.34.5, and Git. During the private preview, your GitHub account needs repository access. Use an SSH remote:
+You need Node.js 22 or newer, pnpm 10.34.5, and Git with SSH configured for GitHub. Fork the repository, then clone your fork. Replace `YOUR_USERNAME` with your GitHub username:
 
 ```bash
-git clone git@github.com:ralphbibera/commonspace.git
+git clone git@github.com:YOUR_USERNAME/commonspace.git
 cd commonspace
+git remote add upstream git@github.com:ralphbibera/commonspace.git
 pnpm install --frozen-lockfile
 pnpm dev
 ```
@@ -76,6 +77,7 @@ A change is ready to merge when required CI passes, substantive review comments 
 ## Write useful documentation
 
 - Write for the person using the page. State what they can do or learn before explaining implementation details.
+- Write for public readers. Keep repository visibility, launch preparation, and work-session status out of product copy; put maintainer procedures in the maintainer guides.
 - Use complete sentences and familiar words. Explain a technical term before relying on it.
 - Describe Commonspace directly. Do not use other projects as comparisons, inspiration, or references. Name another tool only when readers need it to use, develop, or maintain Commonspace.
 - Give prerequisites, accurate commands, and the expected result. Check file links and command examples against the current implementation.

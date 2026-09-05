@@ -86,6 +86,7 @@ Do not replace a deterministic unit or Storybook check with a slower live-agent 
 - Write about Commonspace directly. Do not use other projects as comparisons, inspiration, or authorities for product decisions.
 - Keep names of actual dependencies and supported integrations when readers need them to follow instructions.
 - Use complete sentences, familiar words, and descriptive headings. Explain necessary terms before using them.
+- Write product documentation for public readers. Do not add repository-visibility banners, launch-preparation notes, or work-session status to product copy. Keep administrative procedures in maintainer guides.
 - Organize guides around the reader's task. State prerequisites, give steps in order, and describe the expected result.
 - Keep implementation details in technical references and label historical verification with its date or revision. Check related documents, links, and commands after an edit.
 

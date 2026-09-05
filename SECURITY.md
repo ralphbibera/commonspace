@@ -4,7 +4,7 @@ Report suspected security problems privately. Do not put vulnerability details, 
 
 ## Send a private report
 
-Use the repository's **Security → Report a vulnerability** form when it is available. During the private preview, you can also contact a maintainer through an existing private communication channel. If neither route is available to you, ask a maintainer how to submit a confidential report before sharing the details.
+Use [Security → Report a vulnerability](https://github.com/ralphbibera/commonspace/security/advisories/new). If that form is unavailable, ask the repository owner for a confidential reporting route without disclosing vulnerability details in a public issue.
 
 Include:
 
@@ -15,11 +15,9 @@ Include:
 
 Do not attach workspace state, credential stores, or agent transcripts unless a maintainer requests them through the private reporting channel.
 
-A monitored private reporting route must be verified before public launch. Its availability is tracked in the [maintainer launch checklist](docs/maintaining.md#public-launch-checklist).
-
 ## Supported versions
 
-Commonspace is in private preview. Security fixes target the latest `main` revision and the latest available preview release. Older preview versions do not have a separate backport commitment; use the fixed release when it becomes available. The preview does not have a fixed response-time guarantee.
+Security fixes target `main` and the latest release. Older versions do not have a separate backport commitment. Follow the affected-version and upgrade guidance in security advisories; response times are not guaranteed.
 
 ## How Commonspace protects local data
 

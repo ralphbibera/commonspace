@@ -9,7 +9,7 @@
 | Last updated | 2026-09-03 |
 | Editorial review | 2026-09-05 |
 | License | MIT |
-| Primary release | v0.1 local private preview |
+| Initial release target | v0.1 local workspace |
 
 This specification defines what Commonspace must do and how to judge whether that behavior is complete. Use it when designing a change, implementing a feature, or reviewing a release.
 
@@ -19,7 +19,7 @@ For a first read, sections 1–5 explain the product and its main flows. [Sectio
 
 ## 1. Product definition
 
-Commonspace is an MIT-licensed, local-first workspace for one person working with several local agents. It connects the agents the user already has, shares conversation context, sends each agent the relevant request, and continues the correct agent session. The repository remains private while it is prepared for an open-source release.
+Commonspace is an MIT-licensed, local-first workspace for one person working with several local agents. It connects the agents the user already has, shares conversation context, sends each agent the relevant request, and continues the correct agent session.
 
 Conversation is the work record: requests, replies, decisions, and follow-ups stay in messages and threads. There is no separate task-management system.
 
@@ -238,7 +238,7 @@ Each row gives a stable requirement ID, its release target, the required behavio
 
 | Target | Meaning |
 | --- | --- |
-| v0.1 | Required for the complete private-preview product. |
+| v0.1 | Required for the complete v0.1 product. |
 | Capability-dependent | Required only when the connected runtime advertises the relevant ACP capability. |
 | Later | Deliberately outside the v0.1 release gate. |
 

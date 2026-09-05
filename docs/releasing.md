@@ -2,7 +2,7 @@
 
 This guide is for maintainers preparing an installable Commonspace release. The release workflow builds and checks archives, then creates a draft prerelease on GitHub.
 
-The repository is currently private. Publishing a release and making the repository public each require the repository owner's explicit approval. The workflow does neither automatically.
+Publishing a release requires the repository owner's approval after candidate verification. The workflow creates drafts only. Repository visibility is a separate administrative decision and is never changed by release automation.
 
 ## Choose the version
 
@@ -10,7 +10,7 @@ The root `package.json` contains the release version. Its Git tag must match exa
 
 Update the version and move the relevant [changelog](../CHANGELOG.md) entries into a dated release section through the normal contribution workflow. Release only a reviewed commit. Do not move an existing release tag to another commit.
 
-Internal workspace packages remain private. This process creates downloadable archives; it does not publish packages to a registry.
+The workspace packages are not published individually. This process distributes the assembled runtime as downloadable archives.
 
 ## Build and check locally
 
@@ -64,7 +64,7 @@ The workflow refuses to overwrite any existing draft or published release. If a 
 
 Inspect the draft's commit, version, download files, installation instructions, changes, known limitations, and test results. Include migration and backup instructions whenever a release changes saved data. Download and run the candidate archive on the release account using [Installation](install.md).
 
-For the first public launch, complete the [maintainer launch checklist](maintaining.md#public-launch-checklist) and present the candidate for the owner's decision. A maintainer publishes the draft manually after approval. Approval to publish a release for private collaborators does not change repository visibility.
+Complete the [release readiness checklist](maintaining.md#release-readiness-checklist), then publish the approved draft manually.
 
 ## What the archive contains
 
