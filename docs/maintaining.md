@@ -1,6 +1,6 @@
 # Maintaining Commonspace
 
-Maintainers help contributors choose useful changes, review the results, and prepare releases. The repository owner makes the final decisions about product direction, access, releases, and repository visibility. [CODEOWNERS](../.github/CODEOWNERS) records who reviews changes.
+Maintainers review contributions, handle reports, and prepare releases. [CODEOWNERS](../.github/CODEOWNERS) identifies the reviewers for each part of the repository.
 
 ## Handle issues and proposals
 
@@ -22,9 +22,9 @@ Use [Contributing](../CONTRIBUTING.md) as the review standard. A change should h
 - resolved substantive feedback and maintainer approval;
 - disclosure of AI assistance and a review of the complete diff.
 
-Check that documentation follows the [writing guidance](../CONTRIBUTING.md#write-useful-documentation). The explanation should make sense to a contributor who has not read the original conversation.
+Check that documentation follows the [writing guidance](../CONTRIBUTING.md#write-useful-documentation). Reviewers should be able to understand the change from its description and linked issues.
 
-Use conventional commit messages and SSH Git remotes. See [Releasing](releasing.md) when a reviewed change is ready to become a distribution.
+Use conventional commit messages. See [Releasing](releasing.md) for the release process.
 
 ## Review workflows and dependencies
 
@@ -34,7 +34,7 @@ Review permission changes explicitly. Dependency updates do not authorize additi
 
 ## Configure GitHub
 
-Repository files document policy; they do not prove that GitHub settings enforce it. When reviewing the repository configuration, check the actual settings and use rules supported by the repository's plan.
+Configure branch rules and required checks in the repository's GitHub settings. Use rules supported by the repository's plan.
 
 The default branch should require the CI `check` status and, for outside contributions, pull requests with resolved conversations and maintainer or code-owner review. Prevent force pushes and branch deletion. Keep any owner recovery exception narrow and explicit.
 
@@ -50,7 +50,7 @@ Security fixes target `main` and the latest release. Document affected versions,
 
 ## Release readiness checklist
 
-Review the candidate before approving publication:
+Before a release:
 
 - Review both current files and Git history for credentials, private paths, agent session data, internal links, and generated artifacts. Deleting a file from the latest commit does not remove it from history.
 - Review screenshots, fixtures, examples, and bundled dependencies for private content and license requirements.
@@ -58,6 +58,6 @@ Review the candidate before approving publication:
 - Verify the private security and conduct reporting routes.
 - Check branch rules, required CI, and contribution templates in GitHub.
 - Verify all supported archives, checksums, and fresh installations. Record real agent and macOS service results, plus any checks or platforms not exercised.
-- Review the release notes, backup and migration instructions, known limitations, and accuracy of public installation and contribution instructions.
+- Review the release notes, backup and migration instructions, and known limitations.
 
-The owner must approve publication. The release workflow leaves the candidate as a draft; a maintainer publishes it after review. Repository access and visibility changes are separate administrative decisions.
+Complete the draft review described in [Releasing](releasing.md#review-and-publish).

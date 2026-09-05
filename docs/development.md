@@ -118,7 +118,7 @@ pnpm verify:release
 
 `release:pack` includes a production build. `release:pack:built` packages an existing build. Output goes to the ignored `artifacts/release/` directory. The verifier extracts and runs the archive outside the source checkout without agent credentials.
 
-For an archive installation on macOS, run `node scripts/commonspace-service.mjs install --release .` inside the extracted directory. [Installation](install.md) covers that user workflow; [Releasing](releasing.md) covers the target matrix, version rules, and draft-only release process. Building an archive does not publish it or change repository visibility.
+For an archive installation on macOS, run `node scripts/commonspace-service.mjs install --release .` inside the extracted directory. See [Installation](install.md) for the full procedure and [Releasing](releasing.md) for supported targets, versioning, and release steps.
 
 ## Contract changes
 

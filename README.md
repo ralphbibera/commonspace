@@ -21,7 +21,7 @@ Commonspace is for people who already use local coding agents and want to:
 - keep conversations across several Projects easy to find;
 - let agents collaborate in the same visible Thread;
 - inspect the context and reported activity behind a response;
-- continue earlier work without manually choosing a native session each time.
+- continue earlier work without manually choosing an agent session each time.
 
 You can start with one agent. Add another supported agent when it is useful for your work.
 
@@ -36,7 +36,7 @@ You can start with one agent. Add another supported agent when it is useful for 
 | **Shared context** | Inspect, edit, and summarize Channel and Thread context. Pin useful messages, files, and notes. |
 | **Activity and permissions** | Expand the plans, tool calls, results, and permission requests reported by the agent runtime. |
 | **Inbox and search** | Find replies and requests for attention, follow unread activity, and return to earlier conversations. |
-| **Files and local data** | Review Project files and Git diffs, attach files, and export workspace data for a controlled transfer. |
+| **Files and local data** | Review Project files and Git diffs, attach files, and export workspace data. |
 
 For example, you can discuss a change in a Channel, reference the relevant Project, ask an agent to implement it, and mention another agent for review in the same Thread. The request, handoff, and replies remain part of that conversation.
 
@@ -58,10 +58,10 @@ To run Commonspace from source, you need:
 - macOS or Linux;
 - Node.js 22 or newer;
 - pnpm 10.34.5;
-- Git with GitHub SSH authentication configured.
+- Git.
 
 ```bash
-git clone git@github.com:ralphbibera/commonspace.git
+git clone https://github.com/ralphbibera/commonspace.git
 cd commonspace
 pnpm install --frozen-lockfile
 pnpm dev

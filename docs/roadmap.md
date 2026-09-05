@@ -2,7 +2,7 @@
 
 Core conversation, context, and local-service capabilities are implemented. Current priorities are clean-machine validation and desktop usability.
 
-The capabilities below describe the implementation, not a passing result for a release candidate. Use the [Product specification](product-spec.md) for required behavior, the [Implementation gap audit](implementation-gap-audit.md) for its dated status snapshot, and the [v0.1 acceptance ledger](v0.1-acceptance.md) for evidence and release gates.
+See the [Product specification](product-spec.md) for requirements, the [Implementation gap audit](implementation-gap-audit.md) for the recorded assessment, and the [v0.1 acceptance ledger](v0.1-acceptance.md) for test evidence.
 
 ## Working now
 
@@ -69,4 +69,4 @@ Regardless of storage technology, every accepted message must remain available u
 - Install the candidate archive on a clean supported macOS account and manually check real LaunchAgent startup, browser access, status, update, and rollback using [Releasing](releasing.md#check-the-real-integrations).
 - Complete keyboard-only and destructive-action reviews.
 
-Narrow and mobile layouts are deferred; desktop is the current UI target. Release gates need fresh results from the candidate being shipped. Follow [Releasing](releasing.md) for packaging, review, and publication.
+Narrow and mobile layouts are deferred; desktop is the current UI target. See [Releasing](releasing.md) for packaging and release checks.

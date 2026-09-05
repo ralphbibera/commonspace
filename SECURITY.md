@@ -4,7 +4,7 @@ Report suspected security problems privately. Do not put vulnerability details, 
 
 ## Send a private report
 
-Use [Security → Report a vulnerability](https://github.com/ralphbibera/commonspace/security/advisories/new). If that form is unavailable, ask the repository owner for a confidential reporting route without disclosing vulnerability details in a public issue.
+Use [Security → Report a vulnerability](https://github.com/ralphbibera/commonspace/security/advisories/new). If that form is unavailable, ask the repository owner for a confidential reporting route. Keep vulnerability details out of GitHub issues.
 
 Include:
 

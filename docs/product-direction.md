@@ -151,7 +151,7 @@ Humans and agents can attach files to messages. Supported harness-generated file
 
 Editing a delivered human message creates a visible conversation branch from that point and may route the corrected request again. The original message and its replies remain available because the runtime has already received them. Agent replies remain immutable.
 
-If a delivered message is deleted, Commonspace should preserve a visible deletion marker rather than pretending the harness never saw it.
+Deleting a delivered message should leave a visible deletion marker because the runtime has already received it.
 
 Reactions are not required for v0.1.
 
