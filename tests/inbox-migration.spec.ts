@@ -102,7 +102,7 @@ describe("Commonspace Inbox state migration", () => {
 				threadIds: [],
 				updatedAt: null,
 			},
-			settings: { model: null, reasoning: null },
+			settings: { model: "legacy-channel-model", reasoning: "low" },
 			createdAt: "2026-08-27T09:00:00.000Z",
 		};
 
@@ -133,7 +133,6 @@ describe("Commonspace Inbox state migration", () => {
 						compactedThroughCorrectionId: null,
 						updatedAt: null,
 					},
-					settings: { model: null, reasoning: null },
 					createdAt: "2026-08-27T09:00:00.000Z",
 				},
 			]);

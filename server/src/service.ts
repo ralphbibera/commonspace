@@ -131,7 +131,6 @@ import {
 	DM_SESSION_BOUNDARY_AUTHOR_ID,
 	defaultCommonspaceDefaults,
 	defaultNotificationSettings,
-	defaultRunSettings,
 	emptyChannelMemory,
 	emptyRoutingMemory,
 	isCommonspaceReasoning,
@@ -1209,20 +1208,6 @@ function sanitizeAgentTrace(
 	return { adapter: trace.adapter, startedAt, completedAt, entries };
 }
 
-function sanitizeRunSettings(
-	value: JsonValue | undefined,
-): CommonspaceState["channels"][number]["settings"] {
-	const settings = plainRecord(value);
-	if (settings === null) return defaultRunSettings();
-	return {
-		model: loadedModel(settings.model),
-		reasoning:
-			settings.reasoning === null || !isCommonspaceReasoning(settings.reasoning)
-				? null
-				: settings.reasoning,
-	};
-}
-
 function sanitizeChannelMemory(
 	value: JsonValue | undefined,
 ): CommonspaceState["channels"][number]["memory"] {
@@ -1358,7 +1343,6 @@ function sanitizeChannels(
 			instructions: loadedString(channel.instructions, 8_000),
 			memory: sanitizeChannelMemory(channel.memory),
 			routingMemory: sanitizeRoutingMemory(channel.routingMemory),
-			settings: sanitizeRunSettings(channel.settings),
 			createdAt: loadedString(channel.createdAt, 100),
 		});
 	}
@@ -3182,6 +3166,27 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 			) {
 				throw new Error("workspace archive is invalid");
 			}
+			const importedWorkspace = { ...workspace };
+			if (Array.isArray(workspace.channels)) {
+				importedWorkspace.channels = workspace.channels.map((candidate) => {
+					const channel = plainRecord(candidate);
+					if (channel === null || channel.settings === undefined)
+						return candidate;
+					const settings = plainRecord(channel.settings);
+					if (
+						settings === null ||
+						Object.keys(settings).length !== 2 ||
+						settings.model !== loadedModel(settings.model) ||
+						(settings.reasoning !== null &&
+							!isCommonspaceReasoning(settings.reasoning))
+					) {
+						throw new Error("workspace archive failed structural validation");
+					}
+					const currentChannel = { ...channel };
+					delete currentChannel.settings;
+					return currentChannel;
+				});
+			}
 			const projects: CommonspaceState["projects"] = [];
 			const mappedIds = new Set(Object.keys(projectMappings));
 			for (const candidate of workspace.projects) {
@@ -3222,7 +3227,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 				throw new Error("Project mappings contain unknown archive Projects");
 			const importedValue: JsonValue = JSON.parse(
 				JSON.stringify({
-					...workspace,
+					...importedWorkspace,
 					version: COMMONSPACE_STATE_VERSION,
 					revision: 1,
 					projects,
@@ -3257,7 +3262,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 			if (workspace.inboxUnreadMessageIds !== undefined)
 				canonicalWorkspace.inboxUnreadMessageIds =
 					imported.inboxUnreadMessageIds ?? [];
-			if (!isDeepStrictEqual(canonicalWorkspace, workspace))
+			if (!isDeepStrictEqual(canonicalWorkspace, importedWorkspace))
 				throw new Error("workspace archive failed structural validation");
 			const expected = new Map<
 				string,
@@ -5929,12 +5934,8 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 		const effectiveLimit = explicitlyTargetsAll
 			? prepared.agentIds.length
 			: this.state.defaults.maxAgentsPerTurn;
-		const effectiveModel =
-			prepared.channel?.settings.model ??
-			this.state.defaults.model ??
-			undefined;
-		const effectiveReasoning =
-			prepared.channel?.settings.reasoning ?? this.state.defaults.reasoning;
+		const effectiveModel = this.state.defaults.model ?? undefined;
+		const effectiveReasoning = this.state.defaults.reasoning;
 		const memberIds =
 			prepared.channel?.agentIds ?? thread?.agentIds ?? prepared.agentIds;
 		const delivered = new Set<string>();

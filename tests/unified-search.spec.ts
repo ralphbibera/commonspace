@@ -55,7 +55,6 @@ function bootstrap(): CommonspaceBootstrap {
 					threadIds: ["thread-1"],
 					updatedAt: "2026-08-20T00:00:00.000Z",
 				},
-				settings: { model: null, reasoning: null },
 				createdAt: "2026-08-01T00:00:00.000Z",
 			},
 		],

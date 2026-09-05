@@ -62,7 +62,6 @@ function inboxState(): CommonspaceState {
 					threadIds: ["thread-1"],
 					updatedAt: null,
 				},
-				settings: { model: null, reasoning: null },
 				createdAt: "2026-08-27T08:00:00.000Z",
 			},
 		],

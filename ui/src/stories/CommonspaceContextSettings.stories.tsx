@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { fn } from "storybook/test";
+import { expect, fn, within } from "storybook/test";
 import {
 	AgentSettingsPane,
 	ChannelSettingsPane,
@@ -28,7 +28,18 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-export const ChannelSettings: Story = {};
+export const ChannelSettings: Story = {
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		await expect(
+			canvas.queryByLabelText("Channel model"),
+		).not.toBeInTheDocument();
+		await expect(
+			canvas.queryByLabelText("Channel reasoning"),
+		).not.toBeInTheDocument();
+		await expect(canvas.getByLabelText("Channel instructions")).toBeVisible();
+	},
+};
 
 export const AgentSettings: Story = {
 	render: () => (

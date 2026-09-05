@@ -526,6 +526,7 @@ describe("Commonspace host authority", () => {
 		await service.initialize();
 
 		const state = service.snapshot();
+		expect(state.channels[0]).not.toHaveProperty("settings");
 		expect(state).toMatchObject({
 			version: COMMONSPACE_STATE_VERSION,
 			revision: 0,
@@ -541,7 +542,6 @@ describe("Commonspace host authority", () => {
 					id: "channel-1",
 					agentIds: [],
 					instructions: "",
-					settings: { model: null, reasoning: null },
 				},
 			],
 			threads: [],
@@ -611,7 +611,6 @@ describe("Commonspace host authority", () => {
 							threadIds: [],
 							updatedAt: null,
 						},
-						settings: { model: null, reasoning: null },
 						createdAt: "now",
 					},
 				],

@@ -1,7 +1,6 @@
 import type {
 	CommonspaceAgentProfile,
 	CommonspaceBootstrap,
-	CommonspaceReasoning,
 } from "@commonspace/shared";
 import { CheckIcon, ChevronDownIcon, SearchIcon, XIcon } from "lucide-react";
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
@@ -9,20 +8,6 @@ import { Button } from "@/components/ui/button";
 import { ConfirmActionDialog } from "@/design-system/ConfirmActionDialog";
 import { cn } from "@/lib/utils";
 import type { CommonspaceStore } from "./commonspace-store.ts";
-
-const reasoningValues: ReadonlySet<string> = new Set([
-	"none",
-	"minimal",
-	"low",
-	"medium",
-	"high",
-	"xhigh",
-	"max",
-]);
-
-function isReasoning(value: string): value is CommonspaceReasoning {
-	return reasoningValues.has(value);
-}
 
 interface SettingsPaneProps {
 	bootstrap: CommonspaceBootstrap;
@@ -187,10 +172,6 @@ export function ChannelSettingsPane({
 	const [query, setQuery] = useState("");
 	const [filter, setFilter] = useState<"all" | "included" | "available">("all");
 	const [instructions, setInstructions] = useState(channel?.instructions ?? "");
-	const [model, setModel] = useState(channel?.settings.model ?? "");
-	const [reasoning, setReasoning] = useState<CommonspaceReasoning | "">(
-		channel?.settings.reasoning ?? "",
-	);
 	const [summary, setSummary] = useState(channel?.memory.summary ?? "");
 	const [decisions, setDecisions] = useState(
 		channel?.memory.decisions.join("\n") ?? "",
@@ -207,8 +188,6 @@ export function ChannelSettingsPane({
 		if (channel === undefined) return;
 		setAgentIds(channel.agentIds);
 		setInstructions(channel.instructions);
-		setModel(channel.settings.model ?? "");
-		setReasoning(channel.settings.reasoning ?? "");
 		setSummary(channel.memory.summary);
 		setDecisions(channel.memory.decisions.join("\n"));
 		setQuestions(channel.memory.openQuestions.join("\n"));
@@ -246,8 +225,6 @@ export function ChannelSettingsPane({
 				channelId: id,
 				agentIds,
 				instructions,
-				model: model || null,
-				reasoning: reasoning || null,
 				summary,
 				decisions: decisions
 					.split("\n")
@@ -455,8 +432,7 @@ export function ChannelSettingsPane({
 							Channel context
 						</h3>
 						<p className="mt-1 text-xs text-muted-foreground">
-							Instructions, model defaults, and canonical memory remain attached
-							to this room.
+							Instructions and canonical memory remain attached to this room.
 						</p>
 						<div className="mt-4 grid gap-3 [&_input]:min-h-11 [&_input]:rounded-sm [&_input]:border [&_input]:px-3 [&_label]:grid [&_label]:gap-1.5 [&_label]:text-xs [&_label]:font-semibold [&_select]:min-h-11 [&_select]:rounded-sm [&_select]:border [&_select]:bg-background [&_select]:px-3 [&_textarea]:min-h-20 [&_textarea]:rounded-sm [&_textarea]:border [&_textarea]:p-3">
 							<label>
@@ -469,48 +445,6 @@ export function ChannelSettingsPane({
 									}}
 								/>
 							</label>
-							<div className="grid grid-cols-2 gap-3">
-								<label>
-									Model
-									<input
-										aria-label="Channel model"
-										placeholder="Inherit default"
-										value={model}
-										onChange={(event) => {
-											setModel(event.target.value);
-										}}
-									/>
-								</label>
-								<label>
-									Reasoning
-									<select
-										aria-label="Channel reasoning"
-										value={reasoning}
-										onChange={(event) => {
-											if (
-												event.target.value === "" ||
-												isReasoning(event.target.value)
-											)
-												setReasoning(event.target.value);
-										}}
-									>
-										<option value="">Inherit default</option>
-										{[
-											"none",
-											"minimal",
-											"low",
-											"medium",
-											"high",
-											"xhigh",
-											"max",
-										].map((value) => (
-											<option key={value} value={value}>
-												{value}
-											</option>
-										))}
-									</select>
-								</label>
-							</div>
 							<label>
 								Summary
 								<textarea

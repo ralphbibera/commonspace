@@ -20,8 +20,6 @@ describe("atomic channel configuration", () => {
 				channelId: "channel-id",
 				agentIds: ["backend", "backend", ""],
 				instructions: "  Use explicit assignments.  ",
-				model: "  model-x  ",
-				reasoning: "high",
 				summary: "  Keep the release stable.  ",
 				decisions: [" One mutation ", "One mutation"],
 				openQuestions: [" Who verifies rollout? "],
@@ -36,7 +34,6 @@ describe("atomic channel configuration", () => {
 		expect(updated.channels[0]).toMatchObject({
 			agentIds: ["backend"],
 			instructions: "Use explicit assignments.",
-			settings: { model: "model-x", reasoning: "high" },
 			memory: {
 				summary: "Keep the release stable.",
 				decisions: ["One mutation"],
@@ -46,5 +43,6 @@ describe("atomic channel configuration", () => {
 				status: "current",
 			},
 		});
+		expect(updated.channels[0]).not.toHaveProperty("settings");
 	});
 });

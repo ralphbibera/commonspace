@@ -14,8 +14,10 @@ afterEach(async () => {
 	);
 });
 
-describe("workspace portability", () => {
-	it("exports non-secret data and imports it into a clean workspace with explicit Project remapping", async () => {
+const archiveShapes = ["current", "legacy defaults", "legacy overrides"];
+
+describe.each(archiveShapes)("workspace portability (%s)", (shape) => {
+	it("exports sanitized metadata and imports into a clean workspace with explicit Project remapping", async () => {
 		const root = await mkdtemp(join(tmpdir(), "commonspace-export-source-"));
 		roots.push(root);
 		const projectRoot = join(root, "private-source-project");
@@ -34,6 +36,16 @@ describe("workspace portability", () => {
 		);
 		await source.initialize();
 		await addTestHarness(source, "codex", "Review Bot");
+		await source.mutate({
+			action: "set-defaults",
+			model: "workspace-model",
+			reasoning: "high",
+		});
+		await source.mutate({
+			action: "create-channel",
+			name: "portable-room",
+			agentIds: ["codex"],
+		});
 		await source.mutate({
 			action: "set-notifications",
 			notifications: {
@@ -70,6 +82,17 @@ describe("workspace portability", () => {
 		const exportWorkspace = source.exportWorkspace;
 
 		const archive = await exportWorkspace.call(source);
+		if (shape !== "current") {
+			archive.workspace.channels = archive.workspace.channels.map(
+				(channel) => ({
+					...channel,
+					settings:
+						shape === "legacy defaults"
+							? { model: null, reasoning: null }
+							: { model: "legacy-channel-model", reasoning: "low" },
+				}),
+			);
+		}
 		const serialized = JSON.stringify(archive);
 		expect(archive).toMatchObject({
 			format: "commonspace-workspace",
@@ -114,10 +137,34 @@ describe("workspace portability", () => {
 		await expect(
 			importWorkspace.call(target, malformed, mappings),
 		).rejects.toThrow("workspace archive failed structural validation");
+		for (const settings of [
+			{ model: 42, reasoning: "low" },
+			{ model: null, reasoning: "invalid" },
+			{ model: null, reasoning: null, extra: "unexpected" },
+		]) {
+			const invalidSettings = structuredClone(archive);
+			invalidSettings.workspace.channels =
+				invalidSettings.workspace.channels.map((channel) => ({
+					...channel,
+					settings,
+				}));
+			await expect(
+				importWorkspace.call(target, invalidSettings, mappings),
+			).rejects.toThrow("workspace archive failed structural validation");
+		}
 
 		await importWorkspace.call(target, archive, mappings);
 
 		expect(importedNotificationCount).toBe(0);
+		expect(target.snapshot().defaults).toMatchObject({
+			model: "workspace-model",
+			reasoning: "high",
+		});
+		expect(target.snapshot().channels[0]).toMatchObject({
+			name: "portable-room",
+			agentIds: ["codex"],
+		});
+		expect(target.snapshot().channels[0]).not.toHaveProperty("settings");
 		expect(target.snapshot().projects[0]).toMatchObject({
 			id: project.id,
 			paths: [await realpath(mappedProject), await realpath(targetRoot)],

@@ -117,11 +117,11 @@ Project scope is inferred unless the user supplies visible `@@project` reference
 
 ## Persistence
 
-The current internal state version is 26, defined by `COMMONSPACE_STATE_VERSION`. Versions 1–25 migrate during load through structural validation and sanitization.
+The current internal state version is 27, defined by `COMMONSPACE_STATE_VERSION`. Versions 1–26 migrate during load through structural validation and sanitization.
 
-Persisted state includes the roster, appearance, workspace and Channel model/reasoning settings, host-private native sessions, bounded activity, Inbox read/unread/saved state, notification preferences, attachments, routing decisions and memory, Project references, Channel/Thread context, pins, message versions, deletion markers, permissions, and execution state.
+Persisted state includes the roster, appearance, workspace model/reasoning settings, host-private native sessions, bounded activity, Inbox read/unread/saved state, notification preferences, attachments, routing decisions and memory, Project references, Channel/Thread context, pins, message versions, deletion markers, permissions, and execution state.
 
-Migration preserves conversation history while supplying explicit defaults for older shapes. Older routing receives deterministic assignments. Older Threads receive an empty inherited snapshot and current memory derived from their transcript, rather than an invented historical snapshot. Workspaces without pin, permission, or notification fields receive empty history and opt-in notification defaults. Loaded pending permissions become interrupted because their native requests do not survive a process restart.
+Migration preserves conversation history while supplying explicit defaults for older shapes. Legacy per-Channel run settings are discarded. Older routing receives deterministic assignments. Older Threads receive an empty inherited snapshot and current memory derived from their transcript, rather than an invented historical snapshot. Workspaces without pin, permission, or notification fields receive empty history and opt-in notification defaults. Loaded pending permissions become interrupted because their native requests do not survive a process restart.
 
 ### Durability and privacy
 
@@ -137,7 +137,7 @@ Native alerts are derived from new durable Inbox items after persistence. Existi
 
 Notification links contain public conversation, Thread, and message IDs. The client accepts them only when they match current state on the loopback origin.
 
-Portable archive version 1 is independent of internal state version 26. Export contains sanitized workspace records and exact attachment bytes, replaces Project roots with counts, and omits native sessions. Import requires an empty workspace and explicit existing local roots. Retention requires an owner-triggered, revision-bound preview for one inactive conversation. See [Workspace archive format](workspace-archive-format.md).
+Portable archive version 1 is independent of internal state version 27. Export contains sanitized workspace records and exact attachment bytes, replaces Project roots with counts, and omits native sessions. Import requires an empty workspace and explicit existing local roots. Retention requires an owner-triggered, revision-bound preview for one inactive conversation. See [Workspace archive format](workspace-archive-format.md).
 
 ## Routing inference
 

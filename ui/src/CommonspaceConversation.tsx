@@ -1619,7 +1619,7 @@ export function CommonspaceConversation({
 				setCommandFeedback({
 					tone: "info",
 					title: "Channel status",
-					body: `${heading.title} · Global Channel · ${channel?.agentIds.length ?? 0} agents${project === undefined ? "" : `\nNext thread project context: ${project.name}`}\nModel: ${channel?.settings.model ?? bootstrap.state.defaults.model ?? "agent defaults"} · Reasoning: ${channel?.settings.reasoning ?? bootstrap.state.defaults.reasoning}`,
+					body: `${heading.title} · Global Channel · ${channel?.agentIds.length ?? 0} agents${project === undefined ? "" : `\nNext thread project context: ${project.name}`}\nWorkspace model: ${bootstrap.state.defaults.model ?? "agent defaults"} · Workspace reasoning: ${bootstrap.state.defaults.reasoning}`,
 				});
 			}
 			return;
