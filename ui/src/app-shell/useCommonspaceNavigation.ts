@@ -2,13 +2,22 @@ import type {
 	CommonspaceSearchResult,
 	ConversationRef,
 } from "@commonspace/shared";
-import { useEffect, useRef, useState } from "react";
+import { useNavigate, useRouter, useRouterState } from "@tanstack/react-router";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { CommonspaceDirectoryKind } from "../CommonspaceDirectory.tsx";
 import type {
 	CommonspaceClientSnapshot,
 	CommonspaceStore,
 } from "../commonspace-store.ts";
 import type { CommonspaceCollectionKind } from "../design-system/CollectionActionMenu.tsx";
+import {
+	type CommonspaceMessageTarget,
+	type CommonspaceRoute,
+	commonspaceLegacyMessageTargetFromMatches,
+	commonspaceMessageHref,
+	commonspaceRouteFromMatches,
+	commonspaceRouteHref,
+} from "./commonspace-router.tsx";
 
 type CommonspaceDestination =
 	| "conversation"
@@ -23,89 +32,85 @@ interface ConversationTarget {
 	threadId?: string;
 }
 
-interface StoredNavigation {
-	kind: "channel" | "dm";
+interface ContextSettingsRequest {
+	kind: CommonspaceCollectionKind;
 	id: string;
+	token: number;
+}
+
+interface ComposerInsertRequest {
+	text: string;
+	token: number;
 	threadId?: string;
 }
 
-function storedUiValue(key: string): string | null {
-	if (typeof window === "undefined") return null;
-	try {
-		return window.localStorage.getItem(key);
-	} catch {
-		return null;
-	}
+type NavigationIntent =
+	| { kind: "settings"; request: ContextSettingsRequest }
+	| { kind: "mention"; request: ComposerInsertRequest };
+
+function conversationRoute(
+	conversation: ConversationRef,
+	threadId?: string,
+	messageId?: string,
+): Extract<CommonspaceRoute, { kind: "conversation" }> {
+	const route: Extract<CommonspaceRoute, { kind: "conversation" }> = {
+		kind: "conversation",
+		conversation,
+	};
+	if (threadId !== undefined) route.threadId = threadId;
+	if (messageId !== undefined) route.messageId = messageId;
+	return route;
 }
 
-function storedNavigation(raw: string | null): StoredNavigation | null {
-	if (raw === null) return null;
-	try {
-		const value: unknown = JSON.parse(raw);
-		if (typeof value !== "object" || value === null || Array.isArray(value))
-			return null;
-		if (!("kind" in value) || !("id" in value)) return null;
-		if (
-			(value.kind !== "channel" && value.kind !== "dm") ||
-			typeof value.id !== "string" ||
-			value.id === ""
-		)
-			return null;
-		const threadId = "threadId" in value ? value.threadId : undefined;
-		const navigation: StoredNavigation = {
-			kind: value.kind,
-			id: value.id,
-		};
-		if (typeof threadId === "string") navigation.threadId = threadId;
-		return navigation;
-	} catch {
-		return null;
-	}
-}
-
-function initialDestination(): CommonspaceDestination {
-	const saved = storedUiValue("commonspace-view");
-	return saved === "conversation" ||
-		saved === "directory" ||
-		saved === "inbox" ||
-		saved === "threads" ||
-		saved === "project"
-		? saved
-		: "inbox";
-}
-
-function initialDirectoryKind(): CommonspaceDirectoryKind {
-	const saved = storedUiValue("commonspace-directory-kind");
-	return saved === "channels" || saved === "agents" ? saved : "projects";
+function projectRoute(
+	projectId: string,
+	file?: { rootIndex: number; path: string },
+): Extract<CommonspaceRoute, { kind: "project" }> {
+	const route: Extract<CommonspaceRoute, { kind: "project" }> = {
+		kind: "project",
+		projectId,
+	};
+	if (file !== undefined) route.file = file;
+	return route;
 }
 
 export function useCommonspaceNavigation(
 	store: CommonspaceStore,
 	snapshot: CommonspaceClientSnapshot,
 ) {
+	const router = useRouter();
+	const tanstackNavigate = useNavigate();
+	const routeMatches = useRouterState({ select: (state) => state.matches });
+	const leafMatch = routeMatches.at(-1);
+	const routeMatchKey = JSON.stringify([
+		leafMatch?.routeId,
+		leafMatch?.params,
+		leafMatch?.search,
+	]);
+	const matchedRoute = commonspaceRouteFromMatches(routeMatches);
+	const matchedRouteHref =
+		matchedRoute === null ? null : commonspaceRouteHref(router, matchedRoute);
+	const legacyMessageTarget =
+		commonspaceLegacyMessageTargetFromMatches(routeMatches);
 	const [navigationOpen, setNavigationOpen] = useState(false);
+	const [navigationToken, setNavigationToken] = useState(0);
 	const [searchOpen, setSearchOpen] = useState(false);
 	const [activeDestination, setActiveDestination] =
-		useState<CommonspaceDestination>(initialDestination);
+		useState<CommonspaceDestination>("inbox");
 	const [directoryKind, setDirectoryKind] =
-		useState<CommonspaceDirectoryKind>(initialDirectoryKind);
+		useState<CommonspaceDirectoryKind>("projects");
 	const [createRequest, setCreateRequest] = useState<{
 		kind: CommonspaceCollectionKind;
 		token: number;
 	} | null>(null);
-	const [settingsRequest, setSettingsRequest] = useState<{
-		kind: CommonspaceCollectionKind;
-		id: string;
-		token: number;
-	} | null>(null);
+	const [settingsRequest, setSettingsRequest] =
+		useState<ContextSettingsRequest | null>(null);
 	const [inboxViewRequest, setInboxViewRequest] = useState<{
 		view: "attention" | "sessions";
 		token: number;
 	} | null>(null);
-	const [composerInsertRequest, setComposerInsertRequest] = useState<{
-		text: string;
-		token: number;
-	} | null>(null);
+	const [composerInsertRequest, setComposerInsertRequest] =
+		useState<ComposerInsertRequest | null>(null);
 	const [activeProjectViewId, setActiveProjectViewId] = useState<string | null>(
 		null,
 	);
@@ -114,151 +119,241 @@ export function useCommonspaceNavigation(
 		path: string;
 	} | null>(null);
 	const [targetMessageId, setTargetMessageId] = useState<string | null>(null);
-	const notificationLinkHandled = useRef(false);
+	const appliedRouteMatch = useRef<string | null>(null);
+	const pendingNavigationIntent = useRef<{
+		href: string;
+		intent: NavigationIntent;
+	} | null>(null);
+	const applyNavigationIntent = useCallback((intent: NavigationIntent) => {
+		if (intent.kind === "settings") setSettingsRequest(intent.request);
+		else setComposerInsertRequest(intent.request);
+	}, []);
 
-	useEffect(() => {
-		try {
-			window.localStorage.setItem("commonspace-view", activeDestination);
-			window.localStorage.setItem("commonspace-directory-kind", directoryKind);
-		} catch {
-			// Navigation remains available for this session when storage is unavailable.
-		}
-	}, [activeDestination, directoryKind]);
-
-	useEffect(() => {
-		if (snapshot.bootstrap === null) return;
-		if (activeDestination === "project" && activeProjectViewId === null) {
-			const projectId = storedUiValue("commonspace-project");
-			if (
-				projectId !== null &&
-				snapshot.bootstrap.state.projects.some(
-					(project) => project.id === projectId,
+	const applyRoute = useCallback(
+		(route: CommonspaceRoute): boolean => {
+			const bootstrap = snapshot.bootstrap;
+			if (bootstrap === null) return false;
+			const state = bootstrap.state;
+			setSettingsRequest(null);
+			setComposerInsertRequest(null);
+			setSearchOpen(false);
+			setNavigationOpen(false);
+			setNavigationToken((token) => token + 1);
+			setTargetMessageId(null);
+			if (route.kind === "project") {
+				const project = state.projects.find(
+					(candidate) => candidate.id === route.projectId,
+				);
+				if (
+					project === undefined ||
+					(route.file !== undefined &&
+						project.paths[route.file.rootIndex] === undefined)
 				)
-			)
-				setActiveProjectViewId(projectId);
-			return;
-		}
+					return false;
+				store.selectProject(route.projectId);
+				setActiveProjectViewId(route.projectId);
+				setTargetProjectFile(route.file ?? null);
+				setActiveDestination("project");
+				return true;
+			}
+			setActiveProjectViewId(null);
+			setTargetProjectFile(null);
+			if (route.kind === "conversation") {
+				const { conversation } = route;
+				const conversationExists =
+					conversation.kind === "channel"
+						? state.channels.some((channel) => channel.id === conversation.id)
+						: state.agents.some((agent) => agent.id === conversation.id);
+				if (!conversationExists) return false;
+				const thread =
+					route.threadId === undefined
+						? undefined
+						: state.threads.find(
+								(candidate) =>
+									candidate.id === route.threadId &&
+									conversation.kind === "channel" &&
+									candidate.channelId === conversation.id,
+							);
+				if (route.threadId !== undefined && thread === undefined) return false;
+				if (route.messageId !== undefined) {
+					const message = state.messages[
+						`${conversation.kind}:${conversation.id}`
+					]?.find((candidate) => candidate.id === route.messageId);
+					if (
+						message === undefined ||
+						(thread !== undefined &&
+							message.threadId !== thread.id &&
+							message.id !== thread.rootMessageId)
+					)
+						return false;
+				}
+				store.selectConversation(conversation);
+				if (thread !== undefined) store.selectThread(thread.id);
+				setTargetMessageId(route.messageId ?? null);
+				setActiveDestination("conversation");
+				return true;
+			}
+			if (route.kind === "directory") {
+				setDirectoryKind(route.directory);
+				setActiveDestination("directory");
+				return true;
+			}
+			if (route.kind === "threads") {
+				setActiveDestination("threads");
+				return true;
+			}
+			setInboxViewRequest({ view: route.view, token: Date.now() });
+			setActiveDestination("inbox");
+			return true;
+		},
+		[snapshot.bootstrap, store],
+	);
+
+	const navigate = useCallback(
+		(
+			route: CommonspaceRoute,
+			replace = false,
+			intent: NavigationIntent | null = null,
+		): boolean => {
+			const href = commonspaceRouteHref(router, route);
+			pendingNavigationIntent.current = null;
+			setSettingsRequest(null);
+			setComposerInsertRequest(null);
+			setNavigationOpen(false);
+			setSearchOpen(false);
+			setNavigationToken((token) => token + 1);
+			if (intent !== null) {
+				if (href === matchedRouteHref) {
+					applyNavigationIntent(intent);
+					return true;
+				}
+				pendingNavigationIntent.current = { href, intent };
+			}
+			if (route.kind === "inbox") {
+				void tanstackNavigate({
+					to: route.view === "sessions" ? "/inbox/sessions" : "/",
+					search: {},
+					replace,
+				});
+				return true;
+			}
+			if (route.kind === "threads") {
+				void tanstackNavigate({ to: "/threads", search: {}, replace });
+				return true;
+			}
+			if (route.kind === "directory") {
+				const to =
+					route.directory === "projects"
+						? "/projects"
+						: route.directory === "channels"
+							? "/channels"
+							: "/agents";
+				void tanstackNavigate({ to, search: {}, replace });
+				return true;
+			}
+			if (route.kind === "project") {
+				if (route.file === undefined) {
+					void tanstackNavigate({
+						to: "/projects/$projectId",
+						params: { projectId: route.projectId },
+						search: {},
+						replace,
+					});
+				} else {
+					void tanstackNavigate({
+						to: "/projects/$projectId/files/$rootIndex/$filePath",
+						params: {
+							projectId: route.projectId,
+							rootIndex: String(route.file.rootIndex),
+							filePath: route.file.path,
+						},
+						search: {},
+						replace,
+					});
+				}
+				return true;
+			}
+			const search =
+				route.messageId === undefined ? {} : { message: route.messageId };
+			if (route.conversation.kind === "channel") {
+				if (route.threadId === undefined) {
+					void tanstackNavigate({
+						to: "/channels/$channelId",
+						params: { channelId: route.conversation.id },
+						search,
+						replace,
+					});
+				} else {
+					void tanstackNavigate({
+						to: "/channels/$channelId/threads/$threadId",
+						params: {
+							channelId: route.conversation.id,
+							threadId: route.threadId,
+						},
+						search,
+						replace,
+					});
+				}
+			} else {
+				void tanstackNavigate({
+					to: "/agents/$agentId",
+					params: { agentId: route.conversation.id },
+					search,
+					replace,
+				});
+			}
+			return true;
+		},
+		[applyNavigationIntent, matchedRouteHref, router, tanstackNavigate],
+	);
+
+	useEffect(() => {
 		if (
-			activeDestination !== "conversation" ||
-			snapshot.activeConversation !== null
+			snapshot.bootstrap === null ||
+			appliedRouteMatch.current === routeMatchKey
 		)
 			return;
-		const raw = storedUiValue("commonspace-navigation");
-		const fallbackRaw = storedUiValue("commonspace-conversation");
-		if (raw === null && fallbackRaw === null) return;
-		const candidate = storedNavigation(raw ?? fallbackRaw);
-		if (candidate === null) return;
-		const exists =
-			candidate.kind === "channel"
-				? snapshot.bootstrap.state.channels.some(
-						(channel) => channel.id === candidate.id,
-					)
-				: snapshot.bootstrap.state.agents.some(
-						(agent) => agent.id === candidate.id,
+		const route =
+			legacyMessageTarget === null
+				? matchedRoute
+				: conversationRoute(
+						legacyMessageTarget.conversation,
+						legacyMessageTarget.threadId,
+						legacyMessageTarget.messageId,
 					);
-		if (!exists) return;
-		store.selectConversation({ kind: candidate.kind, id: candidate.id });
-		if (candidate.threadId === undefined || candidate.kind !== "channel")
+		if (route === null || !applyRoute(route)) {
+			appliedRouteMatch.current = routeMatchKey;
+			navigate({ kind: "inbox", view: "attention" }, true);
 			return;
-		const thread = snapshot.bootstrap.state.threads.find(
-			(item) =>
-				item.id === candidate.threadId && item.channelId === candidate.id,
-		);
-		if (thread !== undefined) store.selectThread(thread.id);
+		}
+		appliedRouteMatch.current = routeMatchKey;
+		const pendingIntent = pendingNavigationIntent.current;
+		pendingNavigationIntent.current = null;
+		if (
+			pendingIntent !== null &&
+			pendingIntent.href === commonspaceRouteHref(router, route)
+		)
+			applyNavigationIntent(pendingIntent.intent);
+		if (legacyMessageTarget !== null) {
+			navigate(route, true);
+			void store
+				.mutate({
+					action: "mark-inbox-item-read",
+					messageId: legacyMessageTarget.messageId,
+				})
+				.catch(() => undefined);
+		}
 	}, [
-		activeDestination,
-		activeProjectViewId,
-		snapshot.activeConversation,
+		applyNavigationIntent,
+		applyRoute,
+		legacyMessageTarget,
+		matchedRoute,
+		navigate,
+		routeMatchKey,
+		router,
 		snapshot.bootstrap,
 		store,
 	]);
-
-	useEffect(() => {
-		if (snapshot.activeConversation === null) return;
-		try {
-			window.localStorage.setItem(
-				"commonspace-navigation",
-				JSON.stringify({
-					...snapshot.activeConversation,
-					threadId: snapshot.activeThreadId,
-				}),
-			);
-			window.localStorage.setItem(
-				"commonspace-conversation",
-				JSON.stringify(snapshot.activeConversation),
-			);
-		} catch {
-			// Conversation selection remains available for this session.
-		}
-	}, [snapshot.activeConversation, snapshot.activeThreadId]);
-
-	useEffect(() => {
-		if (activeProjectViewId === null) return;
-		try {
-			window.localStorage.setItem("commonspace-project", activeProjectViewId);
-		} catch {
-			// Project selection remains available for this session.
-		}
-	}, [activeProjectViewId]);
-
-	useEffect(() => {
-		if (notificationLinkHandled.current || snapshot.bootstrap === null) return;
-		const parameters = new URLSearchParams(window.location.search);
-		const kind = parameters.get("conversation");
-		const conversationId = parameters.get("conversationId");
-		const threadId = parameters.get("threadId");
-		const messageId = parameters.get("messageId");
-		if (
-			(kind !== "channel" && kind !== "dm") ||
-			conversationId === null ||
-			messageId === null ||
-			conversationId === "" ||
-			conversationId.length > 200 ||
-			messageId === "" ||
-			messageId.length > 200 ||
-			(threadId !== null && (threadId === "" || threadId.length > 200))
-		) {
-			notificationLinkHandled.current = true;
-			return;
-		}
-		const conversation = { kind, id: conversationId } as const;
-		const state = snapshot.bootstrap.state;
-		const conversationExists =
-			kind === "channel"
-				? state.channels.some((channel) => channel.id === conversationId)
-				: state.agents.some((agent) => agent.id === conversationId);
-		if (!conversationExists) {
-			notificationLinkHandled.current = true;
-			return;
-		}
-		const message = state.messages[`${kind}:${conversationId}`]?.find(
-			(candidate) => candidate.id === messageId,
-		);
-		if (message === undefined) return;
-		const thread =
-			threadId === null
-				? undefined
-				: state.threads.find((candidate) => candidate.id === threadId);
-		const threadMatches =
-			kind === "dm"
-				? threadId === null
-				: threadId === null ||
-					(thread !== undefined &&
-						thread.channelId === conversationId &&
-						(message.threadId === thread.id ||
-							thread.rootMessageId === message.id));
-		notificationLinkHandled.current = true;
-		if (!threadMatches) return;
-		store.selectConversation(conversation);
-		if (thread !== undefined) store.selectThread(thread.id);
-		setActiveProjectViewId(null);
-		setTargetProjectFile(null);
-		setActiveDestination("conversation");
-		setTargetMessageId(message.id);
-		void store
-			.mutate({ action: "mark-inbox-item-read", messageId: message.id })
-			.catch(() => undefined);
-	}, [snapshot.bootstrap, store]);
 
 	useEffect(() => {
 		const handleKeyboardNavigation = (event: KeyboardEvent) => {
@@ -281,97 +376,89 @@ export function useCommonspaceNavigation(
 		conversation?: ConversationRef,
 		messageId?: string,
 	) => {
-		if (conversation !== undefined) store.selectConversation(conversation);
-		setActiveProjectViewId(null);
-		setTargetProjectFile(null);
-		setActiveDestination("conversation");
-		setTargetMessageId(messageId ?? null);
-		setSettingsRequest(null);
-		setNavigationOpen(false);
+		const target = conversation ?? store.getSnapshot().activeConversation;
+		if (target === null) return;
+		navigate(conversationRoute(target, undefined, messageId));
 	};
 
 	const openTarget = (target: ConversationTarget) => {
-		store.selectConversation(target.conversation);
-		store.selectThread(target.threadId ?? null);
-		openConversation(undefined, target.messageId);
+		navigate(
+			conversationRoute(target.conversation, target.threadId, target.messageId),
+		);
 	};
 
 	const openSearchResult = (result: CommonspaceSearchResult) => {
 		setSearchOpen(false);
 		if (result.target.kind === "conversation") {
-			if (result.target.messageId === undefined) {
-				store.selectThread(result.target.threadId ?? null);
-				openConversation(result.target.conversation);
-				return;
-			}
-			const target: ConversationTarget = {
-				messageId: result.target.messageId,
-				conversation: result.target.conversation,
-			};
-			if (result.target.threadId !== undefined)
-				target.threadId = result.target.threadId;
-			openTarget(target);
+			navigate(
+				conversationRoute(
+					result.target.conversation,
+					result.target.threadId,
+					result.target.messageId,
+				),
+			);
 			return;
 		}
 		if (result.target.kind === "project-file") {
-			store.selectProject(result.target.projectId);
-			setActiveProjectViewId(result.target.projectId);
-			setTargetProjectFile({
-				rootIndex: result.target.rootIndex,
-				path: result.target.path,
+			navigate({
+				kind: "project",
+				projectId: result.target.projectId,
+				file: {
+					rootIndex: result.target.rootIndex,
+					path: result.target.path,
+				},
 			});
-			setActiveDestination("project");
 			return;
 		}
 		openConversation({ kind: "dm", id: result.target.agentId });
 	};
 
 	const openDirectory = (kind: CommonspaceDirectoryKind) => {
-		setDirectoryKind(kind);
-		setActiveProjectViewId(null);
-		setTargetProjectFile(null);
-		setSettingsRequest(null);
-		setActiveDestination("directory");
-		setNavigationOpen(false);
+		navigate({ kind: "directory", directory: kind });
 	};
 
 	const openInbox = (view: "attention" | "sessions" = "attention") => {
-		setActiveProjectViewId(null);
-		setTargetProjectFile(null);
-		setSettingsRequest(null);
-		setInboxViewRequest({ view, token: Date.now() });
-		setActiveDestination("inbox");
-		setNavigationOpen(false);
+		navigate({ kind: "inbox", view });
 	};
 
 	const openContextSettings = (kind: CommonspaceCollectionKind, id: string) => {
-		setSettingsRequest({ kind, id, token: Date.now() });
-		if (kind === "project") {
-			store.selectProject(id);
-			setActiveProjectViewId(id);
-			setTargetProjectFile(null);
-			setActiveDestination("project");
-		} else {
-			store.selectConversation({
-				kind: kind === "channel" ? "channel" : "dm",
-				id,
-			});
-			setActiveProjectViewId(null);
-			setTargetProjectFile(null);
-			setActiveDestination("conversation");
-		}
-		setNavigationOpen(false);
+		const route =
+			kind === "project"
+				? projectRoute(id)
+				: conversationRoute({
+						kind: kind === "channel" ? "channel" : "dm",
+						id,
+					});
+		const request = { kind, id, token: Date.now() };
+		navigate(route, false, { kind: "settings", request });
 	};
 
 	const openProject = (
 		projectId: string,
 		file?: { rootIndex: number; path: string },
 	) => {
-		setActiveProjectViewId(projectId);
-		setTargetProjectFile(file ?? null);
-		setActiveDestination("project");
-		setSettingsRequest(null);
-		setNavigationOpen(false);
+		navigate(projectRoute(projectId, file));
+	};
+
+	const openThread = (threadId: string | null) => {
+		const conversation = store.getSnapshot().activeConversation;
+		if (conversation === null) return;
+		navigate(conversationRoute(conversation, threadId ?? undefined));
+	};
+
+	const mentionAgent = (agentName: string) => {
+		const current = store.getSnapshot();
+		if (current.activeConversation?.kind !== "channel") return;
+		const threadId = current.activeThreadId ?? undefined;
+		const request: ComposerInsertRequest = {
+			text: `@${agentName} `,
+			token: Date.now(),
+		};
+		if (threadId !== undefined) request.threadId = threadId;
+		navigate(conversationRoute(current.activeConversation, threadId), false, {
+			kind: "mention",
+			request,
+		});
 	};
 
 	const requestCreate = (kind: CommonspaceDirectoryKind) => {
@@ -383,6 +470,14 @@ export function useCommonspaceNavigation(
 					: "agent";
 		setCreateRequest({ kind: singular, token: Date.now() });
 	};
+	const messageUrl = useCallback(
+		(target: CommonspaceMessageTarget) =>
+			new URL(
+				commonspaceMessageHref(router, target),
+				window.location.origin,
+			).toString(),
+		[router],
+	);
 
 	return {
 		activeDestination,
@@ -393,26 +488,20 @@ export function useCommonspaceNavigation(
 		createRequest,
 		directoryKind,
 		inboxViewRequest,
-		mentionAgent: (agentName: string) => {
-			setComposerInsertRequest({ text: `@${agentName} `, token: Date.now() });
-			setActiveDestination("conversation");
-			setNavigationOpen(false);
-		},
+		messageUrl,
+		mentionAgent,
 		navigationOpen,
+		navigationToken,
 		openContextSettings,
 		openConversation,
 		openDirectory,
 		openInbox,
 		openProject,
+		openThread,
 		openSearch: () => setSearchOpen(true),
 		openSearchResult,
 		openTarget,
-		openThreads: () => {
-			setActiveProjectViewId(null);
-			setTargetProjectFile(null);
-			setActiveDestination("threads");
-			setNavigationOpen(false);
-		},
+		openThreads: () => navigate({ kind: "threads" }),
 		requestCreate,
 		searchOpen,
 		settingsRequest,

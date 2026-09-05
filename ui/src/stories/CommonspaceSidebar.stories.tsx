@@ -1,9 +1,12 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect, fn, userEvent, within } from "storybook/test";
+import { expect, fn, userEvent, waitFor, within } from "storybook/test";
 import { CommonspaceSidebar } from "../CommonspaceSidebar";
+import { sidebarPreferencesStore } from "../sidebar-preferences";
 import {
+	buildChannel,
 	createStoryBootstrap,
 	createStoryStore,
+	designChannel,
 	storyBootstrap,
 } from "./story-fixtures";
 
@@ -50,7 +53,224 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+const sortingChannels = [
+	{
+		...designChannel,
+		createdAt: "2026-09-04T10:00:00.000Z",
+	},
+	{
+		...buildChannel,
+		createdAt: "2026-09-01T10:00:00.000Z",
+	},
+	{
+		...designChannel,
+		id: "channel-announcements",
+		name: "announcements",
+		createdAt: "2026-09-02T10:00:00.000Z",
+	},
+	{
+		...buildChannel,
+		id: "channel-triage",
+		name: "triage",
+		createdAt: "2026-09-03T10:00:00.000Z",
+	},
+];
+
+const channelSortingBootstrap = createStoryBootstrap({
+	state: {
+		...storyBootstrap.state,
+		channels: sortingChannels,
+		messages: {
+			...storyBootstrap.state.messages,
+			[`channel:${designChannel.id}`]: [],
+			[`channel:${buildChannel.id}`]: [],
+			"channel:channel-announcements": [],
+			"channel:channel-triage": [],
+		},
+	},
+});
+
+function channelNames(canvasElement: HTMLElement): string[] {
+	return within(canvasElement)
+		.getAllByRole("button", { name: /^Open channel /u })
+		.map((button) =>
+			(button.getAttribute("aria-label") ?? "")
+				.replace(/^Open channel /u, "")
+				.replace(/, \d+ unread$/u, ""),
+		);
+}
+
+function clearStoryFocus(canvasElement: HTMLElement) {
+	const activeElement = canvasElement.ownerDocument.activeElement;
+	if (activeElement instanceof HTMLElement) activeElement.blur();
+}
+
+async function prepareChannelSorting(canvasElement: HTMLElement) {
+	const canvas = within(canvasElement);
+	const page = within(canvasElement.ownerDocument.body);
+	await userEvent.selectOptions(
+		canvas.getByLabelText("Sort channels"),
+		"recent",
+	);
+	sidebarPreferencesStore.setChannelCustomOrder([]);
+	await userEvent.click(
+		canvas.getByRole("button", { name: "More actions for builds" }),
+	);
+	const pinAction = page.queryByText("Pin to sidebar");
+	if (pinAction !== null) await userEvent.click(pinAction);
+	else await userEvent.keyboard("{Escape}");
+	await waitFor(() => {
+		expect(page.queryByRole("menu")).not.toBeInTheDocument();
+	});
+}
+
 export const Expanded: Story = {};
+
+export const ChannelsByRecentActivity: Story = {
+	args: {
+		...meta.args,
+		store: createStoryStore(channelSortingBootstrap),
+	},
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		await prepareChannelSorting(canvasElement);
+		await expect(canvas.getByLabelText("Sort channels")).toHaveValue("recent");
+		await expect(channelNames(canvasElement)).toEqual([
+			"design-review",
+			"builds",
+			"triage",
+			"announcements",
+		]);
+		clearStoryFocus(canvasElement);
+	},
+};
+
+export const ChannelsAlphabetically: Story = {
+	args: {
+		...meta.args,
+		store: createStoryStore(channelSortingBootstrap),
+	},
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		await prepareChannelSorting(canvasElement);
+		await userEvent.selectOptions(
+			canvas.getByLabelText("Sort channels"),
+			"alphabetical",
+		);
+		await expect(canvas.getByLabelText("Sort channels")).toHaveValue(
+			"alphabetical",
+		);
+		await expect(channelNames(canvasElement)).toEqual([
+			"builds",
+			"design-review",
+			"announcements",
+			"triage",
+		]);
+		clearStoryFocus(canvasElement);
+	},
+};
+
+export const ChannelsInCustomOrder: Story = {
+	args: {
+		...meta.args,
+		store: createStoryStore(channelSortingBootstrap),
+	},
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		await prepareChannelSorting(canvasElement);
+		await userEvent.selectOptions(
+			canvas.getByLabelText("Sort channels"),
+			"custom",
+		);
+		await expect(canvas.getByLabelText("Sort channels")).toHaveValue("custom");
+		const design = canvas.getByRole("button", {
+			name: "Open channel design-review",
+		});
+		await userEvent.click(design);
+		await userEvent.keyboard("{Alt>}{ArrowDown}{/Alt}");
+		await expect(channelNames(canvasElement)).toEqual([
+			"builds",
+			"design-review",
+			"triage",
+			"announcements",
+		]);
+		await expect(design).toHaveFocus();
+		await userEvent.keyboard("{Alt>}{ArrowDown}{/Alt}");
+		await expect(channelNames(canvasElement)).toEqual([
+			"builds",
+			"design-review",
+			"triage",
+			"announcements",
+		]);
+		const triage = canvas.getByRole("button", { name: "Open channel triage" });
+		await userEvent.click(triage);
+		await userEvent.keyboard("{Alt>}{ArrowUp}{/Alt}");
+		await expect(channelNames(canvasElement)).toEqual([
+			"builds",
+			"design-review",
+			"triage",
+			"announcements",
+		]);
+		await userEvent.keyboard("{Alt>}{ArrowDown}{/Alt}");
+		await expect(channelNames(canvasElement)).toEqual([
+			"builds",
+			"design-review",
+			"announcements",
+			"triage",
+		]);
+		await expect(triage).toHaveFocus();
+		await userEvent.keyboard("{Alt>}{ArrowUp}{/Alt}");
+		await expect(channelNames(canvasElement)).toEqual([
+			"builds",
+			"design-review",
+			"triage",
+			"announcements",
+		]);
+		await expect(triage).toHaveFocus();
+		clearStoryFocus(canvasElement);
+	},
+};
+
+export const ChannelsRestoreCustomOrder: Story = {
+	args: {
+		...meta.args,
+		store: createStoryStore(channelSortingBootstrap),
+	},
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		await prepareChannelSorting(canvasElement);
+		await userEvent.selectOptions(
+			canvas.getByLabelText("Sort channels"),
+			"custom",
+		);
+		await expect(channelNames(canvasElement)).toEqual([
+			"design-review",
+			"builds",
+			"triage",
+			"announcements",
+		]);
+		await userEvent.click(
+			canvas.getByRole("button", { name: "Open channel design-review" }),
+		);
+		await userEvent.keyboard("{Alt>}{ArrowDown}{/Alt}");
+		await userEvent.selectOptions(
+			canvas.getByLabelText("Sort channels"),
+			"recent",
+		);
+		sidebarPreferencesStore.reload();
+		await userEvent.selectOptions(
+			canvas.getByLabelText("Sort channels"),
+			"custom",
+		);
+		await expect(channelNames(canvasElement)).toEqual([
+			"builds",
+			"design-review",
+			"triage",
+			"announcements",
+		]);
+		clearStoryFocus(canvasElement);
+	},
+};
 
 export const Collapsed: Story = {
 	args: { wide: false },
@@ -83,6 +303,30 @@ export const WorkspaceSettings: Story = {
 		await expect(
 			within(document.body).getByRole("form", { name: "Workspace settings" }),
 		).toBeVisible();
+	},
+};
+
+export const WorkspaceSettingsChannelTransition: Story = {
+	args: {
+		store: createStoryStore(storyBootstrap),
+		onOpenConversation: fn(),
+	},
+	play: async ({ args, canvasElement }) => {
+		const canvas = within(canvasElement);
+		await userEvent.click(
+			canvas.getByRole("button", { name: "Commonspace settings" }),
+		);
+		const settings = within(document.body).getByRole("form", {
+			name: "Workspace settings",
+		});
+		await expect(settings).toBeVisible();
+
+		await userEvent.click(
+			canvas.getByRole("button", { name: /^Open channel design-review/ }),
+		);
+
+		await expect(args.onOpenConversation).toHaveBeenCalledOnce();
+		await expect(settings).not.toBeInTheDocument();
 	},
 };
 

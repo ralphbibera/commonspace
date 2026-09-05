@@ -30,10 +30,13 @@ export function CommonspaceWorkspace({
 		composerInsertRequest,
 		directoryKind,
 		inboxViewRequest,
+		messageUrl,
+		navigationToken,
 		openContextSettings,
 		openConversation,
 		openInbox,
 		openProject,
+		openThread,
 		openTarget,
 		requestCreate,
 		settingsRequest,
@@ -50,6 +53,7 @@ export function CommonspaceWorkspace({
 		return (
 			<CommonspaceProjectView
 				projectId={activeProjectViewId}
+				navigationToken={navigationToken}
 				targetFile={targetProjectFile}
 				store={store}
 				{...(projectFetcher === undefined ? {} : { fetcher: projectFetcher })}
@@ -110,8 +114,18 @@ export function CommonspaceWorkspace({
 		<CommonspaceConversation
 			store={store}
 			composerInsertRequest={composerInsertRequest}
+			messageUrl={messageUrl}
+			onOpenSettings={() => {
+				const conversation = snapshot.activeConversation;
+				if (conversation === null) return;
+				openContextSettings(
+					conversation.kind === "channel" ? "channel" : "agent",
+					conversation.id,
+				);
+			}}
 			onSettingsClosed={clearSettingsRequest}
 			settingsRequest={conversationSettingsRequest}
+			onThreadChange={openThread}
 			targetMessageId={targetMessageId}
 			onTargetMessageHandled={clearTargetMessage}
 		/>

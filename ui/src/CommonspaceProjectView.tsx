@@ -22,6 +22,7 @@ export interface CommonspaceProjectViewProps {
 	projectId: string;
 	targetFile?: { rootIndex: number; path: string } | null;
 	settingsRequest?: number;
+	navigationToken?: number;
 	store: CommonspaceStore;
 	onBack: () => void;
 	onOpenConversation: (conversation: ConversationRef) => void;
@@ -170,6 +171,7 @@ export function CommonspaceProjectView({
 	projectId,
 	targetFile,
 	settingsRequest,
+	navigationToken,
 	store,
 	onBack,
 	onOpenConversation,
@@ -191,8 +193,10 @@ export function CommonspaceProjectView({
 	);
 
 	useEffect(() => {
-		if (settingsRequest !== undefined) setSettingsOpen(true);
-	}, [settingsRequest]);
+		void navigationToken;
+		void projectId;
+		setSettingsOpen(settingsRequest !== undefined);
+	}, [navigationToken, projectId, settingsRequest]);
 
 	const addLocalFolder = async () => {
 		setAddingFolder(true);

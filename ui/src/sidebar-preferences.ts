@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import type { ChannelSortMode } from "./channel-sorting.ts";
 
 export type SidebarCollectionKind = "project" | "channel" | "agent";
 
@@ -6,6 +7,8 @@ export interface SidebarPreferencesSnapshot {
 	pinnedKeys: string[];
 	recentKeys: Record<SidebarCollectionKind, string[]>;
 	collapsedSections: SidebarCollectionKind[];
+	channelSortMode: ChannelSortMode;
+	channelCustomOrder: string[];
 	hasStoredPins: boolean;
 }
 
@@ -18,6 +21,8 @@ type StoredValue =
 const PINNED_STORAGE_KEY = "commonspace-pins";
 const RECENT_STORAGE_KEY = "commonspace-recent";
 const COLLAPSED_STORAGE_KEY = "commonspace-collapsed-sections";
+const CHANNEL_SORT_MODE_STORAGE_KEY = "commonspace-channel-sort-mode";
+const CHANNEL_CUSTOM_ORDER_STORAGE_KEY = "commonspace-channel-custom-order";
 const COLLECTION_KINDS: readonly SidebarCollectionKind[] = [
 	"project",
 	"channel",
@@ -113,6 +118,8 @@ function readSnapshot(): SidebarPreferencesSnapshot {
 	const pinnedValue = readJson(PINNED_STORAGE_KEY);
 	const recentValue = readJson(RECENT_STORAGE_KEY);
 	const collapsedValue = readJson(COLLAPSED_STORAGE_KEY);
+	const channelSortModeValue = readJson(CHANNEL_SORT_MODE_STORAGE_KEY);
+	const channelCustomOrderValue = readJson(CHANNEL_CUSTOM_ORDER_STORAGE_KEY);
 	const recentKeys = emptyRecentKeys();
 	const recentRecord =
 		typeof recentValue === "object" &&
@@ -134,6 +141,13 @@ function readSnapshot(): SidebarPreferencesSnapshot {
 		collapsedSections: Array.isArray(collapsedValue)
 			? collapsedValue.filter(isCollectionKind)
 			: [],
+		channelSortMode:
+			channelSortModeValue === "alphabetical" ||
+			channelSortModeValue === "custom" ||
+			channelSortModeValue === "recent"
+				? channelSortModeValue
+				: "recent",
+		channelCustomOrder: validKeys(channelCustomOrderValue, "channel"),
 		hasStoredPins: Array.isArray(pinnedValue),
 	};
 }
@@ -142,6 +156,8 @@ function updateStorage(snapshot: SidebarPreferencesSnapshot): void {
 	writeJson(PINNED_STORAGE_KEY, snapshot.pinnedKeys);
 	writeJson(RECENT_STORAGE_KEY, snapshot.recentKeys);
 	writeJson(COLLAPSED_STORAGE_KEY, snapshot.collapsedSections);
+	writeJson(CHANNEL_SORT_MODE_STORAGE_KEY, snapshot.channelSortMode);
+	writeJson(CHANNEL_CUSTOM_ORDER_STORAGE_KEY, snapshot.channelCustomOrder);
 }
 
 export function collectionKey(kind: SidebarCollectionKind, id: string): string {
@@ -219,6 +235,18 @@ class SidebarPreferencesStore {
 		if (collapsed) sections.add(kind);
 		else sections.delete(kind);
 		this.commit({ collapsedSections: [...sections] });
+	};
+
+	setChannelSortMode = (channelSortMode: ChannelSortMode): void => {
+		this.commit({ channelSortMode });
+	};
+
+	setChannelCustomOrder = (channelIds: readonly string[]): void => {
+		this.commit({
+			channelCustomOrder: [
+				...new Set(channelIds.map((id) => collectionKey("channel", id))),
+			],
+		});
 	};
 
 	private commit(changes: Partial<SidebarPreferencesSnapshot>): void {

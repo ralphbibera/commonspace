@@ -6,13 +6,15 @@ Commonspace's desktop UI should keep conversations, context, and agent responses
 
 The shell uses a 52px title bar, a 260px navigation rail, a flexible working area, 64px pane headers, and 8px pane dividers. Preserve consistent spacing, borders, and alignment across collections and conversations.
 
-With no saved destination, the shell opens to Inbox. Workspace branding does not navigate, and returning from a Project pane goes to Inbox. A legacy `commonspace-view=home` value also resolves to Inbox.
+The URL selects the destination when the app opens. `/` opens Inbox; unknown or stale detail routes return there. Workspace branding does not navigate, and returning from a Project pane goes to Inbox.
 
 Inbox and each owning conversation or Thread show runtime outcomes. Keep this model intact: the current product has no separate Workspace landing page or Agent-runs dashboard.
 
 ## Collections and context
 
 Projects, Channels, Agents, Inbox, and Threads use clear titles, compact rows, and visible selection. Show the metadata that helps users decide where to go next. Keep secondary controls quiet but discoverable.
+
+The Channel list offers recent-activity, alphabetical, and custom sorting. Returning to Custom restores the saved order. Users can drag Channels or focus a Channel row and press Alt+ArrowUp or Alt+ArrowDown to move it within its pinned or unpinned group. Keep the shortcut hint visible in Custom mode and preserve focus after a move.
 
 Project files and Git changes provide context for conversation. Channel and Thread context should be inspectable without exposing native session identifiers or absolute host paths. Use visible `@@project` references in composers; do not introduce separate Project-scope pickers for roots, Threads, branches, or reroutes.
 

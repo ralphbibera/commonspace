@@ -43,6 +43,8 @@ Notable changes to Commonspace are recorded here. Changes under **Unreleased** h
 
 #### Navigation and appearance
 
+- Shareable workspace URLs for directories, Projects, Channels, Direct Messages, Threads, and messages, including browser back/forward navigation and older notification links.
+- Channel sorting by recent activity, name, or a saved custom order. Custom order supports dragging and Alt+ArrowUp/ArrowDown within pinned and unpinned groups.
 - Inbox entries for actual agent replies, with unread filtering, exact Thread navigation, and persistent read position.
 - Saved sidebar pins, recent items, collapsed sections, and manual unread state.
 - Project files, Git changes and diffs, image previews, live activity, and stop controls.

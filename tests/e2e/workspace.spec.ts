@@ -117,6 +117,83 @@ test("opens project settings and closes it", async ({ page }) => {
 	await expect(projectSettings).toBeHidden();
 });
 
+test("routes Settings transitions and restores detail deep links", async ({
+	page,
+}) => {
+	await page.goto("/");
+	await page.getByRole("button", { name: "Commonspace settings" }).click();
+	const workspaceSettings = page.getByRole("form", {
+		name: "Workspace settings",
+	});
+	await expect(workspaceSettings).toBeVisible();
+
+	await page.getByRole("button", { name: VERIFICATION_PROJECT }).click();
+	await expect(workspaceSettings).toBeHidden();
+	await expect(
+		page.getByRole("main", { name: "Project Verification Project" }),
+	).toBeVisible();
+	await expect(page).toHaveURL(/\/projects\/[^/?#]+$/u);
+	const projectUrl = page.url();
+
+	await page.getByRole("button", { name: "Open project settings" }).click();
+	const projectSettings = page.getByRole("complementary", {
+		name: "Project settings",
+	});
+	await expect(projectSettings).toBeVisible();
+	await page.getByRole("button", { name: VERIFICATION_CHANNEL }).click();
+	await expect(projectSettings).toBeHidden();
+	await expect(verificationPosts(page)).toBeVisible();
+	await expect(page).toHaveURL(/\/channels\/[^/?#]+$/u);
+	const channelUrl = page.url();
+
+	await page.reload();
+	await expect(page).toHaveURL(channelUrl);
+	await expect(verificationPosts(page)).toBeVisible();
+	await openRootVerificationThread(page);
+	await expect(page).toHaveURL(/\/channels\/[^/?#]+\/threads\/[^/?#]+$/u);
+	const threadUrl = page.url();
+	await page.reload();
+	await expect(page).toHaveURL(threadUrl);
+	await expect(page.getByLabel("Thread replies")).toBeVisible();
+
+	await page.goto(projectUrl);
+	await expect(page).toHaveURL(projectUrl);
+	await expect(
+		page.getByRole("main", { name: "Project Verification Project" }),
+	).toBeVisible();
+
+	await page.reload();
+	await expect(page).toHaveURL(projectUrl);
+	await expect(
+		page.getByRole("main", { name: "Project Verification Project" }),
+	).toBeVisible();
+
+	await page.getByRole("button", { name: "Commonspace settings" }).click();
+	await expect(workspaceSettings).toBeVisible();
+	await page.getByRole("button", { name: "Message agent Review Bot" }).click();
+	await expect(workspaceSettings).toBeHidden();
+	await expect(page).toHaveURL(/\/agents\/[^/?#]+$/u);
+	const agentUrl = page.url();
+	await expect(page.getByLabel("Message Review Bot")).toBeVisible();
+	await page.reload();
+	await expect(page).toHaveURL(agentUrl);
+	await expect(page.getByLabel("Message Review Bot")).toBeVisible();
+
+	await page.goBack();
+	await expect(page).toHaveURL(projectUrl);
+	await expect(
+		page.getByRole("main", { name: "Project Verification Project" }),
+	).toBeVisible();
+
+	await page.goto("/projects");
+	await expect(
+		page.getByRole("main", { name: "Projects directory" }),
+	).toBeVisible();
+	await page.goto("/projects/not-a-real-project");
+	await expect(page).toHaveURL(/\/$/u);
+	await expect(page.getByRole("main", { name: "Inbox" })).toBeVisible();
+});
+
 test("opens channel settings and closes it", async ({ page }) => {
 	await openVerificationChannel(page);
 	await page.getByRole("button", { name: "Open channel settings" }).click();
@@ -128,6 +205,118 @@ test("opens channel settings and closes it", async ({ page }) => {
 		.getByRole("button", { name: "Close channel settings" })
 		.click();
 	await expect(channelSettings).toBeHidden();
+});
+
+test("returns mentions to the selected Channel and Thread", async ({
+	page,
+}) => {
+	await openVerificationChannel(page);
+	const channelUrl = page.url();
+	await openRootVerificationThread(page);
+	const threadUrl = page.url();
+	const threadComposer = page.getByLabel("Reply in thread", { exact: true });
+	const rootComposer = page.getByLabel("Post in verification");
+	for (const destination of [
+		/Open Inbox/iu,
+		/Open Threads/iu,
+		VERIFICATION_PROJECT,
+	]) {
+		await page.getByRole("button", { name: destination }).click();
+		await expect(page).not.toHaveURL(threadUrl);
+		await page
+			.getByRole("button", { name: "More actions for Review Bot" })
+			.click();
+		await page
+			.getByRole("menuitem", { name: /^Mention in #verification/u })
+			.click();
+		await expect(page).toHaveURL(threadUrl);
+		await expect(threadComposer).toHaveValue("@Review Bot ");
+		await expect(rootComposer).toHaveValue("");
+		await threadComposer.fill("");
+	}
+	await page.getByRole("button", { name: "Close thread" }).click();
+	await page.getByRole("button", { name: /Open Inbox/iu }).click();
+	await page
+		.getByRole("button", { name: "More actions for Review Bot" })
+		.click();
+	await page
+		.getByRole("menuitem", { name: /^Mention in #verification/u })
+		.click();
+	await expect(page).toHaveURL(channelUrl);
+	await expect(rootComposer).toHaveValue("@Review Bot ");
+	await expect(page.getByLabel("Thread replies")).toBeHidden();
+	await rootComposer.fill("");
+	await page.goBack();
+	await expect(page.getByRole("main", { name: "Inbox" })).toBeVisible();
+	await page.goForward();
+	await expect(page).toHaveURL(channelUrl);
+	await expect(rootComposer).toHaveValue("");
+});
+
+test("opens Channel header Settings from an active Thread", async ({
+	page,
+}) => {
+	await openVerificationChannel(page);
+	const channelUrl = page.url();
+	await openRootVerificationThread(page);
+	await page.getByRole("button", { name: "Open channel settings" }).click();
+	await expect(page).toHaveURL(channelUrl);
+	await expect(page.getByLabel("Thread replies")).toBeHidden();
+	const settings = page.getByRole("complementary", {
+		name: "Channel settings",
+	});
+	await expect(settings).toBeVisible();
+	await page.getByRole("button", { name: "Open channel settings" }).click();
+	await expect(settings).toBeHidden();
+});
+
+test("dismisses Settings when navigating to the same destination", async ({
+	page,
+}) => {
+	await page.goto("/");
+	for (const destination of [
+		{
+			label: "Verification Project",
+			menu: /^Project settings/u,
+			pane: "Project settings",
+			row: VERIFICATION_PROJECT,
+			header: "Open project settings",
+		},
+		{
+			label: "verification",
+			menu: /^Channel settings/u,
+			pane: "Channel settings",
+			row: VERIFICATION_CHANNEL,
+			header: "Open channel settings",
+		},
+		{
+			label: "Review Bot",
+			menu: /^Profile & capabilities/u,
+			pane: "Agent profile",
+			row: "Message agent Review Bot",
+			header: "Open agent profile",
+		},
+	]) {
+		await page
+			.getByRole("button", {
+				name: `More actions for ${destination.label}`,
+				exact: true,
+			})
+			.click();
+		await page.getByRole("menuitem", { name: destination.menu }).click();
+		const settings = page.getByRole("complementary", {
+			name: destination.pane,
+		});
+		await expect(settings).toBeVisible();
+		const destinationUrl = page.url();
+		await page.getByRole("button", { name: destination.row }).click();
+		await expect(page).toHaveURL(destinationUrl);
+		await expect(settings).toBeHidden();
+		await page.getByRole("button", { name: destination.header }).click();
+		await expect(settings).toBeVisible();
+		await page.getByRole("button", { name: destination.row }).click();
+		await expect(settings).toBeHidden();
+	}
 });
 
 test("sends a channel message and keeps composer state correct", async ({
@@ -343,10 +532,19 @@ test("copies a message link from action menu", async ({ page }) => {
 	expect(typeof copiedText).toBe("string");
 	const copiedUrl = new URL(copiedText);
 	expect(copiedUrl.origin).toBe("http://127.0.0.1:3199");
-	expect(copiedUrl.searchParams.get("conversation")).toBe("channel");
-	expect(copiedUrl.searchParams.get("conversationId")).toBeTruthy();
-	expect(copiedUrl.searchParams.get("messageId")).toBeTruthy();
-	expect(copiedUrl.searchParams.get("threadId")).toBeTruthy();
+	expect(copiedUrl.pathname).toMatch(
+		/^\/channels\/[^/?#]+\/threads\/[^/?#]+$/u,
+	);
+	const messageId = await messageRow.getAttribute("id");
+	expect(messageId).toBeTruthy();
+	expect(copiedUrl.searchParams.get("message")).toBe(
+		messageId?.replace(/^commonspace-message-/u, ""),
+	);
+
+	await page.goto(copiedText);
+	await expect(
+		page.locator(`#${messageId ?? "missing-message"}`),
+	).toHaveAttribute("aria-current", "true");
 });
 
 test("opens thread from the message action menu", async ({ page }) => {
