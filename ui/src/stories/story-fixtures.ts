@@ -109,7 +109,6 @@ function channel(
 			compactedThroughCorrectionId: null,
 			updatedAt: now,
 		},
-		settings: { model: null, reasoning: null },
 		createdAt: now,
 	};
 }

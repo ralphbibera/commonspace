@@ -204,18 +204,10 @@ const mutationSchema = requestSchema<CommonspaceMutation>(
 				openQuestions: z.array(z.string()).optional(),
 			}),
 			z.object({
-				action: z.literal("set-channel-settings"),
-				channelId: z.string(),
-				model: z.string().nullable().optional(),
-				reasoning: reasoningSchema.nullable().optional(),
-			}),
-			z.object({
 				action: z.literal("set-channel-configuration"),
 				channelId: z.string(),
 				agentIds: z.array(z.string()),
 				instructions: z.string(),
-				model: z.string().nullable().optional(),
-				reasoning: reasoningSchema.nullable().optional(),
 				summary: z.string(),
 				decisions: z.array(z.string()).optional(),
 				openQuestions: z.array(z.string()).optional(),

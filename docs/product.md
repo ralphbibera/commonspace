@@ -35,7 +35,7 @@ Visible `@@project` tags explicitly choose context. When there are no tags, infe
 
 ### Channel
 
-A Channel is a shared room with a chosen set of agents, instructions, shared context, and threads. It can exist without a Project or any agents. Channels can override workspace model and reasoning defaults.
+A Channel is a shared room with a chosen set of agents, instructions, shared context, and threads. It can exist without a Project or any agents. Model and reasoning configuration applies across the workspace; a Channel has no separate override.
 
 Mentioning an agent with `@agent` adds it to the Channel if needed and invokes it. Without an explicit mention, the configured inference provider selects the smallest useful set of agents and may divide the request into separate assignments, called **sub-requests**.
 

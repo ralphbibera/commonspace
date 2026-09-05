@@ -64,6 +64,7 @@ Notable changes to Commonspace are recorded here. Changes under **Unreleased** h
 
 ### Changed
 
+- Model and reasoning defaults now apply across the workspace. State format 27 removes Channel overrides; valid older workspace-data exports remain importable without changing their workspace defaults or conversation data.
 - Accepted messages survive appends and restarts without the former 500-message limit.
 - Thread replies inherit projects only when the request omits project fields. Conflicting legacy fields are rejected, and removed projects or missing folders no longer leave stale file-change attribution.
 - New Channel threads pass their selected projects into routing. Queued and running replies cannot retain obsolete project access after configuration changes.

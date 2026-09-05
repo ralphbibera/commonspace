@@ -130,13 +130,9 @@ function normalizedContextEntries(
 	].slice(0, 50);
 }
 
-export function defaultRunSettings() {
-	return { model: null, reasoning: null };
-}
-
 export function defaultCommonspaceDefaults() {
 	return {
-		...defaultRunSettings(),
+		model: null,
 		reasoning: "max" as const,
 		maxAgentsPerTurn: 4,
 		memoryThreads: 12,
@@ -482,7 +478,6 @@ export function applyMutation(
 						instructions: "",
 						memory: emptyChannelMemory(),
 						routingMemory: emptyRoutingMemory(),
-						settings: defaultRunSettings(),
 						createdAt: dependencies.now(),
 					},
 				],
@@ -559,29 +554,6 @@ export function applyMutation(
 			if (!matched) throw new Error("unknown channel");
 			return { ...state, revision: nextRevision(state), channels };
 		}
-		case "set-channel-settings": {
-			let matched = false;
-			const reasoning =
-				mutation.reasoning === undefined
-					? undefined
-					: mutation.reasoning === null
-						? null
-						: requiredReasoning(mutation.reasoning);
-			const channels = state.channels.map((channel) => {
-				if (channel.id !== mutation.channelId) return channel;
-				matched = true;
-				return {
-					...channel,
-					settings: {
-						model: optionalModel(mutation.model, channel.settings.model),
-						reasoning:
-							reasoning === undefined ? channel.settings.reasoning : reasoning,
-					},
-				};
-			});
-			if (!matched) throw new Error("unknown channel");
-			return { ...state, revision: nextRevision(state), channels };
-		}
 		case "set-channel-configuration": {
 			if (typeof mutation.instructions !== "string")
 				throw new Error("channel instructions are required");
@@ -604,12 +576,6 @@ export function applyMutation(
 				mutation.openQuestions,
 				"channel context open questions",
 			);
-			const reasoning =
-				mutation.reasoning === undefined
-					? undefined
-					: mutation.reasoning === null
-						? null
-						: requiredReasoning(mutation.reasoning);
 			const projection = projectChannelMemory(
 				state,
 				mutation.channelId,
@@ -624,11 +590,6 @@ export function applyMutation(
 					...channel,
 					agentIds,
 					instructions,
-					settings: {
-						model: optionalModel(mutation.model, channel.settings.model),
-						reasoning:
-							reasoning === undefined ? channel.settings.reasoning : reasoning,
-					},
 					memory: {
 						summary,
 						decisions,

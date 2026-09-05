@@ -8,7 +8,7 @@ The capabilities below describe the implementation, not a passing result for a r
 
 ### Conversations and session continuity
 
-- Channels have chosen agent members, instructions, shared context, and threads. Channels can override workspace model and reasoning defaults.
+- Channels have chosen agent members, instructions, shared context, and threads. Model and reasoning settings apply across the workspace.
 - Direct Messages continue one chosen agent's native session. `/new` starts a fresh session and prevents earlier context or late replies from crossing into it.
 - Different native sessions can run concurrently. New turns send only the new request, and continuations resume the exact stored native session.
 - Busy sessions preserve queued follow-ups. Users can reorder or remove them, steer the agent where supported, or stop the current turn and send the next input.

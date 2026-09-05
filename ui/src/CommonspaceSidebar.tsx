@@ -456,10 +456,6 @@ export function CommonspaceSidebar({
 	const [editingChannelId, setEditingChannelId] = useState<string | null>(null);
 	const [channelAgentIds, setChannelAgentIds] = useState<string[]>([]);
 	const [channelInstructions, setChannelInstructions] = useState("");
-	const [channelModel, setChannelModel] = useState("");
-	const [channelReasoning, setChannelReasoning] = useState<
-		CommonspaceReasoning | ""
-	>("");
 	const [channelSummary, setChannelSummary] = useState("");
 	const [channelDecisions, setChannelDecisions] = useState("");
 	const [channelQuestions, setChannelQuestions] = useState("");
@@ -785,8 +781,6 @@ export function CommonspaceSidebar({
 			channelId,
 			agentIds: channelAgentIds,
 			instructions: channelInstructions,
-			model: channelModel || null,
-			reasoning: channelReasoning || null,
 			summary: channelSummary,
 			decisions: channelDecisions
 				.split("\n")
@@ -1485,18 +1479,20 @@ export function CommonspaceSidebar({
 								)}
 
 								<fieldset className="mt-8 border-t pt-8">
-									<legend className="sr-only">Agent run defaults</legend>
+									<legend className="sr-only">
+										Workspace agent run settings
+									</legend>
 									<SettingsSectionHeading
-										title="Agent run defaults"
-										description="Defaults apply when a channel or agent profile does not override them."
+										title="Workspace agent run settings"
+										description="Model and reasoning apply workspace-wide to every Channel and DM."
 									/>
 									<div className="grid grid-cols-2 gap-4 rounded-md border bg-card p-4 max-[640px]:grid-cols-1">
 										<label>
 											<span className="text-xs font-semibold text-muted-foreground">
-												Model override
+												Workspace model
 											</span>
 											<input
-												aria-label="Default model"
+												aria-label="Workspace model"
 												list="commonspace-models"
 												placeholder="Use each harness default"
 												value={defaultModel}
@@ -1515,7 +1511,7 @@ export function CommonspaceSidebar({
 												Reasoning
 											</span>
 											<select
-												aria-label="Default reasoning"
+												aria-label="Workspace reasoning"
 												value={defaultReasoning}
 												onChange={(event) => {
 													if (isReasoning(event.target.value))
@@ -2434,8 +2430,6 @@ export function CommonspaceSidebar({
 												setEditingChannelId(channel.id);
 												setChannelAgentIds(channel.agentIds);
 												setChannelInstructions(channel.instructions);
-												setChannelModel(channel.settings.model ?? "");
-												setChannelReasoning(channel.settings.reasoning ?? "");
 												setChannelSummary(channel.memory.summary);
 												setChannelDecisions(
 													channel.memory.decisions.join("\n"),
@@ -2469,8 +2463,6 @@ export function CommonspaceSidebar({
 												setEditingChannelId(channel.id);
 												setChannelAgentIds(channel.agentIds);
 												setChannelInstructions(channel.instructions);
-												setChannelModel(channel.settings.model ?? "");
-												setChannelReasoning(channel.settings.reasoning ?? "");
 												setChannelSummary(channel.memory.summary);
 												setChannelDecisions(
 													channel.memory.decisions.join("\n"),
@@ -2550,47 +2542,6 @@ export function CommonspaceSidebar({
 												}}
 												placeholder="What agents should remember and how they should behave in this channel"
 											/>
-										</label>
-										<label className="grid gap-1.5">
-											Channel model
-											<input
-												aria-label={`Model for channel ${channel.name}`}
-												list="commonspace-models"
-												placeholder="Inherit default"
-												value={channelModel}
-												onChange={(event) => {
-													setChannelModel(event.target.value);
-												}}
-											/>
-										</label>
-										<label className="grid gap-1.5">
-											Channel reasoning
-											<select
-												aria-label={`Reasoning for channel ${channel.name}`}
-												value={channelReasoning}
-												onChange={(event) => {
-													if (
-														event.target.value === "" ||
-														isReasoning(event.target.value)
-													)
-														setChannelReasoning(event.target.value);
-												}}
-											>
-												<option value="">Inherit default</option>
-												{[
-													"none",
-													"minimal",
-													"low",
-													"medium",
-													"high",
-													"xhigh",
-													"max",
-												].map((value) => (
-													<option key={value} value={value}>
-														{value}
-													</option>
-												))}
-											</select>
 										</label>
 										<section
 											className="grid gap-3 rounded-md border border-sidebar-border p-3"

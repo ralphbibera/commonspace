@@ -1,4 +1,4 @@
-export const COMMONSPACE_STATE_VERSION = 26 as const;
+export const COMMONSPACE_STATE_VERSION = 27 as const;
 export const COMMONSPACE_EXPORT_VERSION = 1 as const;
 
 export type AgentAdapterKind = "hermes" | "codex";
@@ -12,13 +12,8 @@ export type CommonspaceReasoning =
 	| "xhigh"
 	| "max";
 
-export interface CommonspaceRunSettings {
+export interface CommonspaceDefaults {
 	model: string | null;
-	reasoning: CommonspaceReasoning | null;
-}
-
-export interface CommonspaceDefaults
-	extends Omit<CommonspaceRunSettings, "reasoning"> {
 	reasoning: CommonspaceReasoning;
 	maxAgentsPerTurn: number;
 	memoryThreads: number;
@@ -368,7 +363,6 @@ export interface CommonspaceChannel {
 	instructions: string;
 	memory: CommonspaceChannelMemory;
 	routingMemory: CommonspaceRoutingMemory;
-	settings: CommonspaceRunSettings;
 	createdAt: string;
 }
 
@@ -622,18 +616,10 @@ export type CommonspaceMutation =
 			openQuestions?: string[];
 	  }
 	| {
-			action: "set-channel-settings";
-			channelId: string;
-			model?: string | null;
-			reasoning?: CommonspaceReasoning | null;
-	  }
-	| {
 			action: "set-channel-configuration";
 			channelId: string;
 			agentIds: string[];
 			instructions: string;
-			model?: string | null;
-			reasoning?: CommonspaceReasoning | null;
 			summary: string;
 			decisions?: string[];
 			openQuestions?: string[];

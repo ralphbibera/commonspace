@@ -66,7 +66,6 @@ describe("Commonspace local state", () => {
 						threadIds: [],
 						updatedAt: null,
 					},
-					settings: { model: null, reasoning: null },
 					createdAt: "now",
 				},
 			],
@@ -81,7 +80,7 @@ describe("Commonspace local state", () => {
 		expect(next.messages["channel:c"]).toEqual([]);
 	});
 
-	it("applies bounded defaults and per-channel overrides", () => {
+	it("keeps model and reasoning configuration workspace-wide", () => {
 		let state = createInitialState();
 		state = applyMutation(state, {
 			action: "set-defaults",
@@ -106,16 +105,13 @@ describe("Commonspace local state", () => {
 			{ action: "create-channel", name: "general", agentIds: [] },
 			{ ids: () => "c", now: () => "now" },
 		);
-		state = applyMutation(state, {
-			action: "set-channel-settings",
-			channelId: "c",
-			model: null,
-			reasoning: null,
-		});
-		expect(state.channels[0]?.settings).toEqual({
-			model: null,
-			reasoning: null,
-		});
+		expect(state.channels[0]).not.toHaveProperty("settings");
+		expectTypeOf<{
+			action: "set-channel-settings";
+			channelId: "c";
+			model: null;
+			reasoning: null;
+		}>().not.toMatchTypeOf<CommonspaceMutation>();
 	});
 
 	it("keeps OS notification preferences independent from durable Inbox state", () => {
@@ -203,7 +199,6 @@ describe("Commonspace local state", () => {
 						threadIds: [],
 						updatedAt: null,
 					},
-					settings: { model: null, reasoning: null },
 					createdAt: "now",
 				},
 			],
@@ -313,7 +308,6 @@ describe("Commonspace local state", () => {
 						threadIds: [threadId],
 						updatedAt: null,
 					},
-					settings: { model: null, reasoning: null },
 					createdAt: "now",
 				},
 			],

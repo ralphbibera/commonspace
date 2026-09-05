@@ -118,7 +118,7 @@ flowchart TD
 | Workspace | One local Commonspace installation and its durable state. | One human is the authority in v0.1. |
 | Agent | A supported local ACP runtime explicitly added to the workspace. | The same Agent is reused across Projects and conversations; Commonspace does not clone it per Project. |
 | Project | A named context container with one or more resources. | Projects are references, not task owners. Local folders are the only v0.1 resource type. |
-| Channel | A shared conversation with a chosen set of agents, instructions, settings, and shared context. | A Channel may be projectless and does not permanently belong to one Project. |
+| Channel | A shared conversation with a chosen set of agents, instructions, and shared context. | A Channel may be projectless and does not permanently belong to one Project. Model and reasoning configuration is workspace-wide. |
 | DM | A persistent conversation between the human and exactly one chosen Agent. | Smart routing never substitutes another Agent. |
 | Message | Human, Agent, or system conversation content with references and attachments. | Accepted messages are persisted before inference or agent execution. |
 | Thread | The focused continuation created by a Channel root message. | Each participating Agent has its own native session inside the Thread. |
@@ -291,6 +291,7 @@ Each row gives a stable requirement ID, its release target, the required behavio
 | CON-08 | v0.1 | Run different native sessions concurrently and serialize only the same session. | A slow Agent does not block unrelated Agents or Threads. |
 | CON-09 | v0.1 | Bound pathological Agent-to-Agent cycles. | Repeated cycles stop with a visible outcome rather than silently looping. |
 | CON-10 | v0.1 | Preserve queued follow-ups while a native session is busy. | The user can inspect, reorder, remove, steer where supported, or stop-and-send queued input. |
+| CON-11 | v0.1 | Apply one workspace model and reasoning configuration to every conversation. | Channels do not expose, persist, or apply per-Channel model or reasoning overrides. |
 
 ### 6.5 Commonspace inference, routing, and correction
 

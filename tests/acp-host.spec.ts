@@ -616,7 +616,7 @@ describe("Commonspace ACP host path", () => {
 		);
 	});
 
-	it("maps Hermes Channel model and workspace edit approval onto native ACP controls", async () => {
+	it("maps the workspace model and edit approval onto native ACP controls", async () => {
 		const root = await mkdtemp(
 			join(tmpdir(), "commonspace-hermes-acp-settings-"),
 		);
@@ -659,8 +659,7 @@ describe("Commonspace ACP host path", () => {
 			).channels[0],
 		);
 		await service.mutate({
-			action: "set-channel-settings",
-			channelId: channel.id,
+			action: "set-defaults",
 			model: "openai:hermes-test",
 		});
 
