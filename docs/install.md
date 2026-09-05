@@ -6,7 +6,7 @@ If you already have an extracted archive, go to [Start Commonspace](#start-commo
 
 ## Check your computer
 
-Release archives are available for these targets:
+Release archives are built for these targets:
 
 | Computer | Archive target |
 | --- | --- |
@@ -31,7 +31,7 @@ For packaged builds, check the [Releases page](https://github.com/ralphbibera/co
 
 Download both the archive for your target and its matching `.tar.gz.sha256` file. Keep them in the same folder.
 
-In a terminal opened in that folder, set the version and target for your download. Replace `X.Y.Z` with the release version without its leading `v`. The values below are an example; they do not name an available release.
+In a terminal opened in that folder, set the version and target for your download. Replace `X.Y.Z` with the release version without its leading `v`.
 
 ```bash
 version=X.Y.Z

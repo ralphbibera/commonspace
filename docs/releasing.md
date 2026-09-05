@@ -2,11 +2,11 @@
 
 This guide is for maintainers preparing an installable Commonspace release. The release workflow builds and checks archives, then creates a draft prerelease on GitHub.
 
-Publishing a release requires the repository owner's approval after candidate verification. The workflow creates drafts only. Repository visibility is a separate administrative decision and is never changed by release automation.
+The repository owner reviews and approves the verified draft before a maintainer publishes it.
 
 ## Choose the version
 
-The root `package.json` contains the release version. Its Git tag must match exactly as `v<version>`. For example, version `X.Y.Z` uses tag `vX.Y.Z`; these are placeholders, not announced releases.
+The root `package.json` contains the release version. Its Git tag must match exactly as `v<version>`. For example, version `X.Y.Z` uses tag `vX.Y.Z`.
 
 Update the version and move the relevant [changelog](../CHANGELOG.md) entries into a dated release section through the normal contribution workflow. Release only a reviewed commit. Do not move an existing release tag to another commit.
 
@@ -47,7 +47,7 @@ Keep credentials and transcripts local. Record the commands, platform versions, 
 
 The [Draft release workflow](../.github/workflows/release.yml) runs when a version tag is pushed. You can also start **Actions → Draft release → Run workflow** and supply an existing version tag in the `tag` field.
 
-Before starting it, confirm that the selected tag matches the root version and has no existing release. Use SSH for Git operations.
+Before starting it, confirm that the selected tag matches the root version and has no existing release.
 
 The workflow:
 

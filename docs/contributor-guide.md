@@ -62,7 +62,7 @@ For a quick check across representative screens, run:
 pnpm test:storybook:smoke
 ```
 
-Use `pnpm check:ui` for a complete UI-only check while developing. Before review, manually inspect the changed desktop flow and follow the full checks in Contributing. Run `pnpm verify:live` when the behavior depends on the UI and server working together. Do not hide an integration problem behind a passing isolated story.
+Use `pnpm check:ui` for a complete UI-only check while developing. Before review, manually inspect the changed desktop flow and follow the full checks in Contributing. Run `pnpm verify:live` when the behavior depends on the UI and server working together.
 
 ## Change server behavior safely
 

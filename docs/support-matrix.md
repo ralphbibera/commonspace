@@ -43,4 +43,4 @@ Start with [Contributing](../CONTRIBUTING.md) for a fresh checkout and [Developm
 | Real Hermes and Codex checks | Yes. | Agent session start, exact session resumption, and permitted context/progress tools. |
 | Real macOS service check | A local macOS user session. | Installation, startup, update, and rollback with the actual LaunchAgent. |
 
-Normal contribution checks do not need provider credentials or agent session stores. Keep those outside the repository. The [release guide](releasing.md) explains which results to record before publication.
+Normal contribution checks do not need provider credentials or agent session stores. Keep those outside the repository. See [Releasing](releasing.md) for the required integration checks.

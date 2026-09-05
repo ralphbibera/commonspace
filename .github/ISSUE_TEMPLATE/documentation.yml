@@ -6,7 +6,7 @@ body:
     id: document
     attributes:
       label: Document or page
-      description: Link a repository-relative path or public URL.
+      description: Link the affected page or repository file.
       placeholder: docs/development.md
     validations:
       required: true

@@ -153,7 +153,7 @@ State writes use a `0600` temporary file followed by atomic rename. The prior va
 
 Native alerts are derived from new durable Inbox items after persistence. Existing items become the baseline at startup and import, so historical alerts are not replayed. Notification categories are independent of Inbox read state. Delivery failure cannot fail the originating Agent result.
 
-Notification links contain public conversation, Thread, and message IDs. The client accepts them only when they match current state on the loopback origin.
+Notification links identify conversations, Threads, and messages by their workspace IDs. The client accepts them only when they match current state on the loopback origin.
 
 Portable archive version 1 is independent of internal state version 27. Export contains sanitized workspace records and exact attachment bytes, replaces Project roots with counts, and omits native sessions. Import requires an empty workspace and explicit existing local roots. Retention requires an owner-triggered, revision-bound preview for one inactive conversation. See [Workspace archive format](workspace-archive-format.md).
 

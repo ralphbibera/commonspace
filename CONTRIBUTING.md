@@ -10,12 +10,12 @@ Read the relevant parts of the [product direction](docs/product-direction.md), [
 
 ## Set up your checkout
 
-You need Node.js 22 or newer, pnpm 10.34.5, and Git with SSH configured for GitHub. Fork the repository, then clone your fork. Replace `YOUR_USERNAME` with your GitHub username:
+You need Node.js 22 or newer, pnpm 10.34.5, and Git. Fork the repository, then clone your fork. Replace `YOUR_USERNAME` with your GitHub username:
 
 ```bash
-git clone git@github.com:YOUR_USERNAME/commonspace.git
+git clone https://github.com/YOUR_USERNAME/commonspace.git
 cd commonspace
-git remote add upstream git@github.com:ralphbibera/commonspace.git
+git remote add upstream https://github.com/ralphbibera/commonspace.git
 pnpm install --frozen-lockfile
 pnpm dev
 ```
@@ -86,7 +86,7 @@ A change is ready to merge when required CI passes, substantive review comments 
 
 AI assistance is welcome. You remain responsible for understanding the change, checking its product fit, reviewing every changed line, and verifying the result. Disclose the provider and exact model in the pull request.
 
-Use only code and data you are authorized to share with the chosen model. Do not send real Commonspace conversations or saved state, credentials, agent session records, or internal links without permission. Keep these private records out of public contribution artifacts and use synthetic data instead.
+Use only code and data you are authorized to share with the chosen model. Do not send real Commonspace conversations or saved state, credentials, agent session records, or internal links without permission. Use synthetic data in contributions.
 
 ## Protect private data
 

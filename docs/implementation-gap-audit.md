@@ -6,11 +6,9 @@ This is a historical snapshot of the state-v25 implementation audited on `main`,
 
 ## Status key
 
-The 2026-09-05 runtime review corrected the identity claim in this historical snapshot: the implementation discovers existing Hermes profiles and the installed Codex harness. Each selected native identity is reused across conversations. The historical claim that discovery never enumerated profiles was inaccurate; the current specification describes the implemented behavior.
-
 | Status | Meaning in this snapshot |
 | --- | --- |
-| Working | The audited implementation included the complete behavior described in the row. This does not claim that every control was exposed in the UI. |
+| Working | The behavior was implemented in the audited code; individual UI controls may still have been incomplete. |
 | Backend-ready | Contracts, persistence, service behavior, API, and tests existed, but the UI exposed only a subset or no control. |
 | Partial | A useful subset existed, but an important product promise remained incomplete. |
 | Direction conflict | Behavior contradicted the documented product boundary. |
@@ -34,7 +32,7 @@ The tables group findings by the user experience they support. “Working” row
 
 | Product capability | Status | Evidence and limits recorded at the audit |
 | --- | --- | --- |
-| Explicit Agent identity | Working | Each new Agent represented one explicitly selected supported installation: Codex or Hermes. Discovery did not enumerate custom profiles or create personas. Legacy identities remained loadable to preserve existing conversation history. |
+| Explicit Agent identity | Working | Reviewed 2026-09-05: explicit discovery returns the installed Codex harness and existing Hermes profiles. Each Agent represents a selected native identity. Commonspace does not create native profiles or synthetic personas. Existing identities remain loadable to preserve conversation history. |
 | ACP capability/configuration authority | Working | Commonspace limited customization to workspace appearance. Runtime-specific configuration endpoints, CLI/profile mutation, native-configuration data contracts, and the configuration dashboard had been removed. Runtime controls had to originate in capabilities advertised through ACP. |
 | Explicit mentions and peer handoffs | Working | Mentions chose the addressed agent, added it to the Channel when needed, and created bounded, non-blocking handoffs in the same visible thread. |
 | Unaddressed agent selection | Working | A configured runtime or OpenAI-compatible provider chose the smallest useful agent set. The service stored the decision, start and resolution times, and routing duration separately from execution time. Invalid inference left the accepted message visible with a retryable failure and Inbox attention. |
@@ -85,8 +83,6 @@ The tables group findings by the user experience they support. “Working” row
 
 The next release step recorded by this audit was to repeat the real-runtime, isolated service-lifecycle, and browser acceptance gates on a clean supported release machine. The [Roadmap](roadmap.md#release-readiness) and [v0.1 acceptance ledger](v0.1-acceptance.md#current-release-gates) describe the gates to run for a candidate now.
 
-## Documentation corrections made with this audit
+## Audit scope
 
 The snapshot used state version 25 and migration coverage from versions 1–24. Later implementation changes require later state-version documentation and fresh evidence; this historical record does not establish their status.
-
-The audit also corrected earlier descriptions that understated multi-Project context, context controls, work/result attribution, export/import, retention, notifications, and the installed service lifecycle. The capability tables above record those findings together with their UI and runtime limits. Desktop polish remained separate from the implemented service behavior.

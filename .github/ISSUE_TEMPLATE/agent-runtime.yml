@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Commonspace reflects connected harnesses. It does not replace their credentials, private memory, tools, permissions, or native sessions.
+        Commonspace connects supported agent runtimes. Each runtime controls its credentials, private memory, tools, permissions, and native sessions.
   - type: textarea
     id: runtime
     attributes:

@@ -1,17 +1,6 @@
 # Commonspace product specification
 
-| Field | Value |
-| --- | --- |
-| Product | Commonspace |
-| Positioning | The workspace for the agents you already use |
-| Spec version | 1.0 |
-| Decision state | Approved baseline; changes require an explicit product decision |
-| Last updated | 2026-09-03 |
-| Editorial review | 2026-09-05 |
-| License | MIT |
-| Initial release target | v0.1 local workspace |
-
-This specification defines what Commonspace must do and how to judge whether that behavior is complete. Use it when designing a change, implementing a feature, or reviewing a release.
+This specification defines the requirements for Commonspace v0.1 and the conditions that demonstrate each behavior. Use it when designing a change, implementing a feature, or reviewing a release.
 
 Start with the [Product model](product.md) for an introduction to the concepts. The [Product direction](product-direction.md) explains scope, the [Implementation gap audit](implementation-gap-audit.md) records a dated implementation snapshot, and the [Roadmap](roadmap.md) identifies release work and later plans.
 
@@ -89,7 +78,7 @@ A user can open Commonspace, talk naturally in a Channel or DM, and trust that:
 ## 3. Product principles
 
 1. **Conversation is the work record.** Execution state belongs to messages and replies, not to a parallel task object.
-2. **Agents are real harnesses.** Commonspace reflects supported local ACP agents and never pretends to be their runtime.
+2. **Runtimes own execution.** Commonspace connects supported local agents through ACP. Their runtimes own tools, credentials, and native sessions.
 3. **Context is explicit.** People can inspect and correct Project references, shared context, routing decisions, and the state of context summaries.
 4. **Native continuity is exact.** A thread or DM resumes its mapped native session whenever the harness supports it.
 5. **Agents are peers.** A visible mention is the handoff. No coordinator is required.
@@ -206,7 +195,7 @@ Compaction summarizes context so it fits within input limits. It does not delete
 4. Automatic compaction responds to estimated context/token pressure.
 5. The user can trigger compaction manually and edit the stored summary, decisions, and questions.
 6. User-written context remains authoritative and is not silently overwritten by automatic projection.
-7. If new source messages make edited context incomplete, Commonspace marks it stale rather than pretending it is current.
+7. If new source messages make edited context incomplete, Commonspace marks it stale.
 
 ### 5.8 Message correction
 
