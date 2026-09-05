@@ -28,7 +28,7 @@ The capabilities below describe the implementation, not a passing result for a r
 
 ### Agents and routing
 
-- Adding an agent explicitly discovers supported installed Hermes and Codex runtimes. Each runtime has one reusable workspace identity.
+- Adding an agent explicitly discovers the installed Codex runtime and existing Hermes profiles. Each selected native identity is reused across the workspace.
 - The Agent Client Protocol (ACP) carries native sessions and activity. Scoped Model Context Protocol (MCP) tools let agents read permitted Commonspace context and post visible progress or peer handoffs.
 - Unaddressed Channel messages use a configured runtime or OpenAI-compatible inference provider to select agents. Explicit mentions remain authoritative.
 - Routing stores one limited sub-request and relevant Project subset per selected agent. A visible setting controls the maximum number of selected agents; there is no hidden two-agent cap.

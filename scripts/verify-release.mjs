@@ -48,14 +48,22 @@ async function verifyMacInstallation(root, home) {
 	const { installOrUpdate, rollbackRelease } = await import(
 		pathToFileURL(join(root, "scripts/commonspace-service.mjs")).href
 	);
+	let loaded = false;
 	const runtime = {
 		home,
 		uid: process.getuid(),
 		log: () => undefined,
 		health: async () => true,
 		run: async (command, args, options = {}) => {
-			if (command === "/bin/launchctl")
-				return { exitCode: 0, stdout: "", stderr: "" };
+			if (command === "/bin/launchctl") {
+				if (args[0] === "bootstrap") loaded = true;
+				if (args[0] === "bootout") loaded = false;
+				return {
+					exitCode: args[0] === "print" && !loaded ? 113 : 0,
+					stdout: "",
+					stderr: "",
+				};
+			}
 			const result = await run(command, args, options);
 			return { ...result, exitCode: 0 };
 		},
@@ -212,6 +220,14 @@ async function main() {
 		assert.equal(metadata.platform, process.platform);
 		assert.equal(metadata.arch, process.arch);
 		assert.equal(metadata.distribution, "archive");
+		const notices = await readFile(
+			join(root, "THIRD_PARTY_NOTICES.txt"),
+			"utf8",
+		);
+		assert(
+			notices.includes("Third-party notices"),
+			"Missing dependency notices",
+		);
 		const home = join(temporary, "home");
 		await mkdir(join(home, ".commonspace"), { recursive: true });
 		const sentinel = join(home, ".commonspace/release-smoke-sentinel");

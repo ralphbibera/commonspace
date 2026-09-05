@@ -562,11 +562,16 @@ export const discoveryStoryBootstrap = createStoryBootstrap({
 export const failedStoryBootstrap = (() => {
 	const state = createStoryState();
 	const failedReply: CommonspaceMessage = {
-		...dmReply,
 		id: "message-dm-failed",
-		text: "",
-		replyStatus: "failed",
-		replyError: "The local agent process exited before replying.",
+		conversation: dmUserMessage.conversation,
+		authorType: "system",
+		authorId: "system",
+		authorName: "Commonspace",
+		text: "The local agent process exited before replying.",
+		createdAt: dmReply.createdAt,
+		sourceMessageId: dmUserMessage.id,
+		projectIds: [primaryProject.id],
+		projectId: primaryProject.id,
 	};
 	return createStoryBootstrap({
 		state: {
@@ -574,7 +579,14 @@ export const failedStoryBootstrap = (() => {
 			inboxUnreadMessageIds: [failedReply.id],
 			messages: {
 				...state.messages,
-				[`dm:${hermesAgent.id}`]: [dmUserMessage, failedReply],
+				[`dm:${hermesAgent.id}`]: [
+					{
+						...dmUserMessage,
+						replyStatus: "failed",
+						replyError: failedReply.text,
+					},
+					failedReply,
+				],
 			},
 		},
 	});

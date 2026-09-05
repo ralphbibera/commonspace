@@ -6,6 +6,8 @@ This is a historical snapshot of the state-v25 implementation audited on `main`,
 
 ## Status key
 
+The 2026-09-05 runtime review corrected the identity claim in this historical snapshot: the implementation discovers existing Hermes profiles and the installed Codex harness. Each selected native identity is reused across conversations. The historical claim that discovery never enumerated profiles was inaccurate; the current specification describes the implemented behavior.
+
 | Status | Meaning in this snapshot |
 | --- | --- |
 | Working | The audited implementation included the complete behavior described in the row. This does not claim that every control was exposed in the UI. |

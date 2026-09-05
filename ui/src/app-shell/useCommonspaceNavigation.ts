@@ -187,8 +187,15 @@ export function useCommonspaceNavigation(
 					)
 						return false;
 				}
-				store.selectConversation(conversation);
-				if (thread !== undefined) store.selectThread(thread.id);
+				const currentConversation = store.getSnapshot().activeConversation;
+				if (
+					currentConversation?.kind !== conversation.kind ||
+					currentConversation.id !== conversation.id
+				)
+					store.selectConversation(conversation);
+				const threadId = thread?.id ?? null;
+				if (store.getSnapshot().activeThreadId !== threadId)
+					store.selectThread(threadId);
 				setTargetMessageId(route.messageId ?? null);
 				setActiveDestination("conversation");
 				return true;

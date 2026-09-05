@@ -25,6 +25,7 @@ import {
 	relative,
 	resolve,
 } from "node:path";
+import { URL } from "node:url";
 
 export const COMMONSPACE_SERVICE_LABEL = "dev.commonspace.service";
 export const DEFAULT_COMMONSPACE_SOURCE =
@@ -161,8 +162,26 @@ async function defaultRun(command, args, options = {}) {
 	});
 }
 
-async function defaultHealth(url) {
+export async function serviceHealth(url, layout, run = defaultRun) {
 	try {
+		const service = await run("/bin/launchctl", ["print", layout.target]);
+		const pid = /^\s*pid = ([1-9][0-9]*)\s*$/mu.exec(service.stdout)?.[1];
+		if (service.exitCode !== 0 || pid === undefined) return false;
+		const endpoint = new URL(url);
+		const listener = await run("/usr/sbin/lsof", [
+			"-nP",
+			"-a",
+			"-p",
+			pid,
+			`-iTCP@${endpoint.hostname}:${endpoint.port}`,
+			"-sTCP:LISTEN",
+			"-Fp",
+		]);
+		if (
+			listener.exitCode !== 0 ||
+			!listener.stdout.split("\n").includes(`p${pid}`)
+		)
+			return false;
 		const response = await fetch(`${url}/api/health`, {
 			signal: globalThis.AbortSignal.timeout(1_000),
 		});
@@ -186,7 +205,7 @@ function dependencies(overrides = {}) {
 		randomId:
 			overrides.randomId ??
 			(() => `${String(process.pid)}-${globalThis.crypto.randomUUID()}`),
-		health: overrides.health ?? defaultHealth,
+		health: overrides.health ?? serviceHealth,
 		log:
 			overrides.log ??
 			((message) => {
@@ -243,7 +262,7 @@ async function requiredRun(runtime, command, args, options = {}) {
 
 async function waitForHealth(runtime, layout) {
 	for (let attempt = 0; attempt < 20; attempt += 1) {
-		if (await runtime.health(layout.url)) return;
+		if (await runtime.health(layout.url, layout, runtime.run)) return;
 		await new Promise((resolveWait) => {
 			setTimeout(resolveWait, 250);
 		});
@@ -443,7 +462,24 @@ export async function stopService(options = {}, overrides = {}) {
 		"bootout",
 		layout.target,
 	]);
-	return result.exitCode === 0;
+	if (result.exitCode === 3 || result.exitCode === 113) return false;
+	if (result.exitCode !== 0)
+		throw new Error(
+			`launchctl bootout failed: ${result.stderr.trim() || result.stdout.trim() || `exit ${String(result.exitCode)}`}`,
+		);
+	for (let attempt = 0; attempt < 40; attempt += 1) {
+		const loaded = await runtime.run("/bin/launchctl", [
+			"print",
+			layout.target,
+		]);
+		if (loaded.exitCode === 3 || loaded.exitCode === 113) return true;
+		if (loaded.exitCode !== 0)
+			throw new Error(
+				`launchctl print failed while stopping: ${loaded.stderr.trim() || loaded.stdout.trim()}`,
+			);
+		await new Promise((resolveWait) => setTimeout(resolveWait, 250));
+	}
+	throw new Error("Commonspace service did not finish stopping");
 }
 
 export async function startService(options = {}, overrides = {}) {
@@ -473,12 +509,17 @@ export async function startService(options = {}, overrides = {}) {
 			throw new Error(
 				`launchctl bootstrap failed: ${bootstrap.stderr.trim() || bootstrap.stdout.trim()}`,
 			);
+		const kickstart = await runtime.run("/bin/launchctl", [
+			"kickstart",
+			"-k",
+			layout.target,
+		]);
+		if (kickstart.exitCode !== 0 && kickstart.exitCode !== 37) {
+			throw new Error(
+				`launchctl kickstart failed: ${kickstart.stderr.trim() || kickstart.stdout.trim() || `exit ${String(kickstart.exitCode)}`}`,
+			);
+		}
 	}
-	await requiredRun(runtime, "/bin/launchctl", [
-		"kickstart",
-		"-k",
-		layout.target,
-	]);
 	await waitForHealth(runtime, layout);
 	return layout;
 }
@@ -606,7 +647,8 @@ export async function serviceStatus(options = {}, overrides = {}) {
 		installed &&
 		(await runtime.run("/bin/launchctl", ["print", layout.target])).exitCode ===
 			0;
-	const healthy = loaded && (await runtime.health(layout.url));
+	const healthy =
+		loaded && (await runtime.health(layout.url, layout, runtime.run));
 	let release = null;
 	try {
 		const metadata = JSON.parse(await readFile(layout.releaseMetadata, "utf8"));

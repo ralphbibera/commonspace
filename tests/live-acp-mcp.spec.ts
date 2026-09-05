@@ -31,6 +31,7 @@ describe
 			await mkdir(workspace);
 			const running = await startCommonspaceServer({
 				root,
+				codexPath: process.env.COMMONSPACE_CODEX_PATH ?? "codex",
 				port: 0,
 				runBudgetSeconds: 120,
 				logger: { info: () => undefined, warn: () => undefined },
@@ -77,13 +78,12 @@ describe
 			expect(
 				messages.find((message) => message.authorType === "system"),
 			).toBeUndefined();
-			expect(
-				messages.some(
-					(message) =>
-						message.authorType === "agent" &&
-						message.text === "CODEX_MCP_PROGRESS_OK",
-				),
-			).toBe(true);
+			const replies = messages
+				.filter((message) => message.authorType === "agent")
+				.map((message) => message.text);
+			expect(replies, JSON.stringify(replies)).toContain(
+				"CODEX_MCP_PROGRESS_OK",
+			);
 			expect(
 				messages.some(
 					(message) =>
@@ -107,7 +107,11 @@ describe
 				logger: { info: () => undefined, warn: () => undefined },
 			});
 			servers.push(running);
-			const discovered = await addTestHarness(running.service, "hermes");
+			const discovered = await addTestHarness(
+				running.service,
+				"hermes",
+				"Hermes",
+			);
 			const project = mustExist(
 				(
 					await running.service.mutate({

@@ -158,6 +158,7 @@ export const FailedSession: Story = {
 		await expect(
 			canvas.getByText(/local agent process exited/iu),
 		).toBeVisible();
+		await expect(canvas.getByText("Failed", { exact: true })).toBeVisible();
 	},
 };
 

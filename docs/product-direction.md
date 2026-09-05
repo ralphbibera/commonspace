@@ -48,7 +48,7 @@ Commonspace supports known local agent runtimes that expose ACP. Supporting a co
 Agent addition is always explicit:
 
 1. The user chooses to add an agent.
-2. Commonspace scans for supported harnesses only during that flow.
+2. Commonspace scans for the supported Codex installation and existing Hermes profiles only during that flow.
 3. The user manually selects and adds the desired agent.
 4. The user can customize workspace appearance, such as display name or avatar, without changing the underlying runtime identity.
 

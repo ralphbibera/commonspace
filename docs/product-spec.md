@@ -257,11 +257,11 @@ Each row gives a stable requirement ID, its release target, the required behavio
 
 | ID | Target | Requirement | Acceptance condition |
 | --- | --- | --- | --- |
-| AGT-01 | v0.1 | Add Agents only through an explicit user-initiated discovery flow. | Startup does not silently add installed harnesses, and discovery returns one identity per supported harness rather than custom profiles. |
+| AGT-01 | v0.1 | Add Agents only through an explicit user-initiated discovery flow. | Startup does not silently add Agents. Discovery returns the installed Codex harness and existing Hermes profiles; Commonspace does not create native profiles or synthetic personas. |
 | AGT-02 | v0.1 | Support known ACP harnesses through first-party adapters. | Unsupported arbitrary CLIs are rejected rather than represented as partially functional Agents. |
 | AGT-03 | v0.1 | Reuse one Agent identity across Projects, Channels, DMs, and Threads. | No per-Project Agent clone or hidden Project-specific memory identity is created. |
 | AGT-04 | v0.1 | Allow workspace-local display name, avatar/emoji, and accent changes. | Native harness identity and configuration remain unchanged; Commonspace does not create synthetic personas or behavior profiles. |
-| AGT-05 | Capability-dependent | Expose models, reasoning, steering, stopping, tools, and permissions only when advertised through ACP. | The UI and API do not synthesize unsupported choices or inspect/mutate harness configuration through runtime-specific side channels. |
+| AGT-05 | Capability-dependent | Expose models, reasoning, steering, stopping, tools, and permissions only when advertised through ACP. | Configuration controls use ACP and do not synthesize unsupported choices. Discovery may read identity metadata through the supported harness CLI; Commonspace does not mutate native profile configuration. |
 | AGT-06 | v0.1 | Avoid standalone Agent profile/dashboard requirements. | Agent discovery and context remain available through addition, DMs, Channel membership, mentions, and session indicators. |
 
 ### 6.3 Projects and references

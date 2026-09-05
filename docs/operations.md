@@ -57,7 +57,7 @@ Use a verified archive for the computer's architecture. Stop any foreground Comm
 node scripts/commonspace-service.mjs install --release .
 ```
 
-The installer stages the release, validates the LaunchAgent property list, atomically activates it, starts the service, and requires `/api/health` to pass. State remains in `~/.commonspace`. One previous release is retained for recovery. Agent authentication is needed when running an agent, not when installing or opening the application.
+The installer stages the release, validates the LaunchAgent property list, atomically activates it, starts the service, and requires `/api/health` to pass. It also checks that the LaunchAgent process owns the loopback listener, so an existing foreground process cannot make a failed installation appear healthy. State remains in `~/.commonspace`. One previous release is retained for recovery. Agent authentication is needed when running an agent, not when installing or opening the application.
 
 After installation:
 

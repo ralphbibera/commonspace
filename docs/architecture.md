@@ -115,7 +115,7 @@ Messages and Threads use zero-to-many Project references. A singular compatibili
 
 ## Agent runtimes
 
-Hermes runs through its installed `hermes acp` harness. Codex uses the bundled ACP bridge with the installed Codex CLI. Commonspace exposes one workspace Agent identity per supported harness, while each Thread or DM generation keeps its own native session.
+Hermes runs through its installed `hermes acp` harness. Discovery reads its existing native profiles; each selected profile has a reusable workspace Agent identity and retains its own native configuration. Codex uses the bundled ACP bridge with the installed Codex CLI. Each Thread or DM generation keeps its own native session. Discovery never creates or rewrites native profiles.
 
 A native turn receives the newly delivered message or assigned sub-request and ACP resource links for attached files. Shared room context is available through scoped MCP tools instead of being replayed inside every user message. Agent-authored mention handoffs deliver only the new handoff message.
 

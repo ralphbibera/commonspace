@@ -13,22 +13,16 @@ async function waitForAgentText(
 	agentId: string,
 	text: string,
 ): Promise<void> {
-	await vi.waitFor(
-		async () => {
-			const messages =
-				(await service.bootstrap()).state.messages[`dm:${agentId}`] ?? [];
-			const failure = messages.find(
-				(message) => message.authorType === "system",
-			);
-			if (failure !== undefined) throw new Error(failure.text);
-			expect(
-				messages.some(
-					(message) =>
-						message.authorType === "agent" && message.text.includes(text),
-				),
-			).toBe(true);
-		},
-		{ timeout: 180_000, interval: 500 },
+	await service.whenIdle();
+	const messages =
+		(await service.bootstrap()).state.messages[`dm:${agentId}`] ?? [];
+	const failure = messages.find((message) => message.authorType === "system");
+	if (failure !== undefined) throw new Error(failure.text);
+	const replies = messages
+		.filter((message) => message.authorType === "agent")
+		.map((message) => message.text);
+	expect(replies, JSON.stringify(replies)).toEqual(
+		expect.arrayContaining([expect.stringContaining(text)]),
 	);
 }
 
@@ -47,6 +41,7 @@ describe.skipIf(!live).sequential("installed Commonspace ACP agents", () => {
 			{},
 			{
 				root,
+				codexPath: process.env.COMMONSPACE_CODEX_PATH ?? "codex",
 				runBudgetSeconds: 120,
 			},
 		);

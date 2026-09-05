@@ -34,6 +34,7 @@ import {
 	useState,
 	useSyncExternalStore,
 } from "react";
+import { Button } from "@/components/ui/button";
 import { WorkspaceHeader } from "@/design-system/WorkspaceHeader";
 import { cn } from "@/lib/utils";
 import { AgentTrace } from "./AgentTrace.tsx";
@@ -2165,7 +2166,7 @@ export function CommonspaceConversation({
 													conversationUnreadMessages.length > 0 && (
 														<button
 															type="button"
-															className="mx-auto mb-3 grid min-h-11 w-[calc(100%+32px)] max-w-[812px] grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 border-0 bg-transparent px-4 text-xs font-semibold text-primary before:h-px before:bg-primary hover:[&>span:last-child]:text-foreground hover:[&>span:last-child]:underline"
+															className="mx-auto mb-3 grid min-h-11 w-full max-w-[812px] grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 border-0 bg-transparent px-4 text-xs font-semibold text-primary before:h-px before:bg-primary hover:[&>span:last-child]:text-foreground hover:[&>span:last-child]:underline"
 															aria-label={`${String(conversationUnreadMessages.length)} new messages, mark read`}
 															onClick={markConversationRead}
 														>
@@ -2379,7 +2380,7 @@ export function CommonspaceConversation({
 								role={commandFeedback.tone === "error" ? "alert" : "status"}
 								aria-label="Command result"
 							>
-								<header>
+								<header className="flex items-center justify-between gap-3">
 									<strong>{commandFeedback.title}</strong>
 									<button
 										type="button"
@@ -2395,24 +2396,27 @@ export function CommonspaceConversation({
 								</header>
 								<p>{commandFeedback.body}</p>
 								{commandFeedback.action === "reset-dm" && (
-									<div>
-										<button
+									<div className="mt-3 flex flex-wrap gap-2">
+										<Button
 											type="button"
+											size="sm"
 											onClick={() => {
 												void resetDirectMessage();
 											}}
 										>
 											Start new chat
-										</button>
-										<button
+										</Button>
+										<Button
 											type="button"
+											size="sm"
+											variant="outline"
 											onClick={() => {
 												setCommandFeedback(null);
 												composer.current?.focus();
 											}}
 										>
 											Cancel
-										</button>
+										</Button>
 									</div>
 								)}
 							</section>
