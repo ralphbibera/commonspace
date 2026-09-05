@@ -27,7 +27,7 @@ An **agent runtime**, or **harness**, is the software that runs an agent. It own
 
 ### Project
 
-A Project names resources that agents can use in a conversation. v0.1 supports one or more local folders. The first folder is the primary working directory; additional folders provide further context.
+A Project names resources that agents can use in a conversation. v0.0.1 supports one or more local folders. The first folder is the primary working directory; additional folders provide further context.
 
 For example, an API repository and a documentation repository can be separate Projects referenced by the same thread. A Project does not own tasks or require its own Channel or agent copy.
 

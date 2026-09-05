@@ -2,7 +2,7 @@
 
 Core conversation, context, and local-service capabilities are implemented. Current priorities are clean-machine validation and desktop usability.
 
-See the [Product specification](product-spec.md) for requirements, the [Implementation gap audit](implementation-gap-audit.md) for the recorded assessment, and the [v0.1 acceptance ledger](v0.1-acceptance.md) for test evidence.
+See the [Product specification](product-spec.md) for requirements, the [Implementation gap audit](implementation-gap-audit.md) for the recorded assessment, and the [v0.0.1 acceptance ledger](v0.0.1-acceptance.md) for test evidence.
 
 ## Working now
 

@@ -1,6 +1,6 @@
 # Implementation gap audit
 
-The 2026-09-03 audit found the core v0.1 conversation and local-service capabilities implemented. Desktop visual polish remained partial; additional Project resource types, relational storage, and plugins were deferred.
+The 2026-09-03 audit found the initial release's core conversation and local-service capabilities implemented. Desktop visual polish remained partial; additional Project resource types, relational storage, and plugins were deferred.
 
 This is a historical snapshot of the state-v25 implementation audited on `main`, not a fresh verification of the current checkout. It compares the [Product specification](product-spec.md), [Product direction](product-direction.md), and [Product model](product.md) with the contracts, service, persistence, API, interface, and tests available at that time. Later state versions and release results must be checked separately.
 
@@ -13,7 +13,7 @@ This is a historical snapshot of the state-v25 implementation audited on `main`,
 | Partial | A useful subset existed, but an important product promise remained incomplete. |
 | Direction conflict | Behavior contradicted the documented product boundary. |
 | Missing | No durable implementation was found. |
-| Deferred | Outside v0.1 scope or dependent on demonstrated scale. |
+| Deferred | Outside the initial release scope or dependent on demonstrated scale. |
 
 ## Capability audit
 
@@ -75,13 +75,13 @@ The tables group findings by the user experience they support. “Working” row
 | Product capability | Status | Evidence and limits recorded at the audit |
 | --- | --- | --- |
 | Export, import, and retention | Working | Version-1 JSON archives preserved conversation text and exact attachment bytes while omitting Commonspace-managed path, native-session, capability, and credential fields. This was metadata sanitization, not removal of sensitive content from arbitrary text or files. Archives were unencrypted private user data. Import required a clean workspace, attachment validation, and explicit local root mappings. Revision-bound retention covered one Channel or DM and rejected live/queued runs and context or routing compaction. See [Workspace archive format](workspace-archive-format.md). |
-| Extensible Project resources | Deferred | PRJ-08 reserved non-folder resources for later. v0.1 supported one or more local folders. |
+| Extensible Project resources | Deferred | PRJ-08 reserved non-folder resources for later. Projects supported one or more local folders. |
 | Relational transcript store | Deferred | Storage technology depended on measured scale. Complete transcript preservation and explicit retention were required regardless of a future relational migration. |
 | Plugin lifecycle | Deferred | A generic plugin lifecycle was outside the local-first core and was not required by the product model. |
 
 ## Recommended feature order
 
-The next release step recorded by this audit was to repeat the real-runtime, isolated service-lifecycle, and browser acceptance gates on a clean supported release machine. The [Roadmap](roadmap.md#release-readiness) and [v0.1 acceptance ledger](v0.1-acceptance.md#current-release-gates) describe the gates to run for a candidate now.
+The next release step recorded by this audit was to repeat the real-runtime, isolated service-lifecycle, and browser acceptance gates on a clean supported release machine. The [Roadmap](roadmap.md#release-readiness) and [v0.0.1 acceptance ledger](v0.0.1-acceptance.md#current-release-gates) describe the gates to run for a candidate now.
 
 ## Audit scope
 

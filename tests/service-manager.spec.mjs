@@ -119,6 +119,7 @@ async function fixture() {
 					"#!/usr/bin/env node\n",
 				);
 				await writeFile(join(target, "release-marker"), String(clone));
+				await writeFile(join(target, "scripts", "release-version.mjs"), "");
 			}
 			if (command === "git" && args[0] === "rev-parse") {
 				return { exitCode: 0, stdout: `commit-${String(clone)}\n`, stderr: "" };
@@ -150,10 +151,11 @@ describe("packaged Commonspace service releases", () => {
 			join(release, "scripts/commonspace-service.mjs"),
 			"#!/usr/bin/env node\n",
 		);
+		await writeFile(join(release, "scripts/release-version.mjs"), "");
 		await writeFile(
 			join(release, "commonspace-release.json"),
 			JSON.stringify({
-				version: "0.1.0",
+				version: "0.0.1+build.01",
 				revision: "a".repeat(40),
 				platform: "darwin",
 				arch: process.arch,
@@ -167,6 +169,14 @@ describe("packaged Commonspace service releases", () => {
 		);
 		await installOrUpdate({ appRoot, release }, dependencies);
 		const layout = serviceLayout({ appRoot, home, uid: dependencies.uid });
+		expect(
+			JSON.parse(
+				await readFile(
+					join(layout.current, "commonspace-release.json"),
+					"utf8",
+				),
+			).version,
+		).toBe("0.0.1+build.01");
 		await rm(release, { recursive: true });
 		expect(
 			await readFile(
@@ -187,28 +197,35 @@ describe("packaged Commonspace service releases", () => {
 		).rejects.toThrow("--release");
 	});
 
-	it("rejects a package for another platform before replacing the installed release", async () => {
-		const { appRoot, dependencies, home } = await fixture();
-		await installOrUpdate({ appRoot }, dependencies);
-		const release = join(home, "wrong-platform");
-		await mkdir(release);
-		await writeFile(
-			join(release, "commonspace-release.json"),
-			JSON.stringify({
-				version: "0.1.0",
-				revision: "a".repeat(40),
-				platform: "linux",
-				arch: "x64",
-				distribution: "archive",
-			}),
-		);
-		await expect(
-			installOrUpdate({ mode: "update", appRoot, release }, dependencies),
-		).rejects.toThrow("platform");
-		expect(
-			await readFile(join(appRoot, "current/release-marker"), "utf8"),
-		).toBe("1");
-	});
+	it.each([
+		{ version: "0.0.1", platform: "linux", error: "platform" },
+		{ version: "0.0.1-rc.01", platform: "darwin", error: "version" },
+		{ version: "0.0.1+build..1", platform: "darwin", error: "version" },
+	])(
+		"rejects an incompatible package ($version, $platform) before replacing the installed release",
+		async ({ version, platform, error }) => {
+			const { appRoot, dependencies, home } = await fixture();
+			await installOrUpdate({ appRoot }, dependencies);
+			const release = join(home, "wrong-platform");
+			await mkdir(release);
+			await writeFile(
+				join(release, "commonspace-release.json"),
+				JSON.stringify({
+					version,
+					revision: "a".repeat(40),
+					platform,
+					arch: "x64",
+					distribution: "archive",
+				}),
+			);
+			await expect(
+				installOrUpdate({ mode: "update", appRoot, release }, dependencies),
+			).rejects.toThrow(error);
+			expect(
+				await readFile(join(appRoot, "current/release-marker"), "utf8"),
+			).toBe("1");
+		},
+	);
 });
 
 describe("installed Commonspace service manager", () => {

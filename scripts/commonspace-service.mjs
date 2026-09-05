@@ -26,6 +26,7 @@ import {
 	resolve,
 } from "node:path";
 import { URL } from "node:url";
+import { parseReleaseVersion } from "./release-version.mjs";
 
 export const COMMONSPACE_SERVICE_LABEL = "dev.commonspace.service";
 export const DEFAULT_COMMONSPACE_SOURCE =
@@ -345,6 +346,7 @@ async function releaseIsComplete(path) {
 		join(path, "server", "dist", "index.js"),
 		join(path, "ui", "dist", "index.html"),
 		join(path, "scripts", "commonspace-service.mjs"),
+		join(path, "scripts", "release-version.mjs"),
 	];
 	for (const file of required) {
 		if (!(await stat(file)).isFile())
@@ -366,11 +368,11 @@ async function copyPackagedRelease(layout, runtime, release, staging) {
 	if (
 		metadata.distribution !== "archive" ||
 		typeof metadata.version !== "string" ||
-		!/^\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]+)?$/u.test(metadata.version) ||
 		!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u.test(metadata.revision)
 	) {
 		throw new Error("Invalid Commonspace package metadata");
 	}
+	parseReleaseVersion(metadata.version);
 	if (
 		metadata.platform !== runtime.platform ||
 		metadata.arch !== (runtime.arch ?? process.arch)

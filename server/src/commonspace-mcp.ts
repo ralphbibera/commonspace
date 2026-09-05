@@ -10,6 +10,7 @@ import type {
 	McpReadMessagesResponse,
 	McpSearchMessagesResponse,
 } from "./service.js";
+import { COMMONSPACE_VERSION } from "./version.js";
 
 const MAX_CREDENTIALS = 10_000;
 
@@ -192,7 +193,10 @@ export class CommonspaceMcpGateway {
 	}
 
 	#createServer(scope: CommonspaceMcpScope): McpServer {
-		const server = new McpServer({ name: "commonspace", version: "0.1.0" });
+		const server = new McpServer({
+			name: "commonspace",
+			version: COMMONSPACE_VERSION,
+		});
 		server.registerTool(
 			"commonspace_get_context",
 			{
