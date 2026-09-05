@@ -149,4 +149,6 @@ pnpm verify:acp:mcp
 
 The first two check native session startup and resumption. The MCP check also requires real harnesses to read scoped context and post visible progress. These checks complement deterministic tests; they do not replace them.
 
+The Codex live checks honor `COMMONSPACE_CODEX_PATH` when testing a particular installed CLI. Use a complete runtime installation, including its Code Mode companion when that feature is enabled. The selected CLI must support the model configured in its native settings; an authenticated but outdated CLI can still fail model requests.
+
 On macOS, `pnpm verify:notifications` checks whether the native notifier accepts a safe test alert. Use **Send test notification** in Workspace settings to check visible delivery and follow any operating-system guidance.

@@ -4,6 +4,14 @@ Notable changes to Commonspace are recorded here. Changes under **Unreleased** h
 
 ## [Unreleased]
 
+### Fixed
+
+- Opening or closing a Thread preserves unsent attachments in its Channel composer.
+- The unread marker and its Mark read control fit within a split conversation pane.
+- Installed-service readiness verifies that the LaunchAgent process owns the loopback listener before accepting its health response. Another Commonspace process can no longer mask a failed installation or update.
+- Service updates wait for macOS to unload the previous job before activating its replacement.
+- Release archives retain third-party dependency license and copyright notices alongside the application.
+
 ### Added
 
 #### Installation and releases

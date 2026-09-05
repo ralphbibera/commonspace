@@ -5,6 +5,7 @@ import {
 	cp,
 	mkdir,
 	mkdtemp,
+	readdir,
 	readFile,
 	rename,
 	rm,
@@ -50,6 +51,62 @@ export async function copyReleaseAssets(source, target) {
 			verbatimSymlinks: true,
 		});
 	}
+}
+
+async function writeDependencyNotices(target) {
+	const { stdout } = await run(
+		"corepack",
+		["pnpm", "licenses", "list", "--prod", "--json"],
+		{ cwd: repoRoot, maxBuffer: 8 * 1024 * 1024 },
+	);
+	const packages = Object.values(JSON.parse(stdout))
+		.flat()
+		.sort((left, right) => left.name.localeCompare(right.name));
+	const sections = [
+		"Third-party notices\n\nApplication dependencies retain their respective licenses and copyright notices.",
+	];
+	for (const dependency of packages) {
+		const notices = new Set();
+		for (const path of dependency.paths) {
+			for (const entry of await readdir(path, { withFileTypes: true })) {
+				if (
+					entry.isFile() &&
+					/^(?:licen[cs]e|notice|copying)(?:[._-]|$)/iu.test(entry.name)
+				)
+					notices.add((await readFile(join(path, entry.name), "utf8")).trim());
+			}
+		}
+		if (notices.size === 0) {
+			const readmePath = join(dependency.paths[0], "README.md");
+			const readme = await readFile(readmePath, "utf8");
+			const license =
+				/^#{1,3} License[^\n]*\n([\s\S]*?)(?=^#{1,3} |$(?![\s\S]))/imu.exec(
+					readme,
+				)?.[1];
+			if (
+				license !== undefined &&
+				license.includes("Permission is hereby granted")
+			)
+				notices.add(license.trim());
+			else if (
+				dependency.name === "@openai/codex" &&
+				dependency.license === "Apache-2.0"
+			)
+				notices.add(
+					(
+						await readFile(join(repoRoot, "licenses/codex-LICENSE.txt"), "utf8")
+					).trim(),
+				);
+			else throw new Error(`Missing license text for ${dependency.name}`);
+		}
+		sections.push(
+			`${dependency.name} ${dependency.versions.join(", ")}\n\n${[...notices].join("\n\n")}`,
+		);
+	}
+	await writeFile(
+		join(target, "THIRD_PARTY_NOTICES.txt"),
+		`${sections.join("\n\n---\n\n")}\n`,
+	);
 }
 
 async function main() {
@@ -98,6 +155,7 @@ async function main() {
 			{ force: true },
 		);
 		await copyReleaseAssets(repoRoot, staging);
+		await writeDependencyNotices(staging);
 		await chmod(join(staging, "commonspace.mjs"), 0o755);
 		await chmod(join(staging, "scripts/commonspace-service.mjs"), 0o755);
 		const { stdout: revision } = await run("git", ["rev-parse", "HEAD"], {

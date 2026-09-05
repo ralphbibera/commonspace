@@ -27,7 +27,7 @@ export async function addTestHarness(
 	displayName?: string,
 ): Promise<CommonspaceAgentProfile> {
 	const discovered = (await service.discoverAgents(adapter)).discoveredAgents;
-	const harness = discovered.find((candidate) => candidate.id === adapter);
+	const harness = discovered.find((candidate) => candidate.adapter === adapter);
 	if (harness === undefined) throw new Error(`missing ${adapter} test harness`);
 	await service.mutate({ action: "add-discovered-agent", agentId: harness.id });
 	if (displayName !== undefined && displayName !== harness.displayName) {

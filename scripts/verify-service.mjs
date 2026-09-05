@@ -17,10 +17,18 @@ const temporaryHome = await mkdtemp(
 	join(tmpdir(), "commonspace-service-live-"),
 );
 const appRoot = join(temporaryHome, "Commonspace");
+let loaded = false;
 
 function run(command, args, options = {}) {
-	if (command === "/bin/launchctl")
-		return Promise.resolve({ exitCode: 0, stdout: "", stderr: "" });
+	if (command === "/bin/launchctl") {
+		if (args[0] === "bootstrap") loaded = true;
+		if (args[0] === "bootout") loaded = false;
+		return Promise.resolve({
+			exitCode: args[0] === "print" && !loaded ? 113 : 0,
+			stdout: "",
+			stderr: "",
+		});
+	}
 	return new Promise((resolveRun) => {
 		execFile(
 			command,

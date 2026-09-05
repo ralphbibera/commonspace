@@ -561,6 +561,26 @@ test("opens thread from the message action menu", async ({ page }) => {
 	await expect(page.getByLabel("Thread replies")).toBeVisible();
 });
 
+test("preserves unsent Channel attachments when opening and closing a Thread", async ({
+	page,
+}) => {
+	await openVerificationChannel(page);
+	await page.getByLabel("Attach files", { exact: true }).setInputFiles({
+		name: "release-notes.txt",
+		mimeType: "text/plain",
+		buffer: Buffer.from("Unsent release notes"),
+	});
+	const attachment = page.getByRole("button", {
+		name: "Remove release-notes.txt",
+	});
+	await expect(attachment).toBeVisible();
+	await openRootVerificationThread(page);
+	await expect(attachment).toBeVisible();
+	await page.getByRole("button", { name: "Close thread", exact: true }).click();
+	await expect(page.getByLabel("Thread replies")).toBeHidden();
+	await expect(attachment).toBeVisible();
+});
+
 test("deletes a user message and preserves the deleted tombstone", async ({
 	page,
 }) => {

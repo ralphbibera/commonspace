@@ -88,6 +88,7 @@ The archive extracts into one directory with the same base name:
 | `commonspace-release.json` | Records the version, source commit, source-change status, and target platform. |
 | `README.md` | Contains the [installation guide](install.md). |
 | `LICENSE` | Contains Commonspace's license. |
+| `THIRD_PARTY_NOTICES.txt` | Preserves license and copyright notices for production dependencies, including libraries bundled into the browser app. |
 
 The archive must work without the source checkout, and its filesystem links must stay within the extracted directory. Do not commit release archives, generated builds, workspace state, credentials, agent session stores, or browser artifacts.
 
