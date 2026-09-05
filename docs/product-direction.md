@@ -1,20 +1,19 @@
 # Commonspace product direction
 
-This document records the current product boundary. [Product specification](product-spec.md) is the canonical implementation-ready behavior contract. Research notes are non-canonical and cannot add product scope on their own.
+Commonspace helps one person work with several local agents in a shared conversation. This document explains what belongs in the product and who controls each part of the experience.
+
+Read the [Product model](product.md) for the main concepts and the [Product specification](product-spec.md) for exact behavior and acceptance requirements. The [Roadmap](roadmap.md) separates implemented capabilities from release work and later ideas.
 
 ## Positioning
 
 **Commonspace — The workspace for the agents you already use.**
 
-Commonspace is a fully open-source, MIT-licensed, local-first shared workspace for one human and many local agent harnesses. It is bring-your-own-agent by design: Commonspace does not replace the agent runtime, credentials, tools, memory, model, or native session. It provides the shared workspace around those agents.
+Commonspace is an MIT-licensed, local-first workspace for the agents a person already uses. The repository is currently private while it is prepared for an open-source release. Publication requires the owner's explicit approval.
 
-Commonspace is not a company simulator, task manager, orchestration dashboard, or workflow engine. It should not introduce goals, objectives, org charts, employees, managers, budgets, tickets, or a parallel work-management domain.
+An **agent runtime**, also called a **harness**, is the local software that runs an agent and manages its tools, credentials, model, private context, and sessions. Commonspace connects supported runtimes and provides the conversation around them. The runtime continues to control how the agent works.
 
-Conversation is the product and the work record.
+Conversation is the work record. Requests, replies, decisions, and follow-ups belong in messages and threads. Goals, objectives, org charts, employees, managers, budgets, tickets, and separate task or workflow systems are outside the product boundary.
 
-## Reference policy
-
-External products may be studied for evidence about user needs, interaction risks, and technical patterns. Their feature models, terminology, and product language do not define Commonspace and do not belong in canonical product documents or user-facing copy. A referenced pattern enters scope only after it is justified and rewritten as a Commonspace-specific product decision.
 
 ## Product boundary
 
@@ -23,10 +22,10 @@ Commonspace owns:
 - Projects and project references.
 - Channels, Direct Messages, messages, and threads.
 - Agent appearance inside the workspace.
-- Smart routing and message decomposition.
-- Shared context, context compaction, and routing memory.
+- Routing: choosing agents and dividing a request into the parts each agent needs.
+- Shared context, summaries of that context, and knowledge learned from routing corrections.
 - Native-session mapping and continuity.
-- Normalized harness activity exposed through ACP.
+- A consistent presentation of activity exposed through the Agent Client Protocol (ACP).
 - Conversation attachments, search, unread state, notifications, and export/import.
 
 The connected harness owns:
@@ -40,26 +39,26 @@ The connected harness owns:
 - Raw terminal/debug output.
 - Runtime-specific configuration and credentials.
 
-Hard rule: **Commonspace never invents runtime capabilities. It exposes what the harness advertises through ACP.**
+ACP is the protocol Commonspace uses to communicate with supported local runtimes. **Commonspace exposes only the capabilities a runtime advertises through ACP.** A control must not imply that an agent can do something its runtime does not support.
 
 ## Supported agents
 
-Commonspace supports known local agent harnesses that expose ACP. It is not a generic arbitrary-CLI wrapper.
+Commonspace supports known local agent runtimes that expose ACP. Supporting a command-line program requires a first-party integration; being installed on the machine is not enough.
 
 Agent addition is always explicit:
 
 1. The user chooses to add an agent.
 2. Commonspace scans for supported harnesses only during that flow.
 3. The user manually selects and adds the desired agent.
-4. Commonspace may customize only workspace appearance such as display name or avatar without changing the underlying harness identity.
+4. The user can customize workspace appearance, such as display name or avatar, without changing the underlying runtime identity.
 
-Commonspace should remain platform-agnostic. Distribution should support both a desktop application and a local browser/CLI experience over the same local service.
+The local service is the foundation for distribution. A browser/CLI experience and a future desktop application should use that same service and data model. See the [Product specification](product-spec.md#61-workspace-and-lifecycle) for release targets.
 
 ## Conversation model
 
 ### Channels
 
-Channels are shared rooms. They may exist without a Project. `#general`-style universal channels are first-class.
+Channels are shared rooms with a chosen set of agents. A Channel may have no Project; for example, a general discussion Channel can span several codebases or none.
 
 Agents normally participate through smart routing or explicit mentions.
 
@@ -71,45 +70,47 @@ A DM means one human talking directly to one chosen agent. Smart routing does no
 
 Threads are focused continuations of conversation, not tasks. They do not require objectives, acceptance criteria, priorities, statuses, budgets, or ownership fields.
 
-The same workspace agent can participate in many threads at once, with each thread mapped to its own native harness session. Commonspace should make those separate sessions understandable without exposing opaque native session IDs.
+The same workspace agent can participate in many threads at once. Each thread uses a separate session owned by the runtime, called a **native session**. Commonspace should explain those boundaries without showing the private session identifiers.
 
 ## Smart routing
 
 Smart routing is always enabled for unaddressed Channel messages.
 
-There is one Commonspace inference layer used for routing, intent splitting, project-reference resolution, context compaction, and routing-memory compaction. It should be optimized for low latency and treated as infrastructure, not as a visible workspace agent.
+Commonspace uses one configured inference provider to choose agents, divide requests, identify relevant Projects, and summarize shared context and routing corrections. This is an internal service function; it does not appear as another agent in the workspace.
+
+For example, a request to review an API change and update its user guide may produce two assignments. Each agent receives the relevant part of the request, and both replies appear in the same thread.
 
 Routing rules:
 
 1. Explicit `@agent` mentions are authoritative.
 2. If a message mentions agents that are not yet in the channel, Commonspace immediately adds them to the channel and invokes them.
 3. A message may be decomposed into separate agent-specific sub-requests.
-4. Each agent receives only its assigned sub-request, not the full original message.
+4. Each agent's new turn receives only its assigned sub-request. The full original message remains in the conversation.
 5. Shared thread context remains available through Commonspace context tools.
 6. Without explicit mentions, inference selects the smallest useful set of agents for the request.
 7. Prefer one best-fit agent when one agent is sufficient.
 8. Select multiple agents when the request clearly spans distinct responsibilities.
-9. Routing decisions and generated sub-requests must persist as service-side metadata for dispatch, reply binding, diagnostics, and correction history.
-10. A service-level correction can reroute one sub-request without resending unrelated assignments; resolved receipts and inline correction controls are deferred from the conversation UI.
-11. Reroutes are stored as feedback and compacted into routing knowledge so future routing improves.
+9. The service stores routing decisions and sub-requests so it can dispatch work, attach replies to the correct assignment, diagnose problems, and retain corrections.
+10. The service can correct one assignment without resending the others. Completed routing details and inline correction controls are deferred from the conversation UI; pending and failed routing remain visible.
+11. Corrections are stored as feedback and summarized into routing knowledge for later decisions.
 12. Project references and channel/thread context are inputs to routing.
 13. Routing should feel effectively immediate; sub-second latency is the target where practical.
 
-Commonspace should not impose agent concurrency or execution limits that belong to the harness.
+Different native sessions may run concurrently. Commonspace serializes calls to the same native session and leaves the runtime's execution policy to the runtime.
 
 ## Agent-to-agent conversation
 
-Agents are peers. An agent can mention another agent in a shared thread, which invokes that agent in the same thread. There is no mandatory coordinator, captain, manager, or handoff form.
+Agents are peers. An agent can mention another agent in a shared thread to invoke it there. This does not require a coordinator, captain, manager, or handoff form.
 
 A visible `@agent` mention is the user-facing handoff mechanism.
 
-Commonspace may protect the workspace against pathological repeated message cycles, but it should not pretend to own the harness's execution policy.
+Commonspace may stop repeated mention cycles that would otherwise loop indefinitely. Those safeguards do not give Commonspace control over the runtime's execution policy.
 
 ## Projects
 
 Projects are references and context containers, not task containers.
 
-A Project may contain abstract resources. Local filesystem folders are the first supported resource type, but the model should allow additional resource kinds later.
+A Project identifies resources the agents can use as context. v0.1 supports local folders. The model should leave room for other resource types later.
 
 Channels do not need to belong permanently to one Project. A message or thread may reference zero, one, or many Projects. Project references are context for the conversation.
 
@@ -119,26 +120,26 @@ When one message is split across agents, the router decides which Project refere
 
 ## Shared context
 
-Commonspace owns a canonical shared-context layer that is separate from each harness's private native-session context.
+Shared context is the information Commonspace makes available to participants in a conversation. It is stored separately from each runtime's private session context.
 
 Shared context may include:
 
-- Compacted Channel history.
+- Summarized Channel history.
 - Thread-specific context.
 - Recent verbatim messages.
 - Pinned messages, files, and notes.
 - Project references.
 - Relevant routing knowledge.
 
-Each thread inherits the current Channel shared context when it begins and then maintains thread-specific context while still being able to inspect newer shared context when needed.
+Each thread records the Channel context available when it begins and then maintains its own context. Agents can inspect newer Channel context separately; later Channel changes must not rewrite the thread's starting snapshot.
 
 ### Context compaction
 
-Compaction should primarily respond to context/token pressure rather than arbitrary message counts. Users can also trigger compaction manually.
+**Compaction** summarizes context so it fits within an agent's input limits. It should respond primarily to estimated token pressure rather than an arbitrary message count. Users can also run compaction manually.
 
 The same Commonspace inference layer used for routing performs compaction.
 
-Context state must be visible. Users should be able to inspect the current compacted representation, understand its compaction state, and manually edit it.
+Users must be able to read and edit the summary, see which source messages it covers, and tell whether it is current, stale, being compacted, or failed. Automatic updates must preserve human edits.
 
 The UI should make it possible to inspect what Commonspace-level Project, Channel, and Thread context is available to an agent.
 
@@ -148,7 +149,7 @@ Agent-suggested durable context is not a v0.1 requirement.
 
 Humans and agents can attach files to messages. Supported harness-generated files should render as normal Commonspace attachments.
 
-Editing a message after delivery must not pretend to rewrite an already-consumed native harness turn. The edited version creates a visible conversation branch from that point and may be routed again. The original version and its replies remain available as history.
+Editing a delivered human message creates a visible conversation branch from that point and may route the corrected request again. The original message and its replies remain available because the runtime has already received them. Agent replies remain immutable.
 
 If a delivered message is deleted, Commonspace should preserve a visible deletion marker rather than pretending the harness never saw it.
 
@@ -156,7 +157,7 @@ Reactions are not required for v0.1.
 
 ## Harness activity and controls
 
-Commonspace presents normalized ACP activity, not raw harness terminal output. Raw debugging remains in the harness itself.
+Commonspace translates ACP events into a consistent activity view. Raw terminal output and runtime debugging remain in the runtime itself.
 
 Where the harness exposes them through ACP, Commonspace should render:
 
@@ -166,13 +167,13 @@ Where the harness exposes them through ACP, Commonspace should render:
 - Usage.
 - Model/reasoning information.
 - Permission requests and the harness-provided permission choices.
-- Session stopping/steering or related controls.
+- Controls for stopping a session or sending guidance while it runs.
 
 Activity may stream live but should remain compact/collapsed by default.
 
 ## Workspace UX
 
-Near-term collaboration fundamentals include:
+The workspace should provide:
 
 - Unread state.
 - Mentions/relevant-activity inbox.
@@ -184,15 +185,15 @@ Near-term collaboration fundamentals include:
 - Exact native-session resumption after Commonspace or machine restart whenever the harness supports it.
 - Open export/import of workspace data.
 
-Do not add an agent-management dashboard or standalone agent profile pages merely because agents exist. Agent identity should remain natural through DMs, channel membership, mentions, and session indicators.
+People should find and understand agents through DMs, Channel membership, mentions, and session indicators. A separate agent-management dashboard or standalone profile page is outside the current scope.
 
 ## Files and code surfaces
 
-Commonspace may expose Project files and Git changes as context/review surfaces, but it should not become a Git client or execution manager. Tests and verification results are useful to surface when the harness emits them. Runtime debugging belongs in the harness.
+Commonspace may show Project files and Git changes to help people review agent work. It may also show test and verification results emitted by the runtime. Git operations, command execution, and runtime debugging remain outside these read-oriented views.
 
 ## Extensibility
 
-Do not build a generic plugin system yet. Support known ACP harnesses through first-party integrations and stabilize the internal harness interface first.
+Support known ACP runtimes through first-party integrations and stabilize the internal runtime interface before considering a generic plugin system.
 
 ## License
 
@@ -200,12 +201,6 @@ Commonspace remains MIT licensed.
 
 ## Decision filter
 
-A feature belongs when it makes the shared workspace between one human and many local agents better by improving conversation, routing, shared context, session continuity, discoverability, trust, or collaboration.
+A feature belongs when it improves conversation, routing, shared context, session continuity, discoverability, trust, or collaboration between one person and their local agents.
 
-A feature does not belong merely because it appears in a reference product.
-
-When in doubt, ask:
-
-> Does this make Commonspace a better shared workspace for the agents the user already uses, or does it turn Commonspace into a manager for those agents?
-
-Prefer the former.
+Before adding a feature, identify the user problem, the existing Commonspace object that owns it, and the behavior that would prove it solved. Changes to the product boundary require an explicit product decision.

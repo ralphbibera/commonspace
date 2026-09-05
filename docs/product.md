@@ -4,77 +4,85 @@
 
 **Commonspace — The workspace for the agents you already use.**
 
-Commonspace gives one person a clear, local-first shared workspace for working with many local agent harnesses while keeping shared context and native session continuity visible.
+Commonspace brings one person's local agents into shared Channels, focused threads, and direct conversations. Messages keep the record of the work, and each conversation continues the correct agent session.
 
-Commonspace is bring-your-own-agent by design. It reflects and connects supported ACP harnesses; it does not replace their runtime, credentials, tools, private memory, models, permissions, or native sessions.
+This guide explains the concepts used throughout the product. For exact requirements, use the [Product specification](product-spec.md). The [Product direction](product-direction.md) explains scope; the [Implementation gap audit](implementation-gap-audit.md) records a dated implementation snapshot.
 
-See [Product specification](product-spec.md) for the complete behavior and acceptance contract, [Product direction](product-direction.md) for the boundary and decision filter, and [Implementation gap audit](implementation-gap-audit.md) for current implementation status.
+An **agent runtime**, or **harness**, is the software that runs an agent. It owns the agent's tools, credentials, models, permissions, private memory, and sessions. Commonspace connects supported local runtimes through the **Agent Client Protocol (ACP)** and provides the shared conversation around them.
 
 ## Product principles
 
-1. **Conversation is the work record.** Requests, replies, decisions, and follow-ups remain legible as messages and threads. Commonspace does not introduce a parallel task-management model.
-2. **Context is explicit and referenceable.** Channels may be universal or projectless. Messages and threads may reference zero, one, or many Projects, and those references provide bounded context rather than task ownership.
-3. **Agents are real harnesses.** Supported local agents use ACP. Adding an agent is always explicit; discovery happens only when the user chooses to add one.
-4. **Routing is intelligent and durable.** Unaddressed Channel messages always use the Commonspace inference layer. Explicit mentions remain authoritative, messages may be split into agent-specific sub-requests, and routing records support dispatch, diagnostics, and feedback without adding resolved routing detail to the conversation.
-5. **Agents are peers.** Agents may mention and invoke other agents in shared threads. There is no mandatory coordinator, manager, captain, or handoff form.
-6. **Continuity is exact.** A Channel thread or DM resumes the native harness session created for that conversation whenever the harness supports it.
-7. **Shared context and harness context are separate.** Commonspace owns visible Channel/Thread/Project shared context and compaction. Each harness remains authoritative for its private native-session context.
-8. **Harness capabilities are authoritative.** Commonspace never invents runtime capabilities. Models, reasoning modes, permissions, tools, steering, stopping, and other runtime behavior are exposed only when advertised by the harness through ACP.
-9. **Local authority.** State, files, agent processes, native sessions, and credentials remain on the machine.
-10. **Commonspace intelligence is infrastructure.** Routing, intent splitting, project-reference resolution, context compaction, and routing-memory compaction use one optimized inference layer rather than appearing as another workspace agent.
+1. **Conversation is the work record.** Requests, replies, decisions, and follow-ups stay in messages and threads. There is no separate task-management model.
+2. **Context is explicit.** Messages and threads can reference zero, one, or several Projects. People can see and correct those references.
+3. **Adding an agent is a choice.** Commonspace discovers supported ACP runtimes only when the user chooses to add an agent.
+4. **Routing respects the message.** Explicit mentions choose the agents. Unaddressed Channel messages use inference to choose agents and divide the request. The service retains its decisions for delivery, diagnostics, and correction history.
+5. **Agents are peers.** An agent can mention another agent in a shared thread. No coordinator or separate handoff form is required.
+6. **Continuity is exact.** A thread or DM resumes the runtime session created for that conversation whenever the runtime supports it.
+7. **Shared context is separate from private memory.** Commonspace manages inspectable Project, Channel, and Thread context. The runtime controls its private session context.
+8. **Capabilities come from the runtime.** Commonspace shows models, reasoning modes, tools, permission choices, and execution controls only when the runtime advertises them through ACP.
+9. **Local data stays under the user's control.** Commonspace stores workspace data and native-session references locally. Connected agent runtimes may send messages and context to their configured model services. Commonspace inference may also use a disclosed remote endpoint; each runtime continues to manage its own credentials.
+10. **Inference is a service function.** One configured provider handles routing, dividing requests, identifying Projects, and summarizing shared context and routing corrections. It does not appear as another workspace agent.
 
 ## Core objects
 
 ### Project
 
-A named context containing resources. Local filesystem directories are the first supported resource type, but the product model should remain open to additional resource kinds.
+A Project names resources that agents can use in a conversation. v0.1 supports one or more local folders. The first folder is the primary working directory; additional folders provide further context.
 
-Projects are references for conversation and agent context, not task containers. A message or thread may reference multiple Projects. The router may infer relevant Project references when none are explicit, but inferred references must remain visible and correctable.
+For example, an API repository and a documentation repository can be separate Projects referenced by the same thread. A Project does not own tasks or require its own Channel or agent copy.
+
+Visible `@@project` tags explicitly choose context. When there are no tags, inference may identify relevant Projects; those references remain visible and correctable. Other resource types may be added later without changing this role.
 
 ### Channel
 
-A shared conversation with an explicit agent roster, instructions, settings, shared context, and threaded native sessions. Channels may exist without any Project.
+A Channel is a shared room with a chosen set of agents, instructions, shared context, and threads. It can exist without a Project or any agents. Channels can override workspace model and reasoning defaults.
 
-An explicit `@agent` mention is authoritative. Mentioning an agent that is not yet seated immediately adds that agent to the Channel and invokes it. Every unaddressed Channel message is classified by configured inference, which selects the smallest useful set of agents and may split the message into agent-specific sub-requests.
+Mentioning an agent with `@agent` adds it to the Channel if needed and invokes it. Without an explicit mention, the configured inference provider selects the smallest useful set of agents and may divide the request into separate assignments, called **sub-requests**.
 
-Each selected agent receives only its assigned sub-request. The original conversation remains available through bounded Commonspace context tools.
+Each agent's new turn receives only its assigned sub-request. It can read the original conversation through Commonspace context tools within the scope granted to its session.
 
 ### Direct Message
 
-A persistent one-to-one conversation with a chosen agent. DMs do not use smart routing to substitute another agent. `/new` deliberately rotates the native scope, leaves earlier messages visibly separated by a session boundary, and prevents old context or stale in-flight replies from crossing into the fresh harness session.
+A Direct Message, or **DM**, is a persistent conversation between the human and one chosen agent. Routing never substitutes another agent.
+
+Normal replies continue the current native session. Sending `/new` starts a fresh session and places a visible boundary after the earlier messages. Old context and late replies from the previous session cannot cross that boundary.
 
 Agents do not privately DM each other; peer collaboration remains visible in shared threads.
 
 ### Agent
 
-A workspace-visible reflection of a supported local ACP harness. Commonspace may customize presentation such as display name or avatar, but the harness remains authoritative for the actual agent behavior and runtime capabilities.
+An Agent is a supported local runtime added to the workspace. Commonspace can customize its display name or avatar. The runtime still controls the agent's identity, behavior, and capabilities.
 
-The same agent may participate in many threads simultaneously, each backed by its own native session. Commonspace should make these session boundaries understandable without exposing opaque native session identifiers.
+The same Agent can work in several threads at once, each with its own native session. Calls to one native session run in order; other sessions can run concurrently. The UI should explain which conversation a session belongs to while keeping its internal identifier private.
 
 ### Message and thread
 
-Messages carry human or agent conversation, references, and attachments. Humans and agents may attach files. Agent replies may carry expandable normalized activity emitted by the harness, including reasoning summaries, plans, tool calls, results, usage, and native permission requests where supported.
+Messages contain conversation, Project references, and attachments. Both humans and supported agents can attach files. Agent replies can also show expandable activity: reasoning summaries, plans, tool calls, results, usage, and native permission requests, when the runtime provides them.
 
 Threads are focused continuations of conversation, not tasks. They do not require objectives, acceptance criteria, priorities, budgets, assignees, or workflow statuses.
 
-Agents can mention other agents inside a thread. The mention itself is the user-facing handoff mechanism; Commonspace does not require a separate delegation object or form.
+Agents can mention one another inside a thread. The visible mention is the handoff, so people can follow the collaboration in the conversation.
 
-Editing a previously delivered human message creates a new conversation branch/version rather than pretending to rewrite history already consumed by a native harness session. Deleting an already-delivered message leaves a visible deletion marker.
+Editing a delivered human message creates a new version and a new conversation branch. The original message and its replies remain available as history. Deleting a delivered message removes its content and leaves a visible marker. Agent replies cannot be edited.
 
 ### Shared context
 
-Commonspace maintains canonical shared context separately from each harness's private native-session context. Shared context may include compacted Channel history, thread-specific context, recent verbatim messages, pinned messages/files/notes, Project references, and relevant routing knowledge.
+Shared context is the conversation information Commonspace makes available to an agent. It can include Channel and Thread summaries, recent messages in their original wording, pinned messages, files, notes, Project references, and relevant routing knowledge. It does not expose the runtime's private session memory.
 
-Compaction responds primarily to context pressure and may also be triggered manually. The current compacted representation and compaction state must be visible and editable by the user.
+A thread starts with a snapshot of the Channel's current context. It then develops its own context and can inspect later Channel updates separately.
+
+**Compaction** summarizes context to fit within input limits. It responds primarily to estimated token pressure and can also be run manually. Users can inspect and edit the summary and see whether it is current, stale, being compacted, or failed. Automatic updates preserve human edits.
 
 ### Commonspace inference
 
-One inference layer powers Commonspace-level intelligence including smart routing, message decomposition, Project-reference resolution, shared-context compaction, and routing-memory compaction.
+Commonspace inference uses one configured provider for agent selection, request division, Project references, shared-context summaries, and summaries of routing corrections.
 
-Routing should be optimized for low latency. Routing decisions and generated sub-requests are persisted for dispatch, reply binding, diagnostics, and routing-memory feedback. Resolved routing detail stays out of the conversation UI; pending and failed states remain visible.
+Routing should feel immediate. The service stores each decision and generated sub-request so it can deliver the request, associate replies with it, and retain correction history. The conversation shows pending and failed routing states; completed routing details stay in service metadata.
+
+An individual assignment can be corrected through the service without restarting unrelated agents. Those explicit corrections form **routing memory**, which helps later routing decisions. Inline correction controls are deferred from the conversation UI.
 
 ## Product decision rule
 
-A feature belongs when it improves the shared workspace between one human and many local agents through better conversation, routing, context visibility, native-session continuity, transcript navigation, trust, or collaboration.
+A feature belongs when it improves conversation, routing, context visibility, session continuity, navigation, trust, or collaboration between one person and their agents.
 
-It should extend the objects above rather than introduce goals, objectives, tickets, org charts, agent employees, budgets, workflow bureaucracy, or a separate task-management domain.
+Features should extend the objects above. Goals, objectives, tickets, org charts, agent employees, budgets, and separate task or workflow domains remain outside the product scope. Use the [Product specification](product-spec.md) to check a proposed change against the required behavior.

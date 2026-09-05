@@ -1,148 +1,62 @@
 # Commonspace
 
-Commonspace is a local-first workspace for durable conversations with coding agents. It keeps filesystem projects, shared channels, direct messages, agent identities, and native session continuity visible in one place.
+Commonspace brings your coding agents into one local workspace. Talk with agents in shared channels or direct messages, connect local projects, and return to earlier conversations without losing their history.
 
 ![Commonspace workspace](docs/assets/commonspace-panel.png)
 
-> **Status:** private preview. `Commonspace` is the working product name while the standalone experience is being proven.
+> **Private preview:** Commonspace is being prepared for an open-source release. The repository is currently private.
 
-## What Commonspace manages
+## Work with your agents
 
-- **Projects** bind conversations to one or more local directories. Messages and threads may reference zero, one, or many Projects.
-- **Channels** provide shared, optionally projectless conversations with explicit agent rosters and editable compacted context.
-- **Direct Messages** preserve one-to-one continuity with a chosen agent.
-- **Inbox** collects actual agent replies from Channels and Direct Messages, with unread filtering and exact thread navigation.
-- **Agents** are explicitly chosen from discovered supported harness installations. Workspace names and appearance stay local and never rename or reconfigure the harness.
-- **Messages and threads** are the work record. Native agent session references keep every continuation attached to the correct context.
+- Use **Channels** for shared conversations and **Direct Messages** to talk with one agent.
+- Connect local folders through **Projects**, then refer to a Project from any conversation.
+- Continue a focused conversation in a **thread**, with the agent's session preserved between replies.
+- Find agent replies and requests for your attention in the **Inbox**, then open the conversation to inspect reported progress and tool results.
+- Find earlier work through search, unread markers, and pinned context.
 
-Commonspace is conversation-first. Hermes and Codex receive only the newly delivered message over ACP, resume their exact provider-native session, and can read bounded shared-room context or post progress through a session-scoped Commonspace MCP server. Each reply can expose a durable, expandable audit of the reasoning summaries, plans, tool calls, results, and usage emitted by its native harness. Raw session mechanics remain host-private.
+Commonspace supports local Hermes and Codex installations. You choose which agents to add. Their credentials, tools, permissions, and native sessions remain under their control.
 
-Optional native notifications mirror new durable Inbox events for replies, mentions, permissions, failures, and timeouts. Their category/sound settings are independent from Inbox state, and clicks open the exact loopback conversation item.
+In a Channel, use `@agent` to choose who responds and `@@project` to choose relevant Project context. For messages without an agent mention, your configured router chooses which agents should respond. See [how Commonspace works](docs/product.md) for the conversation and context rules.
 
-Unaddressed Channel messages always use configured inference—either an agent harness or a BYO OpenAI-compatible model—to select the smallest useful harness set and create an inspectable sub-request for each selection. When a new root has no `@@project` tag, the same decision infers visible Project scope; each harness receives only its assigned sub-request and Project subset. Explicit `@agent` and `@@project` tags remain authoritative; there is no deterministic/no-inference routing mode or separate Project picker.
+## Run Commonspace
 
-## Quick start
+The [installation guide](docs/install.md) covers release downloads, checksums, startup, and updates for macOS and Linux. A release archive includes the application and its dependencies; you only need Node.js 22 or newer.
 
-Requirements:
-
-- Node.js 22+
-- pnpm 10.34.5
-
-The contributor path does not require agent credentials. It starts the local API and UI with an empty workspace so you can work on the product, tests, and Storybook in isolation.
+From an extracted release directory:
 
 ```bash
+node commonspace.mjs
+```
+
+Open `http://127.0.0.1:3100` in your desktop browser. The app runs on your computer. macOS users can also install it as a background service.
+
+During the private preview, downloads require repository access. If no release is available to you, use the source setup below.
+
+## Develop from source
+
+You need Node.js 22 or newer, pnpm 10.34.5, and Git with SSH access to the repository. Agent credentials are not required for development or the normal test suite.
+
+```bash
+git clone git@github.com:ralphbibera/commonspace.git
+cd commonspace
 pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-Open `http://127.0.0.1:5173` for the UI. The API runs at `http://127.0.0.1:3100`.
+Open `http://127.0.0.1:5173`. This development UI connects to the local API on port `3100`.
 
-To exercise real agent sessions, install and authenticate Hermes and/or Codex separately, then add the discovered harness from the Commonspace UI. Agent credentials remain optional for source development.
+Read [Contributing](CONTRIBUTING.md) to choose a change, run the right checks, and prepare a pull request. Small fixes can go straight to a pull request; discuss larger changes with a maintainer first.
 
-On macOS, install the private preview as an owner LaunchAgent directly from `main`:
+## Your data
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/ralphbibera/commonspace/main/scripts/commonspace-service.mjs | node --input-type=module - install
-```
+Commonspace stores workspace data in `~/.commonspace` by default and listens only on `127.0.0.1`. Agent credentials stay in each agent's own store. Agents and your configured inference provider may use remote model services, so the services you choose determine where message and context data is sent.
 
-The installer clones through SSH, builds in an owner-only managed release, starts the service at `http://127.0.0.1:3100`, and installs `~/.local/bin/commonspace`. Lifecycle commands need no repository checkout:
-
-```bash
-~/.local/bin/commonspace status
-~/.local/bin/commonspace stop
-~/.local/bin/commonspace start
-~/.local/bin/commonspace update
-~/.local/bin/commonspace rollback
-```
-
-For the production path:
-
-```bash
-# Terminal 1: API
-pnpm build
-pnpm start
-
-# Terminal 2: UI preview
-pnpm --filter @commonspace/ui preview
-```
-
-The API server runs at `http://127.0.0.1:3100`; Vite preview serves the built UI separately. The installed LaunchAgent instead serves the built UI and API from one loopback origin.
-
-## Repository structure
-
-```text
-packages/shared    Versioned product and API contracts
-server             Express API, persistence, local relay, ACP/MCP, and execution
-ui                 Vite and React application
-scripts            Real-path verification
-tests              Cross-package behavior and integration tests
-```
-
-The split keeps product contracts, server behavior, and the browser interface independently testable without introducing a second product domain.
-
-## Commands
-
-```bash
-pnpm dev                    # server + UI development
-pnpm storybook              # persistent UI workbench
-pnpm test                   # unit and integration tests
-pnpm test:storybook:smoke   # six representative browser stories
-pnpm test:storybook:watch   # focused browser-test watch mode
-pnpm check:fast             # Biome, ESLint, types, tests, and Storybook smoke
-pnpm biome:check            # Biome lint, format, and import-organization checks
-pnpm lint                   # ESLint
-pnpm typecheck              # workspace TypeScript checks
-pnpm build                  # all production builds
-pnpm check:ui               # full UI type, Storybook, and build gate
-pnpm check                  # complete local gate
-pnpm verify:live            # build, boot API + UI preview, and exercise the browser path
-pnpm verify:service         # isolated real clone/build/update/rollback lifecycle on macOS
-pnpm service:install        # install current committed main checkout as a macOS LaunchAgent
-pnpm service:status         # inspect installed service and health
-pnpm verify:acp             # opt-in real Hermes and Codex ACP start/resume tests
-pnpm verify:acp:hermes      # real Hermes profile start/resume test
-pnpm verify:acp:codex       # real Codex start/resume test
-pnpm verify:acp:mcp         # real Hermes and Codex scoped-context/progress tests
-```
-
-## Runtime configuration
-
-| Variable | Purpose |
-| --- | --- |
-| `COMMONSPACE_PORT` | Standalone server port; defaults to `3100` |
-| `COMMONSPACE_HOME` | State directory; defaults to `~/.commonspace` |
-| `COMMONSPACE_HERMES_PATH` | Hermes discovery executable and default Hermes ACP executable |
-| `COMMONSPACE_CODEX_PATH` | Codex executable override |
-| `COMMONSPACE_HERMES_ACP_PATH` | Hermes ACP executable override; defaults to `COMMONSPACE_HERMES_PATH` or `hermes` |
-| `COMMONSPACE_CODEX_ACP_PATH` | Codex ACP bridge executable override; bundled bridge is the default |
-| `COMMONSPACE_HERMES_YOLO=1` | Explicit Hermes unsafe mode |
-| `COMMONSPACE_AGENT_YOLO=1` | Explicit Codex unsafe mode |
-
-Unsafe modes are off by default.
-
-Routing provider settings live in the Defaults panel. Endpoint changes clear the previously stored key so credentials cannot silently cross origins. `OPENAI_API_KEY` is considered only for the canonical OpenAI origin; other providers use the explicitly supplied key or an unauthenticated local endpoint.
-
-## Local state and credentials
-
-Commonspace binds only to loopback, rejects cross-origin API mutations, writes versioned state atomically to `~/.commonspace/state.json`, and never copies provider credentials. ACP uses local stdio; its scoped MCP endpoint uses ephemeral bearer capabilities on loopback. Persisted activity is bounded and strips host paths, native session identifiers, and MCP capabilities. There is no Nostr or remote relay in this local-first phase. Hermes and Codex continue using their supported credential and native session stores.
-
-The Project Files browser refuses to preview known credential-bearing files such as `.env*`, common auth/credential/secret files, private keys, and key containers.
+See [Operations](docs/operations.md) for configuration, backups, and recovery, and [Security](SECURITY.md) for the protection and reporting policies.
 
 ## Documentation
 
-- [Contributor guide](docs/contributor-guide.md)
-- [Development support matrix](docs/support-matrix.md)
-- [Product specification](docs/product-spec.md)
-- [Product model](docs/product.md)
-- [Architecture](docs/architecture.md)
-- [Development](docs/development.md)
-- [Operations](docs/operations.md)
-- [Workspace archive format](docs/workspace-archive-format.md)
-- [Design system](docs/design-system.md)
-- [Roadmap](docs/roadmap.md)
-- [Implementation gap audit](docs/implementation-gap-audit.md)
-- [v0.1 acceptance ledger](docs/v0.1-acceptance.md)
+The [documentation guide](docs/README.md) groups instructions for using Commonspace, contributing changes, and maintaining releases.
 
 ## License
 
-MIT © Ralph Bibera
+Commonspace is [MIT licensed](LICENSE). © Ralph Bibera.

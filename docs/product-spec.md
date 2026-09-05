@@ -7,37 +7,40 @@
 | Spec version | 1.0 |
 | Decision state | Approved baseline; changes require an explicit product decision |
 | Last updated | 2026-09-03 |
+| Editorial review | 2026-09-05 |
 | License | MIT |
 | Primary release | v0.1 local private preview |
 
-This is the canonical product-behavior specification for Commonspace. [Product direction](product-direction.md) defines the boundary and decision filter, [Product model](product.md) summarizes the domain, [Implementation gap audit](implementation-gap-audit.md) tracks current code against this specification, and [Roadmap](roadmap.md) sequences delivery.
+This specification defines what Commonspace must do and how to judge whether that behavior is complete. Use it when designing a change, implementing a feature, or reviewing a release.
 
-UI layouts, visual styling, and interaction polish are intentionally not specified here. This document defines what the product must do and what every later UI must make possible.
+Start with the [Product model](product.md) for an introduction to the concepts. The [Product direction](product-direction.md) explains scope, the [Implementation gap audit](implementation-gap-audit.md) records a dated implementation snapshot, and the [Roadmap](roadmap.md) identifies release work and later plans.
 
-Reference research is evidence, not scope. Commonspace is defined by its own user problem and product principles. Any pattern adopted from research must first be justified, named, and specified in Commonspace's own terms. Named comparisons do not belong in canonical product documents or user-facing product language.
+For a first read, sections 1–5 explain the product and its main flows. [Section 6](#6-functional-requirements) is the requirement reference, and [section 12](#12-end-to-end-acceptance-scenarios) describes complete user scenarios. [UI direction](ui-direction.md) covers visual design and layout.
 
 ## 1. Product definition
 
-Commonspace is a fully open-source, local-first shared workspace for one human working with many local agent harnesses. It connects the agents the user already has, gives them shared conversational context, routes work between them, and preserves each harness's native session continuity.
+Commonspace is an MIT-licensed, local-first workspace for one person working with several local agents. It connects the agents the user already has, shares conversation context, sends each agent the relevant request, and continues the correct agent session. The repository remains private while it is prepared for an open-source release.
 
-Conversation is the product and the work record. Commonspace does not create a second task-management system around the conversation.
+Conversation is the work record: requests, replies, decisions, and follow-ups stay in messages and threads. There is no separate task-management system.
+
+An **agent runtime**, also called a **harness**, is the software that runs an agent and owns its tools, credentials, models, permissions, private memory, and sessions. Commonspace communicates with supported local runtimes through the **Agent Client Protocol (ACP)**. A **native session** is a conversation session owned by that runtime.
 
 ### Problem
 
-Local coding agents usually live in isolated terminals, tabs, and native sessions. A user must repeatedly choose the right agent, restate Project context, coordinate handoffs manually, and remember which session owns which continuation. Parallel agent work becomes difficult to follow, while generic orchestration products add workflow objects that do not match how the user actually works.
+Local agents usually run in separate terminals, tabs, and sessions. Working across them means repeatedly choosing an agent, restating Project context, passing messages between agents, and remembering where to continue. Parallel work is difficult to follow when its conversation is scattered.
 
 Commonspace solves this by providing:
 
 - Shared Channels and focused threads for agent collaboration.
 - Persistent one-to-one DMs with exact agent continuity.
-- Smart, inspectable routing through one Commonspace inference layer.
-- Visible Project references rather than Project-owned task containers.
-- Canonical shared context that remains separate from private harness context.
+- Routing through one inference provider, with stored decisions and correction history.
+- Visible Project references that identify the resources relevant to a conversation.
+- Shared context that people can inspect and edit separately from private runtime context.
 - Local persistence, search, unread state, attachments, activity, and recovery.
 
 ### Primary user
 
-The v0.1 user is one technical person who already uses supported local ACP agent harnesses and wants to work with several agents across one or more codebases without becoming the manual message broker between them.
+The v0.1 user is one technical person who already uses supported local ACP runtimes. They want several agents to work across one or more codebases while keeping the conversation and results together.
 
 ### Core job to be done
 
@@ -50,7 +53,7 @@ A user can open Commonspace, talk naturally in a Channel or DM, and trust that:
 1. The right agent or agents receive the right bounded request.
 2. Each conversation continues the correct native harness session.
 3. Project, Channel, and Thread context remains visible and correctable.
-4. Parallel work stays legible without a coordinator or task bureaucracy.
+4. Parallel work remains easy to follow without a required coordinator.
 5. Local state and harness authority remain under the user's control.
 
 ## 2. Goals and exclusions
@@ -87,16 +90,18 @@ A user can open Commonspace, talk naturally in a Channel or DM, and trust that:
 
 1. **Conversation is the work record.** Execution state belongs to messages and replies, not to a parallel task object.
 2. **Agents are real harnesses.** Commonspace reflects supported local ACP agents and never pretends to be their runtime.
-3. **Context is explicit.** Project references, shared context, routing decisions, and compaction state must be inspectable and correctable.
+3. **Context is explicit.** People can inspect and correct Project references, shared context, routing decisions, and the state of context summaries.
 4. **Native continuity is exact.** A thread or DM resumes its mapped native session whenever the harness supports it.
 5. **Agents are peers.** A visible mention is the handoff. No coordinator is required.
-6. **Inference is infrastructure.** One configured Commonspace inference layer handles routing, decomposition, Project resolution, context compaction, and routing-memory compaction.
+6. **Inference is a service function.** One configured provider chooses agents, divides requests, identifies Projects, and summarizes shared context and routing corrections.
 7. **Harness capabilities are authoritative.** Commonspace exposes only models, reasoning modes, tools, permissions, and controls advertised through ACP.
 8. **Parallel by default.** Different native sessions may run concurrently. Only work targeting the same native session is serialized.
-9. **Local authority.** Workspace state, files, native processes, and credentials remain on the machine unless the user explicitly configures a remote inference endpoint.
-10. **No silent fiction.** Commonspace must not hide routing failures, rewrite delivered history, invent permissions, or imply that an interrupted run completed.
+9. **Local authority.** Commonspace stores workspace data and native-session references locally. Connected runtimes control their own model-service traffic and credentials. Commonspace inference may also use an explicitly configured remote endpoint.
+10. **Outcomes are honest.** Commonspace must not hide routing failures, rewrite delivered history, invent permissions, or imply that an interrupted run completed.
 
 ## 4. Conceptual model
+
+For an unaddressed Channel message, Commonspace uses the message and its context to choose agents and create assignments. Each assignment becomes a turn in the appropriate native session. Replies and activity return to the same thread.
 
 ```mermaid
 flowchart TD
@@ -111,16 +116,16 @@ flowchart TD
 | Object | Product meaning | Key rule |
 | --- | --- | --- |
 | Workspace | One local Commonspace installation and its durable state. | One human is the authority in v0.1. |
-| Agent | One workspace-visible reflection of a supported local ACP harness identity. | The same Agent is reused across Projects and conversations; Commonspace does not clone it per Project. |
+| Agent | A supported local ACP runtime explicitly added to the workspace. | The same Agent is reused across Projects and conversations; Commonspace does not clone it per Project. |
 | Project | A named context container with one or more resources. | Projects are references, not task owners. Local folders are the only v0.1 resource type. |
-| Channel | A shared conversation with an agent roster, instructions, settings, and canonical shared context. | A Channel may be projectless and does not permanently belong to one Project. |
+| Channel | A shared conversation with a chosen set of agents, instructions, settings, and shared context. | A Channel may be projectless and does not permanently belong to one Project. |
 | DM | A persistent conversation between the human and exactly one chosen Agent. | Smart routing never substitutes another Agent. |
 | Message | Human, Agent, or system conversation content with references and attachments. | Accepted messages are persisted before inference or agent execution. |
 | Thread | The focused continuation created by a Channel root message. | Each participating Agent has its own native session inside the Thread. |
 | Project reference | A visible link from a message, sub-request, or Thread to a Project. | References can be explicit or inferred and must be correctable. |
-| Sub-request | The bounded request assigned to one Agent after routing/decomposition. | The Agent receives its sub-request, not the entire original message as its new turn. |
+| Sub-request | The part of a request assigned to one Agent during routing. | The Agent receives its sub-request, not the entire original message as its new turn. |
 | Native session | The opaque session owned by a harness for one Agent in one Thread or DM generation. | Its identifier remains host-private. |
-| Shared context | Canonical Commonspace context available separately from native-session context. | Users can inspect, edit, and manually compact it. |
+| Shared context | Conversation information made available by Commonspace separately from the runtime's private session context. | Users can inspect, edit, and manually compact it. |
 | Routing memory | Compacted knowledge derived from explicit routing corrections. | It influences later routing without altering historical decisions. |
 | Attachment | A durable file associated with a specific message version. | Humans and supported harnesses can attach files. |
 | Activity | Normalized ACP reasoning summaries, plans, tools, results, usage, permissions, and controls. | Raw terminal output remains in the harness. |
@@ -162,7 +167,7 @@ flowchart TD
 2. Commonspace persists and displays the message immediately.
 3. The message creates a Thread.
 4. The inference layer resolves missing Project references, selects the smallest useful set of Agents, and decomposes the message when responsibilities differ.
-5. Commonspace retains selected Agents, generated sub-requests, Project references, and the routing reason as service-side metadata for dispatch, reply binding, diagnostics, and correction history. The conversation shows pending and failed routing states but omits resolved routing detail.
+5. The service stores the selected Agents, sub-requests, Project references, and routing reason. These records support delivery, associate replies with assignments, and retain diagnostics and corrections. The conversation shows pending and failed routing states but omits completed routing details.
 6. Commonspace dispatches each sub-request to that Agent's native session in the Thread.
 7. Different Agent sessions run concurrently. Calls to the same native session are serialized.
 8. Replies, activity, results, and attention states appear under the same Thread.
@@ -170,7 +175,7 @@ flowchart TD
 ### 5.4 Explicitly addressed Channel message
 
 1. One or more explicit `@agent` mentions are authoritative.
-2. A mentioned Agent not already seated in the Channel is added immediately and invoked.
+2. A mentioned Agent that is not already a Channel member is added immediately and invoked.
 3. When several Agents are mentioned, inference may decompose the message between those Agents but may not replace them with different Agents.
 4. Explicit Project references are authoritative for the message. Inference may assign a relevant subset to each sub-request.
 
@@ -181,7 +186,7 @@ flowchart TD
 3. A change affects the new message and future Thread defaults, never the context already delivered in earlier turns.
 4. An Agent can mention another Agent in its visible reply.
 5. That mention invokes the Agent in the same Thread with the newly delivered handoff message and bounded shared context.
-6. Repeated Agent-to-Agent cycles are bounded and surfaced without adding a coordinator or task gate.
+6. Repeated Agent-to-Agent cycles stop with a visible outcome before they can loop indefinitely. This does not require a coordinator or task gate.
 
 ### 5.6 Direct Message
 
@@ -193,11 +198,13 @@ flowchart TD
 
 ### 5.7 Context inspection and compaction
 
+Compaction summarizes context so it fits within input limits. It does not delete the conversation transcript or alter the runtime's private memory.
+
 1. The user can inspect the Project, Channel, and Thread context available to an Agent.
-2. Channel context exposes its summary, decisions, open questions, source boundary, estimated pressure, origin, and compaction state.
+2. Channel context shows its summary, decisions, open questions, the source messages it covers, estimated token pressure, who wrote it, and its compaction state.
 3. A new Thread snapshots the current Channel context and then develops its own Thread context.
 4. Automatic compaction responds to estimated context/token pressure.
-5. The user can trigger compaction manually and edit the canonical compacted representation.
+5. The user can trigger compaction manually and edit the stored summary, decisions, and questions.
 6. User-written context remains authoritative and is not silently overwritten by automatic projection.
 7. If new source messages make edited context incomplete, Commonspace marks it stale rather than pretending it is current.
 
@@ -227,7 +234,13 @@ flowchart TD
 
 ## 6. Functional requirements
 
-`v0.1` means required for the complete private-preview product. `Capability-dependent` means required only when the connected harness advertises the relevant ACP capability. `Later` means deliberately outside the v0.1 release gate.
+Each row gives a stable requirement ID, its release target, the required behavior, and the condition that proves it. Cite these IDs in implementation plans and reviews. The [acceptance ledger](v0.1-acceptance.md) maps requirements to recorded evidence.
+
+| Target | Meaning |
+| --- | --- |
+| v0.1 | Required for the complete private-preview product. |
+| Capability-dependent | Required only when the connected runtime advertises the relevant ACP capability. |
+| Later | Deliberately outside the v0.1 release gate. |
 
 ### 6.1 Workspace and lifecycle
 
@@ -319,7 +332,7 @@ flowchart TD
 | MSG-03 | v0.1 | Keep Agent replies immutable as harness output. | A human cannot edit an Agent reply and misrepresent it as native output. |
 | MSG-04 | v0.1 | Pin messages, files, and human notes into shared context. | Pins identify their source, scope, and removal state and are available to scoped context reads. |
 | FIL-01 | v0.1 | Allow humans to attach general local files to messages. | Supported files persist, render or download safely, and reach the intended Agent session. |
-| FIL-02 | Capability-dependent | Accept harness-generated files as Agent attachments. | A supported ACP artifact becomes a durable Commonspace attachment without exposing its host path. |
+| FIL-02 | Capability-dependent | Accept harness-generated files as Agent attachments. | A supported ACP artifact becomes a durable Commonspace attachment whose managed metadata omits its source host path. File contents remain unchanged. |
 | FIL-03 | v0.1 | Bind attachments to exact message versions. | Editing/branching does not silently move an attachment to another version. |
 | FIL-04 | v0.1 | Block known credential-bearing files. | Common secret, key, token, and credential containers cannot be attached or previewed. |
 | FIL-05 | v0.1 | Keep Project file/Git surfaces read-oriented. | Commonspace may show files, changes, diffs, and emitted verification but does not become a Git client or execution manager. |
@@ -350,8 +363,8 @@ flowchart TD
 | ID | Target | Requirement | Acceptance condition |
 | --- | --- | --- | --- |
 | DAT-01 | v0.1 | Persist versioned, sanitized state atomically with rollback recovery. | A partial/invalid write does not replace the previous valid state. |
-| DAT-02 | v0.1 | Keep credentials, MCP capabilities, opaque native session IDs, and host paths private. | Browser snapshots, activity, search, and portable exports do not contain them. |
-| DAT-03 | v0.1 | Provide an open, versioned export of non-secret workspace data and attachments. | The archive is documented and usable without Commonspace cloud services. |
+| DAT-02 | v0.1 | Keep Commonspace-managed credential, MCP capability, native-session, and absolute host-path fields private. | Browser, activity, search, and portable archive metadata omit these managed values. This guarantee does not cover sensitive information supplied in conversation text or attachment contents. |
+| DAT-03 | v0.1 | Provide an open, versioned export of workspace data and attachments with managed private fields omitted. | The archive format is documented and usable without Commonspace cloud services. It preserves conversation text and exact attachment bytes and is unencrypted private user data. |
 | DAT-04 | v0.1 | Validate imports and resolve local resource mappings explicitly. | Import cannot overwrite current state or assume that exported absolute paths exist. |
 | DAT-05 | v0.1 | Keep data indefinitely by default and provide explicit retention controls. | No fixed append/load window silently drops accepted messages; destructive cleanup is scoped, previewable, and does not silently rewrite delivered history. |
 | DAT-06 | v0.1 | Disclose configured inference data flow. | The user can see whether inference is local or remote and what categories of conversation/context may be sent. |
@@ -359,7 +372,7 @@ flowchart TD
 
 ## 7. Context model
 
-Context is composed at request time from independent layers. Commonspace must preserve the origin of each layer rather than flattening everything into an unexplained prompt.
+Commonspace assembles context for each request from the layers below. It must preserve where each piece came from so agents and people can distinguish the current instruction, human notes, source messages, and generated summaries.
 
 | Layer | Scope | Contents | Lifecycle |
 | --- | --- | --- | --- |
@@ -403,7 +416,7 @@ For each Channel root or newly routable follow-up, the inference layer produces 
 - A concise routing reason.
 - Confidence when the provider supplies a meaningful value.
 
-The original human message remains canonical and visible. Sub-requests are routing artifacts attached to it, not fake human messages.
+The original human message remains the source record and stays visible. Sub-requests are assignments attached to that message; they must not appear as additional human-authored messages.
 
 ### Reroute semantics
 
@@ -424,7 +437,7 @@ The original human message remains canonical and visible. Sub-requests are routi
 
 ## 9. Conversation and execution states
 
-These states describe message delivery and native execution. They are not task workflow statuses.
+These states explain what happened to a message or agent turn. They belong to the conversation and do not create a separate task workflow.
 
 | State | Meaning |
 | --- | --- |
@@ -447,16 +460,19 @@ These states describe message delivery and native execution. They are not task w
 - Commonspace binds its service to loopback and guards mutations by origin.
 - ACP runs locally between Commonspace and supported harness processes.
 - Commonspace does not copy or manage harness credentials.
+- Connected runtimes may send messages and context to their configured model services. Their network behavior remains under the runtime's control.
 - A user-configured OpenAI-compatible inference endpoint may be remote. Commonspace must clearly disclose that routing/context data can leave the machine in this configuration.
 - Inference receives only the bounded message, candidate metadata, Project labels/references, and relevant shared context required for its function. Project file contents are not included by default.
 
 ### Data handling
 
-- Native session references, absolute host paths, capabilities, secrets, and credentials are host-private.
+- Commonspace-managed native session references, absolute host paths, capabilities, and credential fields remain private to the service.
 - Persisted activity and error data is bounded and sanitized.
 - Attachments are stored locally with private metadata and served only through authorized loopback requests.
-- Known secret-bearing files and unsafe preview types are rejected.
-- Portable exports omit secrets, opaque sessions, capabilities, and absolute host paths.
+- Known credential-bearing filenames and unsafe preview types are rejected. This does not scan or remove sensitive information from arbitrary conversation text or file contents.
+- Portable exports omit managed credential, native-session, capability, and absolute-path fields. Conversation text and exact attachment bytes remain in the archive and may contain sensitive information supplied by their authors.
+
+Workspace archives are unencrypted private user data. Removing Commonspace-managed metadata does not make their content safe to publish. See [Workspace archive format](workspace-archive-format.md#privacy-boundary) for the exact export boundary.
 
 ### Reliability invariants
 
@@ -471,7 +487,7 @@ These states describe message delivery and native execution. They are not task w
 
 ## 11. Release slices
 
-The implementation order is behavior-first. UI/UX work begins after the underlying contracts and failure semantics stabilize.
+These slices record the implementation sequence: establish the service behavior and failure handling, then expose it in the interface. They are not a list of remaining work; use the [Roadmap](roadmap.md) and [Implementation gap audit](implementation-gap-audit.md) for status.
 
 ### Slice 0: Restore product invariants
 
@@ -514,7 +530,7 @@ The implementation order is behavior-first. UI/UX work begins after the underlyi
 - Channel/Thread context inspector, editor, pins, and compaction controls.
 - Message branch/version navigation and deletion surfaces.
 - File, permission, diagnostics, notification, and data-management surfaces.
-- Keyboard, narrow-screen, light, and dark acceptance coverage.
+- Desktop keyboard navigation and Light/Dark/System appearance coverage. Narrow and mobile layouts are deferred.
 
 ## 12. End-to-end acceptance scenarios
 
@@ -528,10 +544,10 @@ The implementation order is behavior-first. UI/UX work begins after the underlyi
 | E2E-06 | Reach Channel context pressure after a human edit | Context becomes stale, compaction preserves human-authored meaning, and state/source boundaries remain inspectable. |
 | E2E-07 | Edit a delivered routed message | A new visible branch is routed independently while the original branch and native results remain intact. |
 | E2E-08 | Reroute one bad assignment | Only that sub-request is corrected; other Agents are not restarted, and the correction enters routing memory. |
-| E2E-09 | Attach a normal file and receive an Agent file | Both attachments remain bound to their exact messages; no host path or credential data reaches the browser. |
+| E2E-09 | Attach a normal file and receive an Agent file | Both attachments remain bound to their exact messages. Managed attachment metadata omits source host paths and credential fields; the file contents remain unchanged. |
 | E2E-10 | Receive a permission request while the client is closed | The service keeps the request pending, other sessions continue, and reopening shows an exact attention item with harness-provided choices. |
 | E2E-11 | Restart after a conversation exceeds the legacy 500-message boundary | Every accepted message and its context restore, resumable sessions continue exactly, and unrecoverable in-flight work is marked interrupted. |
-| E2E-12 | Export and import into a clean workspace | Non-secret conversation data and attachments import safely, and local Project roots require explicit remapping. |
+| E2E-12 | Export and import into a clean workspace | Conversation data and exact attachment bytes import safely. Managed private fields are omitted from the archive, and local Project roots require explicit remapping. |
 
 ## 13. v0.1 definition of done
 
@@ -541,9 +557,9 @@ Commonspace v0.1 is product-complete when:
 2. Capability-dependent behavior is tested against each supported harness that advertises it.
 3. All end-to-end acceptance scenarios pass on a clean supported machine.
 4. Existing state versions migrate without dropping conversations, context, references, attachments, or read state, including transcripts beyond legacy count windows.
-5. The browser client works across desktop and narrow layouts, keyboard-only operation, and light/dark appearance.
+5. The browser client works at desktop sizes with keyboard-only operation and Light/Dark/System appearance. Narrow and mobile layouts are deferred.
 6. The local service can be installed, started, stopped, updated, and recovered without repository knowledge.
-7. No portable or browser-visible payload leaks credentials, absolute paths, native session IDs, or ephemeral capabilities.
+7. Portable and browser-visible metadata omit Commonspace-managed credentials, absolute paths, native session IDs, and ephemeral capabilities. This guarantee does not imply that user-supplied text or files have been stripped of sensitive content.
 8. Product documentation, the implementation audit, and the roadmap agree on shipped behavior.
 
 ## 14. Deliberately deferred decisions

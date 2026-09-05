@@ -5,54 +5,55 @@ body:
   - type: markdown
     attributes:
       value: |
-        Search existing issues first. Remove private paths, credentials, and native session details from the report.
+        Search existing issues before reporting a new problem. Use synthetic examples and remove private data from logs and screenshots.
+        For suspected security problems, follow SECURITY.md and report privately.
   - type: textarea
     id: summary
     attributes:
-      label: Problem
-      description: What happened, and what did you expect to happen?
-      placeholder: Describe the observed and expected behavior.
+      label: What went wrong?
+      description: Describe what happened and what you expected instead.
+      placeholder: Describe the problem in the app.
     validations:
       required: true
   - type: textarea
     id: reproduction
     attributes:
-      label: Reproduction steps
-      description: Give the smallest sequence that reproduces the problem.
+      label: Steps to reproduce
+      description: Give the shortest sequence that makes the problem happen.
       placeholder: |
         1. Start Commonspace with ...
         2. Open ...
         3. Select ...
-        4. Observe ...
+        4. The app ...
     validations:
       required: true
   - type: input
     id: version
     attributes:
-      label: Revision or version
-      description: Provide a public release, commit, or branch name.
-      placeholder: main or a public commit
+      label: Commonspace version
+      description: Give the release version or Git commit. From an extracted archive, run node commonspace.mjs --version.
+      placeholder: A release version or Git commit
     validations:
       required: true
   - type: dropdown
     id: area
     attributes:
-      label: Area
+      label: Where does the problem happen?
       options:
-        - UI
+        - App interface
         - Storybook
         - API or server
-        - Routing or context
-        - Agent session or ACP
-        - Persistence or migration
-        - Installation or service
+        - Agent selection or shared context
+        - Agent connection or conversation session
+        - Saving data or upgrading
+        - Installation or background service
         - Other
     validations:
       required: true
   - type: dropdown
     id: platform
     attributes:
-      label: Platform
+      label: Operating system
       options:
         - macOS
         - Linux
@@ -61,15 +62,20 @@ body:
     validations:
       required: true
   - type: textarea
+    id: installation
+    attributes:
+      label: How are you running Commonspace?
+      description: State whether you use a release archive or source checkout, a terminal or background service, your Node.js version, and your CPU architecture. Leave out private paths.
+      placeholder: Release archive, macOS background service, Node.js 22, arm64
+  - type: textarea
     id: logs
     attributes:
-      label: Relevant output
-      description: Include sanitized error output or screenshots. Do not include secrets, local paths, or native session identifiers.
-      render: text
+      label: Relevant output or screenshots
+      description: Include only what helps explain the problem. Remove secrets, local paths, agent session identifiers, and private conversation content.
   - type: checkboxes
     id: checks
     attributes:
-      label: Checks
+      label: Before submitting
       options:
         - label: I searched existing issues and found no duplicate.
           required: true

@@ -1,99 +1,97 @@
-# Contributing
+# Contributing to Commonspace
 
-Thank you for helping improve Commonspace. Small, focused fixes are welcome. Larger changes should establish product and architectural fit before implementation starts.
+You can help with bug fixes, features, tests, and documentation. This guide explains how to prepare a change that a maintainer can understand and verify. Normal development and tests do not require agent credentials.
 
-## Start in five minutes
+## Choose a change
 
-You can work on the UI, server, tests, and Storybook without agent credentials.
+Search existing issues and pull requests before starting. Small fixes can go directly to a pull request; explain the problem there if no issue exists. For larger features or changes to the product model, open an issue and agree on the approach with a maintainer before implementing it.
+
+Read the relevant parts of the [product direction](docs/product-direction.md), [product specification](docs/product-spec.md), and [architecture](docs/architecture.md). Keep one logical change per pull request. When continuing someone else's work, link it and give them credit.
+
+## Set up your checkout
+
+You need Node.js 22 or newer, pnpm 10.34.5, and Git. During the private preview, your GitHub account needs repository access. Use an SSH remote:
 
 ```bash
+git clone git@github.com:ralphbibera/commonspace.git
+cd commonspace
 pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-Open the UI at `http://127.0.0.1:5173`. The API is at `http://127.0.0.1:3100`.
+Open `http://127.0.0.1:5173` for the app. The API runs on port `3100`. Install and authenticate Hermes or Codex only when you need to test a real agent connection.
 
-Run the focused contributor gate in another terminal:
+The [contributor guide](docs/contributor-guide.md) explains the repository layout and common development tasks. Check the [support matrix](docs/support-matrix.md) for platform coverage.
 
-```bash
-pnpm check:fast
-```
+## Make the change
 
-For isolated UI work, use Storybook:
+Before editing, write down the user problem, the product rule involved, the package responsible for the behavior, and how you will verify the result. These notes can become your pull request description.
 
-```bash
-pnpm storybook
-pnpm test:storybook:watch -- Conversation
-```
+1. Add a focused failing test for a behavior change. If no new test is needed, explain why and identify any existing coverage.
+2. Make the smallest change that solves the problem. Keep unrelated cleanup separate.
+3. Keep shared types and helpers in `packages/shared`, server behavior in `server`, and browser behavior in `ui`.
+4. Update every affected consumer when a shared type changes. Include the migration and validation needed for saved-data changes.
+5. Update the documentation that describes the changed behavior.
+6. Review the complete diff, including generated code, and run the checks below.
 
-Real Hermes and Codex sessions are optional. They are not required for normal contribution work or for the default test suite.
+Preserve local-only serving, request validation, private session data, and the agent's existing session when a conversation continues. The [architecture](docs/architecture.md) and [contributor guide](docs/contributor-guide.md) describe these requirements in more detail.
 
-Read [the contributor guide](docs/contributor-guide.md) for the repository map, supported development environments, test ownership, and common change paths.
+## Check your work
 
-## Before starting
-
-1. Search open issues and pull requests for duplicate or in-progress work.
-2. Read [product direction](docs/product-direction.md), [product specification](docs/product-spec.md), and [architecture](docs/architecture.md) for the area you will change.
-3. Choose the smallest useful scope.
-4. For a larger feature or a change to a product boundary, open or update a public discussion before writing a large implementation.
-
-Do not include private task IDs, local instance links, localhost URLs, private filesystem paths, or credentials in public branches, commits, issues, or pull requests.
-
-## Change workflow
-
-1. Describe the user problem and the product rule involved.
-2. Identify the owning package or feature boundary.
-3. Add a focused failing test for behavior changes, or document the existing coverage that proves the change.
-4. Implement the smallest production change.
-5. Run the focused test and inspect the result.
-6. Run `pnpm check:fast` while iterating.
-7. Run `pnpm check` before requesting review.
-8. Run `pnpm verify:live` for server, API, routing, persistence, or visible end-to-end changes.
-9. Review `git diff --check` and the complete diff.
-
-Keep changes inside the conversation-first product model. Shared contracts belong in `packages/shared`, host behavior belongs in `server`, and presentation belongs in `ui`.
-
-## Verification commands
-
-| Change | Minimum verification |
-| --- | --- |
-| Shared contract or server behavior | Focused test, `pnpm check`, `pnpm verify:live` |
-| Isolated UI component or state | Storybook story, focused Storybook test, `pnpm check:ui` |
-| Integrated UI flow | Storybook coverage, `pnpm check`, `pnpm verify:live` |
-| Persistence, migration, or security boundary | Focused regression tests, `pnpm check`, `pnpm verify:live` |
-| Documentation or templates only | Link and syntax checks, `git diff --check` |
-
-Useful focused commands:
+Use a focused test while developing, then run the full checks before requesting review:
 
 ```bash
 pnpm test -- tests/channel-context.spec.ts
-pnpm test -- tests/commonspace.client.spec.tsx
-pnpm test:storybook:watch -- Conversation
-pnpm test:storybook:smoke
+pnpm check:fast
+pnpm check
+git diff --check
 ```
 
-## Pull requests
+Replace the example test file with the one relevant to your change. `check:fast` is useful during development. `check` runs the complete local code checks, tests, and builds.
 
-Use the pull request template. Every pull request should make the following clear:
+| Change | Required verification |
+| --- | --- |
+| Shared types, server behavior, saved data, or security | A focused regression test, `pnpm check`, and `pnpm verify:live`. |
+| UI component or screen | Relevant Storybook states and behavior checks, `pnpm check`, and a manual desktop check. Run `pnpm verify:live` when the change affects the complete app flow. |
+| Packaging, installation, production dependencies, or release workflow | Focused tests, `pnpm check`, `pnpm verify:live`, `pnpm release:pack`, and `pnpm verify:release`. Include macOS service checks when relevant. |
+| Documentation or templates only | Check links, command examples, and file syntax, then run `git diff --check`. New behavior tests are not required. |
 
-- what problem the change solves;
-- how the change fits Commonspace’s product model;
-- what changed and where ownership lives;
-- the focused and full verification performed;
-- manual verification for visible behavior;
-- risks, migrations, compatibility concerns, or known follow-up work;
-- the model used, including `None, human-authored` when no AI helped.
+For UI work, `pnpm check:ui` runs the UI checks separately. The [contributor guide](docs/contributor-guide.md) explains Storybook and focused browser tests. Real agent and background-service checks are additional; record which ones you actually ran.
 
-One pull request should represent one logical change. Keep unrelated cleanup in a separate pull request.
+## Prepare a pull request
 
-## AI-assisted contributions
+Use the pull request template to explain:
 
-AI-assisted contributions are welcome. The contributor remains responsible for understanding the change, checking its product fit, reviewing generated code, and validating the result. AI use must be disclosed in the pull request. Do not paste private workspace data, credentials, native agent session data, or internal links into prompts or public artifacts.
+- the problem and the resulting behavior;
+- which files or packages changed and why;
+- the checks you ran, their results, and any checks you skipped;
+- manual verification for visible changes, with screenshots or a short recording when useful;
+- migration, compatibility, security, or performance risks;
+- the provider and exact model used for AI assistance, or `None, human-authored`.
 
-## Security and data
+Use a descriptive branch name and conventional commit messages, such as `fix(server): preserve thread continuity` or `docs: clarify installation`. Mark unfinished pull requests as drafts.
 
-Never commit credentials, CLI session stores, `~/.commonspace`, generated `dist` output, browser artifacts, or local state. Follow [SECURITY.md](SECURITY.md) for vulnerability reports.
+A change is ready to merge when required CI passes, substantive review comments are resolved, and a maintainer approves it. [CODEOWNERS](.github/CODEOWNERS) identifies the current reviewer. A passing test suite does not replace review of product fit and behavior. See the [maintainer guide](docs/maintaining.md) for review responsibilities.
 
-## License
+## Write useful documentation
 
-By contributing, you agree that your contribution is provided under the repository’s MIT license.
+- Write for the person using the page. State what they can do or learn before explaining implementation details.
+- Use complete sentences and familiar words. Explain a technical term before relying on it.
+- Describe Commonspace directly. Do not use other projects as comparisons, inspiration, or references. Name another tool only when readers need it to use, develop, or maintain Commonspace.
+- Give prerequisites, accurate commands, and the expected result. Check file links and command examples against the current implementation.
+- Put detailed technical rules in the relevant reference page and link to them. Avoid repeating the same instructions across several pages.
+- Distinguish supported behavior from planned work, and test results from checks that still need to run.
+
+## Use AI responsibly
+
+AI assistance is welcome. You remain responsible for understanding the change, checking its product fit, reviewing every changed line, and verifying the result. Disclose the provider and exact model in the pull request.
+
+Use only code and data you are authorized to share with the chosen model. Do not send real Commonspace conversations or saved state, credentials, agent session records, or internal links without permission. Keep these private records out of public contribution artifacts and use synthetic data instead.
+
+## Protect private data
+
+Use synthetic data in examples and tests. Remove private paths, local instance links, internal task IDs, credentials, and agent session identifiers from screenshots, logs, commits, issues, and pull requests.
+
+Do not commit `~/.commonspace`, agent credential or session stores, generated builds, release archives, or browser artifacts. Follow [Security](SECURITY.md) for vulnerability reports and the [Code of Conduct](CODE_OF_CONDUCT.md) when participating.
+
+By contributing, you agree that your contribution is provided under the repository's [MIT license](LICENSE).

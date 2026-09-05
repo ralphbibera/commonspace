@@ -1,63 +1,72 @@
 # Roadmap
 
-Commonspace is a private preview focused on durable human-agent conversation and visible context continuity.
+Commonspace is a private preview. Core conversation, context, and local-service capabilities are implemented; release work focuses on clean-machine validation and desktop usability.
+
+The capabilities below describe the implementation, not a passing result for a release candidate. Use the [Product specification](product-spec.md) for required behavior, the [Implementation gap audit](implementation-gap-audit.md) for its dated status snapshot, and the [v0.1 acceptance ledger](v0.1-acceptance.md) for evidence and release gates.
 
 ## Working now
 
-- Standalone local server and browser application.
-- Filesystem Projects with multiple canonical paths.
-- Zero-to-many Project references on messages and threads, including multi-root agent execution and Project-aware search/attribution.
-- Inference-first Project context without root, DM, Thread, branch, or reroute Project pickers; `@@project` remains the explicit context path.
-- Channels with explicit agent rosters, instructions, settings, memory, and threaded native sessions.
-- Editable Channel context with state metadata, manual compaction, and automatic token-pressure compaction through the configured inference layer.
-- Persistent Direct Messages with generation-safe `/new` boundaries.
-- Complete conversation transcripts preserved across append and restart without implicit message-count eviction.
-- Known installed Hermes and Codex harness discovery with explicit roster selection and one workspace identity per harness.
-- Native Hermes/Codex ACP relay with delta-only delivery, exact opaque-session resumption, and scoped Commonspace MCP context/actions.
-- Expandable, durable per-reply traces for harness-emitted reasoning, plans, tools, results, and context usage.
-- Live semantic activity with per-run and `/stop` cancellation controls.
-- Live run supervision with steering, queued follow-ups, reorder/remove controls, and stop-and-send.
-- Explicit completed, needs-input, failed, silent, cancelled, and timeout outcomes with needs-attention surfacing.
-- Inference-only unaddressed Channel routing through a harness or OpenAI-compatible model.
-- Persisted routing-stage latency reported independently from Agent execution, with failed inference promoted to retryable Inbox attention.
-- Persisted per-harness routing assignments with bounded sub-requests, scoped Projects, and visible user-controlled fan-out; resolved assignment details stay out of conversation messages.
-- Visible Project-reference inference for new Channel roots, with `@@project` tags remaining authoritative.
-- Durable single-assignment corrections among existing Channel members, assignment-bound replies, preserved Project scope, and compacted per-Channel routing knowledge used by later inference; no inline reroute control.
-- Immutable Channel-context snapshots per Thread, independent editable/pressure-compacted Thread context, and visible manual compaction controls.
-- Prospective Thread references inherited from inference or supplied through `@@project`, preserving earlier delivery and active-session scope.
-- Channel/Thread pins for messages, attachments, and notes with scoped MCP visibility and removal tombstones.
-- Human message edit branches with new native continuity, previous-version navigation, and pre-branch context; durable deletion markers remove content without rewriting delivery history.
-- Channel context editing, status inspection, manual compaction, and note-pin controls.
-- Dedicated owner-only projectless workspace isolation.
-- General human files, permitted-root ACP Agent artifacts, safe download/search/pinning, and credential-file refusal.
-- Exact native ACP permission choices with durable conversation/Inbox attention and per-session blocking.
-- Runtime readiness diagnostics, recovery guidance, and local/remote inference data-flow disclosure.
-- Versioned non-secret workspace export, clean-workspace import with explicit Project-root mapping, and exact attachment restoration.
-- Explicit revision-guarded Channel/DM retention with impact preview and attachment-byte cleanup; no automatic expiry.
-- One-command macOS installation, owner LaunchAgent startup, same-origin built UI/API service, staged updates, health control, and one-release rollback.
-- Opt-in native notifications for replies, mentions, permission requests, failures, and timeouts, with independent category/sound controls and exact message deep links.
-- Project Files, Git Changes/diffs, and image attachments.
-- Desktop-first Apple-reference visual parity for shell geometry, borders, collections, conversations, Inbox, Threads, and Project panes; existing semantic color settings remain authoritative.
-- Light-default appearance with Light/Dark/System selection and neutral message focus cards without orange accent rails.
-- Theme swaps remain one-command: a new Tweakcn/shadcn theme updates `ui/src/index.css` without React or layout edits.
-- Work/result binding through per-reply run attribution, changed-file surfaces, activity traces, and validation evidence emitted by the harness.
-- Hard-boundary cancellation, stale-session recovery that distinguishes missing from transient failures, and graceful bridge shutdown.
-- Slash commands and agent/project/channel references.
-- Versioned atomic state, loopback API guards, bounded execution, and live browser verification.
-- Browser-private canonical Project roots and retention guards for live/queued/compaction work.
+### Conversations and session continuity
+
+- Channels have chosen agent members, instructions, shared context, and threads. Channels can override workspace model and reasoning defaults.
+- Direct Messages continue one chosen agent's native session. `/new` starts a fresh session and prevents earlier context or late replies from crossing into it.
+- Different native sessions can run concurrently. New turns send only the new request, and continuations resume the exact stored native session.
+- Busy sessions preserve queued follow-ups. Users can reorder or remove them, steer the agent where supported, or stop the current turn and send the next input.
+- Replies show distinct completed, needs-input, failed, silent, cancelled, timed-out, and interrupted outcomes. Cancellation, stale-session recovery, and graceful shutdown preserve session boundaries and distinguish missing sessions from temporary failures.
+- Accepted messages survive append and restart without a hidden message-count limit. Editing a human message creates a new branch and session continuity while retaining earlier versions; deletion leaves a durable marker and removes the content.
+- Slash commands and agent, Project, and Channel references are available within the conversation.
+
+### Projects and shared context
+
+- Projects can contain several validated local folders. Messages and threads can reference zero, one, or several Projects; execution, search, and reply attribution account for every reference.
+- Inference chooses relevant Projects when no explicit tags are present. Visible `@@project` tags remain authoritative. There are no separate Project pickers for root messages, DMs, threads, branches, or reroutes.
+- Thread replies inherit the latest Project references or use explicit `@@project` tags. New references affect future turns without rewriting earlier deliveries or active-session scope.
+- Projectless turns run from a dedicated owner-only neutral workspace and receive no Project filesystem roots.
+- Channel context supports editing, source and status inspection, manual compaction, and automatic compaction under token pressure. Human edits are preserved.
+- Each thread starts with an immutable Channel-context snapshot and maintains its own editable context and compaction state.
+- Channel and Thread pins include messages, exact attachments, and human notes. Scoped context tools expose active pins and preserve removal records.
+
+### Agents and routing
+
+- Adding an agent explicitly discovers supported installed Hermes and Codex runtimes. Each runtime has one reusable workspace identity.
+- The Agent Client Protocol (ACP) carries native sessions and activity. Scoped Model Context Protocol (MCP) tools let agents read permitted Commonspace context and post visible progress or peer handoffs.
+- Unaddressed Channel messages use a configured runtime or OpenAI-compatible inference provider to select agents. Explicit mentions remain authoritative.
+- Routing stores one limited sub-request and relevant Project subset per selected agent. A visible setting controls the maximum number of selected agents; there is no hidden two-agent cap.
+- Routing time is recorded separately from agent execution. Failed inference creates retryable Inbox attention. Completed routing assignments remain service metadata instead of filling the conversation with routing details.
+- Service-level corrections can redirect one assignment to another existing Channel member while retaining its Project scope and earlier attempts. Replies stay linked to their assignments, and summaries of explicit corrections inform later routing. Inline reroute controls are deferred.
+
+### Review, activity, and desktop experience
+
+- Project views show files, Git changes, and diffs. Agent replies connect changed files, Project roots, activity, and emitted verification results to the request that produced them.
+- Replies preserve expandable reasoning summaries, plans, tool calls, results, and context usage when the runtime emits them. Live activity includes per-run and `/stop` cancellation controls where supported.
+- Images and general files can be attached, downloaded safely, searched, and pinned. Supported agent files are copied only from permitted roots; known credential files are refused.
+- Native permission requests show exactly the runtime's available choices. They remain visible in the conversation and Inbox and block only the affected session.
+- The desktop shell, collections, conversations, Inbox, threads, and Project panes follow the geometry and border rules in [UI direction](ui-direction.md). Final visual polish remains part of release readiness.
+- Appearance starts in Light and offers Light, Dark, and System modes. Message focus uses a neutral card treatment. Theme tokens in `ui/src/index.css` allow a theme change without editing React components or layouts.
+
+### Local operation and data
+
+- The standalone server and browser application use a loopback API, origin guards, versioned atomic state, bounded execution, and browser-safe Project labels. Absolute Project roots stay private to the service.
+- One-command macOS installation runs Commonspace as a user LaunchAgent. The built UI and API share an origin; service controls, staged updates, health checks, and one-release rollback support recovery.
+- Runtime diagnostics explain storage readiness, available runtimes, observed agent readiness, recovery steps, and whether inference sends context to a local or remote provider.
+- Opt-in desktop notifications cover replies, mentions, permission requests, failures, and timeouts. Category and sound settings are independent of durable Inbox state; alerts open the exact message.
+- Versioned exports omit Commonspace-managed credential, session, capability, and absolute-path fields while preserving conversation text and exact attachment bytes. Archives are unencrypted private data; their contents may still contain sensitive information supplied by their authors. Import requires a clean workspace and explicit local Project-root mappings.
+- Channel or DM retention requires an impact preview and a matching state revision. Cleanup removes attachment bytes and rejects live or queued runs and context or routing compaction. There is no automatic expiry.
 
 ## Scale-dependent work
 
-- A durable relational message store once transcript scale justifies migration from the current versioned state file.
-- Storage technology may remain JSON while appropriate, but the current store must preserve every accepted message until explicit retention exists.
+A relational transcript store is deferred until measured transcript scale justifies replacing the current versioned state file. Storage may remain JSON while it meets the product's needs.
 
-See [Product specification](product-spec.md) for the complete behavior and acceptance contract and [Implementation gap audit](implementation-gap-audit.md) for evidence-based implementation status.
+Regardless of storage technology, every accepted message must remain available until the user applies explicit retention. A migration must preserve that rule and the portable archive contract.
 
 ## Release readiness
 
-- Exercise Hermes and Codex ACP login/start/resume paths on a clean machine.
-- Keep automated keyboard search/navigation and Light/Dark/System desktop palette checks green in `pnpm verify:live`.
-- Defer narrow/mobile layout validation until the desktop visual direction is accepted.
-- Keep state migration, automatic backup recovery, and rollback fixtures green in `pnpm check`.
-- Repeat the green isolated `pnpm verify:service` lifecycle on a clean supported macOS user account with real launchctl health.
+- Exercise Hermes and Codex login, start, and exact-session resume on a clean supported machine.
+- Run `pnpm check` for static checks, tests, migration and recovery coverage, and application builds.
+- Run `pnpm verify:live` for desktop browser behavior, keyboard search and navigation, and Light/Dark/System appearance.
+- Build and verify a distribution archive with `pnpm release:pack` and `pnpm verify:release`.
+- Run `pnpm verify:service` on macOS for isolated source clone, install, build, update, and rollback checks. This test substitutes `launchctl` commands and health responses.
+- Install the candidate archive on a clean supported macOS account and manually check real LaunchAgent startup, browser access, status, update, and rollback using [Releasing](releasing.md#check-the-real-integrations).
 - Complete keyboard-only and destructive-action reviews.
+
+Narrow and mobile layouts are deferred; desktop is the current UI target. Release gates need fresh results from the candidate being shipped. Follow [Releasing](releasing.md) for packaging and publication; the repository remains private until the owner explicitly authorizes a visibility change.

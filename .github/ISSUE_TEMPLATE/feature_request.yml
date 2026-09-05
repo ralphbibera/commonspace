@@ -1,46 +1,47 @@
 name: Feature request
-description: Propose a focused improvement that fits the Commonspace product model.
+description: Suggest an improvement to Commonspace.
 title: "[Feature]: "
 body:
   - type: markdown
     attributes:
       value: |
-        Start with the user problem. A feature should improve conversation, routing, context visibility, native-session continuity, trust, or collaboration without creating a separate task-management domain.
+        Start with the problem you want to solve. Commonspace helps people work with agents through conversations, projects, and shared context.
+        For a larger change, agree on the approach with a maintainer before implementing it.
   - type: textarea
     id: problem
     attributes:
-      label: User problem
-      description: Who is blocked, and what are they trying to accomplish?
-      placeholder: Explain the problem in user terms.
+      label: What are you trying to do?
+      description: Explain who needs this change and what is difficult or missing today.
+      placeholder: Describe the problem from the user's point of view.
     validations:
       required: true
   - type: textarea
     id: proposal
     attributes:
-      label: Proposed change
-      description: Describe the smallest useful behavior.
-      placeholder: Describe the user-facing result, not only the implementation.
+      label: What would help?
+      description: Describe the smallest change that would solve the problem.
+      placeholder: Explain what the user would see or do.
     validations:
       required: true
   - type: textarea
     id: product_fit
     attributes:
-      label: Product fit
-      description: Which existing Commonspace object or principle does this extend?
-      placeholder: Project, Channel, Direct Message, Agent, Message, thread, shared context, or another existing boundary.
+      label: Where does this fit in Commonspace?
+      description: Identify the part of the existing workspace that should change.
+      placeholder: For example, a Project, Channel, Direct Message, Agent, Message, thread, or shared context.
     validations:
       required: true
   - type: textarea
     id: alternatives
     attributes:
-      label: Alternatives and scope
-      description: What alternatives did you consider, and what should remain out of scope?
+      label: Alternatives and limits
+      description: Describe other approaches you considered and what this change should leave out.
   - type: checkboxes
     id: checks
     attributes:
-      label: Checks
+      label: Before submitting
       options:
         - label: I searched existing issues and pull requests.
           required: true
-        - label: This proposal does not assume a new task, ticket, company, approval, or work-queue domain.
+        - label: I checked this proposal against Commonspace's product direction.
           required: true
