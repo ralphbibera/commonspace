@@ -1,6 +1,12 @@
 import type { ConversationRef } from "@commonspace/shared";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, userEvent, within } from "storybook/test";
+import {
+	type CommonspaceRoute,
+	commonspaceRouteHref,
+	createCommonspaceRouter,
+	createMemoryHistory,
+} from "../app-shell/commonspace-router";
 import { CommonspaceApp } from "../CommonspaceApp";
 import type { CommonspaceDirectoryKind } from "../CommonspaceDirectory";
 import type { CommonspaceStore } from "../commonspace-store";
@@ -38,6 +44,37 @@ interface CommonspaceScreenProps {
 	searchFetcher?: typeof globalThis.fetch;
 }
 
+const storyRouter = createCommonspaceRouter({
+	history: createMemoryHistory({ initialEntries: ["/"] }),
+});
+
+function screenRoute({
+	destination,
+	directoryKind,
+	projectId,
+	conversation,
+	threadId,
+}: Pick<
+	CommonspaceScreenProps,
+	"destination" | "directoryKind" | "projectId" | "conversation" | "threadId"
+>): CommonspaceRoute {
+	if (destination === "directory")
+		return { kind: "directory", directory: directoryKind ?? "projects" };
+	if (destination === "project" && projectId !== undefined)
+		return { kind: "project", projectId };
+	if (destination === "threads") return { kind: "threads" };
+	if (destination === "conversation" && conversation !== undefined) {
+		const route: CommonspaceRoute = {
+			kind: "conversation",
+			conversation,
+		};
+		if (threadId !== undefined && route.kind === "conversation")
+			route.threadId = threadId;
+		return route;
+	}
+	return { kind: "inbox", view: "attention" };
+}
+
 function CommonspaceScreen({
 	destination,
 	store,
@@ -48,25 +85,21 @@ function CommonspaceScreen({
 	projectFetcher,
 	searchFetcher,
 }: CommonspaceScreenProps) {
-	window.localStorage.setItem("commonspace-view", destination);
-	window.localStorage.setItem("commonspace-directory-kind", directoryKind);
-	if (projectId === undefined)
-		window.localStorage.removeItem("commonspace-project");
-	else window.localStorage.setItem("commonspace-project", projectId);
-	if (conversation === undefined) {
-		window.localStorage.removeItem("commonspace-navigation");
-		window.localStorage.removeItem("commonspace-conversation");
-	} else {
-		const navigation = JSON.stringify({ ...conversation, threadId });
-		window.localStorage.setItem("commonspace-navigation", navigation);
-		window.localStorage.setItem(
-			"commonspace-conversation",
-			JSON.stringify(conversation),
-		);
-	}
+	const routeInput: Pick<
+		CommonspaceScreenProps,
+		"destination" | "directoryKind" | "projectId" | "conversation" | "threadId"
+	> = { destination, directoryKind };
+	if (projectId !== undefined) routeInput.projectId = projectId;
+	if (conversation !== undefined) routeInput.conversation = conversation;
+	if (threadId !== undefined) routeInput.threadId = threadId;
+	const initialPath = commonspaceRouteHref(
+		storyRouter,
+		screenRoute(routeInput),
+	);
 	return (
 		<CommonspaceApp
 			store={store}
+			initialPath={initialPath}
 			{...(projectFetcher === undefined ? {} : { projectFetcher })}
 			{...(searchFetcher === undefined ? {} : { searchFetcher })}
 		/>

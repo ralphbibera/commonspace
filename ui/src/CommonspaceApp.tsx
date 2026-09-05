@@ -1,7 +1,12 @@
+import { RouterProvider } from "@tanstack/react-router";
 import { MenuIcon, XIcon } from "lucide-react";
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useSyncExternalStore } from "react";
 import { cn } from "@/lib/utils";
 import { CommonspaceWorkspace } from "./app-shell/CommonspaceWorkspace.tsx";
+import {
+	createCommonspaceRouter,
+	createMemoryHistory,
+} from "./app-shell/commonspace-router.tsx";
 import { useCommonspaceNavigation } from "./app-shell/useCommonspaceNavigation.ts";
 import { useCommonspaceTheme } from "./app-shell/useCommonspaceTheme.ts";
 import { CommonspaceSearchDialog } from "./CommonspaceSearch.tsx";
@@ -13,13 +18,47 @@ export interface CommonspaceAppProps {
 	store: CommonspaceStore;
 	projectFetcher?: typeof globalThis.fetch;
 	searchFetcher?: typeof globalThis.fetch;
+	initialPath?: string;
 }
 
 export function CommonspaceApp({
 	store,
 	projectFetcher,
 	searchFetcher,
+	initialPath,
 }: CommonspaceAppProps) {
+	const router = useMemo(
+		() =>
+			createCommonspaceRouter(
+				initialPath === undefined
+					? {}
+					: {
+							history: createMemoryHistory({ initialEntries: [initialPath] }),
+						},
+			),
+		[initialPath],
+	);
+	return (
+		<RouterProvider
+			router={router}
+			context={{
+				app: (
+					<CommonspaceAppShell
+						store={store}
+						{...(projectFetcher === undefined ? {} : { projectFetcher })}
+						{...(searchFetcher === undefined ? {} : { searchFetcher })}
+					/>
+				),
+			}}
+		/>
+	);
+}
+
+function CommonspaceAppShell({
+	store,
+	projectFetcher,
+	searchFetcher,
+}: Omit<CommonspaceAppProps, "initialPath">) {
 	const snapshot = useSyncExternalStore(
 		store.subscribe,
 		store.getSnapshot,
@@ -35,6 +74,7 @@ export function CommonspaceApp({
 		createRequest,
 		mentionAgent,
 		navigationOpen,
+		navigationToken,
 		openContextSettings,
 		openConversation,
 		openDirectory,
@@ -42,6 +82,7 @@ export function CommonspaceApp({
 		openProject,
 		openSearch,
 		openSearchResult,
+		openTarget,
 		openThreads,
 		searchOpen,
 		toggleNavigation,
@@ -100,6 +141,7 @@ export function CommonspaceApp({
 						directoryActive={activeDestination === "directory"}
 						activeProjectViewId={activeProjectViewId}
 						createRequest={createRequest}
+						navigationToken={navigationToken}
 						onOpenSearch={openSearch}
 						onOpenInbox={() => openInbox()}
 						onOpenThreads={openThreads}
@@ -108,8 +150,13 @@ export function CommonspaceApp({
 						onOpenAgentSessions={() => openInbox("sessions")}
 						onMentionAgent={mentionAgent}
 						onOpenProject={openProject}
-						onOpenConversation={(messageId) => {
-							openConversation(undefined, messageId);
+						onOpenConversation={(conversation, messageId, threadId) => {
+							if (messageId !== undefined) {
+								const target = { conversation, messageId };
+								openTarget(
+									threadId === undefined ? target : { ...target, threadId },
+								);
+							} else openConversation(conversation);
 						}}
 					/>
 				</aside>

@@ -10,6 +10,7 @@ import {
 const meta = {
 	title: "Pages/CommonspaceApp",
 	component: CommonspaceApp,
+	args: { initialPath: "/" },
 	parameters: { layout: "fullscreen" },
 	decorators: [
 		(Story) => (
@@ -33,22 +34,28 @@ export const WorkspaceNavigationFlow: Story = {
 		const canvas = within(canvasElement);
 
 		await userEvent.click(canvas.getByRole("button", { name: /Open Inbox/iu }));
-		await expect(canvas.getByRole("main", { name: "Inbox" })).toBeVisible();
+		await expect(
+			await canvas.findByRole("main", { name: "Inbox" }),
+		).toBeVisible();
 
 		await userEvent.click(
 			canvas.getByRole("button", { name: /Open Threads/iu }),
 		);
-		await expect(canvas.getByRole("main", { name: "Threads" })).toBeVisible();
+		await expect(
+			await canvas.findByRole("main", { name: "Threads" }),
+		).toBeVisible();
 
 		await userEvent.click(
 			canvas.getByRole("button", { name: "Select project Commonspace" }),
 		);
 		await expect(
-			canvas.getByRole("main", { name: "Project Commonspace" }),
+			await canvas.findByRole("main", { name: "Project Commonspace" }),
 		).toBeVisible();
 
 		await userEvent.click(canvas.getByRole("button", { name: "Workspace" }));
-		await expect(canvas.getByRole("main", { name: "Inbox" })).toBeVisible();
+		await expect(
+			await canvas.findByRole("main", { name: "Inbox" }),
+		).toBeVisible();
 	},
 };
 
@@ -87,6 +94,71 @@ export const WorkspaceColorModes: Story = {
 		await expect(canvasElement.ownerDocument.documentElement).toHaveClass(
 			"light",
 		);
+	},
+};
+
+export const ProjectSettingsNavigation: Story = {
+	args: { store: createStoryStore(storyBootstrap) },
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		const page = within(canvasElement.ownerDocument.body);
+		await expect(
+			await canvas.findByRole("main", { name: "Inbox" }),
+		).toBeVisible();
+		await userEvent.click(
+			canvas.getByRole("button", { name: "More actions for Platform" }),
+		);
+		await userEvent.click(
+			await page.findByRole("menuitem", { name: "Project settings" }),
+		);
+		await expect(
+			await canvas.findByRole("main", { name: "Project Platform" }),
+		).toBeVisible();
+		const settings = await canvas.findByRole("complementary", {
+			name: "Project settings",
+		});
+		await expect(
+			within(settings).getByRole("heading", { name: "Platform" }),
+		).toBeVisible();
+
+		await userEvent.click(
+			canvas.getByRole("button", { name: "Close project settings" }),
+		);
+		await userEvent.click(
+			canvas.getByRole("button", { name: "More actions for Platform" }),
+		);
+		await userEvent.click(
+			await page.findByRole("menuitem", { name: "Project settings" }),
+		);
+		await expect(
+			await canvas.findByRole("complementary", { name: "Project settings" }),
+		).toBeVisible();
+
+		await userEvent.click(
+			canvas.getByRole("button", { name: "Select project Commonspace" }),
+		);
+		await expect(
+			await canvas.findByRole("main", { name: "Project Commonspace" }),
+		).toBeVisible();
+		await expect(
+			canvas.queryByRole("complementary", { name: "Project settings" }),
+		).not.toBeInTheDocument();
+
+		await userEvent.click(
+			canvas.getByRole("button", { name: "Open project settings" }),
+		);
+		await expect(
+			await canvas.findByRole("complementary", { name: "Project settings" }),
+		).toBeVisible();
+		await userEvent.click(
+			canvas.getByRole("button", { name: "Select project Platform" }),
+		);
+		await expect(
+			await canvas.findByRole("main", { name: "Project Platform" }),
+		).toBeVisible();
+		await expect(
+			canvas.queryByRole("complementary", { name: "Project settings" }),
+		).not.toBeInTheDocument();
 	},
 };
 

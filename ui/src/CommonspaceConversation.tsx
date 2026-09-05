@@ -37,6 +37,7 @@ import {
 import { WorkspaceHeader } from "@/design-system/WorkspaceHeader";
 import { cn } from "@/lib/utils";
 import { AgentTrace } from "./AgentTrace.tsx";
+
 import {
 	AgentSettingsPane,
 	ChannelSettingsPane,
@@ -105,8 +106,19 @@ export interface CommonspaceConversationProps {
 		id: string;
 		token: number;
 	} | null;
-	composerInsertRequest?: { text: string; token: number } | null;
+	composerInsertRequest?: {
+		text: string;
+		token: number;
+		threadId?: string;
+	} | null;
+	onOpenSettings?: () => void;
 	onSettingsClosed?: () => void;
+	onThreadChange?: (threadId: string | null) => void;
+	messageUrl?: (target: {
+		conversation: ConversationRef;
+		threadId?: string;
+		messageId: string;
+	}) => string;
 }
 
 export function matchesContextSettingsRequest(
@@ -1017,7 +1029,10 @@ export function CommonspaceConversation({
 	onTargetMessageHandled,
 	settingsRequest = null,
 	composerInsertRequest = null,
+	onOpenSettings,
 	onSettingsClosed,
+	onThreadChange,
+	messageUrl,
 }: CommonspaceConversationProps) {
 	const suggestionListId = useId();
 	const threadSuggestionListId = useId();
@@ -1025,6 +1040,13 @@ export function CommonspaceConversation({
 		store.subscribe,
 		store.getSnapshot,
 		store.getSnapshot,
+	);
+	const selectThread = useCallback(
+		(threadId: string | null) => {
+			if (onThreadChange === undefined) store.selectThread(threadId);
+			else onThreadChange(threadId);
+		},
+		[onThreadChange, store],
 	);
 	const activeFocusScopeKey =
 		snapshot.activeConversation === null
@@ -1071,6 +1093,7 @@ export function CommonspaceConversation({
 	const threadMessages = useRef<HTMLDivElement>(null);
 	const composer = useRef<HTMLTextAreaElement>(null);
 	const threadComposer = useRef<HTMLTextAreaElement>(null);
+	const handledComposerInsertToken = useRef<number | null>(null);
 	const suppressThreadAutoScroll = useRef(false);
 	const bootstrap = snapshot.bootstrap;
 	const messages = store.messages();
@@ -1344,14 +1367,6 @@ export function CommonspaceConversation({
 		setFocusedRootMessageId(null);
 	}, [activeFocusScopeKey, targetMessageId]);
 	useEffect(() => {
-		if (composerInsertRequest === null || !isChannel) return;
-		setDraft(
-			(current) =>
-				`${current}${current !== "" && !/\s$/u.test(current) ? " " : ""}${composerInsertRequest.text}`,
-		);
-		composer.current?.focus();
-	}, [composerInsertRequest, isChannel]);
-	useEffect(() => {
 		if (
 			!matchesContextSettingsRequest(
 				settingsRequest,
@@ -1359,13 +1374,13 @@ export function CommonspaceConversation({
 			)
 		)
 			return;
-		if (snapshot.activeThreadId !== null) store.selectThread(null);
+		if (snapshot.activeThreadId !== null) selectThread(null);
 		setContextSettingsOpen(true);
 	}, [
 		settingsRequest,
+		selectThread,
 		snapshot.activeConversation,
 		snapshot.activeThreadId,
-		store.selectThread,
 	]);
 	useEffect(() => {
 		if (activeThread !== undefined) setContextSettingsOpen(false);
@@ -1385,6 +1400,26 @@ export function CommonspaceConversation({
 		snapshot.activeConversation?.kind,
 		snapshot.activeThreadId,
 	]);
+	useEffect(() => {
+		if (
+			composerInsertRequest === null ||
+			!isChannel ||
+			handledComposerInsertToken.current === composerInsertRequest.token ||
+			(composerInsertRequest.threadId !== undefined &&
+				composerInsertRequest.threadId !== snapshot.activeThreadId)
+		)
+			return;
+		handledComposerInsertToken.current = composerInsertRequest.token;
+		const insert = (current: string) =>
+			`${current}${current !== "" && !/\s$/u.test(current) ? " " : ""}${composerInsertRequest.text}`;
+		if (composerInsertRequest.threadId !== undefined) {
+			setThreadDraft(insert);
+			threadComposer.current?.focus();
+		} else {
+			setDraft(insert);
+			composer.current?.focus();
+		}
+	}, [composerInsertRequest, isChannel, snapshot.activeThreadId]);
 	useEffect(() => {
 		const memory = activeThread?.context?.memory;
 		if (memory === undefined) return;
@@ -1959,20 +1994,23 @@ export function CommonspaceConversation({
 		});
 	};
 	const copyMessageLink = (message: CommonspaceMessage) => {
-		const link = new URL(window.location.href);
-		link.search = "";
-		link.hash = "";
-		link.searchParams.set("conversation", message.conversation.kind);
-		link.searchParams.set("conversationId", message.conversation.id);
-		link.searchParams.set("messageId", message.id);
-		if (message.threadId !== undefined)
-			link.searchParams.set("threadId", message.threadId);
-		void navigator.clipboard?.writeText(link.toString()).catch(() => undefined);
+		const target: {
+			conversation: ConversationRef;
+			threadId?: string;
+			messageId: string;
+		} = {
+			conversation: message.conversation,
+			messageId: message.id,
+		};
+		if (message.threadId !== undefined) target.threadId = message.threadId;
+		const link = messageUrl?.(target);
+		if (link === undefined) return;
+		void navigator.clipboard?.writeText(link).catch(() => undefined);
 	};
 
 	const openMessageVersion = (messageId: string) => {
 		const version = messages.find((message) => message.id === messageId);
-		if (version?.threadId !== undefined) store.selectThread(version.threadId);
+		if (version?.threadId !== undefined) selectThread(version.threadId);
 		setFocusedRootMessageId(
 			version?.parentMessageId ?? version?.id ?? messageId,
 		);
@@ -2034,7 +2072,11 @@ export function CommonspaceConversation({
 								}
 								aria-pressed={contextSettingsOpen}
 								onClick={() => {
-									if (activeThread !== undefined) store.selectThread(null);
+									if (!contextSettingsOpen && onOpenSettings !== undefined) {
+										onOpenSettings();
+										return;
+									}
+									if (activeThread !== undefined) selectThread(null);
 									if (contextSettingsOpen) onSettingsClosed?.();
 									setContextSettingsOpen((open) => !open);
 								}}
@@ -2162,7 +2204,7 @@ export function CommonspaceConversation({
 															: {
 																	onReplyInThread: () => {
 																		setContextSettingsOpen(false);
-																		store.selectThread(thread.id);
+																		selectThread(thread.id);
 																	},
 																})}
 													/>
@@ -2176,7 +2218,7 @@ export function CommonspaceConversation({
 														onClick={() => {
 															if (thread === undefined) return;
 															setContextSettingsOpen(false);
-															store.selectThread(thread.id);
+															selectThread(thread.id);
 															for (const reply of unreadReplies) {
 																void store.mutate({
 																	action: "mark-inbox-item-read",
@@ -2671,7 +2713,7 @@ export function CommonspaceConversation({
 										className="grid size-8 shrink-0 place-items-center rounded-sm border-0 bg-transparent text-base leading-none text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
 										aria-label="Close thread"
 										onClick={() => {
-											store.selectThread(null);
+											selectThread(null);
 										}}
 									>
 										×

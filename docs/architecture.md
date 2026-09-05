@@ -46,6 +46,22 @@ A routing or execution failure after acceptance leaves the source message in his
 
 In development and preview, Vite forwards `/api` to `127.0.0.1:3100`. Production browser assets are built into `ui/dist`. The archive launcher and installed macOS service give this directory to Express so that the UI and API share one loopback origin.
 
+### Browser routes
+
+The URL is authoritative on direct loads and browser back/forward navigation:
+
+| Route | Destination |
+| --- | --- |
+| `/` | Inbox |
+| `/inbox/sessions` | Inbox session view |
+| `/threads` | Threads |
+| `/projects`, `/channels`, `/agents` | Directories |
+| `/projects/:id` | Project, with encoded file detail when selected |
+| `/channels/:id` | Channel, with Thread and message detail when selected |
+| `/agents/:id` | Direct Message with the Agent |
+
+Unknown or stale detail routes return to Inbox instead of restoring unrelated saved state. Each route transition clears transient Settings state. Express serves the application entry point for non-API deep links. Legacy notification query links are accepted once and replaced with their canonical conversation route.
+
 ### API groups
 
 The HTTP boundary is implemented in [`server/src/app.ts`](../server/src/app.ts). The following groups locate the main capabilities; request and response shapes live in `packages/shared`.
@@ -109,9 +125,11 @@ Resumption uses the saved opaque native-session reference through ACP `session/l
 
 ## UI
 
-`ui/src/main.tsx` mounts React and shared styles. `CommonspaceApp` composes the desktop navigation and conversation surfaces. With no saved destination, it opens Inbox; legacy `commonspace-view=home` values also resolve there. The shell has no separate Workspace landing page or Agent-runs dashboard.
+`ui/src/main.tsx` mounts React and shared styles. `CommonspaceApp` composes the desktop navigation and conversation surfaces. The URL determines the startup destination: `/` opens Inbox, and unknown or stale detail routes return there. The shell has no separate Workspace landing page or Agent-runs dashboard.
 
 `CommonspaceClientStore` owns bootstrap state, selection, sends, mutations, and revision refreshes. The browser communicates with the server only through shared contracts and `/api`.
+
+Sidebar sort preferences belong to `ui/src/sidebar-preferences.ts` and persist in browser storage. `ui/src/channel-sorting.ts` orders Channels without changing conversation data. Pinned and unpinned Channels remain separate groups when sorting or reordering.
 
 Project scope is inferred unless the user supplies visible `@@project` references. Composers do not have separate Project pickers for roots, Threads, branches, or reroutes. [UI direction](ui-direction.md) describes the current visual treatment.
 
