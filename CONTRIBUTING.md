@@ -77,9 +77,7 @@ A change is ready to merge when required CI passes, substantive review comments 
 ## Write useful documentation
 
 - Write for the person using the page. State what they can do or learn before explaining implementation details.
-- Write for public readers. Keep repository visibility, launch preparation, and work-session status out of product copy; put maintainer procedures in the maintainer guides.
 - Use complete sentences and familiar words. Explain a technical term before relying on it.
-- Describe Commonspace directly. Do not use other projects as comparisons, inspiration, or references. Name another tool only when readers need it to use, develop, or maintain Commonspace.
 - Give prerequisites, accurate commands, and the expected result. Check file links and command examples against the current implementation.
 - Put detailed technical rules in the relevant reference page and link to them. Avoid repeating the same instructions across several pages.
 - Distinguish supported behavior from planned work, and test results from checks that still need to run.
