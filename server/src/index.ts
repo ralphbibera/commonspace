@@ -140,7 +140,7 @@ function configuredPort(value: string | undefined): number {
 	return port;
 }
 
-async function runCli(): Promise<void> {
+export async function runCommonspaceCli(): Promise<void> {
 	const serverOptions: StartCommonspaceServerOptions = {
 		port: configuredPort(process.env.COMMONSPACE_PORT),
 		hermesYolo: process.env.COMMONSPACE_HERMES_YOLO === "1",
@@ -203,7 +203,7 @@ if (
 	entryPath?.endsWith("/server/src/index.ts") === true ||
 	entryPath?.endsWith("/server/dist/index.js") === true
 ) {
-	void runCli().catch((error: Error) => {
+	void runCommonspaceCli().catch((error: Error) => {
 		process.stderr.write(`${String(error)}\n`);
 		process.exitCode = 1;
 	});

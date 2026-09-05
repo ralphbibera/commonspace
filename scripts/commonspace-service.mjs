@@ -4,10 +4,12 @@ import { execFile } from "node:child_process";
 import {
 	access,
 	chmod,
+	cp,
 	lstat,
 	mkdir,
 	readFile,
 	readlink,
+	realpath,
 	rename,
 	rm,
 	stat,
@@ -331,7 +333,55 @@ async function releaseIsComplete(path) {
 	}
 }
 
-async function prepareRelease(layout, runtime, source) {
+async function copyPackagedRelease(layout, runtime, release, staging) {
+	const source = await realpath(resolve(release));
+	const child = relative(source, layout.appRoot);
+	if (child === "" || (!child.startsWith("..") && !isAbsolute(child))) {
+		throw new Error(
+			"The package directory must not contain the installation root",
+		);
+	}
+	const metadata = JSON.parse(
+		await readFile(join(source, "commonspace-release.json"), "utf8"),
+	);
+	if (
+		metadata.distribution !== "archive" ||
+		typeof metadata.version !== "string" ||
+		!/^\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]+)?$/u.test(metadata.version) ||
+		!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u.test(metadata.revision)
+	) {
+		throw new Error("Invalid Commonspace package metadata");
+	}
+	if (
+		metadata.platform !== runtime.platform ||
+		metadata.arch !== (runtime.arch ?? process.arch)
+	) {
+		throw new Error(
+			"The package platform or architecture does not match this machine",
+		);
+	}
+	await releaseIsComplete(source);
+	await cp(source, staging, { recursive: true, verbatimSymlinks: true });
+	await writeFile(
+		join(staging, "commonspace-release.json"),
+		`${JSON.stringify(
+			{
+				version: metadata.version,
+				revision: metadata.revision,
+				dirty: metadata.dirty,
+				platform: metadata.platform,
+				arch: metadata.arch,
+				distribution: "archive",
+				installedAt: runtime.now(),
+			},
+			null,
+			2,
+		)}\n`,
+		{ mode: 0o600 },
+	);
+}
+
+async function prepareRelease(layout, runtime, options) {
 	await mkdir(layout.appRoot, { recursive: true, mode: 0o700 });
 	await chmod(layout.appRoot, 0o700);
 	const staging = join(
@@ -340,6 +390,11 @@ async function prepareRelease(layout, runtime, source) {
 	);
 	assertManagedPath(layout, staging);
 	try {
+		if (options.release !== undefined) {
+			await copyPackagedRelease(layout, runtime, options.release, staging);
+			await chmod(join(staging, "scripts", "commonspace-service.mjs"), 0o755);
+			return staging;
+		}
 		await requiredRun(runtime, "git", [
 			"clone",
 			"--depth",
@@ -347,7 +402,7 @@ async function prepareRelease(layout, runtime, source) {
 			"--branch",
 			"main",
 			"--",
-			source,
+			options.source,
 			staging,
 		]);
 		await requiredRun(
@@ -366,7 +421,7 @@ async function prepareRelease(layout, runtime, source) {
 			throw new Error("Commonspace release returned an invalid revision");
 		await writeFile(
 			join(staging, "commonspace-release.json"),
-			`${JSON.stringify({ revision, source, installedAt: runtime.now() }, null, 2)}\n`,
+			`${JSON.stringify({ revision, source: options.source, installedAt: runtime.now() }, null, 2)}\n`,
 			{ mode: 0o600 },
 		);
 		return staging;
@@ -463,12 +518,27 @@ async function activateRelease(layout, runtime, staging) {
 	}
 }
 
+function releaseInput(options) {
+	const source = options.source ?? DEFAULT_COMMONSPACE_SOURCE;
+	if (typeof source !== "string" || source.trim() === "")
+		throw new Error("Commonspace source is required");
+	if (
+		options.release !== undefined &&
+		(typeof options.release !== "string" || options.release.trim() === "")
+	)
+		throw new Error("Commonspace package directory is required");
+	if (options.release !== undefined && options.source !== undefined)
+		throw new Error("Choose either --source or --release");
+	return { source, release: options.release };
+}
+
 export async function installOrUpdate(options = {}, overrides = {}) {
 	const runtime = dependencies(overrides);
 	requireMacOwner(runtime);
 	const mode = options.mode ?? "install";
 	if (mode !== "install" && mode !== "update")
 		throw new Error("service mode must be install or update");
+	const input = releaseInput(options);
 	const layout = serviceLayout({
 		...options,
 		home: runtime.home,
@@ -476,14 +546,22 @@ export async function installOrUpdate(options = {}, overrides = {}) {
 	});
 	if (mode === "update" && !(await exists(layout.current)))
 		throw new Error("Commonspace is not installed; run install first");
-	const source = options.source ?? DEFAULT_COMMONSPACE_SOURCE;
-	if (typeof source !== "string" || source.trim() === "")
-		throw new Error("Commonspace source is required");
-	const staging = await prepareRelease(layout, runtime, source);
+	if (
+		mode === "update" &&
+		options.release === undefined &&
+		options.source === undefined
+	) {
+		const current = JSON.parse(await readFile(layout.releaseMetadata, "utf8"));
+		if (current.distribution === "archive")
+			throw new Error(
+				"Download the next package, then run update --release <directory>",
+			);
+	}
+	const staging = await prepareRelease(layout, runtime, input);
 	await activateRelease(layout, runtime, staging);
 	const metadata = JSON.parse(await readFile(layout.releaseMetadata, "utf8"));
 	runtime.log(
-		`${mode === "install" ? "Installed" : "Updated"} Commonspace ${String(metadata.revision)}.`,
+		`${mode === "install" ? "Installed" : "Updated"} Commonspace ${String(metadata.version ?? metadata.revision)}.`,
 	);
 	runtime.log(`Open ${layout.url}`);
 	runtime.log(`CLI: ${layout.binPath}`);
@@ -548,6 +626,9 @@ function parsedCli(argv) {
 		if (flag === "--source" && value !== undefined) {
 			options.source = value;
 			index += 1;
+		} else if (flag === "--release" && value !== undefined) {
+			options.release = value;
+			index += 1;
 		} else if (flag === "--app-root" && value !== undefined) {
 			options.appRoot = value;
 			index += 1;
@@ -595,7 +676,7 @@ async function runCli() {
 		return;
 	}
 	writeLine(
-		"Usage: commonspace <install|update|start|stop|restart|status|rollback> [--source <git-url>] [--app-root <path>]",
+		"Usage: commonspace <install|update|start|stop|restart|status|rollback> [--source <git-url> | --release <directory>] [--app-root <path>]",
 	);
 }
 
