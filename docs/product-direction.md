@@ -8,7 +8,7 @@ Read the [Product model](product.md) for the main concepts and the [Product spec
 
 **Commonspace — The workspace for the agents you already use.**
 
-Commonspace is an MIT-licensed, local-first workspace for the agents a person already uses. The repository is currently private while it is prepared for an open-source release. Publication requires the owner's explicit approval.
+Commonspace is an MIT-licensed, local-first workspace for the agents a person already uses.
 
 An **agent runtime**, also called a **harness**, is the local software that runs an agent and manages its tools, credentials, model, private context, and sessions. Commonspace connects supported runtimes and provides the conversation around them. The runtime continues to control how the agent works.
 

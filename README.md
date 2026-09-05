@@ -6,8 +6,6 @@ Commonspace brings your local coding agents into one place for conversations, pr
 
 [What it is](#what-is-commonspace) · [What it isn't](#what-commonspace-is-not) · [Quickstart](#quickstart) · [FAQ](#faq) · [Contributing](#contributing)
 
-> **Private preview:** Commonspace is MIT-licensed and being prepared for an open-source release. The repository is currently private, and no release has been published. Start from source using the instructions below.
-
 ![Commonspace workspace](docs/assets/commonspace-panel.png)
 
 ## What is Commonspace?
@@ -55,12 +53,12 @@ See [how Commonspace works](docs/product.md) for the full conversation and conte
 
 ## Quickstart
 
-The current preview runs from a source checkout. You need:
+To run Commonspace from source, you need:
 
 - macOS or Linux;
 - Node.js 22 or newer;
 - pnpm 10.34.5;
-- Git with SSH access to this private repository.
+- Git with GitHub SSH authentication configured.
 
 ```bash
 git clone git@github.com:ralphbibera/commonspace.git
@@ -80,7 +78,7 @@ You can explore the empty workspace and work on the application without agent cr
 
 For a shared conversation, create a Channel and use `@` to select an agent. Channel routing uses your configured inference provider; a Direct Message goes straight to its chosen agent.
 
-See [Development](docs/development.md) for local commands, [Operations](docs/operations.md) for configuration and background operation, and the [support matrix](docs/support-matrix.md) for platform limits. The [installation guide](docs/install.md) also documents how to use a verified runtime archive when one is provided.
+See [Development](docs/development.md) for local commands, [Operations](docs/operations.md) for configuration and background operation, and the [support matrix](docs/support-matrix.md) for platform limits. The [installation guide](docs/install.md) covers packaged builds.
 
 ## FAQ
 
@@ -114,9 +112,9 @@ Conversation history is saved locally. Closing the browser leaves a running serv
 
 Send `/new` in a Direct Message to start a fresh session in the agent runtime. Previous messages remain in history, but the old session's context does not carry into the new one.
 
-### Is there a native desktop app or a published download?
+### Where can I run Commonspace?
 
-Not yet. The current UI runs in a desktop browser, and no release has been published. Source development is maintained on macOS and Linux. Windows source development is not currently validated; mobile layouts are outside the current scope. See the [support matrix](docs/support-matrix.md) for details.
+Commonspace runs in a desktop browser on macOS and Linux. Windows source development is not validated, and mobile layouts are outside the project scope. See the [support matrix](docs/support-matrix.md) for platform details and background-service options.
 
 ## Contributing
 

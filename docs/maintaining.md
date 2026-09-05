@@ -2,8 +2,6 @@
 
 Maintainers help contributors choose useful changes, review the results, and prepare releases. The repository owner makes the final decisions about product direction, access, releases, and repository visibility. [CODEOWNERS](../.github/CODEOWNERS) records who reviews changes.
 
-Commonspace is currently a private preview. The launch checklist below prepares the project for a later publication decision.
-
 ## Handle issues and proposals
 
 Look for related issues and pull requests before creating new work. For a bug, establish what happened, what should have happened, how to reproduce it, and which version is affected. Then identify the smallest part of the code responsible for the behavior.
@@ -46,13 +44,13 @@ Keep default workflow permissions read-only. Check jobs that request write acces
 
 Follow [Security](../SECURITY.md) and the [Code of Conduct](../CODE_OF_CONDUCT.md). Arrange a confidential route before asking someone for sensitive details. Do not request workspace state or agent transcripts in ordinary issues.
 
-Before public launch, verify a monitored vulnerability-reporting route and a private conduct contact, then put the working routes in those policies. Do not promise response times or long-term version support that the maintainer group cannot provide.
+Maintain working confidential reporting routes for security and conduct concerns, and keep the policies current. Do not promise response times or long-term version support that the maintainer group cannot provide.
 
-For preview security fixes, target the latest development revision and latest available preview release. Document affected versions, the upgrade path, and any saved-data compatibility limits.
+Security fixes target `main` and the latest release. Document affected versions, the upgrade path, and any saved-data compatibility limits.
 
-## Public launch checklist
+## Release readiness checklist
 
-Prepare a concrete release candidate before asking the owner to approve publication:
+Review the candidate before approving publication:
 
 - Review both current files and Git history for credentials, private paths, agent session data, internal links, and generated artifacts. Deleting a file from the latest commit does not remove it from history.
 - Review screenshots, fixtures, examples, and bundled dependencies for private content and license requirements.
@@ -60,6 +58,6 @@ Prepare a concrete release candidate before asking the owner to approve publicat
 - Verify the private security and conduct reporting routes.
 - Check branch rules, required CI, and contribution templates in GitHub.
 - Verify all supported archives, checksums, and fresh installations. Record real agent and macOS service results, plus any checks or platforms not exercised.
-- Review the release notes, backup and migration instructions, known limitations, and wording that will change when the private preview ends.
+- Review the release notes, backup and migration instructions, known limitations, and accuracy of public installation and contribution instructions.
 
-The owner must explicitly approve publishing a release and changing repository visibility. The release workflow leaves the candidate as a draft. After approval, carry out only the approved publication actions; announcements and messages to other people require their own authorization.
+The owner must approve publication. The release workflow leaves the candidate as a draft; a maintainer publishes it after review. Repository access and visibility changes are separate administrative decisions.
