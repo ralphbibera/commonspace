@@ -65,6 +65,12 @@ test("search scrolls results while input, filters, and footer remain fixed", asy
 	expect(
 		await input.evaluate((element) => element.getBoundingClientRect().top),
 	).toBe(inputTop);
+	await dialog
+		.getByRole("button", { name: "Filter result types: All types" })
+		.click();
+	await page.getByRole("menuitemcheckbox", { name: "Messages" }).click();
+	await page.keyboard.press("Escape");
+	await expect(dialog.getByRole("listbox").getByRole("option")).toHaveCount(8);
 });
 
 test("search keyboard selection stays visible without moving its input", async ({
