@@ -22,7 +22,7 @@ Notable changes to Commonspace. See the [versioning policy](docs/releasing.md#ch
 - Each Thread starts with a Channel-context snapshot and maintains separate shared context. Users can inspect, edit, pin, and summarize context; automatic compaction preserves human edits. Later Project-reference changes preserve earlier deliveries and access boundaries.
 - Scoped Model Context Protocol (MCP) tools let agents inspect permitted context and transcripts, post progress, and hand off work in the conversation. New agent turns receive the new request rather than a replay of the full conversation.
 - Human-message edits create visible branches with separate session continuity. Deletion preserves a delivery marker while removing message content and associated attachment bytes.
-- Project views show files, Git changes, diffs, and emitted verification. Human and agent attachments support previews, downloads, search, and pins; known credential files are rejected, and agent files are copied only from permitted folders.
+- Project views show files, Git changes, diffs, and emitted verification. Human and agent attachments support previews, downloads, search, and pins; Agent artifacts validate source, resolved, and display filenames before reading bytes, use a bounded same-file descriptor copy, and reject symlink replacement, growth, credential disguises, or permitted-root escapes.
 
 ### Desktop experience
 
