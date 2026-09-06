@@ -1,11 +1,12 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { ArrowUpIcon, LoaderCircleIcon, PlusIcon } from "lucide-react";
-import { fn } from "storybook/test";
+import { expect, fn } from "storybook/test";
 import { Button } from "@/components/ui/button";
 
 const meta = {
 	title: "Foundations/Button",
 	component: Button,
+	tags: ["ai-generated"],
 	parameters: { layout: "centered" },
 	args: {
 		children: "Add project",
@@ -46,6 +47,16 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
+
+export const CssCheck: Story = {
+	play: async ({ canvas }) => {
+		const button = canvas.getByRole("button", { name: /add project/iu });
+		await expect(getComputedStyle(button).backgroundColor).toBe(
+			"oklch(0.5 0.1368 48.513)",
+		);
+	},
+};
+
 export const WithIcon: Story = {
 	args: {
 		children: (
