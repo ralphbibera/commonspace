@@ -25,6 +25,7 @@ const config: StorybookConfig = {
 	typescript: testing ? { reactDocgen: false } : undefined,
 	viteFinal: async (viteConfig) =>
 		mergeConfig(viteConfig, {
+			optimizeDeps: { include: ["@base-ui/react/tooltip"] },
 			resolve: {
 				alias: {
 					"@": path.join(dirname, "../src"),

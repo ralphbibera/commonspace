@@ -2,7 +2,7 @@ import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
 	testDir: "./tests",
-	testMatch: "storybook-visual.spec.ts",
+	testMatch: ["storybook-visual.spec.ts", "storybook-interactions.spec.ts"],
 	timeout: 30_000,
 	fullyParallel: true,
 	forbidOnly: Boolean(process.env.CI),

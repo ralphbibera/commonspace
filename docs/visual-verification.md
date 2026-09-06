@@ -107,6 +107,8 @@ These checks protect usability and provide evidence for review. Pixel inspection
 
 Use this matrix when selecting acceptance states. Every row needs resting, hover, keyboard focus, open/selected, and applicable empty, dense, loading, or error states.
 
+The [Storybook coverage map](storybook-coverage.md) provides focused states for these checks. Use its Light / Dark toolbar for both ordinary content and portaled overlays. Inspect the compact sorting menu, queued-message tray, startup retry, and long dialogs at desktop and narrow-pane widths.
+
 | Surface | Examples to inspect |
 | --- | --- |
 | Shell and sidebar | Active destination, unread state, dense navigation, open menus |

@@ -22,6 +22,9 @@ Notable changes to Commonspace. See the [versioning policy](docs/releasing.md#ch
 
 ### Desktop experience
 
+- DM and Thread follow-up trays gain expandable previews, readable delivery status, aligned reorder/removal icons, and compact Queue/Steer/Stop and send controls.
+- Workspace startup distinguishes loading from an empty Inbox and offers retry after a connection failure. Long dialogs scroll, confirmation actions remain reachable, and vertical tabs and toggle groups use the requested keyboard orientation.
+- Dedicated Storybook primitive, workspace, routing, sorting, and follow-up stories support local UI iteration with a Light/Dark toolbar. See the [coverage map](docs/storybook-coverage.md).
 - Inbox, search, unread state, saved sidebar preferences, and conversation URLs help users find replies and return to the exact message or Thread. Channel ordering supports recent activity, name, and custom order.
 - Agent replies expose runtime-reported reasoning summaries, plans, tool calls, results, and usage. Native permission requests show the runtime's choices and block only their own session.
 - Light, Dark, and System appearance accompany desktop conversation and Project panes. Channel composers preserve unsent attachments while opening or closing Threads.

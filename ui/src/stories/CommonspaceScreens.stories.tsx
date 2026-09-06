@@ -135,7 +135,7 @@ export const InboxAttention: Story = {};
 export const InboxActivity: Story = {
 	play: async ({ canvasElement }) => {
 		const canvas = within(canvasElement);
-		const activity = canvas.getByRole("button", { name: /Activity/iu });
+		const activity = canvas.getByRole("button", { name: /^Activity/iu });
 		await userEvent.click(activity);
 		await expect(activity).toHaveAttribute("aria-pressed", "true");
 	},
@@ -166,7 +166,7 @@ export const DenseInboxActivity: Story = {
 	args: { store: createStoryStore(denseStoryBootstrap) },
 	play: async ({ canvasElement }) => {
 		const canvas = within(canvasElement);
-		await userEvent.click(canvas.getByRole("button", { name: /Activity/iu }));
+		await userEvent.click(canvas.getByRole("button", { name: /^Activity/iu }));
 		await expect(
 			canvas.getAllByRole("button", { name: /Open/iu }).length,
 		).toBeGreaterThan(4);
@@ -177,7 +177,7 @@ export const DenseInboxUnread: Story = {
 	args: { store: createStoryStore(denseStoryBootstrap) },
 	play: async ({ canvasElement }) => {
 		const canvas = within(canvasElement);
-		await userEvent.click(canvas.getByRole("button", { name: /Activity/iu }));
+		await userEvent.click(canvas.getByRole("button", { name: /^Activity/iu }));
 		const filters = canvas.getByRole("group", { name: "Inbox filter" });
 		const unread = within(filters).getByRole("button", { name: /Unread/iu });
 		await userEvent.click(unread);
@@ -189,7 +189,7 @@ export const InboxSaved: Story = {
 	args: { store: createStoryStore(denseStoryBootstrap) },
 	play: async ({ canvasElement }) => {
 		const canvas = within(canvasElement);
-		await userEvent.click(canvas.getByRole("button", { name: /Activity/iu }));
+		await userEvent.click(canvas.getByRole("button", { name: /^Activity/iu }));
 		const filters = canvas.getByRole("group", { name: "Inbox filter" });
 		const saved = within(filters).getByRole("button", { name: /Saved/iu });
 		await userEvent.click(saved);

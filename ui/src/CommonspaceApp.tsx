@@ -1,6 +1,7 @@
 import { RouterProvider } from "@tanstack/react-router";
-import { MenuIcon, XIcon } from "lucide-react";
+import { CircleAlertIcon, MenuIcon, RefreshCwIcon, XIcon } from "lucide-react";
 import { useEffect, useMemo, useSyncExternalStore } from "react";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { CommonspaceWorkspace } from "./app-shell/CommonspaceWorkspace.tsx";
 import {
@@ -51,6 +52,41 @@ export function CommonspaceApp({
 				),
 			}}
 		/>
+	);
+}
+
+function WorkspaceErrorNotice({
+	error,
+	loading,
+	onRefresh,
+}: {
+	error: string;
+	loading: boolean;
+	onRefresh: () => void;
+}) {
+	return (
+		<div
+			className="fixed right-4 bottom-4 z-50 flex max-w-md items-start gap-3 rounded-md border bg-popover p-4 text-sm text-popover-foreground shadow-lg"
+			role="alert"
+		>
+			<CircleAlertIcon
+				aria-hidden="true"
+				className="mt-0.5 size-4 shrink-0 text-destructive"
+			/>
+			<div className="min-w-0 flex-1">
+				<p className="leading-relaxed [overflow-wrap:anywhere]">{error}</p>
+				<Button
+					variant="outline"
+					size="sm"
+					className="mt-3"
+					disabled={loading}
+					onClick={onRefresh}
+				>
+					<RefreshCwIcon data-icon="inline-start" aria-hidden="true" />
+					Refresh workspace
+				</Button>
+			</div>
+		</div>
 	);
 }
 
@@ -177,13 +213,14 @@ function CommonspaceAppShell({
 					{...(searchFetcher === undefined ? {} : { fetcher: searchFetcher })}
 				/>
 			)}
-			{snapshot.error !== null && (
-				<div
-					className="fixed right-4 bottom-4 z-50 max-w-sm rounded-md border bg-popover px-4 py-3 text-sm text-popover-foreground shadow-lg"
-					role="alert"
-				>
-					{snapshot.error}
-				</div>
+			{snapshot.bootstrap !== null && snapshot.error !== null && (
+				<WorkspaceErrorNotice
+					error={snapshot.error}
+					loading={snapshot.loading}
+					onRefresh={() => {
+						void store.refresh();
+					}}
+				/>
 			)}
 		</div>
 	);

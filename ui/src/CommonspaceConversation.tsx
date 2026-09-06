@@ -35,6 +35,10 @@ import {
 	useSyncExternalStore,
 } from "react";
 import { Button } from "@/components/ui/button";
+import {
+	QueuedFollowups,
+	RunDeliveryControls,
+} from "@/design-system/RunDelivery";
 import { WorkspaceHeader } from "@/design-system/WorkspaceHeader";
 import { cn } from "@/lib/utils";
 import { AgentTrace } from "./AgentTrace.tsx";
@@ -2275,63 +2279,18 @@ export function CommonspaceConversation({
 							<div ref={bottom} />
 						</div>
 
-						{directMessageFollowups.length > 0 && (
-							<section
-								className="mx-auto mb-2 w-[min(780px,calc(100%-48px))] rounded-md border bg-muted px-3 py-2.5"
-								aria-label="Queued follow-ups"
-							>
-								<header>
-									<strong>Up next</strong>
-									<span>{directMessageFollowups.length}</span>
-								</header>
-								{directMessageFollowups.map((followup, index) => (
-									<div
-										key={followup.messageId}
-										className="flex items-center gap-2 border-t py-1.5 text-xs"
-									>
-										<span>
-											{followup.delivery === "steer" ? "Steer" : "Queued"}
-										</span>
-										<p>{followup.text}</p>
-										<div>
-											<button
-												type="button"
-												aria-label="Move queued follow-up up"
-												disabled={index === 0}
-												onClick={() => {
-													void store.reorderFollowup(followup.messageId, "up");
-												}}
-											>
-												↑
-											</button>
-											<button
-												type="button"
-												aria-label="Move queued follow-up down"
-												disabled={index === directMessageFollowups.length - 1}
-												onClick={() => {
-													void store.reorderFollowup(
-														followup.messageId,
-														"down",
-													);
-												}}
-											>
-												↓
-											</button>
-											<button
-												type="button"
-												className="grid size-8 place-items-center rounded-sm border-0 bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-												aria-label="Remove queued follow-up"
-												onClick={() => {
-													void store.removeFollowup(followup.messageId);
-												}}
-											>
-												×
-											</button>
-										</div>
-									</div>
-								))}
-							</section>
-						)}
+						<QueuedFollowups
+							followups={directMessageFollowups}
+							className="mx-auto mb-2 w-[min(920px,calc(100%-48px))]"
+							onMove={(messageId, direction) => {
+								void store
+									.reorderFollowup(messageId, direction)
+									.catch(() => undefined);
+							}}
+							onRemove={(messageId) => {
+								void store.removeFollowup(messageId).catch(() => undefined);
+							}}
+						/>
 
 						{commandFeedback !== null && (
 							<section
@@ -2503,42 +2462,14 @@ export function CommonspaceConversation({
 							</div>
 							<div className="flex min-h-[52px] flex-wrap items-center gap-2 pt-1">
 								{directMessageActivities.length > 0 && !isChannel && (
-									<fieldset
-										className="order-2 m-0 ml-auto flex min-w-0 flex-wrap items-center gap-1 border-0 p-0 [&_button]:min-h-9 [&_button]:rounded-sm [&_button]:border [&_button]:px-2 [&_button]:text-xs [&_button]:font-semibold [&_button]:hover:bg-muted [&_button]:disabled:opacity-45"
-										aria-label="Active run delivery"
+									<RunDeliveryControls
 										disabled={
 											snapshot.sending ||
 											(draft.trim() === "" &&
 												pendingImages.length === 0 &&
 												pendingFiles.length === 0)
 										}
-									>
-										<button
-											type="submit"
-											name="delivery"
-											value="queue"
-											title="Send after the current run finishes"
-										>
-											Queue
-										</button>
-										<button
-											type="submit"
-											name="delivery"
-											value="steer"
-											title="Interrupt with new guidance"
-										>
-											Steer
-										</button>
-										<button
-											type="submit"
-											name="delivery"
-											value="stop-and-send"
-											aria-label="Stop and send"
-											title="Stop the current run and send this next"
-										>
-											Stop + send
-										</button>
-									</fieldset>
+									/>
 								)}
 								<label className="relative inline-flex min-h-9 items-center rounded-sm border px-2 text-xs font-semibold">
 									Attach
@@ -2887,66 +2818,19 @@ export function CommonspaceConversation({
 									}
 								/>
 							</div>
-							{activeThreadFollowups.length > 0 && (
-								<section
-									className="mx-4 mb-2 rounded-md border bg-muted px-3 py-2.5"
-									aria-label="Queued thread follow-ups"
-								>
-									<header>
-										<strong>Up next</strong>
-										<span>{activeThreadFollowups.length}</span>
-									</header>
-									{activeThreadFollowups.map((followup, index) => (
-										<div
-											key={followup.messageId}
-											className="flex items-center gap-2 border-t py-1.5 text-xs"
-										>
-											<span>
-												{followup.delivery === "steer" ? "Steer" : "Queued"}
-											</span>
-											<p>{followup.text}</p>
-											<div>
-												<button
-													type="button"
-													aria-label="Move queued thread follow-up up"
-													disabled={index === 0}
-													onClick={() => {
-														void store.reorderFollowup(
-															followup.messageId,
-															"up",
-														);
-													}}
-												>
-													↑
-												</button>
-												<button
-													type="button"
-													aria-label="Move queued thread follow-up down"
-													disabled={index === activeThreadFollowups.length - 1}
-													onClick={() => {
-														void store.reorderFollowup(
-															followup.messageId,
-															"down",
-														);
-													}}
-												>
-													↓
-												</button>
-												<button
-													type="button"
-													className="grid size-8 place-items-center rounded-sm border-0 bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-													aria-label="Remove queued thread follow-up"
-													onClick={() => {
-														void store.removeFollowup(followup.messageId);
-													}}
-												>
-													×
-												</button>
-											</div>
-										</div>
-									))}
-								</section>
-							)}
+							<QueuedFollowups
+								followups={activeThreadFollowups}
+								thread
+								className="mx-3 mb-2"
+								onMove={(messageId, direction) => {
+									void store
+										.reorderFollowup(messageId, direction)
+										.catch(() => undefined);
+								}}
+								onRemove={(messageId) => {
+									void store.removeFollowup(messageId).catch(() => undefined);
+								}}
+							/>
 							<form
 								className="relative mx-3 mb-3 grid gap-2 rounded-sm border bg-background p-2 transition-colors focus-within:border-foreground/25 focus-within:ring-2 focus-within:ring-foreground/10"
 								onSubmit={(event) => {
@@ -3083,42 +2967,15 @@ export function CommonspaceConversation({
 								<div className="flex flex-wrap items-center gap-2">
 									{activeThreadActivities.length > 0 &&
 										threadReplyTarget === null && (
-											<fieldset
-												className="order-2 m-0 ml-auto flex min-w-0 flex-wrap items-center gap-1 border-0 p-0 [&_button]:min-h-9 [&_button]:rounded-sm [&_button]:border [&_button]:px-2 [&_button]:text-xs [&_button]:font-semibold [&_button]:hover:bg-muted [&_button]:disabled:opacity-45"
-												aria-label="Active thread run delivery"
+											<RunDeliveryControls
+												thread
 												disabled={
 													snapshot.sending ||
 													(threadDraft.trim() === "" &&
 														pendingThreadImages.length === 0 &&
 														pendingThreadFiles.length === 0)
 												}
-											>
-												<button
-													type="submit"
-													name="delivery"
-													value="queue"
-													title="Send after the current run finishes"
-												>
-													Queue
-												</button>
-												<button
-													type="submit"
-													name="delivery"
-													value="steer"
-													title="Interrupt with new guidance"
-												>
-													Steer
-												</button>
-												<button
-													type="submit"
-													name="delivery"
-													value="stop-and-send"
-													aria-label="Stop and send thread follow-up"
-													title="Stop the current run and send this next"
-												>
-													Stop + send
-												</button>
-											</fieldset>
+											/>
 										)}
 									<label className="relative inline-flex min-h-9 w-fit items-center rounded-sm border px-2 text-xs font-semibold">
 										Attach

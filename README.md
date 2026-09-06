@@ -42,6 +42,8 @@ For example, you can discuss a change in a Channel, reference the relevant Proje
 
 See [how Commonspace works](docs/product.md) for the full conversation and context model.
 
+For UI development, run `pnpm storybook`. The [coverage map](docs/storybook-coverage.md) points to isolated controls, workspace states, sorting, and queued-message previews, with Light/Dark inspection in the toolbar.
+
 ## What Commonspace is not
 
 | Boundary | What to expect |

@@ -91,7 +91,7 @@ pnpm check:ui
 
 Storybook's Vitest suite checks rendering, interactions, and accessibility in a real browser. Pixel comparisons use the separate `pnpm test:visual` command. The optional Chromatic integration also needs a configured project; it is not required for the local workflow.
 
-Inspect the actual rendering in Light and Dark modes. Follow [Visual verification](visual-verification.md) for screenshot review and baseline changes. Keep component permutations in Storybook and use `verify:live` for behavior that depends on the assembled application.
+Use the Light / Dark toolbar to inspect the actual rendering, including overlays. The [Storybook coverage map](storybook-coverage.md) lists dedicated primitive, workspace, routing, sorting, and follow-up states with focused commands. Follow [Visual verification](visual-verification.md) for screenshot review and baseline changes. Keep component permutations in Storybook and use `verify:live` for behavior that depends on the assembled application.
 
 ## Self-development hot reload
 
