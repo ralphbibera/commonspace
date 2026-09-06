@@ -88,6 +88,11 @@ test("search keyboard selection stays visible without moving its input", async (
 			.getByRole("listbox", { name: "Commonspace search results" })
 			.getByRole("option"),
 	).toHaveCount(24);
+	await dialog.evaluate(async (element) => {
+		await Promise.all(
+			element.getAnimations().map((animation) => animation.finished),
+		);
+	});
 	await input.focus();
 	const inputTop = await input.evaluate(
 		(element) => element.getBoundingClientRect().top,

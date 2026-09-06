@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect, userEvent, within } from "storybook/test";
+import { expect, userEvent, waitFor, within } from "storybook/test";
 import { CommonspaceApp } from "../CommonspaceApp";
 import {
 	createStoryStore,
@@ -168,9 +168,10 @@ export const KeyboardSearchFlow: Story = {
 		const document = within(canvasElement.ownerDocument.body);
 
 		await userEvent.keyboard("{Control>}k{/Control}");
-		await expect(
-			document.getByRole("searchbox", { name: "Search Commonspace" }),
-		).toBeVisible();
+		const search = document.getByRole("searchbox", {
+			name: "Search Commonspace",
+		});
+		await waitFor(() => expect(search).toBeVisible());
 	},
 };
 

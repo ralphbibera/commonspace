@@ -89,13 +89,15 @@ export const KeyboardDismissal: Story = {
 			name: "Inspect shared context",
 		});
 		await userEvent.click(trigger);
-		await expect(
-			await page.findByRole("dialog", { name: "Shared context" }),
-		).toBeVisible();
-		await userEvent.keyboard("{Escape}");
+		const dialog = await page.findByRole("dialog", { name: "Shared context" });
+		await waitFor(() => expect(dialog).toBeVisible());
 		await waitFor(() =>
-			expect(page.queryByRole("dialog")).not.toBeInTheDocument(),
+			expect(
+				within(dialog).getByRole("heading", { name: "Shared context" }),
+			).toHaveFocus(),
 		);
-		await expect(trigger).toHaveFocus();
+		await userEvent.keyboard("{Escape}");
+		await waitFor(() => expect(dialog).not.toBeInTheDocument());
+		await waitFor(() => expect(trigger).toHaveFocus());
 	},
 };

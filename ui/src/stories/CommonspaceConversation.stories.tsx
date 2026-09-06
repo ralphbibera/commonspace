@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useMemo, useState } from "react";
-import { expect, fn, userEvent, within } from "storybook/test";
+import { expect, fn, userEvent, waitFor, within } from "storybook/test";
 import { CommonspaceConversation } from "../CommonspaceConversation";
 import type { CommonspaceStore } from "../commonspace-store";
 import { COMMONSPACE_RESIZABLE_PANEL } from "../design-system/useResizablePanel";
@@ -366,9 +366,12 @@ export const EditingDeliveredMessage: Story = {
 	},
 	play: async ({ canvasElement }) => {
 		const canvas = within(canvasElement);
-		await userEvent.click(
-			canvas.getByRole("button", { name: "Edit message from Ralph" }),
-		);
+		const editButton = canvas.getByRole("button", {
+			name: "Edit message from Ralph",
+		});
+		editButton.focus();
+		await waitFor(() => expect(editButton).toBeVisible());
+		await userEvent.click(editButton);
 		await expect(
 			canvas.getByRole("form", { name: "Edit delivered message" }),
 		).toBeVisible();

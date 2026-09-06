@@ -103,6 +103,9 @@ export const KeyboardNavigation: Story = {
 			page.getByRole("menuitem", { name: "Channel settings" }),
 		).toHaveFocus();
 		await userEvent.keyboard("{Escape}");
-		await expect(trigger).toHaveFocus();
+		await waitFor(() =>
+			expect(page.queryByRole("menu")).not.toBeInTheDocument(),
+		);
+		await waitFor(() => expect(trigger).toHaveFocus());
 	},
 };

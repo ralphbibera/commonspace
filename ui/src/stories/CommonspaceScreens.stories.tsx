@@ -1,6 +1,6 @@
 import type { ConversationRef } from "@commonspace/shared";
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect, userEvent, within } from "storybook/test";
+import { expect, userEvent, waitFor, within } from "storybook/test";
 import {
 	type CommonspaceRoute,
 	commonspaceRouteHref,
@@ -496,12 +496,12 @@ export const GlobalSearch: Story = {
 	play: async ({ canvasElement }) => {
 		const page = within(canvasElement.ownerDocument.body);
 		await userEvent.keyboard("{Control>}k{/Control}");
-		await expect(
-			page.getByRole("dialog", { name: "Search Commonspace" }),
-		).toBeVisible();
-		await expect(
-			page.getByRole("option", { name: /Open Channel: #design-review/iu }),
-		).toBeVisible();
+		const dialog = page.getByRole("dialog", { name: "Search Commonspace" });
+		await waitFor(() => expect(dialog).toBeVisible());
+		const result = page.getByRole("option", {
+			name: /Open Channel: #design-review/iu,
+		});
+		await waitFor(() => expect(result).toBeVisible());
 	},
 };
 
@@ -536,7 +536,8 @@ export const GlobalSearchPending: Story = {
 	play: async ({ canvasElement }) => {
 		const page = within(canvasElement.ownerDocument.body);
 		await userEvent.keyboard("{Control>}k{/Control}");
-		await expect(page.getByText("Searching…")).toBeVisible();
+		const status = page.getByText("Searching…");
+		await waitFor(() => expect(status).toBeVisible());
 	},
 };
 
@@ -556,9 +557,8 @@ export const AddProject: Story = {
 	play: async ({ canvasElement }) => {
 		const page = within(canvasElement.ownerDocument.body);
 		await userEvent.click(page.getByRole("button", { name: "Add project" }));
-		await expect(
-			page.getByRole("dialog", { name: "Add a project" }),
-		).toBeVisible();
+		const dialog = page.getByRole("dialog", { name: "Add a project" });
+		await waitFor(() => expect(dialog).toBeVisible());
 	},
 };
 
@@ -566,9 +566,8 @@ export const AddChannel: Story = {
 	play: async ({ canvasElement }) => {
 		const page = within(canvasElement.ownerDocument.body);
 		await userEvent.click(page.getByRole("button", { name: "Add channel" }));
-		await expect(
-			page.getByRole("dialog", { name: "Add a channel" }),
-		).toBeVisible();
+		const dialog = page.getByRole("dialog", { name: "Add a channel" });
+		await waitFor(() => expect(dialog).toBeVisible());
 	},
 };
 
@@ -576,9 +575,8 @@ export const AddAgent: Story = {
 	play: async ({ canvasElement }) => {
 		const page = within(canvasElement.ownerDocument.body);
 		await userEvent.click(page.getByRole("button", { name: "Add agent" }));
-		await expect(
-			page.getByRole("dialog", { name: "Add an agent" }),
-		).toBeVisible();
+		const dialog = page.getByRole("dialog", { name: "Add an agent" });
+		await waitFor(() => expect(dialog).toBeVisible());
 	},
 };
 
@@ -718,8 +716,7 @@ export const NarrowSearch: Story = {
 	play: async ({ canvasElement }) => {
 		const page = within(canvasElement.ownerDocument.body);
 		await userEvent.keyboard("{Control>}k{/Control}");
-		await expect(
-			page.getByRole("dialog", { name: "Search Commonspace" }),
-		).toBeVisible();
+		const dialog = page.getByRole("dialog", { name: "Search Commonspace" });
+		await waitFor(() => expect(dialog).toBeVisible());
 	},
 };
