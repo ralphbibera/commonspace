@@ -68,7 +68,9 @@ test("search scrolls results while input, filters, and footer remain fixed", asy
 	await dialog
 		.getByRole("button", { name: "Filter result types: All types" })
 		.click();
-	await page.getByRole("menuitemcheckbox", { name: "Messages" }).click();
+	await page
+		.getByRole("menuitemcheckbox", { name: "Messages", exact: true })
+		.click();
 	await page.keyboard.press("Escape");
 	await expect(dialog.getByRole("listbox").getByRole("option")).toHaveCount(8);
 });
