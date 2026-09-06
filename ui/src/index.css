@@ -276,6 +276,10 @@
 	}
 }
 
+.commonspace-project-context-settings {
+	width: var(--commonspace-settings-width);
+}
+
 @media (max-width: 780px) {
 	.commonspace-conversation-layout {
 		grid-template-columns: minmax(0, 1fr) !important;
@@ -292,10 +296,19 @@
 		display: none;
 	}
 
+	.commonspace-settings-resizer {
+		display: none;
+	}
+
 	.commonspace-thread-panel,
 	.commonspace-context-settings {
 		width: 100%;
 		min-width: 0 !important;
 		border-left: 0;
+	}
+
+	.commonspace-project-context-settings {
+		width: 100%;
+		min-width: 0;
 	}
 }

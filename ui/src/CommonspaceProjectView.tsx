@@ -6,13 +6,25 @@ import type {
 } from "@commonspace/shared";
 import { referencedProjectIds } from "@commonspace/shared";
 import { ArrowLeftIcon, FolderPlusIcon, SettingsIcon } from "lucide-react";
-import { useEffect, useState, useSyncExternalStore } from "react";
+import {
+	type CSSProperties,
+	useEffect,
+	useRef,
+	useState,
+	useSyncExternalStore,
+} from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CommonspaceLogo } from "@/design-system/CommonspaceLogo";
 import { ConfirmActionDialog } from "@/design-system/ConfirmActionDialog";
+import { ResizablePanelHandle } from "@/design-system/ResizablePanelHandle";
+import {
+	COMMONSPACE_RESIZABLE_PANEL,
+	useResizablePanel,
+} from "@/design-system/useResizablePanel";
 import { WorkspaceHeader } from "@/design-system/WorkspaceHeader";
+import { cn } from "@/lib/utils";
 import { CommonspaceProjectChanges } from "./CommonspaceProjectChanges.tsx";
 import { CommonspaceProjectFiles } from "./CommonspaceProjectFiles.tsx";
 import type { CommonspaceStore } from "./commonspace-store.ts";
@@ -181,6 +193,14 @@ export function CommonspaceProjectView({
 	const [addingFolder, setAddingFolder] = useState(false);
 	const [settingsOpen, setSettingsOpen] = useState(false);
 	const [removeConfirmOpen, setRemoveConfirmOpen] = useState(false);
+	const projectLayout = useRef<HTMLElement>(null);
+	const {
+		width: panelWidth,
+		resizing: resizingPanel,
+		setWidth: setPanelWidth,
+		startResizing: startPanelResize,
+		resetWidth: resetPanelWidth,
+	} = useResizablePanel(projectLayout, COMMONSPACE_RESIZABLE_PANEL);
 	const snapshot = useSyncExternalStore(
 		store.subscribe,
 		store.getSnapshot,
@@ -257,8 +277,17 @@ export function CommonspaceProjectView({
 		folderCount === 1
 			? "1 folder · working directory"
 			: `${String(folderCount)} folders · working + references`;
+	const settingsStyle: CSSProperties & {
+		"--commonspace-settings-width": string;
+	} = {
+		"--commonspace-settings-width": `${String(panelWidth)}%`,
+	};
 	return (
-		<main className="h-full min-h-0" aria-label={`Project ${project.name}`}>
+		<main
+			ref={projectLayout}
+			className={cn("h-full min-h-0", resizingPanel && "select-none")}
+			aria-label={`Project ${project.name}`}
+		>
 			<Tabs
 				value={activeTab}
 				onValueChange={(value) => {
@@ -362,8 +391,23 @@ export function CommonspaceProjectView({
 					<CommonspaceProjectChanges projectId={project.id} fetcher={fetcher} />
 				</TabsContent>
 				{settingsOpen && (
+					<ResizablePanelHandle
+						className="commonspace-settings-resizer absolute top-16 right-0 bottom-0 z-30 h-auto"
+						style={{ right: `max(340px, ${String(panelWidth)}%)` }}
+						ariaLabel="Resize settings"
+						value={panelWidth}
+						min={COMMONSPACE_RESIZABLE_PANEL.min}
+						max={COMMONSPACE_RESIZABLE_PANEL.max}
+						step={COMMONSPACE_RESIZABLE_PANEL.step}
+						onChange={setPanelWidth}
+						onStartResize={startPanelResize}
+						onReset={resetPanelWidth}
+					/>
+				)}
+				{settingsOpen && (
 					<aside
-						className="absolute top-16 right-0 bottom-0 z-20 flex w-[min(420px,100%)] flex-col border-l bg-background shadow-[-20px_0_48px_color-mix(in_oklch,var(--foreground)_9%,transparent)]"
+						className="commonspace-project-context-settings absolute top-16 right-0 bottom-0 z-20 flex min-w-[340px] max-w-full flex-col border-l bg-background shadow-[-20px_0_48px_color-mix(in_oklch,var(--foreground)_9%,transparent)]"
+						style={settingsStyle}
 						aria-label="Project settings"
 					>
 						<header className="flex min-h-[70px] items-center gap-3 border-b py-2.5 pr-3.5 pl-5">

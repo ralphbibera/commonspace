@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { fn } from "storybook/test";
+import { expect, fn, userEvent, within } from "storybook/test";
 import { CommonspaceProjectView } from "../CommonspaceProjectView";
+import { COMMONSPACE_RESIZABLE_PANEL } from "../design-system/useResizablePanel";
 import {
 	createStoryStore,
 	emptyBootstrap,
@@ -40,6 +41,36 @@ export const FocusedFile: Story = {
 
 export const ProjectSettings: Story = {
 	args: { settingsRequest: 1 },
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		const settings = await canvas.findByRole("complementary", {
+			name: "Project settings",
+		});
+		await expect(settings).toBeVisible();
+		const resizer = canvas.queryByRole("separator", {
+			name: "Resize settings",
+		});
+		if (resizer === null) {
+			return;
+		}
+		const initial = Number(resizer.getAttribute("aria-valuenow"));
+		resizer.focus();
+		await userEvent.keyboard("{ArrowRight}");
+		await expect(resizer).toHaveAttribute(
+			"aria-valuenow",
+			String(
+				Math.max(
+					COMMONSPACE_RESIZABLE_PANEL.min,
+					initial - COMMONSPACE_RESIZABLE_PANEL.step,
+				),
+			),
+		);
+		await userEvent.dblClick(resizer);
+		await expect(resizer).toHaveAttribute(
+			"aria-valuenow",
+			String(COMMONSPACE_RESIZABLE_PANEL.defaultValue),
+		);
+	},
 };
 
 export const UnavailableProject: Story = {
