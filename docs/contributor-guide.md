@@ -13,7 +13,8 @@ Use this guide to find the code responsible for a change and choose the right de
 | `ui/src` | Browser state, screens, components, and interaction. |
 | `ui/src/stories` | Isolated examples of component and screen states. |
 | `tests` | Unit, integration, and browser-flow tests. |
-| `scripts` | Development tools, installation, packaging, and runtime verification. |
+| `cli` | Published npm command and package build. |
+| `scripts` | Development tools, source installation, packaging, and runtime verification. |
 | `docs` | Product rules, development instructions, and operating guides. |
 
 Use the existing owner of a behavior instead of adding a new abstraction. Shared types have one source in `packages/shared`; the UI communicates with the server through those types and `/api`.
@@ -27,7 +28,7 @@ Read the [product direction](product-direction.md), [product specification](prod
 | A function, state change, or API behaves correctly. | Unit or integration tests in `tests/`. |
 | A component renders and responds to input correctly. | A Storybook story and its interaction test. |
 | The complete browser flow works with the built server and UI. | `pnpm verify:live`. |
-| The release archive runs independently of the checkout. | `pnpm release:pack`, then `pnpm verify:release`. |
+| The npm package installs and runs independently of the checkout. | `pnpm build:npm`, then `pnpm verify:npm-package`. |
 | A real agent starts or resumes its existing session. | Opt-in agent checks with your own installation and credentials. |
 
 Use the smallest test that proves the behavior. A component test should not need a real agent connection. Tests should check behavior owned by Commonspace, rather than repeat implementation details.
@@ -77,17 +78,17 @@ Keep these rules intact:
 
 For a saved-data change, update the shared types, every affected consumer, loading and migration logic, tests, and the relevant documentation together. Read [Development](development.md) for the detailed workflow and [Operations](operations.md) for storage and recovery.
 
-## Check a release package
+## Check the npm package
 
-With Git and Corepack available, build an archive for your operating system and CPU:
+Build the package used by npm releases:
 
 ```bash
-pnpm release:pack
-pnpm verify:release
+pnpm build:npm
+pnpm verify:npm-package
 ```
 
-The first command builds and packages the app. The second extracts it into a temporary location and checks that it starts and serves the UI without the source checkout. Neither command needs agent credentials.
+The first command builds one platform-neutral npm tarball. The second installs it into a clean temporary prefix and checks that it starts and serves the UI without the source checkout. Neither command needs agent credentials.
 
-Real agent and real macOS background-service checks are separate. Record whether you ran them; an archive check does not prove those integrations were exercised. See [Releasing](releasing.md) for the full process.
+Real agent and real macOS background-service checks are separate. Record whether you ran them; npm-package smoke does not prove those integrations were exercised. See [Releasing](releasing.md) for the full process.
 
 When the change is ready, follow [Contributing](../CONTRIBUTING.md#prepare-a-pull-request) to explain the result and the evidence for it.

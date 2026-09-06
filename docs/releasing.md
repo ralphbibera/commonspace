@@ -1,12 +1,10 @@
 # Releasing Commonspace
 
-This guide is for maintainers preparing an installable Commonspace release. The release workflow builds and checks archives, then creates a draft release on GitHub.
-
-The repository owner reviews and approves the verified draft before a maintainer publishes it.
+Commonspace follows an npm-first release model. One `commonspace` package contains the bundled Commonspace CLI/server code and built browser UI. External npm dependencies remain ordinary package dependencies and are installed by npm. GitHub Releases contain the tag and release notes, not duplicate platform archives.
 
 ## Choose the version
 
-Commonspace follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html), starting at `0.0.1`. Keep one identical version in the root, `packages/shared`, `server`, and `ui` package manifests.
+Commonspace follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html), starting at `0.0.1`. Keep one identical version in the root, `cli`, `packages/shared`, `server`, and `ui` package manifests.
 
 Compatibility covers documented HTTP and MCP interfaces, CLI behavior, and the workspace archive format. The internal saved-state schema has a separate version and requires its own migration and recovery coverage.
 
@@ -17,94 +15,68 @@ Compatibility covers documented HTTP and MCP interfaces, CLI behavior, and the w
 | Breaking change before `1.0.0` | Increment the minor version, reset the patch to zero, and include migration notes. |
 | Breaking change from `1.0.0` onward | Increment the major version, reset minor and patch to zero, and include migration notes. |
 
-Version `1.0.0` establishes stable supported interfaces. Before then, interfaces are under initial development and breaking changes follow the minor-version policy above.
+Use a prerelease suffix for candidates, such as `0.0.2-rc.1`. Git tags add only `v` and must match exactly. The release workflow publishes prereleases under npm's `next` tag and stable versions under `latest`.
 
-Use a prerelease suffix for candidates, such as `0.0.2-rc.1`. Build metadata is supported, such as `0.0.2+build.1`, and does not affect version precedence. Store the complete version without a prefix in each manifest. Git tags add only `v` and must match exactly, including any suffix or metadata: version `0.0.2-rc.1` uses tag `v0.0.2-rc.1`.
-
-The workflow always creates a draft. It marks the GitHub release as a prerelease only when the version contains a prerelease suffix; `0.0.1` and versions with build metadata alone are not prereleases.
-
-Update the version and move the relevant [changelog](../CHANGELOG.md) entries into a dated release section through the normal contribution workflow. Release only a reviewed commit. Do not move an existing release tag to another commit.
-
-The workspace packages are not published individually. This process distributes the assembled runtime as downloadable archives.
+Update the version and changelog through the normal contribution workflow. Release only a reviewed commit. Never move an existing release tag.
 
 ## Build and check locally
 
-Use a clean checkout with Git, Corepack, Node.js 22, and the pinned pnpm version. From the repository root, run:
+Use a clean checkout with Git, Corepack, Node.js 22, and the pinned pnpm version:
 
 ```bash
 pnpm install --frozen-lockfile
 pnpm check
 pnpm verify:live
-pnpm release:pack
-pnpm verify:release
+pnpm build:npm
+pnpm verify:npm-package
 ```
 
-`release:pack` builds the app and writes an archive and checksum under `artifacts/release/`. It packages the operating system and CPU architecture of the machine running it. Use `release:pack:built` only when that checkout already has current production builds.
+`build:npm` builds all workspaces, bundles Commonspace-owned server and shared code into `cli/dist/index.js`, copies the built UI, and writes `artifacts/npm/commonspace-<version>.tgz` through `npm pack`.
 
-`verify:release` extracts the archive into a temporary directory, starts it without the source checkout, and checks the API, UI files, and shutdown. On macOS, it also checks installation, update, and rollback with `launchctl` commands and health responses substituted for the test. It does not start a real LaunchAgent or connect a real agent.
+`verify:npm-package` installs that tarball into a clean temporary prefix using npm. It checks the version command, starts the installed package outside the source checkout, requests the API and browser assets, and verifies clean shutdown. It does not connect a real agent.
 
-Local development archives may record uncommitted changes. Release automation rejects those archives and requires the recorded commit to match the selected tag.
-
-## Check the real integrations
-
-Before publishing, record results from the supported release environment:
-
-| Check | What it proves |
-| --- | --- |
-| `pnpm verify:service` on macOS | The source-based clone, install, build, update, and rollback path works in a temporary home. It substitutes launchctl and health responses. |
-| Install an archive with `node scripts/commonspace-service.mjs install --release .` on macOS | The real per-user service starts. Check browser access, status, update, and rollback as described in [Installation](install.md). |
-| `pnpm verify:acp` | Authenticated Hermes and Codex installations can start and resume their exact existing sessions. |
-| `pnpm verify:acp:mcp` | Those agents can read the allowed conversation context, post progress, and return the expected reply. |
-
-Keep credentials and transcripts local. Record the commands, platform versions, results, and any checks that were not run. Passing an archive test does not establish that the real integrations passed.
-
-## Prepare the draft on GitHub
-
-The [Draft release workflow](../.github/workflows/release.yml) runs when a version tag is pushed. You can also start **Actions → Draft release → Run workflow** and supply an existing version tag in the `tag` field.
-
-Before starting it, confirm that the selected tag matches the root version and has no existing release.
-
-The workflow:
-
-1. Resolves the tag to a commit and checks the version.
-2. Runs the same complete CI checks used for contributions.
-3. Builds and tests archives on macOS ARM64, macOS x64, and Linux x64.
-4. Checks each archive's recorded version, commit, operating system, CPU architecture, and clean source state.
-5. Rechecks all checksums and confirms the tag still points to the verified commit.
-6. Creates a draft release with the archives and checksum files attached, using the version's prerelease suffix to set the prerelease flag.
-
-The workflow refuses to overwrite any existing draft or published release. If a failed run left a draft, inspect it and the failure before removing that draft for a retry. Do not silently replace a published release's files. A code fix requires a new reviewed commit and release version.
-
-## Review and publish
-
-Inspect the draft's commit, version, download files, installation instructions, changes, known limitations, and test results. Include migration and backup instructions whenever a release changes saved data. Download and run the candidate archive on the release account using [Installation](install.md).
-
-Complete the [release readiness checklist](maintaining.md#release-readiness-checklist), then publish the approved draft manually.
-
-## What the archive contains
-
-Each target produces:
-
-```text
-commonspace-<version>-<platform>-<arch>.tar.gz
-commonspace-<version>-<platform>-<arch>.tar.gz.sha256
-```
-
-The targets are `darwin-arm64`, `darwin-x64`, and `linux-x64`. Build on the matching platform so any native dependencies work on the user's computer. The [support matrix](support-matrix.md) describes platform limits.
-
-The archive extracts into one directory with the same base name:
+The npm tarball contains only:
 
 | File or directory | Purpose |
 | --- | --- |
-| `commonspace.mjs` | Starts the app in the terminal and provides `--version` and `--help`. |
-| `scripts/commonspace-service.mjs` | Installs and manages the macOS background service. |
-| `server/dist` and production dependencies | Runs the API and agent connections, including shared code and the Codex ACP bridge. |
-| `ui/dist` | Contains the built browser app. |
-| `commonspace-release.json` | Records the version, source commit, source-change status, and target platform. |
-| `README.md` | Contains the [installation guide](install.md). |
-| `LICENSE` | Contains Commonspace's license. |
-| `THIRD_PARTY_NOTICES.txt` | Preserves license and copyright notices for production dependencies, including libraries bundled into the browser app. |
+| `dist/index.js` and source map | Commonspace CLI plus bundled Commonspace-owned server/shared code |
+| `ui-dist` | Built browser application |
+| `package.json` | CLI metadata and ordinary external runtime dependencies |
+| `README.md` | Package overview and setup |
+| `LICENSE` | Commonspace's MIT license |
 
-The archive must work without the source checkout, and its filesystem links must stay within the extracted directory. Do not commit release archives, generated builds, workspace state, credentials, agent session stores, or browser artifacts.
+The package does not vendor `node_modules`, platform archives, checksum sidecars, release manifests, or copied dependency-license files. npm owns dependency selection, integrity metadata, installation, and cache behavior.
 
-Application rollback changes application files, not saved data. Keep a backup compatible with the older release before testing a downgrade; see [Operations](operations.md#backup-and-rollback).
+## Check real integrations
+
+Before publishing, record results from the supported environment:
+
+| Check | What it proves |
+| --- | --- |
+| `pnpm verify:service` on macOS | Source-based clone, build, update, rollback, and LaunchAgent configuration in a temporary home |
+| `pnpm verify:acp` | Authenticated Hermes, Codex, and Claude Code installations can start and resume exact native sessions |
+| `pnpm verify:adapters` | Pinned Claude Code, Gemini CLI, and OpenCode runtimes work against local model fixtures without provider credentials |
+| `pnpm verify:acp:mcp` | Authenticated agents can read permitted context, post progress, and return a reply |
+
+Keep credentials and transcripts local. Copy the [candidate acceptance template](templates/release-acceptance.md) and record the exact commit, package version, commands, results, evidence, and every check not run with its exact reason. A clean npm-package smoke does not establish provider-backed compatibility.
+
+## Publish
+
+The `commonspace` npm name has prior unpublished registry history, so do not assume this repository controls it. Before enabling publication, confirm the intended npm owner can reclaim and publish that name; otherwise choose a new package name in `cli/package.json` and update user-facing commands. For a new package, bootstrap once from the locally verified tarball with maintainer npm authentication and two-factor approval. Do not store that credential in the repository.
+
+After the package exists, configure npm trusted publishing for this repository, `release.yml`, and the `npm-release` GitHub environment; then disable token-based package publication. Create the repository variable `NPM_RELEASE_ENABLED=true` only after those controls are live. Non-dry runs fail closed while the variable is absent.
+
+Create the exact version tag on a reviewed `main` commit and push it, then start **Actions → Release → Run workflow**. Supply that existing tag. Leave `dry_run` enabled first.
+
+The workflow:
+
+1. Resolves the tag, requires its commit to belong to `main`, and checks all workspace versions.
+2. Runs the complete local checks and integrated live verifier.
+3. Builds one npm tarball and installs it into a clean prefix for runtime smoke testing.
+4. Previews `npm publish` during a dry run.
+5. After an approved non-dry run, rechecks the remote tag commit and publishes with npm provenance.
+6. Creates a GitHub Release containing generated notes and no duplicate package asset.
+
+The workflow does not run package creation on every pull request. Normal CI still builds the CLI, server, shared package, and UI through `pnpm build`; npm installation smoke belongs to the release boundary.
+
+If npm publication succeeds but GitHub Release creation fails, create the GitHub Release for the existing tag manually. Never republish or move the tag to repair release notes.

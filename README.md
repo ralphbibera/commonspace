@@ -55,21 +55,16 @@ For UI development, run `pnpm storybook`. The [coverage map](docs/storybook-cove
 
 ## Quickstart
 
-To run Commonspace from source, you need:
+To run Commonspace, you need:
 
 - macOS or Linux;
-- Node.js 22 or newer;
-- pnpm 10.34.5;
-- Git.
+- Node.js 22 or newer.
 
 ```bash
-git clone https://github.com/ralphbibera/commonspace.git
-cd commonspace
-pnpm install --frozen-lockfile
-pnpm dev
+npx --yes commonspace@latest
 ```
 
-Open **http://127.0.0.1:5173** in your desktop browser. The local API runs on port `3100`.
+Open **http://127.0.0.1:3100** in your desktop browser. Keep the terminal open while using Commonspace. Contributors can follow [Development](docs/development.md) to run from source.
 
 You can explore the empty workspace and work on the application without agent credentials. To send your first agent message:
 
@@ -80,7 +75,7 @@ You can explore the empty workspace and work on the application without agent cr
 
 For a shared conversation, create a Channel and use `@` to select an agent. Channel routing uses your configured inference provider; a Direct Message goes straight to its chosen agent.
 
-See [Development](docs/development.md) for local commands, [Operations](docs/operations.md) for configuration and background operation, and the [support matrix](docs/support-matrix.md) for platform limits. The [installation guide](docs/install.md) covers packaged builds.
+See [Installation](docs/install.md) for package and source setup, [Development](docs/development.md) for local commands, [Operations](docs/operations.md) for configuration and background operation, and the [support matrix](docs/support-matrix.md) for platform limits.
 
 ## FAQ
 

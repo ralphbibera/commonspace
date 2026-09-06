@@ -97,9 +97,11 @@ Server-sent events carry durable state revisions and separate temporary activity
 
 `server/src/app.ts` owns HTTP limits, loopback and same-origin guards, event framing, status codes, health checks, security headers, and optional static UI delivery. `server/src/acp-runtime.ts` owns the ACP client and subprocess lifecycle. `server/src/commonspace-mcp.ts` owns temporary capabilities and scoped tools. `server/src/index.ts` owns configuration, startup, signals, and graceful shutdown.
 
-### Service and release lifecycle
+### Package and service lifecycle
 
-`scripts/commonspace-service.mjs` manages the macOS service. It stages source builds or extracted runtime archives in owner-only storage, writes the LaunchAgent atomically, requires a successful health check before accepting an update, and keeps one rollback release. It invokes external commands with argument arrays.
+`cli/src/index.ts` is the published npm entry point. Its build bundles Commonspace-owned server and shared code, packages the built UI, and leaves external runtime libraries as ordinary npm dependencies.
+
+`scripts/commonspace-service.mjs` manages the source-installed macOS service. It stages committed source builds in owner-only storage, writes the LaunchAgent atomically, requires a successful health check before accepting an update, and keeps one rollback release. It invokes external commands with argument arrays.
 
 Workspace state lives outside the release directories. Switching application versions never replaces user data, and rolling back application code does not reverse a state migration. See [Operations](operations.md#backup-and-rollback).
 

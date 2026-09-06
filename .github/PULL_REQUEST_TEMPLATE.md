@@ -16,7 +16,7 @@
 - [ ] `pnpm check:fast`
 - [ ] `pnpm check`
 - [ ] `pnpm verify:live` <!-- required for server, API, routing, saved-data, or complete UI-flow changes -->
-- [ ] `pnpm release:pack` and `pnpm verify:release` <!-- required for packaging, installation, production dependencies, or release workflow changes -->
+- [ ] `pnpm build:npm` and `pnpm verify:npm-package` <!-- required for packaging, installation, production dependencies, or release workflow changes -->
 
 ### Manual checks
 

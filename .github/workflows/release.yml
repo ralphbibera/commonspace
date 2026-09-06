@@ -1,17 +1,20 @@
-name: Draft release
+name: Release
 
 on:
-  push:
-    tags: ["v*"]
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing version tag to verify and package (for example, v0.0.1).
+        description: Existing version tag to publish (for example, v0.0.1).
         required: true
         type: string
+      dry_run:
+        description: Verify package without publishing it.
+        required: true
+        default: true
+        type: boolean
 
 concurrency:
-  group: release-${{ inputs.tag || github.ref_name }}
+  group: release-${{ inputs.tag }}
   cancel-in-progress: false
 
 permissions:
@@ -26,21 +29,15 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
-      tag: ${{ steps.version.outputs.tag }}
-      sha: ${{ steps.version.outputs.sha }}
       prerelease: ${{ steps.version.outputs.prerelease }}
+      sha: ${{ steps.version.outputs.sha }}
     env:
-      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+      RELEASE_TAG: ${{ inputs.tag }}
     steps:
-      - name: Require a version tag
-        run: |
-          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
-            echo "::error::Choose an existing version tag such as v0.0.1."
-            exit 1
-          fi
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: refs/tags/${{ env.RELEASE_TAG }}
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -48,34 +45,26 @@ jobs:
       - name: Require exact tag and package version
         id: version
         run: |
-          node scripts/package-release.mjs --check-tag "$RELEASE_TAG" >> "$GITHUB_OUTPUT"
-          printf 'tag=%s\n' "$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          node scripts/package-npm.mjs --check-tag "$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          if ! git merge-base --is-ancestor HEAD origin/main; then
+            echo "::error::Release tag must point to a commit on main."
+            exit 1
+          fi
           printf 'sha=%s\n' "$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Require publication to be explicitly enabled
+        if: ${{ ! inputs.dry_run }}
+        env:
+          NPM_RELEASE_ENABLED: ${{ vars.NPM_RELEASE_ENABLED }}
+        run: |
+          if [[ "$NPM_RELEASE_ENABLED" != "true" ]]; then
+            echo "::error::Set NPM_RELEASE_ENABLED=true only after npm package ownership and trusted publishing are configured."
+            exit 1
+          fi
 
   verify:
     needs: resolve
-    uses: ./.github/workflows/ci.yml
-    with:
-      ref: ${{ needs.resolve.outputs.sha }}
-
-  package:
-    needs: resolve
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: ubuntu-24.04
-            target: linux-x64
-          - runner: macos-15
-            target: darwin-arm64
-          - runner: macos-15-intel
-            target: darwin-x64
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 25
-    env:
-      RELEASE_TAG: ${{ needs.resolve.outputs.tag }}
-      SOURCE_SHA: ${{ needs.resolve.outputs.sha }}
-      RELEASE_TARGET: ${{ matrix.target }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -87,91 +76,70 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Verify macOS service lifecycle contracts
-        if: runner.os == 'macOS'
-        run: pnpm test -- tests/service-manager.spec.mjs
-      - run: pnpm release:pack
-      - name: Require clean package provenance
-        run: |
-          node --input-type=module <<'NODE'
-          import assert from "node:assert/strict";
-          import { execFileSync } from "node:child_process";
-
-          const version = process.env.RELEASE_TAG.slice(1);
-          const name = `commonspace-${version}-${process.env.RELEASE_TARGET}`;
-          const metadata = JSON.parse(execFileSync("tar", [
-            "-xOf", `artifacts/release/${name}.tar.gz`,
-            `${name}/commonspace-release.json`,
-          ], { encoding: "utf8" }));
-          assert.equal(metadata.version, version);
-          assert.equal(metadata.revision, process.env.SOURCE_SHA);
-          assert.equal(metadata.dirty, false);
-          assert.equal(metadata.platform, process.platform);
-          assert.equal(metadata.arch, process.arch);
-          assert.equal(metadata.distribution, "archive");
-          NODE
-      - run: pnpm verify:release
+      - run: pnpm check
+      - run: pnpm verify:live:built
+      - run: pnpm package:npm
+      - run: pnpm verify:npm-package
+      - name: Preview npm publish
+        if: inputs.dry_run
+        run: npm publish artifacts/npm/*.tgz --dry-run
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: commonspace-${{ matrix.target }}
-          path: |
-            artifacts/release/commonspace-*.tar.gz
-            artifacts/release/commonspace-*.tar.gz.sha256
+          name: commonspace-npm-package
+          path: artifacts/npm/*.tgz
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 1
 
-  draft:
-    needs: [resolve, verify, package]
+  publish:
+    if: ${{ ! inputs.dry_run }}
+    needs: [resolve, verify]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    environment: npm-release
     permissions:
       contents: write
+      id-token: write
     env:
-      RELEASE_TAG: ${{ needs.resolve.outputs.tag }}
-      SOURCE_SHA: ${{ needs.resolve.outputs.sha }}
+      RELEASE_TAG: ${{ inputs.tag }}
       RELEASE_PRERELEASE: ${{ needs.resolve.outputs.prerelease }}
     steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          pattern: commonspace-*
-          merge-multiple: true
-          path: artifacts/release
-      - name: Verify all platform checksums
-        working-directory: artifacts/release
-        run: |
-          for target in linux-x64 darwin-arm64 darwin-x64; do
-            archive="commonspace-${RELEASE_TAG#v}-$target.tar.gz"
-            test -f "$archive"
-            sha256sum --check "$archive.sha256"
-          done
-      - name: Create a draft release
-        working-directory: artifacts/release
+          name: commonspace-npm-package
+          path: artifacts/npm
+      - name: Require unchanged release tag
         env:
           GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ needs.resolve.outputs.sha }}
         run: |
           current_sha="$(gh api "repos/$GITHUB_REPOSITORY/commits/refs%2Ftags%2F$RELEASE_TAG" --jq .sha)"
           if [[ "$current_sha" != "$SOURCE_SHA" ]]; then
-            echo "::error::The release tag moved after verification. Refusing to create a release."
+            echo "::error::Release tag moved after verification. Refusing to publish."
             exit 1
           fi
-          existing_tags="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[].tag_name')"
-          while IFS= read -r existing_tag; do
-            if [[ "$existing_tag" == "$RELEASE_TAG" ]]; then
-              echo "::error::A release already exists for this tag. Review it manually; this workflow never overwrites releases."
-              exit 1
-            fi
-          done <<< "$existing_tags"
-          assets=()
-          for target in linux-x64 darwin-arm64 darwin-x64; do
-            archive="commonspace-${RELEASE_TAG#v}-$target.tar.gz"
-            assets+=("$archive" "$archive.sha256")
-          done
-          gh release create "$RELEASE_TAG" "${assets[@]}" \
+      - name: Publish npm package
+        run: |
+          dist_tag=latest
+          if [[ "$RELEASE_PRERELEASE" == "true" ]]; then
+            dist_tag=next
+          fi
+          npm publish artifacts/npm/*.tgz --access public --provenance --tag "$dist_tag"
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$RELEASE_TAG" \
             --repo "$GITHUB_REPOSITORY" \
-            --target "$SOURCE_SHA" \
+            --target "${{ needs.resolve.outputs.sha }}" \
             --verify-tag \
-            --draft \
             --prerelease="$RELEASE_PRERELEASE" \
-            --latest=false \
             --title "Commonspace $RELEASE_TAG" \
             --generate-notes

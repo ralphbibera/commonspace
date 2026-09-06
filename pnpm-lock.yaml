@@ -72,6 +72,40 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
 
+  cli:
+    dependencies:
+      '@agentclientprotocol/claude-agent-acp':
+        specifier: 0.75.0
+        version: 0.75.0(@anthropic-ai/sdk@0.124.0(zod@4.4.3))(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))
+      '@agentclientprotocol/codex-acp':
+        specifier: 1.6.2
+        version: 1.6.2
+      '@agentclientprotocol/sdk':
+        specifier: 1.4.0
+        version: 1.4.0(zod@4.4.3)
+      '@modelcontextprotocol/sdk':
+        specifier: 1.30.0
+        version: 1.30.0(zod@4.4.3)
+      express:
+        specifier: ^5.1.0
+        version: 5.2.1
+      node-notifier:
+        specifier: 10.0.1
+        version: 10.0.1
+      pino:
+        specifier: ^10.0.0
+        version: 10.3.1
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      esbuild:
+        specifier: 0.28.2
+        version: 0.28.2
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
   packages/shared:
     devDependencies:
       typescript:

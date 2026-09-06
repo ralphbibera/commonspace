@@ -57,7 +57,7 @@ Before a release:
 - Check that the README, installation instructions, contribution guide, support matrix, license, security policy, and conduct policy match the candidate.
 - Verify the private security and conduct reporting routes.
 - Check branch rules, required CI, and contribution templates in GitHub.
-- Verify all supported archives, checksums, and fresh installations. Record real agent and macOS service results, plus any checks or platforms not exercised.
+- Verify the npm tarball through a clean installation. Record real agent and macOS service results, plus any checks or platforms not exercised.
 - Review the release notes, backup and migration instructions, and known limitations.
 
-Complete the draft review described in [Releasing](releasing.md#review-and-publish).
+Complete the publication review described in [Releasing](releasing.md#publish).

@@ -65,9 +65,9 @@ Regardless of storage technology, every accepted message must remain available u
 - Exercise Hermes and Codex login, start, and exact-session resume on a clean supported machine.
 - Run `pnpm check` for static checks, tests, migration and recovery coverage, and application builds.
 - Run `pnpm verify:live` for desktop browser behavior, keyboard search and navigation, and Light/Dark/System appearance.
-- Build and verify a distribution archive with `pnpm release:pack` and `pnpm verify:release`.
+- Build and clean-install the npm package with `pnpm build:npm` and `pnpm verify:npm-package`.
 - Run `pnpm verify:service` on macOS for isolated source clone, install, build, update, and rollback checks. This test substitutes `launchctl` commands and health responses.
-- Install the candidate archive on a clean supported macOS account and manually check real LaunchAgent startup, browser access, status, update, and rollback using [Releasing](releasing.md#check-the-real-integrations).
+- Run the candidate npm package on a clean supported account and manually check browser access. Check real LaunchAgent startup, status, update, and rollback separately from a source installation using [Releasing](releasing.md#check-real-integrations).
 - Complete keyboard-only and destructive-action reviews.
 
-Narrow and mobile layouts are deferred; desktop is the current UI target. See [Releasing](releasing.md) for packaging and release checks.
+Narrow and mobile layouts are deferred; desktop is the current UI target. See [Releasing](releasing.md) for npm packaging and release checks.

@@ -37,8 +37,8 @@ Notable changes to Commonspace. See the [versioning policy](docs/releasing.md#ch
 
 ### Installation and local data
 
-- Runtime archives target macOS ARM64, macOS x64, and Linux x64, with production dependencies, a foreground launcher, SHA-256 checksums, and third-party license notices. Release automation verifies the version, tag, source commit, CI, and archives before creating a draft.
-- The macOS background service supports source or archive installation, health checks tied to the managed process, staged updates, recovery after a failed update, and rollback to one retained release. Updates wait for the previous service to unload before replacement.
+- One npm package ships the Commonspace CLI/server bundle and built UI while npm installs external runtime dependencies. Release automation verifies an exact tag through a clean package installation before npm publication and creates a notes-only GitHub Release.
+- The macOS background service supports source installation, health checks tied to the managed process, staged updates, recovery after a failed update, and rollback to one retained release. Updates wait for the previous service to unload before replacement.
 - The server listens on loopback and guards state changes by origin. Runtime diagnostics explain local readiness, recovery, and configured inference data flow without exposing credentials or host paths. Agents and inference may use remote model services.
 - Accepted conversation history persists until explicit user cleanup. State schema 27 migrates older data and uses atomic writes with backup recovery. Model and reasoning defaults apply across the workspace; migration removes legacy Channel overrides while preserving valid older workspace exports.
 - Version-1 workspace exports preserve conversation text and exact attachment bytes while omitting Commonspace-managed credentials, paths, session references, and temporary capabilities. Archives are unencrypted private data and may contain sensitive author-supplied content. Import requires an empty workspace and explicit local-folder mappings.
