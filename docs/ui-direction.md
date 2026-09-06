@@ -30,6 +30,12 @@ Queued follow-ups sit in a compact tray aligned with the composer. Keep message 
 
 Before workspace data arrives, show an explicit loading state. An initial connection failure shows its error and a Try again action. Refreshing an already loaded workspace preserves its content, with refresh errors shown in an actionable notice.
 
+## Search
+
+Search keeps its query, filters, result count, and keyboard hints fixed. Only the results area scrolls. Arrow-key selection reveals the selected result inside that area without moving the query or the surrounding workspace.
+
+Use the result-type menu to include one or more kinds of content, and the Project menu to narrow their scope. Checked choices and removable chips make the active type filters visible. Clear filters resets both menus while preserving the query. Pending requests hide stale results, and late responses cannot replace the active search.
+
 ## Appearance
 
 The default appearance is Light. Users can choose Light, Dark, or System, and the choice persists locally. System follows the operating-system preference.

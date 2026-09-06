@@ -344,7 +344,7 @@ Each row gives a stable requirement ID, its release target, the required behavio
 | --- | --- | --- | --- |
 | DSC-01 | v0.0.1 | Track durable unread state for Agent replies and relevant system outcomes. | Read state survives restart and opens the exact conversation location. |
 | DSC-02 | v0.0.1 | Provide an attention-focused Inbox. | Replies, mentions, permission requests, needs-input outcomes, and failures can be filtered and navigated exactly. |
-| DSC-03 | v0.0.1 | Search messages, Threads, Channels, Agents, Projects, and attachments. | Project filters match any referenced Project, not only the primary compatibility reference. |
+| DSC-03 | v0.0.1 | Search messages, Threads, Channels, Agents, Projects, and attachments. | Project filters match any referenced Project, not only the primary compatibility reference. Users can combine content types, inspect/remove active filters, and reset filters without clearing the query. Query controls remain fixed while results scroll; pending requests cannot activate stale results. |
 | DSC-04 | v0.0.1 | Support desktop notifications for replies, mentions, permissions, and failures. | Each notification identifies the event type and opens the exact message/activity. |
 | DSC-05 | v0.0.1 | Make notifications configurable without muting durable Inbox state. | Disabling OS notifications does not hide attention items inside Commonspace. |
 

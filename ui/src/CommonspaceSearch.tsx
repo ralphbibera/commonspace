@@ -6,15 +6,48 @@ import {
 	type CommonspaceSearchResponse,
 	type CommonspaceSearchResult,
 } from "@commonspace/shared";
-import { SearchIcon } from "lucide-react";
-import { useDeferredValue, useEffect, useId, useMemo, useState } from "react";
+import {
+	ActivityIcon,
+	BotIcon,
+	CheckCheckIcon,
+	ChevronDownIcon,
+	FileIcon,
+	FolderIcon,
+	HashIcon,
+	ListFilterIcon,
+	LoaderCircleIcon,
+	MessageSquareTextIcon,
+	MessagesSquareIcon,
+	NotebookTextIcon,
+	PlayIcon,
+	SearchIcon,
+	XIcon,
+} from "lucide-react";
+import { useDeferredValue, useEffect, useId, useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
 import {
 	Dialog,
 	DialogContent,
 	DialogHeader,
 	DialogTitle,
 } from "@/components/ui/dialog";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import {
+	DropdownMenu,
+	DropdownMenuCheckboxItem,
+	DropdownMenuContent,
+	DropdownMenuGroup,
+	DropdownMenuLabel,
+	DropdownMenuRadioGroup,
+	DropdownMenuRadioItem,
+	DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+	Empty,
+	EmptyDescription,
+	EmptyHeader,
+	EmptyMedia,
+	EmptyTitle,
+} from "@/components/ui/empty";
 
 export interface CommonspaceSearchDialogProps {
 	projects: readonly CommonspaceProject[];
@@ -22,6 +55,183 @@ export interface CommonspaceSearchDialogProps {
 	onSelect: (result: CommonspaceSearchResult) => void;
 	fetcher?: typeof globalThis.fetch;
 }
+
+const searchTypes = {
+	channel: { label: "Channels", icon: HashIcon },
+	message: { label: "Messages", icon: MessageSquareTextIcon },
+	dm: { label: "Direct messages", icon: MessagesSquareIcon },
+	agent: { label: "Agents", icon: BotIcon },
+	file: { label: "Files", icon: FileIcon },
+	trace: { label: "Activity traces", icon: ActivityIcon },
+	decision: { label: "Decisions", icon: CheckCheckIcon },
+	run: { label: "Runs", icon: PlayIcon },
+	brief: { label: "Briefs", icon: NotebookTextIcon },
+} satisfies Record<
+	CommonspaceSearchKind,
+	{ label: string; icon: typeof SearchIcon }
+>;
+
+function SearchFilters({
+	projects,
+	selectedKinds,
+	projectId,
+	onKindsChange,
+	onProjectChange,
+	onClear,
+}: {
+	projects: readonly CommonspaceProject[];
+	selectedKinds: readonly CommonspaceSearchKind[];
+	projectId: string;
+	onKindsChange: (kinds: CommonspaceSearchKind[]) => void;
+	onProjectChange: (projectId: string) => void;
+	onClear: () => void;
+}) {
+	const firstKind = selectedKinds[0];
+	const typeLabel =
+		selectedKinds.length > 1
+			? `${selectedKinds.length} types`
+			: firstKind === undefined
+				? "All types"
+				: searchTypes[firstKind].label;
+	const projectLabel =
+		projectId === ""
+			? "All projects"
+			: (projects.find((project) => project.id === projectId)?.name ??
+				"Selected project");
+	return (
+		<section
+			className="flex flex-col gap-2 border-b px-3.5 py-3"
+			aria-label="Search filters"
+		>
+			<div className="flex min-w-0 items-center gap-2">
+				<DropdownMenu>
+					<DropdownMenuTrigger
+						render={<Button variant="outline" size="sm" className="h-8" />}
+						aria-label={`Filter result types: ${typeLabel}`}
+					>
+						<ListFilterIcon data-icon="inline-start" aria-hidden="true" />
+						{typeLabel}
+						<ChevronDownIcon data-icon="inline-end" aria-hidden="true" />
+					</DropdownMenuTrigger>
+					<DropdownMenuContent className="w-56">
+						<DropdownMenuGroup>
+							<DropdownMenuLabel>Result types</DropdownMenuLabel>
+							<p className="px-1.5 pb-2 text-xs text-muted-foreground">
+								Choose one or more.
+							</p>
+							{COMMONSPACE_SEARCH_KINDS.map((kind) => {
+								const option = searchTypes[kind];
+								const Icon = option.icon;
+								return (
+									<DropdownMenuCheckboxItem
+										key={kind}
+										checked={selectedKinds.includes(kind)}
+										onCheckedChange={(checked) =>
+											onKindsChange(
+												checked
+													? [...selectedKinds, kind]
+													: selectedKinds.filter(
+															(selected) => selected !== kind,
+														),
+											)
+										}
+									>
+										<Icon aria-hidden="true" />
+										{option.label}
+									</DropdownMenuCheckboxItem>
+								);
+							})}
+						</DropdownMenuGroup>
+					</DropdownMenuContent>
+				</DropdownMenu>
+				<DropdownMenu>
+					<DropdownMenuTrigger
+						render={
+							<Button
+								variant="outline"
+								size="sm"
+								className="h-8 min-w-0 max-w-64 shrink"
+							/>
+						}
+						aria-label={`Filter by project: ${projectLabel}`}
+					>
+						<FolderIcon data-icon="inline-start" aria-hidden="true" />
+						<span className="truncate">{projectLabel}</span>
+						<ChevronDownIcon data-icon="inline-end" aria-hidden="true" />
+					</DropdownMenuTrigger>
+					<DropdownMenuContent className="w-64">
+						<DropdownMenuGroup>
+							<DropdownMenuLabel>Project</DropdownMenuLabel>
+							<DropdownMenuRadioGroup
+								value={projectId}
+								onValueChange={(value) => {
+									if (
+										typeof value === "string" &&
+										(value === "" ||
+											projects.some((project) => project.id === value))
+									)
+										onProjectChange(value);
+								}}
+							>
+								<DropdownMenuRadioItem value="" closeOnClick>
+									All projects
+								</DropdownMenuRadioItem>
+								{projects.map((project) => (
+									<DropdownMenuRadioItem
+										key={project.id}
+										value={project.id}
+										closeOnClick
+									>
+										<span className="truncate" title={project.name}>
+											{project.name}
+										</span>
+									</DropdownMenuRadioItem>
+								))}
+							</DropdownMenuRadioGroup>
+						</DropdownMenuGroup>
+					</DropdownMenuContent>
+				</DropdownMenu>
+				{(selectedKinds.length > 0 || projectId !== "") && (
+					<Button
+						variant="ghost"
+						size="sm"
+						className="ml-auto"
+						onClick={onClear}
+					>
+						Clear filters
+					</Button>
+				)}
+			</div>
+			{selectedKinds.length > 0 && (
+				<fieldset
+					className="m-0 flex min-w-0 flex-wrap items-center gap-1.5 border-0 p-0"
+					aria-label="Selected result types"
+				>
+					{selectedKinds.map((kind) => (
+						<Button
+							key={kind}
+							variant="secondary"
+							size="xs"
+							aria-label={`Remove ${searchTypes[kind].label} filter`}
+							onClick={() =>
+								onKindsChange(
+									selectedKinds.filter((selected) => selected !== kind),
+								)
+							}
+						>
+							{searchTypes[kind].label}
+							<XIcon data-icon="inline-end" aria-hidden="true" />
+						</Button>
+					))}
+				</fieldset>
+			)}
+		</section>
+	);
+}
+
+type SearchOutcome =
+	| { kind: "ready"; url: string; data: CommonspaceSearchResponse }
+	| { kind: "error"; url: string; message: string };
 
 function searchUrl(
 	query: string,
@@ -145,28 +355,23 @@ export function CommonspaceSearchDialog({
 	fetcher = globalThis.fetch,
 }: CommonspaceSearchDialogProps) {
 	const resultsId = useId();
+	const resultsViewport = useRef<HTMLDivElement>(null);
 	const [query, setQuery] = useState("");
 	const [selectedKinds, setSelectedKinds] = useState<CommonspaceSearchKind[]>(
 		[],
 	);
 	const [projectId, setProjectId] = useState("");
 	const [activeIndex, setActiveIndex] = useState(0);
-	const [response, setResponse] = useState<CommonspaceSearchResponse | null>(
-		null,
-	);
-	const [error, setError] = useState<string | null>(null);
+	const [outcome, setOutcome] = useState<SearchOutcome | null>(null);
 	const deferredQuery = useDeferredValue(query);
-	const deferredKinds = useDeferredValue(selectedKinds);
-	const deferredProjectId = useDeferredValue(projectId);
-	const requestUrl = useMemo(
-		() => searchUrl(deferredQuery, deferredKinds, deferredProjectId),
-		[deferredKinds, deferredProjectId, deferredQuery],
-	);
-	const pending =
-		deferredQuery !== query ||
-		deferredKinds !== selectedKinds ||
-		deferredProjectId !== projectId ||
-		response?.query !== deferredQuery;
+	const requestUrl = searchUrl(deferredQuery, selectedKinds, projectId);
+	const currentUrl = searchUrl(query, selectedKinds, projectId);
+	const currentOutcome = outcome?.url === currentUrl ? outcome : null;
+	const response =
+		currentOutcome?.kind === "ready" ? currentOutcome.data : null;
+	const error =
+		currentOutcome?.kind === "error" ? currentOutcome.message : null;
+	const pending = currentOutcome === null;
 	const results = response?.results ?? [];
 	const boundedActiveIndex =
 		results.length === 0 ? 0 : Math.min(activeIndex, results.length - 1);
@@ -174,7 +379,6 @@ export function CommonspaceSearchDialog({
 
 	useEffect(() => {
 		const controller = new AbortController();
-		setError(null);
 		void fetcher(requestUrl, {
 			headers: { accept: "application/json" },
 			signal: controller.signal,
@@ -184,10 +388,17 @@ export function CommonspaceSearchDialog({
 				const data: CommonspaceSearchResponse = await result.json();
 				return data;
 			})
-			.then(setResponse)
+			.then((data) => {
+				if (!controller.signal.aborted)
+					setOutcome({ kind: "ready", url: requestUrl, data });
+			})
 			.catch((cause: unknown) => {
 				if (!controller.signal.aborted)
-					setError(cause instanceof Error ? cause.message : String(cause));
+					setOutcome({
+						kind: "error",
+						url: requestUrl,
+						message: cause instanceof Error ? cause.message : String(cause),
+					});
 			});
 		return () => {
 			controller.abort();
@@ -196,11 +407,23 @@ export function CommonspaceSearchDialog({
 
 	const moveSelection = (offset: number) => {
 		if (results.length === 0) return;
-		setActiveIndex(
-			(current) =>
-				(Math.min(current, results.length - 1) + offset + results.length) %
-				results.length,
-		);
+		const nextIndex =
+			(boundedActiveIndex + offset + results.length) % results.length;
+		setActiveIndex(nextIndex);
+		const viewport = resultsViewport.current;
+		const option =
+			viewport?.querySelectorAll<HTMLElement>('[role="option"]')[nextIndex];
+		if (viewport === null || option === undefined) return;
+		const frame = viewport.getBoundingClientRect();
+		const row = option.getBoundingClientRect();
+		if (row.top < frame.top) viewport.scrollTop += row.top - frame.top;
+		else if (row.bottom > frame.bottom)
+			viewport.scrollTop += row.bottom - frame.bottom;
+	};
+	const clearFilters = () => {
+		setSelectedKinds([]);
+		setProjectId("");
+		setActiveIndex(0);
 	};
 
 	return (
@@ -213,7 +436,7 @@ export function CommonspaceSearchDialog({
 			<DialogContent
 				showCloseButton
 				aria-describedby={undefined}
-				className="top-[10vh] max-h-[80vh] -translate-y-0 sm:max-w-[720px]"
+				className="top-[10dvh] h-[min(600px,80dvh)] max-h-[80dvh] grid-rows-[auto_auto_auto_minmax(0,1fr)_auto] -translate-y-0 overflow-hidden sm:max-w-[720px]"
 			>
 				<DialogHeader className="sr-only">
 					<DialogTitle>Search Commonspace</DialogTitle>
@@ -254,53 +477,20 @@ export function CommonspaceSearchDialog({
 						ESC
 					</kbd>
 				</div>
-				<section className="grid gap-2 px-3.5 py-2" aria-label="Search filters">
-					<select
-						className="h-9 w-full max-w-40 rounded-sm border bg-background px-2 text-xs text-muted-foreground"
-						aria-label="Filter search by project"
-						value={projectId}
-						onChange={(event) => {
-							setProjectId(event.target.value);
-							setActiveIndex(0);
-						}}
-					>
-						<option value="">All projects</option>
-						{projects.map((project) => (
-							<option key={project.id} value={project.id}>
-								{project.name}
-							</option>
-						))}
-					</select>
-					<ToggleGroup
-						multiple
-						value={selectedKinds}
-						onValueChange={(values) => {
-							const allowedKinds: ReadonlySet<string> = new Set(
-								COMMONSPACE_SEARCH_KINDS,
-							);
-							setSelectedKinds(
-								values.filter((value): value is CommonspaceSearchKind =>
-									allowedKinds.has(value),
-								),
-							);
-							setActiveIndex(0);
-						}}
-						aria-label="Search result types"
-						className="min-w-0 w-full flex-nowrap gap-1 overflow-x-auto pb-1"
-					>
-						{COMMONSPACE_SEARCH_KINDS.map((kind) => (
-							<ToggleGroupItem
-								key={kind}
-								value={kind}
-								variant="outline"
-								size="sm"
-								className="data-[state=on]:border-primary data-[state=on]:bg-primary/10 data-[state=on]:text-foreground"
-							>
-								{kindLabel(kind)}
-							</ToggleGroupItem>
-						))}
-					</ToggleGroup>
-				</section>
+				<SearchFilters
+					projects={projects}
+					selectedKinds={selectedKinds}
+					projectId={projectId}
+					onKindsChange={(kinds) => {
+						setSelectedKinds(kinds);
+						setActiveIndex(0);
+					}}
+					onProjectChange={(id) => {
+						setProjectId(id);
+						setActiveIndex(0);
+					}}
+					onClear={clearFilters}
+				/>
 				<div className="flex items-center justify-between px-4 pt-1 pb-1.5 text-xs font-semibold tracking-[0.05em] text-muted-foreground uppercase">
 					<span>{query.trim() === "" ? "Browse" : "Results"}</span>
 					<span>
@@ -311,19 +501,49 @@ export function CommonspaceSearchDialog({
 								: results.length}
 					</span>
 				</div>
-				<div className="min-h-24 overflow-y-auto px-2 pb-2" aria-busy={pending}>
-					{error !== null && (
-						<div
-							className="grid min-h-24 place-items-center text-sm text-destructive"
-							role="alert"
-						>
-							{error}
+				<div
+					ref={resultsViewport}
+					className="min-h-0 overflow-y-auto overscroll-contain px-2 pb-2"
+					aria-busy={pending}
+				>
+					{pending && (
+						<div className="flex min-h-36 items-center justify-center gap-2 text-sm text-muted-foreground">
+							<LoaderCircleIcon
+								className="size-4 motion-safe:animate-spin"
+								aria-hidden="true"
+							/>
+							Searching workspace…
 						</div>
 					)}
+					{error !== null && (
+						<Empty role="alert" className="min-h-36">
+							<EmptyHeader>
+								<EmptyTitle>Search unavailable</EmptyTitle>
+								<EmptyDescription>{error}</EmptyDescription>
+							</EmptyHeader>
+						</Empty>
+					)}
 					{error === null && !pending && results.length === 0 && (
-						<div className="grid min-h-24 place-items-center text-sm text-muted-foreground">
-							No results for “{query.trim()}”.
-						</div>
+						<Empty className="min-h-36">
+							<EmptyHeader>
+								<EmptyMedia variant="icon">
+									<SearchIcon aria-hidden="true" />
+								</EmptyMedia>
+								<EmptyTitle>
+									{query.trim() !== ""
+										? `No results for “${query.trim()}”.`
+										: "No matching results."}
+								</EmptyTitle>
+								<EmptyDescription>
+									Try another search or change the filters.
+								</EmptyDescription>
+							</EmptyHeader>
+							{(selectedKinds.length > 0 || projectId !== "") && (
+								<Button variant="outline" size="sm" onClick={clearFilters}>
+									Clear filters
+								</Button>
+							)}
+						</Empty>
 					)}
 					{results.length > 0 && (
 						<div

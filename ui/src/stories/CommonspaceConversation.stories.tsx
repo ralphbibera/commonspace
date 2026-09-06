@@ -288,7 +288,7 @@ export const FocusedReply: Story = {
 	},
 };
 
-export const ChannelSettings: Story = {
+export const ChannelSettings: StoryObj<typeof ChannelSettingsPreview> = {
 	render: () => <ChannelSettingsPreview />,
 	play: async ({ canvasElement }) => {
 		const canvas = within(canvasElement);

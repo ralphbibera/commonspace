@@ -17,6 +17,7 @@ Changing toolbar appearance restarts the current story so its application settin
 | Sidebar sorting | Design System → SidebarSortControl | Compact header trigger, current mode, open menu, and mode selection |
 | Follow-up queue and delivery | Design System → RunDelivery | Queued and steered messages, stop-and-send status, long or attachment-only messages, narrow Thread panes, and disabled delivery actions |
 | Complete desktop workspace | Screens → Workspace | Inbox, collections, conversations, Project panes, settings, search, permissions, and runtime activity |
+| Workspace search | Workspace → CommonspaceSearch | Dense results, wheel and keyboard scrolling, type/project filters, removable selections, reset, pending filters, and normalized queries |
 
 The component-specific `Pages`, `Workspace`, and `Design System` stories remain useful for their existing focused states. `Foundations → UI Primitives` remains a quick overview.
 
@@ -38,3 +39,5 @@ pnpm --filter @commonspace/ui test-storybook --run src/stories/CommonspaceRouter
 The sidebar stories also check sorting across pinned and unpinned groups, saved custom order, and keyboard reordering. Conversation stories check that Queue, Steer, and Stop and send submit the intended delivery value. Inspect the assembled runtime screen and narrow Thread queue in both appearances after changing these controls.
 
 For overlays, check actual wheel scrolling and keyboard focus as well as viewport bounds. A long confirmation keeps its actions visible while its explanation scrolls. Follow the [visual verification loop](visual-verification.md); passing interactions and saved screenshots alone do not establish visual acceptance.
+
+Search has dedicated browser regressions in `tests/storybook-interactions.spec.ts`: wheel scrolling leaves the controls fixed, and keyboard selection stays visible inside the results area. Its filter stories exercise the real query serialization against a synthetic search response, including combined types, Project scope, reset without losing the query, and prevention of stale-result selection while a filter request is pending.
