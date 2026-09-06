@@ -1,5 +1,7 @@
 import { defineConfig } from "@playwright/test";
 
+const USE_SYSTEM_CHROME = process.env.COMMONSPACE_USE_SYSTEM_CHROME === "1";
+
 export default defineConfig({
 	testDir: "./tests",
 	testMatch: ["storybook-visual.spec.ts", "storybook-interactions.spec.ts"],
@@ -29,7 +31,9 @@ export default defineConfig({
 	},
 	use: {
 		baseURL: "http://127.0.0.1:6006",
+		channel: USE_SYSTEM_CHROME ? "chrome" : undefined,
 		colorScheme: "light",
+		trace: "retain-on-failure",
 		deviceScaleFactor: 1,
 		locale: "en-US",
 		viewport: { width: 1180, height: 820 },
