@@ -1,4 +1,5 @@
 import {
+	AGENT_ADAPTERS,
 	type AgentAdapterKind,
 	type CommonspaceAgentProfile,
 	type CommonspaceBootstrap,
@@ -356,8 +357,7 @@ function PendingFileStrip({
 }
 
 function runtimeLabel(adapter: AgentAdapterKind | undefined): string {
-	if (adapter === "codex") return "Codex";
-	return "Hermes";
+	return adapter === undefined ? "Agent" : AGENT_ADAPTERS[adapter].label;
 }
 
 function conversationTitle(

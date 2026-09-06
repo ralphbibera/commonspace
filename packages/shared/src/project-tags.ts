@@ -1,3 +1,5 @@
+import { AGENT_ADAPTERS, type AgentAdapterKind } from "./agent-adapters.js";
+
 function referenceTagName(value: string, kind: "agent" | "project"): string {
 	const tag = value
 		.normalize("NFKC")
@@ -28,7 +30,7 @@ export function agentMentionName(agent: AgentMentionIdentity): string {
 
 export function uniqueAgentDisplayName(
 	requestedName: string,
-	adapter: "hermes" | "codex",
+	adapter: AgentAdapterKind,
 	agents: readonly AgentMentionIdentity[],
 ): string {
 	const usedHandles = new Set(agents.map(agentMentionName));
@@ -38,7 +40,7 @@ export function uniqueAgentDisplayName(
 	};
 	if (isAvailable(requestedName)) return requestedName;
 
-	const runtime = adapter === "hermes" ? "Hermes" : "Codex";
+	const runtime = AGENT_ADAPTERS[adapter].label;
 	for (let index = 1; ; index += 1) {
 		const suffix = ` (${runtime}${index === 1 ? "" : ` ${index}`})`;
 		const candidate = `${requestedName.slice(0, 80 - suffix.length).trimEnd()}${suffix}`;

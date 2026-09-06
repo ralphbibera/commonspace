@@ -20,6 +20,7 @@ Start with the guide that matches what you want to do. Installation and contribu
 | Run the application, Storybook, and development checks | [Development](development.md) |
 | Find isolated UI states for design and interaction review | [Storybook coverage](storybook-coverage.md) |
 | Understand which package owns a behavior | [Architecture](architecture.md) |
+| Add a supported agent harness | [Agent adapter guide](agent-adapters.md) and [proposal template](templates/agent-adapter.md) |
 | Build or change a screen | [Design](design.md) and [UI direction](ui-direction.md) |
 | Work with shared UI components and tokens | [Design system](design-system.md) |
 | Verify a visual change | [Visual verification](visual-verification.md) |

@@ -2,13 +2,14 @@ import type {
 	AgentAdapterKind,
 	CommonspaceAgentProfile,
 } from "@commonspace/shared";
+import { AGENT_ADAPTERS } from "@commonspace/shared";
 import type { CommonspaceHostService } from "../server/src/service.ts";
 import { mustExist } from "./test-helpers.ts";
 
 export async function discoverTestHarnesses(
 	adapter: AgentAdapterKind,
 ): Promise<CommonspaceAgentProfile[]> {
-	const displayName = adapter === "codex" ? "Codex" : "Hermes";
+	const displayName = AGENT_ADAPTERS[adapter].label;
 	return [
 		{
 			id: adapter,
@@ -29,7 +30,11 @@ export async function addTestHarness(
 	const discovered = (await service.discoverAgents(adapter)).discoveredAgents;
 	const harness = discovered.find((candidate) => candidate.adapter === adapter);
 	if (harness === undefined) throw new Error(`missing ${adapter} test harness`);
-	await service.mutate({ action: "add-discovered-agent", agentId: harness.id });
+	await service.mutate({
+		action: "add-discovered-agent",
+		agentId: harness.id,
+		adapter,
+	});
 	if (displayName !== undefined && displayName !== harness.displayName) {
 		await service.mutate({
 			action: "update-agent-profile",

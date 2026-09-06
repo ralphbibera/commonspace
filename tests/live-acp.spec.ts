@@ -34,6 +34,44 @@ afterEach(async () => {
 });
 
 describe.skipIf(!live).sequential("installed Commonspace ACP agents", () => {
+	it("starts and resumes Claude Code sessions after service restart", async () => {
+		const root = await mkdtemp(join(tmpdir(), "commonspace-claude-code-"));
+		roots.push(root);
+		const config = {
+			root,
+			claudeCodePath: process.env.COMMONSPACE_CLAUDE_CODE_PATH ?? "claude",
+			runBudgetSeconds: 120,
+		};
+		const service = new CommonspaceHostService({}, config);
+		let restarted: CommonspaceHostService | undefined;
+		try {
+			await service.initialize();
+			const agent = await addTestHarness(service, "claude-code");
+			await service.send({
+				conversation: { kind: "dm", id: agent.id },
+				text: "Remember this verification token: CLAUDE_ORANGE_KITE. Reply with exactly CLAUDE_ACP_OK. Do not use tools.",
+			});
+			await waitForAgentText(service, agent.id, "CLAUDE_ACP_OK");
+			const sessionId =
+				service.snapshot().agentSessions[agent.id]?.["Bot Chat"];
+			expect(sessionId).toEqual(expect.any(String));
+			await service.close();
+			restarted = new CommonspaceHostService({}, config);
+			await restarted.initialize();
+			await restarted.send({
+				conversation: { kind: "dm", id: agent.id },
+				text: "Reply with exactly the verification token I asked you to remember. Do not use tools.",
+			});
+			await waitForAgentText(restarted, agent.id, "CLAUDE_ORANGE_KITE");
+			expect(restarted.snapshot().agentSessions[agent.id]?.["Bot Chat"]).toBe(
+				sessionId,
+			);
+		} finally {
+			await service.close();
+			await restarted?.close();
+		}
+	}, 240_000);
+
 	it("starts and resumes Codex sessions", async () => {
 		const root = await mkdtemp(join(tmpdir(), "commonspace-codex-"));
 		roots.push(root);

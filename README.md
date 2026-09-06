@@ -73,7 +73,7 @@ Open **http://127.0.0.1:5173** in your desktop browser. The local API runs on po
 
 You can explore the empty workspace and work on the application without agent credentials. To send your first agent message:
 
-1. Install and authenticate a supported Hermes or Codex runtime separately.
+1. Install and configure a supported Codex, Claude Code, Gemini CLI, OpenCode, or Hermes runtime separately. Check the [supported versions](docs/support-matrix.md#agent-runtimes) before adding it.
 2. Choose **Add Agent** in Commonspace and select the installed agent.
 3. Select that agent in the sidebar to open its **Direct Message**, then send a message.
 4. For code work, create a **Project** with the relevant local folder or folders. Type `@@` in a message and select the Project to reference it.
@@ -86,11 +86,11 @@ See [Development](docs/development.md) for local commands, [Operations](docs/ope
 
 ### Which agents are supported?
 
-Commonspace currently supports local Hermes and Codex installations through the Agent Client Protocol (ACP). You choose which installed agents to add. An arbitrary command-line program cannot be added without a supported integration.
+Commonspace supports local Codex, Claude Code, Gemini CLI, OpenCode, and Hermes installations through the Agent Client Protocol (ACP). Gemini CLI currently requires `>=0.39.1` and `<0.44.0`; `0.43.0` is the tested baseline. You choose which installed agents to add. An arbitrary command-line program cannot be added without a supported integration. Contributors can follow the [agent adapter guide](docs/agent-adapters.md) and proposal template to add another harness.
 
 ### Do I need an API key or a paid account?
 
-Not to open the workspace, develop the app, or run the normal tests. Running an agent requires its own working authentication and model access. Channel inference may also need credentials for the provider you configure. Model-provider usage can have separate costs; Commonspace does not provide model credits.
+Not to open the workspace, develop the app, or run the normal tests. `pnpm verify:adapters` tests real Claude Code, Gemini CLI, and OpenCode runtimes against local model fixtures without a login or provider key. Running an agent requires its own working authentication and model access. Channel inference may also need credentials for the provider you configure. Model-provider usage can have separate costs; Commonspace does not provide model credits.
 
 ### How does Commonspace choose who responds?
 

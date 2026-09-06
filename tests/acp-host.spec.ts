@@ -819,6 +819,58 @@ describe("Commonspace ACP host path", () => {
 		}
 	});
 
+	it.each(["initialize", "session/new"])(
+		"stops during ACP %s without dispatching a prompt and permits the next turn",
+		async (method) => {
+			const root = await mkdtemp(join(tmpdir(), "commonspace-acp-stop-setup-"));
+			roots.push(root);
+			const logPath = join(root, "frames.ndjson");
+			vi.stubEnv("FAKE_ACP_LOG", logPath);
+			vi.stubEnv("FAKE_ACP_DELAY_METHOD", method);
+			vi.stubEnv("FAKE_ACP_SETUP_DELAY_MS", "400");
+			const service = new CommonspaceHostService({}, acpConfig(root), {
+				discoverAgents: discoverTestHarnesses,
+			});
+			try {
+				await service.initialize();
+				await addTestHarness(service, "codex", "Review Bot");
+				const sent = await service.send({
+					conversation: { kind: "dm", id: "codex" },
+					text: "Stop before the native prompt.",
+				});
+				await vi.waitFor(async () =>
+					expect(await readFile(logPath, "utf8")).toContain(
+						`"method":"${method}"`,
+					),
+				);
+				vi.stubEnv("FAKE_ACP_SETUP_DELAY_MS", "0");
+				await service.stopAgentRuns({ messageId: sent.accepted.id });
+				await service.whenIdle();
+				expect(await readFile(logPath, "utf8")).not.toContain(
+					'"method":"session/prompt"',
+				);
+				expect(service.snapshot().messages["dm:codex"]).toEqual([
+					expect.objectContaining({
+						id: sent.accepted.id,
+						replyStatus: "error",
+						replyError: "Stopped by user.",
+					}),
+				]);
+				await service.send({
+					conversation: { kind: "dm", id: "codex" },
+					text: "Next native turn.",
+				});
+				await service.whenIdle();
+				expect(service.snapshot().messages["dm:codex"]?.at(-1)).toMatchObject({
+					authorType: "agent",
+					text: "Echo: Next native turn.",
+				});
+			} finally {
+				await service.close();
+			}
+		},
+	);
+
 	it("cancels the active native ACP turn when a DM crosses a hard reset boundary", async () => {
 		const root = await mkdtemp(join(tmpdir(), "commonspace-acp-reset-cancel-"));
 		roots.push(root);

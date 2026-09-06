@@ -20,7 +20,7 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-Open `http://127.0.0.1:5173` for the app. The API runs on port `3100`. Install and authenticate Hermes or Codex only when you need to test a real agent connection.
+Open `http://127.0.0.1:5173` for the app. The API runs on port `3100`. Install and configure a [supported native runtime](docs/support-matrix.md#agent-runtimes) only when you need to test against its configured model provider. The normal suite includes real Claude Code, Gemini CLI, and OpenCode integration checks with local model fixtures and no account.
 
 The [contributor guide](docs/contributor-guide.md) explains the repository layout and common development tasks. Check the [support matrix](docs/support-matrix.md) for platform coverage.
 

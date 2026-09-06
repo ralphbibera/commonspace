@@ -2,6 +2,7 @@ import type {
 	CommonspaceAgentProfile,
 	CommonspaceBootstrap,
 } from "@commonspace/shared";
+import { AGENT_ADAPTERS } from "@commonspace/shared";
 import { CheckIcon, ChevronDownIcon, SearchIcon, XIcon } from "lucide-react";
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -17,7 +18,7 @@ interface SettingsPaneProps {
 }
 
 function runtimeLabel(agent: CommonspaceAgentProfile): string {
-	return agent.adapter === "codex" ? "Codex" : "Hermes";
+	return AGENT_ADAPTERS[agent.adapter].label;
 }
 
 function AgentMark({

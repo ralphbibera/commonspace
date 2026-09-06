@@ -1,4 +1,3 @@
-import { execFile } from "node:child_process";
 import {
 	chmod,
 	mkdir,
@@ -9,11 +8,10 @@ import {
 	stat,
 	writeFile,
 } from "node:fs/promises";
-import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { basename, isAbsolute, join, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { isDeepStrictEqual, promisify } from "node:util";
+import { isDeepStrictEqual } from "node:util";
 import type { McpServer as AcpMcpServer } from "@agentclientprotocol/sdk";
 import type {
 	AddPinRequest,
@@ -68,10 +66,13 @@ import type {
 	UpdateWorkspaceSettingsRequest,
 } from "@commonspace/shared";
 import {
+	AGENT_ADAPTER_KINDS,
+	AGENT_ADAPTERS,
 	COMMONSPACE_EXPORT_VERSION,
 	COMMONSPACE_STATE_VERSION,
 	conversationKey,
 	deriveCommonspaceInboxItems,
+	isAgentAdapterKind,
 	projectTagName,
 	referencedProjectIds,
 	uniqueAgentDisplayName,
@@ -82,6 +83,11 @@ import {
 	AcpSessionLoadError,
 	AcpSessionRunError,
 } from "./acp-runtime.js";
+import {
+	type AgentAdapterConfig,
+	createAgentAdapters,
+	type NativeAgentAdapter,
+} from "./adapters/index.js";
 import {
 	buildRoutingPrompt,
 	completeWithOpenAICompatible,
@@ -109,8 +115,6 @@ import {
 import {
 	mentionedAgents,
 	mentionedChannelAgents,
-	parseHermesProfileDescription,
-	parseHermesProfileList,
 	parseTags,
 	rankChannelAgents,
 } from "./relay.js";
@@ -145,8 +149,6 @@ import {
 	projectThreadMemoryFromMessages,
 } from "./thread-context.js";
 
-const execFileAsync = promisify(execFile);
-const moduleRequire = createRequire(import.meta.url);
 const MAX_MESSAGE_CHARS = 16_000;
 const MAX_IMAGE_ATTACHMENTS = 4;
 const MAX_IMAGE_ATTACHMENT_BYTES = 8 * 1024 * 1024;
@@ -154,7 +156,6 @@ const MAX_IMAGE_ATTACHMENTS_BYTES = 16 * 1024 * 1024;
 const MAX_FILE_ATTACHMENTS = 8;
 const MAX_FILE_ATTACHMENT_BYTES = 8 * 1024 * 1024;
 const MAX_FILE_ATTACHMENTS_BYTES = 16 * 1024 * 1024;
-const MAX_HARNESS_DISCOVERY_BYTES = 1024 * 1024;
 const MAX_AGENT_RESPONSE_CHARS = 64_000;
 const MAX_MCP_CONTEXT_CHARS = 64_000;
 
@@ -215,18 +216,12 @@ function completedReplyStatus(
 	return "complete";
 }
 
-export interface CommonspaceHostConfig {
+export interface CommonspaceHostConfig extends AgentAdapterConfig {
 	root?: string;
 	defaultCwd?: string;
-	hermesPath?: string;
-	codexPath?: string;
 	hermesYolo?: boolean;
 	externalAgentYolo?: boolean;
 	runBudgetSeconds?: number;
-	hermesAcpCommand?: string;
-	hermesAcpArgs?: readonly string[];
-	codexAcpCommand?: string;
-	codexAcpArgs?: readonly string[];
 }
 
 export interface CommonspaceHostEnvironment {
@@ -762,16 +757,6 @@ function isNativeSessionId(value: JsonValue | undefined): value is string {
 	return true;
 }
 
-function acpReasoningValue(
-	adapter: AgentAdapterKind,
-	reasoning: CommonspaceState["defaults"]["reasoning"] | undefined,
-): string | undefined {
-	if (reasoning === undefined) return undefined;
-	if (adapter === "codex")
-		return reasoning === "none" || reasoning === "minimal" ? "low" : reasoning;
-	return undefined;
-}
-
 function sanitizeAgents(
 	value: JsonValue | undefined,
 ): CommonspaceState["agents"] {
@@ -781,7 +766,7 @@ function sanitizeAgents(
 		const agent = plainRecord(candidate);
 		if (agent === null) continue;
 		const adapter = agent.adapter;
-		if (adapter !== "hermes" && adapter !== "codex") continue;
+		if (!isAgentAdapterKind(adapter)) continue;
 		if (typeof agent.id !== "string") continue;
 		if (adapter === "hermes") {
 			if (
@@ -791,6 +776,12 @@ function sanitizeAgents(
 				/\s/u.test(agent.id)
 			)
 				continue;
+		} else if (
+			adapter === "claude-code" ||
+			adapter === "gemini" ||
+			adapter === "opencode"
+		) {
+			if (agent.id !== adapter || agent.nativeProfile !== undefined) continue;
 		} else if (agent.id !== "codex" && !MANAGED_AGENT_ID_PATTERN.test(agent.id))
 			continue;
 		const nativeProfile = agent.nativeProfile;
@@ -1078,11 +1069,7 @@ function sanitizeAgentTrace(
 	value: JsonValue | undefined,
 ): CommonspaceAgentTrace | undefined {
 	const trace = plainRecord(value);
-	if (
-		trace === null ||
-		(trace.adapter !== "hermes" && trace.adapter !== "codex")
-	)
-		return undefined;
+	if (trace === null || !isAgentAdapterKind(trace.adapter)) return undefined;
 	const startedAt = loadedString(trace.startedAt, 100);
 	const completedAt = loadedString(trace.completedAt, 100);
 	if (startedAt === "" || completedAt === "" || !Array.isArray(trace.entries))
@@ -2345,20 +2332,17 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 	private activeAdmissions = 0;
 	private readonly admissionIdleWaiters = new Set<() => void>();
 	private readonly acpProcesses = new Map<string, AcpAgentProcess>();
+	private readonly acpLaunchAccess = new WeakMap<AcpAgentProcess, boolean>();
+	private readonly acpProcessClosures = new Map<string, Promise<void>>();
 	private readonly activeAcpSessions = new Map<string, string>();
 	private readonly mcpCredentials = new Map<
 		string,
 		{ fingerprint: string; scope: CommonspaceMcpScope; token: string }
 	>();
-	private readonly hermesPath: string;
-	private readonly codexPath: string;
+	private readonly adapters: Record<AgentAdapterKind, NativeAgentAdapter>;
 	private readonly hermesYolo: boolean;
 	private readonly externalAgentYolo: boolean;
 	private readonly runBudgetSeconds: number | undefined;
-	private readonly hermesAcpCommand: string;
-	private readonly hermesAcpArgs: string[];
-	private readonly codexAcpCommand: string;
-	private readonly codexAcpArgs: string[];
 	private readonly managedDefaultCwd: boolean;
 	private readonly notifyDesktop: (
 		notification: CommonspaceDesktopNotification,
@@ -2385,8 +2369,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 		this.attachmentsRoot = join(this.root, "attachments");
 		this.managedDefaultCwd = config.defaultCwd === undefined;
 		this.defaultCwd = config.defaultCwd ?? join(this.root, "workspace");
-		this.hermesPath = config.hermesPath ?? "hermes";
-		this.codexPath = config.codexPath ?? "codex";
+		this.adapters = createAgentAdapters(config);
 		this.hermesYolo = unsafeModeForAdapter(config, "hermes");
 		this.externalAgentYolo = unsafeModeForAdapter(config, "codex");
 		this.runBudgetSeconds =
@@ -2394,18 +2377,6 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 				? undefined
 				: Math.min(3_600, Math.max(30, config.runBudgetSeconds));
 		this.notifyDesktop = overrides.notify ?? createDesktopNotifier();
-		this.hermesAcpCommand = config.hermesAcpCommand ?? this.hermesPath;
-		this.hermesAcpArgs = [...(config.hermesAcpArgs ?? [])];
-		const defaultCodexAcp = moduleRequire.resolve(
-			"@agentclientprotocol/codex-acp",
-		);
-		this.codexAcpCommand = config.codexAcpCommand ?? process.execPath;
-		this.codexAcpArgs =
-			config.codexAcpArgs === undefined
-				? config.codexAcpCommand === undefined
-					? [defaultCodexAcp]
-					: []
-				: [...config.codexAcpArgs];
 	}
 
 	async initialize(): Promise<void> {
@@ -2958,13 +2929,12 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 	}
 
 	async diagnostics(): Promise<CommonspaceDiagnostics> {
-		const [codex, hermes] = await Promise.all([
-			this.discoverAgentCandidates("codex"),
-			this.discoverAgentCandidates("hermes"),
-		]);
-		const installed = new Set(
-			[...codex, ...hermes].map((agent) => agent.adapter),
+		const candidates = await Promise.all(
+			AGENT_ADAPTER_KINDS.map((adapter) =>
+				this.discoverAgentCandidates(adapter),
+			),
 		);
+		const installed = new Set(candidates.flat().map((agent) => agent.adapter));
 		const successfulAgents = new Set(
 			Object.values(this.state.messages)
 				.flat()
@@ -3035,15 +3005,12 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 					"routing corrections",
 				],
 			},
-			harnesses: (["codex", "hermes"] as const).map((adapter) => ({
+			harnesses: AGENT_ADAPTER_KINDS.map((adapter) => ({
 				adapter,
 				installed: installed.has(adapter),
 				rostered: this.state.agents.some((agent) => agent.adapter === adapter),
 				runReadiness: readiness(adapter),
-				recovery:
-					adapter === "codex"
-						? "Run codex --version, then authenticate with the installed Codex CLI and retry from Commonspace."
-						: "Run hermes --version, authenticate with Hermes, verify hermes acp starts, then retry from Commonspace.",
+				recovery: AGENT_ADAPTERS[adapter].recovery,
 			})),
 		};
 	}
@@ -4153,7 +4120,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 	async discoverAgents(
 		adapter: AgentAdapterKind,
 	): Promise<CommonspaceBootstrap> {
-		if (adapter !== "hermes" && adapter !== "codex")
+		if (!isAgentAdapterKind(adapter))
 			throw new Error("unsupported agent adapter");
 		const discovered = await this.discoverAgentCandidates(adapter);
 		this.discoveredAgentCandidates = [
@@ -4316,12 +4283,9 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 			homedir(),
 			process.cwd(),
 			this.defaultCwd,
-			this.hermesPath,
-			this.codexPath,
-			this.hermesAcpCommand,
-			this.codexAcpCommand,
-			...this.hermesAcpArgs,
-			...this.codexAcpArgs,
+			...Object.values(this.adapters).flatMap(
+				(adapter) => adapter.privatePaths,
+			),
 			...this.state.projects.flatMap((project) => project.paths),
 		];
 		for (const path of hostPaths) {
@@ -4444,10 +4408,14 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 		return changed;
 	}
 
-	private interruptPendingPermissions(): boolean {
+	private interruptPendingPermissions(agentId?: string): boolean {
 		const pendingIds = new Set(
 			this.state.permissions
-				.filter((permission) => permission.status === "pending")
+				.filter(
+					(permission) =>
+						permission.status === "pending" &&
+						(agentId === undefined || permission.agentId === agentId),
+				)
 				.map((permission) => permission.id),
 		);
 		if (pendingIds.size === 0) return false;
@@ -4511,19 +4479,37 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 			if (mutation.action === "add-discovered-agent") {
 				if (typeof mutation.agentId !== "string")
 					throw new Error("discovered agent id is required");
-				let agent = this.discoveredAgentCandidates.find(
-					(candidate) => candidate.id === mutation.agentId,
-				);
-				if (agent === undefined) {
-					const [hermes, codex] = await Promise.all([
-						this.discoverAgentCandidates("hermes"),
-						this.discoverAgentCandidates("codex"),
-					]);
-					this.discoveredAgentCandidates = [...hermes, ...codex];
-					agent = this.discoveredAgentCandidates.find(
-						(candidate) => candidate.id === mutation.agentId,
-					);
+				if (
+					mutation.adapter !== undefined &&
+					!isAgentAdapterKind(mutation.adapter)
+				)
+					throw new Error("unsupported agent adapter");
+				const matches = (candidate: CommonspaceAgentProfile) =>
+					candidate.id === mutation.agentId &&
+					(mutation.adapter === undefined ||
+						candidate.adapter === mutation.adapter);
+				let candidates = this.discoveredAgentCandidates.filter(matches);
+				if (candidates.length === 0) {
+					const adapters =
+						mutation.adapter === undefined
+							? AGENT_ADAPTER_KINDS
+							: [mutation.adapter];
+					const discovered = (
+						await Promise.all(
+							adapters.map((adapter) => this.discoverAgentCandidates(adapter)),
+						)
+					).flat();
+					this.discoveredAgentCandidates = [
+						...this.discoveredAgentCandidates.filter(
+							(candidate) => !adapters.includes(candidate.adapter),
+						),
+						...discovered,
+					];
+					candidates = discovered.filter(matches);
 				}
+				if (candidates.length > 1)
+					throw new Error("ambiguous discovered agent; select a harness");
+				const agent = candidates[0];
 				if (agent === undefined) throw new Error("unknown discovered agent");
 				this.state = addDiscoveredAgent(this.state, {
 					...agent,
@@ -4540,6 +4526,48 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 				throw error;
 			}
 			this.revokeInvalidMcpCredentials();
+			if (mutation.action === "update-agent-profile") {
+				const previous = previousState.agents.find(
+					(agent) => agent.id === mutation.agentId,
+				);
+				const updated = this.state.agents.find(
+					(agent) => agent.id === mutation.agentId,
+				);
+				if (previous === undefined || updated === undefined)
+					throw new Error("Updated agent identity is missing");
+				if (this.agentFullAccess(previous) !== this.agentFullAccess(updated)) {
+					const reason = "Interrupted because agent permissions changed.";
+					let changed = this.interruptPendingPermissions(updated.id);
+					const runs = [...this.activeAgentRuns.values()].filter(
+						(run) => run.agentId === updated.id,
+					);
+					for (const run of runs) {
+						run.abortController.abort(new Error(reason));
+						const source = Object.values(this.state.messages)
+							.flat()
+							.find((message) => message.id === run.sourceMessageId);
+						if (source?.conversation.kind === "dm")
+							changed =
+								this.updateMessageReplyStatus(
+									source.conversation,
+									source.id,
+									"cancelled",
+									reason,
+								) || changed;
+					}
+					const processes = [...this.acpProcesses.entries()].filter(([key]) =>
+						key.startsWith(`${updated.id}\u0000`),
+					);
+					for (const [key] of processes) {
+						this.acpProcesses.delete(key);
+						this.activeAcpSessions.delete(key);
+					}
+					await Promise.all(
+						processes.map(([key, client]) => this.closeAcpProcess(key, client)),
+					);
+					if (changed) await this.persist();
+				}
+			}
 			if (mutation.action === "remove-agent") {
 				const processEntries = [...this.acpProcesses.entries()].filter(
 					([key]) => key.startsWith(`${mutation.agentId}\u0000`),
@@ -4550,7 +4578,9 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 						this.activeAcpSessions.delete(key);
 				}
 				await Promise.all(
-					processEntries.map(([, processClient]) => processClient.close()),
+					processEntries.map(([key, processClient]) =>
+						this.closeAcpProcess(key, processClient),
+					),
 				);
 			} else if (mutation.action === "reset-dm" && resetScope !== undefined) {
 				const processClient = this.acpProcesses.get(resetScope);
@@ -4560,7 +4590,8 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 					await processClient?.cancelSession(activeResetSession);
 				for (const run of resetRuns)
 					run.abortController.abort(new Error("Interrupted by /new."));
-				await processClient?.close();
+				if (processClient !== undefined)
+					await this.closeAcpProcess(resetScope, processClient);
 			} else if (mutation.action === "remove-channel") {
 				const processEntries = [...this.acpProcesses.entries()].filter(
 					([key]) => {
@@ -4582,7 +4613,9 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 					}),
 				);
 				await Promise.all(
-					processEntries.map(([, processClient]) => processClient.close()),
+					processEntries.map(([key, processClient]) =>
+						this.closeAcpProcess(key, processClient),
+					),
 				);
 			}
 			this.broadcastRevision();
@@ -6954,68 +6987,14 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 				).values(),
 			];
 		}
-		if (adapter === "hermes") {
-			try {
-				const { stdout } = await execFileAsync(
-					this.hermesPath,
-					["profile", "list"],
-					{
-						maxBuffer: MAX_HARNESS_DISCOVERY_BYTES,
-						timeout: 30_000,
-						encoding: "utf8",
-					},
-				);
-				const profiles = parseHermesProfileList(stdout);
-				return Promise.all(
-					profiles.map(async (profile) => {
-						try {
-							const result = await execFileAsync(
-								this.hermesPath,
-								["profile", "describe", profile.id],
-								{
-									maxBuffer: MAX_HARNESS_DISCOVERY_BYTES,
-									timeout: 30_000,
-									encoding: "utf8",
-								},
-							);
-							const description = parseHermesProfileDescription(result.stdout);
-							return description === undefined
-								? profile
-								: { ...profile, description };
-						} catch {
-							return profile;
-						}
-					}),
-				);
-			} catch (error) {
-				this.environment.logger?.warn(
-					`Commonspace could not discover Hermes profiles: ${error instanceof Error ? error.message : String(error)}`,
-				);
-				return [];
-			}
-		}
 		try {
-			await execFileAsync(this.codexPath, ["--version"], {
-				maxBuffer: MAX_HARNESS_DISCOVERY_BYTES,
-				timeout: 30_000,
-				encoding: "utf8",
-			});
+			return await this.adapters[adapter].discover();
 		} catch (error) {
 			this.environment.logger?.warn(
-				`Commonspace could not discover ${adapter}: ${error instanceof Error ? error.message : String(error)}`,
+				`Commonspace could not discover ${AGENT_ADAPTERS[adapter].label}: ${error instanceof Error ? error.message : String(error)}`,
 			);
 			return [];
 		}
-		return [
-			{
-				id: "codex",
-				displayName: "Codex",
-				adapter: "codex",
-				model: null,
-				status: "stopped",
-				description: "Installed Codex harness.",
-			},
-		];
 	}
 
 	private configuredAgents(
@@ -7234,77 +7213,116 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 		this.broadcastLiveActivities();
 	}
 
+	private agentFullAccess(
+		agent: Pick<CommonspaceAgentProfile, "adapter" | "fullAccess">,
+	): boolean {
+		return (
+			agent.fullAccess === true ||
+			(agent.adapter === "hermes" ? this.hermesYolo : this.externalAgentYolo)
+		);
+	}
+
+	private closeAcpProcess(
+		scopeKey: string,
+		client: AcpAgentProcess,
+	): Promise<void> {
+		if (this.acpProcesses.get(scopeKey) === client)
+			this.acpProcesses.delete(scopeKey);
+		const closing = Promise.all([
+			this.acpProcessClosures.get(scopeKey),
+			client.close(),
+		]).then(() => undefined);
+		this.acpProcessClosures.set(scopeKey, closing);
+		const clear = () => {
+			if (this.acpProcessClosures.get(scopeKey) === closing)
+				this.acpProcessClosures.delete(scopeKey);
+		};
+		void closing.then(clear, clear);
+		return closing;
+	}
+
 	private async runAcpAgent(input: AgentRunInput): Promise<AgentRunResult> {
 		if (input.signal.aborted) throw input.signal.reason;
-		const mcpServers = this.mcpServersFor(input);
-		const reasoning = acpReasoningValue(input.agent.adapter, input.reasoning);
-		const configOptions: Record<string, string> = {};
-		if (input.model !== undefined && input.agent.adapter !== "hermes")
-			configOptions.model = input.model;
-		if (reasoning !== undefined) configOptions.reasoning_effort = reasoning;
 		const activeScopeKey = `${input.agent.id}\u0000${input.sessionName}`;
+		await this.acpProcessClosures.get(activeScopeKey);
+		input.signal.throwIfAborted();
+		const mcpServers = this.mcpServersFor(input);
+		const adapter = this.adapters[input.agent.adapter];
+		const currentAgent = this.state.agents.find(
+			(agent) =>
+				agent.id === input.agent.id && agent.adapter === input.agent.adapter,
+		);
+		if (currentAgent === undefined)
+			throw new Error("Agent identity changed before execution.");
+		const fullAccess = this.agentFullAccess(currentAgent);
+		const settings = adapter.sessionSettings({
+			fullAccess,
+			model: input.model,
+			reasoning: input.reasoning,
+		});
 		let processClient = this.acpProcesses.get(activeScopeKey);
+		if (
+			processClient !== undefined &&
+			this.acpLaunchAccess.get(processClient) !== fullAccess
+		) {
+			this.acpProcesses.delete(activeScopeKey);
+			await this.closeAcpProcess(activeScopeKey, processClient);
+			processClient = undefined;
+		}
 		if (processClient === undefined) {
-			const hermes = input.agent.adapter === "hermes";
-			const fullAccess =
-				input.agent.fullAccess ||
-				(hermes ? this.hermesYolo : this.externalAgentYolo);
+			const launch = await adapter.launch(
+				input.agent,
+				fullAccess,
+				input.signal,
+			);
+			if (input.signal.aborted) throw input.signal.reason;
+			const latestAgent = this.state.agents.find(
+				(agent) =>
+					agent.id === input.agent.id && agent.adapter === input.agent.adapter,
+			);
+			if (latestAgent !== currentAgent)
+				throw new Error("Agent settings changed before execution.");
 			processClient = new AcpAgentProcess({
-				command: hermes ? this.hermesAcpCommand : this.codexAcpCommand,
-				args: hermes
-					? [
-							...this.hermesAcpArgs,
-							...(input.agent.id === "hermes" ? [] : ["-p", input.agent.id]),
-							"acp",
-							...(fullAccess ? ["--accept-hooks"] : []),
-						]
-					: this.codexAcpArgs,
+				...launch,
 				cwd: input.cwd,
-				env: hermes
-					? { ...process.env, NO_BROWSER: "1" }
-					: {
-							...process.env,
-							CODEX_PATH: this.codexPath,
-							INITIAL_AGENT_MODE: fullAccess ? "agent-full-access" : "agent",
-							NO_BROWSER: "1",
-						},
 				requestTimeoutMs: ((this.runBudgetSeconds ?? 3_600) + 30) * 1000,
 				maxResponseChars: MAX_AGENT_RESPONSE_CHARS,
 				clientName: `commonspace-${input.agent.id}`,
 			});
 			this.acpProcesses.set(activeScopeKey, processClient);
+			this.acpLaunchAccess.set(processClient, fullAccess);
 		}
-		const fullAccess =
-			input.agent.fullAccess ||
-			(input.agent.adapter === "hermes"
-				? this.hermesYolo
-				: this.externalAgentYolo);
 		let activeSessionId: string | undefined;
+		const abortSetup = () => {
+			if (activeSessionId !== undefined) return;
+			if (this.acpProcesses.get(activeScopeKey) === processClient)
+				this.acpProcesses.delete(activeScopeKey);
+			void this.closeAcpProcess(activeScopeKey, processClient).catch((error) =>
+				this.environment.logger?.warn(error),
+			);
+		};
+		input.signal.addEventListener("abort", abortSetup, { once: true });
 		try {
+			if (input.signal.aborted) {
+				abortSetup();
+				throw input.signal.reason;
+			}
 			const acpInput: AcpRunInput = {
 				cwd: input.cwd,
 				additionalCwds: input.additionalCwds,
 				message: input.message,
 				mcpServers,
-				modeId:
-					input.agent.adapter === "hermes"
-						? fullAccess
-							? "dont_ask"
-							: "accept_edits"
-						: fullAccess
-							? "agent-full-access"
-							: "agent",
-				configOptions,
+				signal: input.signal,
+				...settings,
 				onSessionReady: (sessionId) => {
+					input.signal.throwIfAborted();
 					activeSessionId = sessionId;
 					this.activeAcpSessions.set(activeScopeKey, sessionId);
-					if (input.signal.aborted) void processClient.cancelSession(sessionId);
+					input.signal.removeEventListener("abort", abortSetup);
 				},
 			};
 			if (input.images !== undefined) acpInput.images = input.images;
 			if (input.files !== undefined) acpInput.files = input.files;
-			if (input.agent.adapter === "hermes" && input.model !== undefined)
-				acpInput.modelId = input.model;
 			if (input.onTraceUpdate !== undefined)
 				acpInput.onTraceUpdate = input.onTraceUpdate;
 			if (input.onPermissionRequest !== undefined)
@@ -7324,6 +7342,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 				runResult.trace = { adapter: input.agent.adapter, ...result.trace };
 			return runResult;
 		} finally {
+			input.signal.removeEventListener("abort", abortSetup);
 			if (
 				activeSessionId !== undefined &&
 				this.activeAcpSessions.get(activeScopeKey) === activeSessionId

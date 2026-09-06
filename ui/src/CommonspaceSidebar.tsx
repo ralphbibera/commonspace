@@ -1,4 +1,6 @@
 import {
+	AGENT_ADAPTER_KINDS,
+	AGENT_ADAPTERS,
 	type AgentAdapterKind,
 	type CommonspaceAgentProfile,
 	type CommonspaceDiagnostics,
@@ -457,8 +459,7 @@ function FormError({ message }: { message: string | null }) {
 }
 
 function runtimeLabel(adapter: AgentAdapterKind): string {
-	if (adapter === "codex") return "Codex";
-	return "Hermes";
+	return AGENT_ADAPTERS[adapter].label;
 }
 
 function agentStatusLabel(status: CommonspaceAgentProfile["status"]): string {
@@ -2980,7 +2981,7 @@ export function CommonspaceSidebar({
 							}}
 						>
 							<div className="grid gap-2">
-								{(["codex", "hermes"] as const).map((adapter) => (
+								{AGENT_ADAPTER_KINDS.map((adapter) => (
 									<button
 										key={adapter}
 										type="button"
@@ -2992,7 +2993,7 @@ export function CommonspaceSidebar({
 										}}
 									>
 										<span className="grid size-10 place-items-center rounded-sm border bg-muted font-mono font-semibold">
-											{adapter === "codex" ? "C" : "H"}
+											{AGENT_ADAPTERS[adapter].monogram}
 										</span>
 										<span>
 											<strong className="block">{runtimeLabel(adapter)}</strong>
@@ -3048,6 +3049,7 @@ export function CommonspaceSidebar({
 												void store.mutate({
 													action: "add-discovered-agent",
 													agentId: agent.id,
+													adapter: agent.adapter,
 													fullAccess: agentFullAccess,
 												});
 												setForm(null);

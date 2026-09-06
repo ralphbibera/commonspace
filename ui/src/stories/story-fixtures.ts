@@ -556,6 +556,30 @@ export const discoveryStoryBootstrap = createStoryBootstrap({
 			status: "stopped",
 			description: "Available from the local Codex installation.",
 		},
+		{
+			id: "claude-code",
+			displayName: "Claude Code",
+			adapter: "claude-code",
+			model: null,
+			status: "stopped",
+			description: "Installed Claude Code harness.",
+		},
+		{
+			id: "gemini",
+			displayName: "Gemini CLI",
+			adapter: "gemini",
+			model: null,
+			status: "stopped",
+			description: "Installed Gemini CLI harness.",
+		},
+		{
+			id: "opencode",
+			displayName: "OpenCode",
+			adapter: "opencode",
+			model: null,
+			status: "stopped",
+			description: "Installed OpenCode harness.",
+		},
 	],
 });
 

@@ -31,6 +31,18 @@ Commonspace does not currently ship a desktop app wrapper. Follow [Installation]
 
 Start with [Contributing](../CONTRIBUTING.md) for a fresh checkout and [Development](development.md) for day-to-day commands.
 
+## Agent runtimes
+
+| Runtime | Connection and current compatibility |
+| --- | --- |
+| Codex | Installed CLI through bundled `@agentclientprotocol/codex-acp`. |
+| Claude Code | Installed CLI through bundled `@agentclientprotocol/claude-agent-acp` 0.75.0; account-free fixture verifies bundled CLI 2.1.257. |
+| Gemini CLI | Native `gemini --acp`; requires stable `>=0.39.1` and `<0.44.0`. Use tested version **0.43.0**. Later tested releases regress exact session resume and are rejected during discovery and launch. |
+| OpenCode | Native `opencode acp`; account-free fixture verifies **1.18.29**. |
+| Hermes | Installed `hermes acp`, using existing native profiles. |
+
+Codex, Claude Code, Gemini CLI, and OpenCode form the initial baseline. Pi coding agent remains planned until its integration passes the same native-session and scoped MCP requirements. See the [adapter guide](agent-adapters.md) for setup, compatibility evidence, and the format for adding another runtime.
+
 ## What the checks cover
 
 | Check | Credentials needed | Coverage |
@@ -40,7 +52,8 @@ Start with [Contributing](../CONTRIBUTING.md) for a fresh checkout and [Developm
 | `pnpm verify:live` | No. | The built UI and server working together in a desktop browser. Uses managed Chromium locally or system Chrome in CI. |
 | `pnpm verify:release` | No. | An extracted archive starts, serves its API and UI, and shuts down. macOS installation checks substitute launchctl and health responses. |
 | `pnpm verify:service` | No agent credentials. | The macOS source-based service lifecycle in a temporary home, with launchctl and health responses substituted. |
-| Real Hermes and Codex checks | Yes. | Agent session start, exact session resumption, and permitted context/progress tools. |
+| `pnpm verify:adapters` | No. | Real Claude Code, Gemini CLI, and OpenCode runtimes, native restart/resume and reset, scoped MCP and progress, using local model API fixtures. |
+| Real Hermes, Codex, and Claude Code checks | Yes. | Agent session start, exact session resumption, and permitted context/progress tools. |
 | Real macOS service check | A local macOS user session. | Installation, startup, update, and rollback with the actual LaunchAgent. |
 
 Normal contribution checks do not need provider credentials or agent session stores. Keep those outside the repository. See [Releasing](releasing.md) for the required integration checks.

@@ -31,7 +31,7 @@ import type {
 	UpdateThreadContextRequest,
 	UpdateWorkspaceSettingsRequest,
 } from "@commonspace/shared";
-import { conversationKey } from "@commonspace/shared";
+import { conversationKey, isAgentAdapterKind } from "@commonspace/shared";
 import type { WorkspaceArchiveSource } from "./workspace-import.ts";
 
 export interface CommonspaceClientSnapshot {
@@ -195,7 +195,7 @@ function isLiveAgentActivity<T>(
 		"agentName" in value &&
 		typeof value.agentName === "string" &&
 		"adapter" in value &&
-		(value.adapter === "hermes" || value.adapter === "codex") &&
+		isAgentAdapterKind(value.adapter) &&
 		"conversation" in value &&
 		isConversationRef(value.conversation) &&
 		(!("threadId" in value) || typeof value.threadId === "string") &&
