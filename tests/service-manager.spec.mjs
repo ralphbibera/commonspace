@@ -6,7 +6,6 @@ import {
 	readFile,
 	readlink,
 	rm,
-	symlink,
 	writeFile,
 } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -119,7 +118,6 @@ async function fixture() {
 					"#!/usr/bin/env node\n",
 				);
 				await writeFile(join(target, "release-marker"), String(clone));
-				await writeFile(join(target, "scripts", "release-version.mjs"), "");
 			}
 			if (command === "git" && args[0] === "rev-parse") {
 				return { exitCode: 0, stdout: `commit-${String(clone)}\n`, stderr: "" };
@@ -130,105 +128,14 @@ async function fixture() {
 	return { home, appRoot, calls, logs, dependencies };
 }
 
-describe("packaged Commonspace service releases", () => {
-	it("installs a packaged release without Git or a build and preserves relocated dependency links and state", async () => {
-		const { appRoot, calls, dependencies, home } = await fixture();
-		const release = join(home, "download");
-		await mkdir(join(release, "server/dist"), { recursive: true });
-		await mkdir(join(release, "server/node_modules/example"), {
-			recursive: true,
-		});
-		await mkdir(join(release, "ui/dist"), { recursive: true });
-		await mkdir(join(release, "scripts"), { recursive: true });
-		await writeFile(join(release, "server/dist/index.js"), "packaged server");
-		await writeFile(
-			join(release, "server/node_modules/example/index.js"),
-			"dependency",
-		);
-		await symlink("example", join(release, "server/node_modules/linked"));
-		await writeFile(join(release, "ui/dist/index.html"), "packaged UI");
-		await writeFile(
-			join(release, "scripts/commonspace-service.mjs"),
-			"#!/usr/bin/env node\n",
-		);
-		await writeFile(join(release, "scripts/release-version.mjs"), "");
-		await writeFile(
-			join(release, "commonspace-release.json"),
-			JSON.stringify({
-				version: "0.0.1+build.01",
-				revision: "a".repeat(40),
-				platform: "darwin",
-				arch: process.arch,
-				distribution: "archive",
-			}),
-		);
-		await mkdir(join(home, ".commonspace"));
-		await writeFile(
-			join(home, ".commonspace/state.json"),
-			"existing workspace",
-		);
-		await installOrUpdate({ appRoot, release }, dependencies);
-		const layout = serviceLayout({ appRoot, home, uid: dependencies.uid });
-		expect(
-			JSON.parse(
-				await readFile(
-					join(layout.current, "commonspace-release.json"),
-					"utf8",
-				),
-			).version,
-		).toBe("0.0.1+build.01");
-		await rm(release, { recursive: true });
-		expect(
-			await readFile(
-				join(layout.current, "server/node_modules/linked/index.js"),
-				"utf8",
-			),
-		).toBe("dependency");
-		expect(await readFile(join(home, ".commonspace/state.json"), "utf8")).toBe(
-			"existing workspace",
-		);
-		expect(
-			calls.some(({ command }) =>
-				["git", "corepack", "pnpm"].includes(command),
-			),
-		).toBe(false);
+describe("installed Commonspace service manager", () => {
+	it("rejects removed packaged-release input", async () => {
+		const { appRoot, dependencies } = await fixture();
 		await expect(
-			installOrUpdate({ mode: "update", appRoot }, dependencies),
-		).rejects.toThrow("--release");
+			installOrUpdate({ appRoot, release: "/tmp/old-release" }, dependencies),
+		).rejects.toThrow("no longer accepts packaged releases");
 	});
 
-	it.each([
-		{ version: "0.0.1", platform: "linux", error: "platform" },
-		{ version: "0.0.1-rc.01", platform: "darwin", error: "version" },
-		{ version: "0.0.1+build..1", platform: "darwin", error: "version" },
-	])(
-		"rejects an incompatible package ($version, $platform) before replacing the installed release",
-		async ({ version, platform, error }) => {
-			const { appRoot, dependencies, home } = await fixture();
-			await installOrUpdate({ appRoot }, dependencies);
-			const release = join(home, "wrong-platform");
-			await mkdir(release);
-			await writeFile(
-				join(release, "commonspace-release.json"),
-				JSON.stringify({
-					version,
-					revision: "a".repeat(40),
-					platform,
-					arch: "x64",
-					distribution: "archive",
-				}),
-			);
-			await expect(
-				installOrUpdate({ mode: "update", appRoot, release }, dependencies),
-			).rejects.toThrow(error);
-			expect(
-				await readFile(join(appRoot, "current/release-marker"), "utf8"),
-			).toBe("1");
-		},
-	);
-});
-
-describe("installed Commonspace service manager", () => {
 	it("waits for the previous job to unload before replacing its application files", async () => {
 		const { appRoot, dependencies } = await fixture();
 		await installOrUpdate({ appRoot }, dependencies);

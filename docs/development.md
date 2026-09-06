@@ -27,6 +27,7 @@ pnpm exec playwright install chromium
 
 | Location | Responsibility |
 | --- | --- |
+| `cli/src` | Published npm command and packaged UI location |
 | `packages/shared/src` | Versioned contracts and pure shared helpers |
 | `server/src/state.ts` | Deterministic state transitions and migration rules |
 | `server/src/service.ts` | Persistence, routing, context, and native-session coordination |
@@ -101,24 +102,22 @@ The server continues accepting work while waiting, so continuous activity can de
 
 ## CI and service verification
 
-CI runs static/build checks, unit/integration tests, browser checks, and a Linux release-package smoke test in parallel. The aggregate `check` job succeeds only when all four jobs pass. GitHub enforces it as a merge requirement only after a maintainer configures branch protection; see [Maintaining](maintaining.md).
+CI runs static/build checks, unit/integration tests, and browser checks in parallel. The aggregate `check` job succeeds only when all three jobs pass. npm clean-install smoke runs only at the release boundary. GitHub enforces `check` as a merge requirement only after a maintainer configures branch protection; see [Maintaining](maintaining.md).
 
 CI browser jobs use the runner's installed Chrome. Local checks use Playwright's managed Chromium unless `COMMONSPACE_USE_SYSTEM_CHROME=1` is set.
 
 Normal development does not register a background service. To exercise source-based macOS installation, use `pnpm service:install` with a committed `main` checkout. The service commands and managed paths are documented in [Operations](operations.md#installed-macos-service).
 
-## Release packaging
+## npm packaging
 
-Packaging requires Git and Corepack in addition to Node.js and pnpm. To build and verify an archive for the current operating system and architecture:
+Build and verify the same npm tarball used by the release workflow:
 
 ```bash
-pnpm release:pack
-pnpm verify:release
+pnpm build:npm
+pnpm verify:npm-package
 ```
 
-`release:pack` includes a production build. `release:pack:built` packages an existing build. Output goes to the ignored `artifacts/release/` directory. The verifier extracts and runs the archive outside the source checkout without agent credentials.
-
-For an archive installation on macOS, run `node scripts/commonspace-service.mjs install --release .` inside the extracted directory. See [Installation](install.md) for the full procedure and [Releasing](releasing.md) for supported targets, versioning, and release steps.
+`build:npm` bundles Commonspace-owned runtime code, copies the built UI, and writes one ignored tarball under `artifacts/npm/`. External packages remain ordinary npm dependencies. The verifier installs the tarball in a clean temporary prefix and runs it outside the source checkout without agent credentials. See [Installation](install.md) and [Releasing](releasing.md).
 
 ## Contract changes
 

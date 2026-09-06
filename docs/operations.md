@@ -4,13 +4,13 @@ Use this guide to configure, inspect, update, back up, and recover a local Commo
 
 ## Runtime
 
-If you have a runtime archive, extract it and run this from the extracted directory:
+Run the published package in the foreground:
 
 ```bash
-node commonspace.mjs
+npx --yes commonspace@latest
 ```
 
-Node.js 22 or newer is required. The archive includes the built UI, server, and production dependencies. It serves the application and API at `http://127.0.0.1:3100` without a source checkout, dependency install, or build. Stop the foreground process with Ctrl+C.
+Node.js 22 or newer is required. npm installs external runtime dependencies and the package serves the application and API at `http://127.0.0.1:3100`. Stop the foreground process with Ctrl+C.
 
 To run production builds from source:
 
@@ -25,7 +25,7 @@ In a second terminal, start the built UI:
 pnpm --filter @commonspace/ui preview
 ```
 
-Open the preview URL printed by Vite. The source server binds to `127.0.0.1:3100` and serves the API and root health check. It does not serve UI assets unless `COMMONSPACE_UI_ROOT` is set. The archive launcher and installed macOS service set that directory automatically so the UI and API share one origin.
+Open the preview URL printed by Vite. The source server binds to `127.0.0.1:3100` and serves the API and root health check. It does not serve UI assets unless `COMMONSPACE_UI_ROOT` is set. The npm command and installed macOS service set that directory automatically so the UI and API share one origin.
 
 ## Runtime configuration
 
@@ -35,7 +35,7 @@ The server reads these variables at startup. They apply to the foreground proces
 | --- | --- |
 | `COMMONSPACE_PORT` | API port; defaults to `3100`. Accepts `0` for an operating-system-assigned port. |
 | `COMMONSPACE_HOME` | Local state directory; defaults to `~/.commonspace`. Use a separate directory for development or verification. |
-| `COMMONSPACE_UI_ROOT` | Built browser asset directory. The source server serves no UI when unset; archive/service launchers set it. |
+| `COMMONSPACE_UI_ROOT` | Built browser asset directory. The source server serves no UI when unset; npm/service launchers set it. |
 | `COMMONSPACE_LOG_LEVEL` | Server log level; defaults to `info`. |
 | `COMMONSPACE_HERMES_PATH` | Hermes discovery executable and default Hermes ACP executable; defaults to `hermes`. |
 | `COMMONSPACE_CODEX_PATH` | Codex executable; defaults to `codex`. |
@@ -59,13 +59,13 @@ Configure inference in Workspace settings using a supported harness or an OpenAI
 
 ## Installed macOS service
 
-Use a verified archive for the computer's architecture. Stop any foreground Commonspace process so port `3100` is free, then run this inside the extracted directory:
+The managed service currently installs from committed source. Stop any foreground Commonspace process so port `3100` is free, then run from a source checkout:
 
 ```bash
-node scripts/commonspace-service.mjs install --release .
+pnpm service:install
 ```
 
-The installer stages the release, validates the LaunchAgent property list, atomically activates it, starts the service, and requires `/api/health` to pass. It also checks that the LaunchAgent process owns the loopback listener, so an existing foreground process cannot make a failed installation appear healthy. State remains in `~/.commonspace`. One previous release is retained for recovery. Agent authentication is needed when running an agent, not when installing or opening the application.
+The installer clones committed source over SSH, installs dependencies, builds a staged release, validates the LaunchAgent property list, atomically activates it, starts the service, and requires `/api/health` to pass. It also checks that the LaunchAgent process owns the loopback listener, so an existing foreground process cannot make a failed installation appear healthy. State remains in `~/.commonspace`. One previous build is retained for recovery. Agent authentication is needed when running an agent, not when installing or opening the application.
 
 After installation:
 
@@ -74,7 +74,7 @@ After installation:
 ~/.local/bin/commonspace stop
 ~/.local/bin/commonspace start
 ~/.local/bin/commonspace restart
-~/.local/bin/commonspace update --release /path/to/new/extracted/release
+~/.local/bin/commonspace update
 ~/.local/bin/commonspace rollback
 ```
 
@@ -87,23 +87,13 @@ After installation:
 | `~/Library/Logs/Commonspace/service.log` | Standard service log |
 | `~/Library/Logs/Commonspace/service.error.log` | Error log |
 
-An update stages the new archive while the old process continues running. A staging failure leaves the current release in place. A failed activation health check restores and restarts the previous release.
+An update clones and builds the configured source while the old process continues running. A staging failure leaves the current release in place. A failed activation health check restores and restarts the previous release.
 
 `rollback` swaps the current and previous application releases. It does not reverse state migrations; read [Backup and rollback](#backup-and-rollback) before downgrading.
 
-### Source-based macOS installation
+This path requires Corepack, Git, the pinned pnpm version, and SSH repository access. It installs committed `main`, not uncommitted checkout edits. `~/.local/bin/commonspace update` clones `git@github.com:ralphbibera/commonspace.git` over SSH and builds `main` again.
 
-Contributors can install a committed `main` checkout:
-
-```bash
-pnpm service:install
-```
-
-This path also requires Corepack, Git, the pinned pnpm version, and SSH repository access. The installer clones committed source and builds a staging release; it does not include uncommitted edits.
-
-For a source-based installation, `~/.local/bin/commonspace update` clones `git@github.com:ralphbibera/commonspace.git` over SSH and builds `main`. Archive installations require an explicit `--release` directory for updates; they do not automatically switch to a source build.
-
-Linux archives run in the foreground. A managed Linux background service is not included.
+The npm package runs in the foreground on Linux. A managed Linux background service is not included.
 
 ## Local data
 
@@ -151,7 +141,7 @@ Contributor verification commands cover separate boundaries:
 | Command | Evidence provided |
 | --- | --- |
 | `pnpm verify:live` | Fresh production build, temporary API/UI servers, and real desktop browser flows through separate and installed single-origin paths |
-| `pnpm release:pack` followed by `pnpm verify:release` | A package built for the current target, extracted and run outside the source checkout |
+| `pnpm build:npm` followed by `pnpm verify:npm-package` | One npm tarball installed and run outside the source checkout |
 | `pnpm verify:service` | Local Git clone, frozen install, build, real plist validation, staged update, and rollback under a temporary home; `launchctl` and health responses are stubbed |
 | `pnpm verify:acp:hermes` | Real Hermes session startup and exact resumption |
 | `pnpm verify:acp:codex` | Real Codex session startup and exact resumption |

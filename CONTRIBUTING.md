@@ -54,7 +54,7 @@ Replace the example test file with the one relevant to your change. `check:fast`
 | --- | --- |
 | Shared types, server behavior, saved data, or security | A focused regression test, `pnpm check`, and `pnpm verify:live`. |
 | UI component or screen | Relevant Storybook states and behavior checks, `pnpm check`, and a manual desktop check. Run `pnpm verify:live` when the change affects the complete app flow. |
-| Packaging, installation, production dependencies, or release workflow | Focused tests, `pnpm check`, `pnpm verify:live`, `pnpm release:pack`, and `pnpm verify:release`. Include macOS service checks when relevant. |
+| Packaging, installation, production dependencies, or release workflow | Focused tests, `pnpm check`, `pnpm verify:live`, `pnpm build:npm`, and `pnpm verify:npm-package`. Include macOS service checks when relevant. |
 | Documentation or templates only | Check links, command examples, and file syntax, then run `git diff --check`. New behavior tests are not required. |
 
 For UI work, `pnpm check:ui` runs the UI checks separately. The [contributor guide](docs/contributor-guide.md) explains Storybook and focused browser tests. Real agent and background-service checks are additional; record which ones you actually ran.
@@ -92,6 +92,6 @@ Use only code and data you are authorized to share with the chosen model. Do not
 
 Use synthetic data in examples and tests. Remove private paths, local instance links, internal task IDs, credentials, and agent session identifiers from screenshots, logs, commits, issues, and pull requests.
 
-Do not commit `~/.commonspace`, agent credential or session stores, generated builds, release archives, or browser artifacts. Follow [Security](SECURITY.md) for vulnerability reports and the [Code of Conduct](CODE_OF_CONDUCT.md) when participating.
+Do not commit `~/.commonspace`, agent credential or session stores, generated builds, npm tarballs, or browser artifacts. Follow [Security](SECURITY.md) for vulnerability reports and the [Code of Conduct](CODE_OF_CONDUCT.md) when participating.
 
 By contributing, you agree that your contribution is provided under the repository's [MIT license](LICENSE).

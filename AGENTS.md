@@ -16,6 +16,7 @@ Read the documents relevant to the change before editing. Keep feature decisions
 
 | Location | Responsibility |
 | --- | --- |
+| `cli/src` | Published npm command and packaged UI entry point |
 | `packages/shared/src` | Cross-process contracts and pure shared helpers |
 | `server/src/state.ts` | Deterministic state transitions and migration rules |
 | `server/src/service.ts` | Persistence, routing, context, and native-session coordination |

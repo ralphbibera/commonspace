@@ -89,8 +89,8 @@ pnpm verify:adapters
 pnpm exec vitest run tests/claude-code-adapter.spec.ts tests/native-acp-adapters.spec.ts tests/acp-host.spec.ts tests/standalone-server.spec.ts tests/commonspace-live-events.spec.ts
 pnpm check
 pnpm verify:live
-pnpm release:pack
-pnpm verify:release
+pnpm build:npm
+pnpm verify:npm-package
 git diff --check
 ```
 

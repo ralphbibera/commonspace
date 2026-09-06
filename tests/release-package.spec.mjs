@@ -1,42 +1,21 @@
-import { execFile } from "node:child_process";
 import {
-	cp,
 	mkdir,
 	mkdtemp,
 	readdir,
 	readFile,
-	realpath,
 	rm,
 	writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { URL } from "node:url";
-import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
-import { copyReleaseAssets, releaseName } from "../scripts/package-release.mjs";
+import {
+	createNpmPackageManifest,
+	stageNpmPackage,
+} from "../scripts/package-npm.mjs";
+import { parseReleaseVersion } from "../scripts/release-version.mjs";
 
 const roots = [];
-const run = promisify(execFile);
-const workspacePackages = ["packages/shared", "server", "ui"];
-
-async function versionCheckout(version) {
-	const root = await realpath(
-		await mkdtemp(join(tmpdir(), "commonspace-version-test-")),
-	);
-	roots.push(root);
-	await cp(new URL("../scripts/", import.meta.url), join(root, "scripts"), {
-		recursive: true,
-	});
-	for (const directory of [".", ...workspacePackages]) {
-		await mkdir(join(root, directory), { recursive: true });
-		await writeFile(
-			join(root, directory, "package.json"),
-			JSON.stringify({ version }),
-		);
-	}
-	return root;
-}
 
 afterEach(async () => {
 	await Promise.all(
@@ -44,14 +23,53 @@ afterEach(async () => {
 	);
 });
 
-describe("release packaging", () => {
-	it("names only supported versioned runtime targets", () => {
-		expect(releaseName("0.0.1", "darwin", "arm64")).toBe(
-			"commonspace-0.0.1-darwin-arm64",
-		);
-		expect(releaseName("0.2.0-beta.1", "linux", "x64")).toBe(
-			"commonspace-0.2.0-beta.1-linux-x64",
-		);
+function cliManifest(version = "0.0.1") {
+	return {
+		name: "commonspace",
+		version,
+		description: "Local-first agent workspace",
+		type: "module",
+		bin: { commonspace: "dist/index.js" },
+		license: "MIT",
+		repository: {
+			type: "git",
+			url: "git+ssh://git@github.com/ralphbibera/commonspace.git",
+			directory: "cli",
+		},
+		homepage: "https://github.com/ralphbibera/commonspace#readme",
+		bugs: { url: "https://github.com/ralphbibera/commonspace/issues" },
+		engines: { node: ">=22" },
+		dependencies: {
+			"@agentclientprotocol/codex-acp": "1.6.2",
+			express: "^5.1.0",
+		},
+		private: true,
+		scripts: { build: "private build command" },
+		devDependencies: { esbuild: "0.28.2" },
+	};
+}
+
+function serverManifest(version = "0.0.1") {
+	return {
+		version,
+		dependencies: {
+			"@commonspace/shared": "workspace:*",
+			"@agentclientprotocol/codex-acp": "1.6.2",
+			express: "^5.1.0",
+		},
+	};
+}
+
+describe("npm release package", () => {
+	it("accepts SemVer releases and rejects unsafe package versions", () => {
+		expect(parseReleaseVersion("0.0.1")).toEqual({
+			version: "0.0.1",
+			prerelease: false,
+		});
+		expect(parseReleaseVersion("0.2.0-beta.1+build.7")).toEqual({
+			version: "0.2.0-beta.1+build.7",
+			prerelease: true,
+		});
 		for (const version of [
 			"../private",
 			"v0.0.1",
@@ -59,116 +77,103 @@ describe("release packaging", () => {
 			"0.1",
 			"0.0.1/extra",
 			"0.0.1-rc.01",
-			"0.0.1-01",
 			"0.0.1+build..1",
 			"0.0.1\n",
-		]) {
-			expect(() => releaseName(version, "darwin", "arm64")).toThrow("version");
-		}
-		expect(() => releaseName("0.1.0", "win32", "x64")).toThrow("target");
-		expect(() => releaseName("0.1.0", "linux", "arm64")).toThrow("target");
+		])
+			expect(() => parseReleaseVersion(version)).toThrow("version");
 	});
 
-	it("preserves SemVer build metadata in archive names", () => {
-		expect(releaseName("0.0.1+build.01", "linux", "x64")).toBe(
-			"commonspace-0.0.1+build.01-linux-x64",
-		);
-		expect(releaseName("0.0.2-rc.1+build.01", "darwin", "arm64")).toBe(
-			"commonspace-0.0.2-rc.1+build.01-darwin-arm64",
-		);
-	});
-
-	it.each([
-		["0.0.1", false],
-		["0.0.1+build-alpha.01", false],
-		["0.0.2-rc.1+build.01", true],
-	])(
-		"reports prerelease status for exact tag v%s",
-		async (version, prerelease) => {
-			const root = await versionCheckout(version);
-			const result = await run(process.execPath, [
-				join(root, "scripts/package-release.mjs"),
-				"--check-tag",
-				`v${version}`,
-			]);
-			expect(result.stdout).toBe(`prerelease=${String(prerelease)}\n`);
-		},
-	);
-
-	it.each(workspacePackages)(
-		"rejects a mismatched %s version before packaging",
-		async (directory) => {
-			const root = await versionCheckout("0.0.1");
-			await writeFile(
-				join(root, directory, "package.json"),
-				JSON.stringify({ version: "0.0.2" }),
-			);
-			await expect(
-				run(process.execPath, [
-					join(root, "scripts/package-release.mjs"),
-					"--check-tag",
-					"v0.0.1",
-				]),
-			).rejects.toMatchObject({
-				stderr: expect.stringContaining(
-					`${directory}/package.json version must be 0.0.1`,
-				),
-			});
-		},
-	);
-
-	it("rejects a tag that does not match the application version", async () => {
-		const root = await versionCheckout("0.0.1");
-		await expect(
-			run(process.execPath, [
-				join(root, "scripts/package-release.mjs"),
-				"--check-tag",
-				"v0.1.0",
-			]),
-		).rejects.toMatchObject({
-			stderr: expect.stringContaining("Release tag must be v0.0.1"),
+	it("publishes one CLI package with external runtime dependencies", () => {
+		expect(createNpmPackageManifest(cliManifest(), serverManifest())).toEqual({
+			name: "commonspace",
+			version: "0.0.1",
+			description: "Local-first agent workspace",
+			type: "module",
+			bin: { commonspace: "dist/index.js" },
+			files: ["dist", "ui-dist"],
+			license: "MIT",
+			repository: {
+				type: "git",
+				url: "git+ssh://git@github.com/ralphbibera/commonspace.git",
+				directory: "cli",
+			},
+			homepage: "https://github.com/ralphbibera/commonspace#readme",
+			bugs: { url: "https://github.com/ralphbibera/commonspace/issues" },
+			engines: { node: ">=22" },
+			dependencies: {
+				"@agentclientprotocol/codex-acp": "1.6.2",
+				express: "^5.1.0",
+			},
+			publishConfig: { access: "public" },
 		});
 	});
 
-	it("copies only built UI and documented runtime assets from the checkout", async () => {
-		const root = await mkdtemp(join(tmpdir(), "commonspace-package-test-"));
+	it("rejects version drift and unresolved workspace dependencies", () => {
+		expect(() =>
+			createNpmPackageManifest(cliManifest(), serverManifest("0.0.2")),
+		).toThrow("server/package.json version must be 0.0.1");
+		expect(() =>
+			createNpmPackageManifest(cliManifest(), {
+				...serverManifest(),
+				dependencies: {
+					...serverManifest().dependencies,
+					"@other/workspace": "workspace:*",
+				},
+			}),
+		).toThrow("cannot publish workspace dependency @other/workspace");
+		expect(() =>
+			createNpmPackageManifest(
+				{
+					...cliManifest(),
+					dependencies: {
+						...cliManifest().dependencies,
+						express: "4.0.0",
+					},
+				},
+				serverManifest(),
+			),
+		).toThrow(
+			"cli/package.json dependency express must match server/package.json",
+		);
+	});
+
+	it("stages only npm runtime assets", async () => {
+		const root = await mkdtemp(join(tmpdir(), "commonspace-npm-stage-test-"));
 		roots.push(root);
 		const source = join(root, "source");
-		const target = join(root, "release");
+		const target = join(root, "package");
 		const files = {
-			"ui/dist/index.html": "<html>packaged client</html>",
+			"cli/dist/index.js": "#!/usr/bin/env node\n",
+			"ui/dist/index.html": "<html>Commonspace</html>",
 			"ui/dist/assets/client.js": "client",
-			"scripts/commonspace-run.mjs": "launcher",
-			"scripts/commonspace-service.mjs": "service",
-			"scripts/release-version.mjs": "version validation",
-			"docs/install.md": "installation instructions",
+			"server/src/private.ts": "source must stay private",
+			".commonspace/state.json": "workspace must stay private",
+			"README.md": "readme",
 			LICENSE: "MIT",
-			".env": "must stay local",
-			".commonspace/state.json": "private transcript",
-			"ui/src/private.ts": "source file",
-			"scripts/private.mjs": "unrelated script",
 		};
 		for (const [path, contents] of Object.entries(files)) {
 			await mkdir(dirname(join(source, path)), { recursive: true });
 			await writeFile(join(source, path), contents);
 		}
-		await copyReleaseAssets(source, target);
+
+		const manifest = createNpmPackageManifest(cliManifest(), serverManifest());
+		await stageNpmPackage(source, target, manifest);
+
 		expect((await readdir(target)).sort()).toEqual([
 			"LICENSE",
 			"README.md",
-			"commonspace.mjs",
-			"scripts",
-			"ui",
+			"dist",
+			"package.json",
+			"ui-dist",
 		]);
-		expect(await readdir(join(target, "scripts"))).toEqual([
-			"commonspace-service.mjs",
-			"release-version.mjs",
-		]);
-		expect(
-			await readFile(join(target, "ui/dist/assets/client.js"), "utf8"),
-		).toBe("client");
-		expect(await readFile(join(target, "README.md"), "utf8")).toBe(
-			"installation instructions",
+		expect(await readFile(join(target, "dist/index.js"), "utf8")).toContain(
+			"#!/usr/bin/env node",
 		);
+		expect(
+			await readFile(join(target, "ui-dist/assets/client.js"), "utf8"),
+		).toBe("client");
+		expect(
+			JSON.parse(await readFile(join(target, "package.json"), "utf8")),
+		).toEqual(manifest);
 	});
 });

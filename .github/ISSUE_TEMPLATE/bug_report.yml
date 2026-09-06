@@ -65,8 +65,8 @@ body:
     id: installation
     attributes:
       label: How are you running Commonspace?
-      description: State whether you use a release archive or source checkout, a terminal or background service, your Node.js version, and your CPU architecture. Leave out private paths.
-      placeholder: Release archive, macOS background service, Node.js 22, arm64
+      description: State whether you use the npm package or a source checkout, a terminal or background service, your Node.js version, and your CPU architecture. Leave out private paths.
+      placeholder: npm package, macOS background service, Node.js 22, arm64
   - type: textarea
     id: logs
     attributes:
