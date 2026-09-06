@@ -137,9 +137,9 @@ export type UpdateRoutingConfigurationRequest =
 	| {
 			provider: "openai-compatible";
 			model: string;
-			baseUrl?: string;
+			baseUrl?: string | undefined;
 			/** Omit to preserve the saved key, provide a value to replace it, or null to clear it. */
-			apiKey?: string | null;
+			apiKey?: string | null | undefined;
 	  };
 
 export interface UpdateWorkspaceSettingsRequest {
@@ -356,8 +356,8 @@ export interface CommonspaceRoutingMemory {
 
 export interface UpdateChannelContextRequest {
 	summary: string;
-	decisions?: string[];
-	openQuestions?: string[];
+	decisions?: string[] | undefined;
+	openQuestions?: string[] | undefined;
 }
 
 export type UpdateThreadContextRequest = UpdateChannelContextRequest;
@@ -618,8 +618,8 @@ export type CommonspaceMutation =
 			action: "set-channel-memory";
 			channelId: string;
 			summary: string;
-			decisions?: string[];
-			openQuestions?: string[];
+			decisions?: string[] | undefined;
+			openQuestions?: string[] | undefined;
 	  }
 	| {
 			action: "set-channel-configuration";
@@ -627,29 +627,29 @@ export type CommonspaceMutation =
 			agentIds: string[];
 			instructions: string;
 			summary: string;
-			decisions?: string[];
-			openQuestions?: string[];
+			decisions?: string[] | undefined;
+			openQuestions?: string[] | undefined;
 	  }
 	| {
 			action: "set-defaults";
-			model?: string | null;
-			reasoning?: CommonspaceReasoning;
-			maxAgentsPerTurn?: number;
-			memoryThreads?: number;
+			model?: string | null | undefined;
+			reasoning?: CommonspaceReasoning | undefined;
+			maxAgentsPerTurn?: number | undefined;
+			memoryThreads?: number | undefined;
 	  }
 	| {
 			action: "add-discovered-agent";
 			agentId: string;
-			adapter?: AgentAdapterKind;
-			fullAccess?: boolean;
+			adapter?: AgentAdapterKind | undefined;
+			fullAccess?: boolean | undefined;
 	  }
 	| {
 			action: "update-agent-profile";
 			agentId: string;
 			displayName: string;
-			avatarEmoji?: string;
-			accentColor?: string;
-			fullAccess?: boolean;
+			avatarEmoji?: string | undefined;
+			accentColor?: string | undefined;
+			fullAccess?: boolean | undefined;
 	  }
 	| { action: "remove-agent"; agentId: string }
 	| { action: "reset-dm"; agentId: string }
@@ -659,16 +659,16 @@ export interface SendMessageRequest {
 	conversation: ConversationRef;
 	text: string;
 	/** Zero, one, or many explicit Project references. */
-	projectIds?: string[];
+	projectIds?: string[] | undefined;
 	/** @deprecated Use projectIds. */
-	projectId?: string;
-	threadId?: string;
+	projectId?: string | undefined;
+	threadId?: string | undefined;
 	/** Restrict a channel-thread reply to one current channel agent. */
-	targetAgentId?: string;
-	attachments?: SendImageAttachment[];
-	files?: SendFileAttachment[];
+	targetAgentId?: string | undefined;
+	attachments?: SendImageAttachment[] | undefined;
+	files?: SendFileAttachment[] | undefined;
 	/** Behavior when the same conversation session already has an active run. */
-	delivery?: "queue" | "steer" | "stop-and-send";
+	delivery?: "queue" | "steer" | "stop-and-send" | undefined;
 }
 
 export interface CommonspaceQueuedFollowup {
@@ -704,7 +704,7 @@ export interface SendMessageResponse {
 export interface EditMessageRequest {
 	messageId: string;
 	text: string;
-	projectIds?: string[];
+	projectIds?: string[] | undefined;
 }
 
 export interface RerouteAssignmentRequest {
@@ -725,7 +725,7 @@ export interface RerouteAssignmentResponse {
 export interface StopAgentRunsRequest {
 	messageId: string;
 	/** When omitted, stop every agent run initiated by the message. */
-	agentId?: string;
+	agentId?: string | undefined;
 }
 
 export interface StopAgentRunsResponse {

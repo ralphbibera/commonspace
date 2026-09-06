@@ -202,6 +202,24 @@ describe("Commonspace AI router", () => {
 		);
 	});
 
+	it("rejects routing assignments that fail the response schema", () => {
+		expect(() =>
+			parseRoutingResponse(
+				JSON.stringify({
+					mode: "parallel",
+					assignments: [
+						{
+							agentId: "frontend",
+							subRequest: "Fix CSS.",
+							projectIds: [42],
+						},
+					],
+					reason: "Invalid project reference",
+				}),
+			),
+		).toThrow("routing response did not match the required shape");
+	});
+
 	it(
 		"rejects an empty routing decision at the router boundary",
 		expectEmptyRoutingDecisionRejected,
@@ -290,6 +308,23 @@ describe("Commonspace AI router provider boundary", () => {
 				input,
 			),
 		).rejects.toThrow("inference provider truncated its response");
+	});
+
+	it("rejects malformed provider completion envelopes", async () => {
+		const request = vi.fn<typeof fetch>(async () =>
+			Response.json({ choices: [{ message: { content: 42 } }] }),
+		);
+
+		await expect(
+			routeWithOpenAICompatible(
+				{
+					baseUrl: "https://example.test/v1",
+					model: "gpt-router",
+					fetch: request,
+				},
+				input,
+			),
+		).rejects.toThrow("inference provider returned no message");
 	});
 
 	it("aborts an oversized provider response without buffering the remaining body", async () => {

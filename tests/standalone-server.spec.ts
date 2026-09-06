@@ -8,7 +8,7 @@ import {
 	type RunningCommonspaceServer,
 	startCommonspaceServer,
 } from "../server/src/index.ts";
-import { discoverTestHarnesses } from "./test-harnesses.ts";
+import { addTestHarness, discoverTestHarnesses } from "./test-harnesses.ts";
 import { mustExist } from "./test-helpers.ts";
 
 const roots: string[] = [];
@@ -460,6 +460,55 @@ describe("standalone Commonspace server", () => {
 		await expect(invalidRetentionResponse.json()).resolves.toEqual({
 			code: "retention_preview_failed",
 			error: "unknown retention conversation",
+		});
+	});
+
+	it("accepts inbox unread mutations through the API", async () => {
+		const root = await mkdtemp(join(tmpdir(), "commonspace-inbox-api-"));
+		roots.push(root);
+		const workspace = join(root, "workspace");
+		await mkdir(workspace);
+
+		const running = await startCommonspaceServer({
+			root,
+			defaultCwd: workspace,
+			port: 0,
+			dependencies: {
+				discoverAgents: discoverTestHarnesses,
+				runAgent: async () => ({ text: "Reply" }),
+			},
+			logger: { warn: () => undefined, info: () => undefined },
+		});
+		servers.push(running);
+
+		await addTestHarness(running.service, "codex");
+		await running.service.send({
+			conversation: { kind: "dm", id: "codex" },
+			text: "Create an inbox item.",
+		});
+		await running.service.whenIdle();
+		const message = running.service
+			.snapshot()
+			.messages["dm:codex"]?.find(
+				(candidate) => candidate.authorType === "user",
+			);
+		if (message === undefined) throw new Error("expected a sent user message");
+
+		const response = await fetch(`${running.url}/api/mutate`, {
+			method: "POST",
+			headers: { origin: running.url, "content-type": "application/json" },
+			body: JSON.stringify({
+				action: "set-inbox-item-unread",
+				messageId: message.id,
+				unread: true,
+			}),
+		});
+
+		expect(response.status).toBe(200);
+		await expect(response.json()).resolves.toMatchObject({
+			state: {
+				inboxUnreadMessageIds: expect.arrayContaining([message.id]),
+			},
 		});
 	});
 });
