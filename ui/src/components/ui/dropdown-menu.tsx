@@ -57,6 +57,30 @@ function DropdownMenuRadioGroup({ ...props }: MenuPrimitive.RadioGroup.Props) {
 	);
 }
 
+function DropdownMenuCheckboxItem({
+	className,
+	children,
+	...props
+}: MenuPrimitive.CheckboxItem.Props) {
+	return (
+		<MenuPrimitive.CheckboxItem
+			data-slot="dropdown-menu-checkbox-item"
+			className={cn(
+				"relative flex min-h-8 cursor-default items-center gap-2 rounded-sm py-1.5 pr-8 pl-2 text-sm outline-none select-none focus:bg-accent focus:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0",
+				className,
+			)}
+			{...props}
+		>
+			{children}
+			<span className="absolute right-2 grid size-4 place-items-center rounded-xs border border-foreground/50">
+				<MenuPrimitive.CheckboxItemIndicator>
+					<CheckIcon aria-hidden="true" />
+				</MenuPrimitive.CheckboxItemIndicator>
+			</span>
+		</MenuPrimitive.CheckboxItem>
+	);
+}
+
 function DropdownMenuRadioItem({
 	className,
 	children,
@@ -137,6 +161,7 @@ function DropdownMenuSeparator({
 
 export {
 	DropdownMenu,
+	DropdownMenuCheckboxItem,
 	DropdownMenuContent,
 	DropdownMenuGroup,
 	DropdownMenuItem,

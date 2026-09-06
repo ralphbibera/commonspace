@@ -26,6 +26,7 @@ Notable changes to Commonspace. See the [versioning policy](docs/releasing.md#ch
 
 ### Desktop experience
 
+- Search scrolls only its results, keeps keyboard selection visible, and replaces the crowded type strip with checked Type/Project menus, removable filters, and a reset action. Request tracking handles normalized queries and prevents stale results from remaining actionable while filters load.
 - DM and Thread follow-up trays gain expandable previews, readable delivery status, aligned reorder/removal icons, and compact Queue/Steer/Stop and send controls.
 - Workspace startup distinguishes loading from an empty Inbox and offers retry after a connection failure. Long dialogs scroll, confirmation actions remain reachable, and vertical tabs and toggle groups use the requested keyboard orientation.
 - Dedicated Storybook primitive, workspace, routing, sorting, and follow-up stories support local UI iteration with a Light/Dark toolbar. See the [coverage map](docs/storybook-coverage.md).

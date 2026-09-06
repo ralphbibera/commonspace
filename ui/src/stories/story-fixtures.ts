@@ -1,4 +1,5 @@
 import {
+	COMMONSPACE_SEARCH_KINDS,
 	COMMONSPACE_STATE_VERSION,
 	type CommonspaceAgentDefinition,
 	type CommonspaceAgentProfile,
@@ -863,6 +864,7 @@ const searchResults: CommonspaceSearchResult[] = [
 	{
 		id: "message-root",
 		kind: "message",
+		projectIds: [primaryProject.id],
 		title: "Review the visual baseline",
 		detail: "Ralph · design-review",
 		receipt: "design-review",
@@ -877,6 +879,7 @@ const searchResults: CommonspaceSearchResult[] = [
 	{
 		id: "file-readme",
 		kind: "file",
+		projectIds: [primaryProject.id],
 		title: "README.md",
 		detail: "text/markdown · 12 KB",
 		receipt: primaryProject.name,
@@ -893,18 +896,20 @@ const searchResults: CommonspaceSearchResult[] = [
 export const storySearchFetcher: typeof globalThis.fetch = async (input) => {
 	const url = new URL(String(input), "http://storybook.local");
 	const query = url.searchParams.get("q")?.trim().toLocaleLowerCase() ?? "";
-	const results =
-		query === ""
-			? searchResults
-			: searchResults.filter((result) =>
-					`${result.title} ${result.detail}`
-						.toLocaleLowerCase()
-						.includes(query),
-				);
+	const kinds = COMMONSPACE_SEARCH_KINDS.filter((kind) =>
+		url.searchParams.get("types")?.split(",").includes(kind),
+	);
+	const projectId = url.searchParams.get("project");
+	const results = searchResults.filter(
+		(result) =>
+			`${result.title} ${result.detail}`.toLocaleLowerCase().includes(query) &&
+			(kinds.length === 0 || kinds.includes(result.kind)) &&
+			(projectId === null || result.projectIds?.includes(projectId) === true),
+	);
 	return jsonResponse({
 		query,
 		results,
-		appliedFilters: { kinds: [], projectId: null },
+		appliedFilters: { kinds, projectId },
 		truncated: false,
 	});
 };

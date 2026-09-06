@@ -3,6 +3,7 @@ import type {
 	CommonspaceSearchResponse,
 	CommonspaceSearchResult,
 } from "@commonspace/shared";
+import { COMMONSPACE_SEARCH_KINDS } from "@commonspace/shared";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, fn, userEvent, within } from "storybook/test";
 import { CommonspaceSearchDialog } from "../CommonspaceSearch";
@@ -19,6 +20,7 @@ const results: CommonspaceSearchResult[] = [
 	{
 		id: "channel-verification",
 		kind: "channel",
+		projectIds: ["reference"],
 		title: "#verification",
 		detail: "Channel",
 		receipt: "Channel",
@@ -32,6 +34,7 @@ const results: CommonspaceSearchResult[] = [
 	{
 		id: "message-review",
 		kind: "message",
+		projectIds: [project.id],
 		title: "Review the visual baseline",
 		detail: "Ralph · verification",
 		receipt: "verification",
@@ -46,6 +49,7 @@ const results: CommonspaceSearchResult[] = [
 	{
 		id: "file-baseline",
 		kind: "file",
+		projectIds: [project.id],
 		title: "visual-baseline.png",
 		detail: "image/png · 128 KB",
 		receipt: "Platform",
@@ -62,18 +66,20 @@ const results: CommonspaceSearchResult[] = [
 const fetcher: typeof globalThis.fetch = async (input) => {
 	const url = new URL(String(input), "http://storybook.local");
 	const query = url.searchParams.get("q")?.trim().toLocaleLowerCase() ?? "";
-	const filtered =
-		query === ""
-			? results
-			: results.filter((result) =>
-					`${result.title} ${result.detail}`
-						.toLocaleLowerCase()
-						.includes(query),
-				);
+	const kinds = COMMONSPACE_SEARCH_KINDS.filter((kind) =>
+		url.searchParams.get("types")?.split(",").includes(kind),
+	);
+	const projectId = url.searchParams.get("project");
+	const filtered = results.filter(
+		(result) =>
+			`${result.title} ${result.detail}`.toLocaleLowerCase().includes(query) &&
+			(kinds.length === 0 || kinds.includes(result.kind)) &&
+			(projectId === null || result.projectIds?.includes(projectId)),
+	);
 	const response: CommonspaceSearchResponse = {
 		query,
 		results: filtered,
-		appliedFilters: { kinds: [], projectId: null },
+		appliedFilters: { kinds, projectId },
 		truncated: false,
 	};
 	return new Response(JSON.stringify(response), {
@@ -87,7 +93,15 @@ const meta = {
 	component: CommonspaceSearchDialog,
 	parameters: { layout: "fullscreen" },
 	args: {
-		projects: [project],
+		projects: [
+			project,
+			{
+				...project,
+				id: "reference",
+				name: "Reference notes",
+				paths: ["/workspace/reference"],
+			},
+		],
 		fetcher,
 		onClose: fn(),
 		onSelect: fn(),
@@ -98,6 +112,43 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Browse: Story = {};
+
+export const DenseResults: Story = {
+	args: {
+		fetcher: async () =>
+			new Response(
+				JSON.stringify({
+					query: "",
+					results: results.flatMap((result) =>
+						Array.from({ length: 8 }, (_, index) => ({
+							...result,
+							id: `${result.id}-${index}`,
+							title: `${result.title} ${index + 1}`,
+						})),
+					),
+					appliedFilters: { kinds: [], projectId: null },
+					truncated: false,
+				} satisfies CommonspaceSearchResponse),
+				{ headers: { "content-type": "application/json" } },
+			),
+	},
+};
+
+export const NormalizedQuery: Story = {
+	play: async ({ canvasElement }) => {
+		const body = within(canvasElement.ownerDocument.body);
+		await userEvent.type(
+			body.getByRole("searchbox", { name: "Search Commonspace" }),
+			"VERIFICATION  ",
+		);
+		await expect(
+			await body.findByRole("option", {
+				name: /Open Channel: #verification/iu,
+			}),
+		).toBeVisible();
+		await expect(body.queryByText("Searching…")).not.toBeInTheDocument();
+	},
+};
 
 export const QueryAndKeyboardSelection: Story = {
 	play: async ({ canvasElement }) => {
@@ -147,5 +198,109 @@ export const RequestFailed: Story = {
 		await expect(await body.findByRole("alert")).toHaveTextContent(
 			"Search is temporarily unavailable.",
 		);
+	},
+};
+
+export const FilterByTypes: Story = {
+	play: async ({ canvasElement }) => {
+		const body = within(canvasElement.ownerDocument.body);
+		await userEvent.click(
+			body.getByRole("button", { name: "Filter result types: All types" }),
+		);
+		await userEvent.click(
+			await body.findByRole("menuitemcheckbox", { name: "Messages" }),
+		);
+		await userEvent.click(
+			body.getByRole("menuitemcheckbox", { name: "Files" }),
+		);
+		await userEvent.keyboard("{Escape}");
+		const list = within(
+			await body.findByRole("listbox", { name: "Commonspace search results" }),
+		);
+		await expect(list.getAllByRole("option")).toHaveLength(2);
+		await expect(
+			list.getByRole("option", { name: /Open Message:/u }),
+		).toBeVisible();
+		await expect(
+			list.getByRole("option", { name: /Open File:/u }),
+		).toBeVisible();
+		await expect(
+			body.getByRole("button", { name: "Remove Messages filter" }),
+		).toBeVisible();
+		await userEvent.click(
+			body.getByRole("button", { name: "Remove Files filter" }),
+		);
+		await expect(
+			within(await body.findByRole("listbox")).getAllByRole("option"),
+		).toHaveLength(1);
+	},
+};
+
+export const ProjectFilterAndReset: Story = {
+	play: async ({ canvasElement }) => {
+		const body = within(canvasElement.ownerDocument.body);
+		const input = body.getByRole("searchbox", { name: "Search Commonspace" });
+		await userEvent.type(input, "verification");
+		await userEvent.click(
+			body.getByRole("button", { name: "Filter by project: All projects" }),
+		);
+		await userEvent.click(
+			await body.findByRole("menuitemradio", { name: "Platform" }),
+		);
+		await expect(
+			within(await body.findByRole("listbox")).getAllByRole("option"),
+		).toHaveLength(1);
+		await userEvent.click(
+			within(body.getByRole("region", { name: "Search filters" })).getByRole(
+				"button",
+				{ name: "Clear filters" },
+			),
+		);
+		await expect(input).toHaveValue("verification");
+		await expect(
+			within(await body.findByRole("listbox")).getAllByRole("option"),
+		).toHaveLength(2);
+	},
+};
+
+export const TypeFilterPending: Story = {
+	args: {
+		onSelect: fn(),
+		fetcher: (input, init) => {
+			const url = new URL(String(input), "http://storybook.local");
+			if (url.searchParams.has("types"))
+				return new Promise<Response>(() => undefined);
+			return fetcher(input, init);
+		},
+	},
+	play: async ({ canvasElement, args }) => {
+		const body = within(canvasElement.ownerDocument.body);
+		await body.findByRole("listbox");
+		await userEvent.click(
+			body.getByRole("button", { name: "Filter result types: All types" }),
+		);
+		await userEvent.click(
+			await body.findByRole("menuitemcheckbox", { name: "Messages" }),
+		);
+		await userEvent.keyboard("{Escape}");
+		await expect(body.getByText("Searching…")).toBeVisible();
+		await expect(body.queryByRole("listbox")).not.toBeInTheDocument();
+		await userEvent.click(
+			body.getByRole("searchbox", { name: "Search Commonspace" }),
+		);
+		await userEvent.keyboard("{Enter}");
+		await expect(args.onSelect).not.toHaveBeenCalled();
+	},
+};
+
+export const FilterMenuOpen: Story = {
+	play: async ({ canvasElement }) => {
+		const body = within(canvasElement.ownerDocument.body);
+		await userEvent.click(
+			body.getByRole("button", { name: "Filter result types: All types" }),
+		);
+		await expect(
+			await body.findByRole("menuitemcheckbox", { name: "Channels" }),
+		).toBeVisible();
 	},
 };

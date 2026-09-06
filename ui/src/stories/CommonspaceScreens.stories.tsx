@@ -132,6 +132,38 @@ const directMessage = { kind: "dm" as const, id: "agent-hermes" };
 
 export const InboxAttention: Story = {};
 
+export const SearchTypeFilter: Story = {
+	tags: ["smoke"],
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		const page = within(canvasElement.ownerDocument.body);
+		await userEvent.click(
+			canvas.getByRole("button", {
+				name: "Search messages, channels, and agents",
+			}),
+		);
+		const dialog = within(
+			await page.findByRole("dialog", { name: "Search Commonspace" }),
+		);
+		await userEvent.click(
+			dialog.getByRole("button", { name: "Filter result types: All types" }),
+		);
+		await userEvent.click(
+			await page.findByRole("menuitemcheckbox", { name: "Messages" }),
+		);
+		await userEvent.keyboard("{Escape}");
+		const list = within(
+			await dialog.findByRole("listbox", {
+				name: "Commonspace search results",
+			}),
+		);
+		await expect(list.getAllByRole("option")).toHaveLength(1);
+		await expect(
+			list.getByRole("option", { name: /Open Message:/u }),
+		).toBeVisible();
+	},
+};
+
 export const InboxActivity: Story = {
 	play: async ({ canvasElement }) => {
 		const canvas = within(canvasElement);

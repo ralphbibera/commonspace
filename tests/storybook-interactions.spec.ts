@@ -37,3 +37,60 @@ test("long dialog content responds to wheel scrolling", async ({ page }) => {
 		.toBeGreaterThan(0);
 	await expect(dialog.getByRole("button", { name: "Done" })).toBeInViewport();
 });
+
+test("search scrolls results while input, filters, and footer remain fixed", async ({
+	page,
+}) => {
+	await page.goto(
+		"/iframe.html?id=workspace-commonspacesearch--dense-results&viewMode=story",
+	);
+	const dialog = page.getByRole("dialog", { name: "Search Commonspace" });
+	const input = dialog.getByRole("searchbox", { name: "Search Commonspace" });
+	const first = dialog
+		.getByRole("listbox", { name: "Commonspace search results" })
+		.getByRole("option")
+		.first();
+	await expect(first).toBeVisible();
+	const inputTop = await input.evaluate(
+		(element) => element.getBoundingClientRect().top,
+	);
+	await first.hover();
+	await page.mouse.wheel(0, 700);
+	await expect(first).not.toBeInViewport();
+	await expect(input).toBeInViewport();
+	await expect(
+		dialog.getByRole("region", { name: "Search filters" }),
+	).toBeInViewport();
+	await expect(dialog.getByText("Navigate", { exact: false })).toBeInViewport();
+	expect(
+		await input.evaluate((element) => element.getBoundingClientRect().top),
+	).toBe(inputTop);
+});
+
+test("search keyboard selection stays visible without moving its input", async ({
+	page,
+}) => {
+	await page.goto(
+		"/iframe.html?id=workspace-commonspacesearch--dense-results&viewMode=story",
+	);
+	const dialog = page.getByRole("dialog", { name: "Search Commonspace" });
+	const input = dialog.getByRole("searchbox", { name: "Search Commonspace" });
+	await expect(
+		dialog
+			.getByRole("listbox", { name: "Commonspace search results" })
+			.getByRole("option"),
+	).toHaveCount(24);
+	await input.focus();
+	const inputTop = await input.evaluate(
+		(element) => element.getBoundingClientRect().top,
+	);
+	for (let index = 0; index < 18; index += 1) await input.press("ArrowDown");
+	await expect(
+		dialog
+			.getByRole("listbox", { name: "Commonspace search results" })
+			.getByRole("option", { selected: true }),
+	).toBeInViewport();
+	expect(
+		await input.evaluate((element) => element.getBoundingClientRect().top),
+	).toBe(inputTop);
+});
