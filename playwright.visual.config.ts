@@ -36,6 +36,7 @@ export default defineConfig({
 		trace: "retain-on-failure",
 		deviceScaleFactor: 1,
 		locale: "en-US",
+		timezoneId: "Asia/Manila",
 		viewport: { width: 1180, height: 820 },
 	},
 	webServer: {
