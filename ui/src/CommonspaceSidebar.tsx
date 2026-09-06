@@ -17,14 +17,11 @@ import {
 	type UpdateRoutingConfigurationRequest,
 } from "@commonspace/shared";
 import {
-	ArrowDownAZIcon,
 	ArrowRightIcon,
 	CheckIcon,
 	ChevronDownIcon,
-	Clock3Icon,
 	GripVerticalIcon,
 	InboxIcon,
-	ListOrderedIcon,
 	MessagesSquareIcon,
 	RefreshCwIcon,
 	SettingsIcon,
@@ -32,6 +29,8 @@ import {
 } from "lucide-react";
 import {
 	type FormEvent,
+	type DragEvent as ReactDragEvent,
+	type KeyboardEvent as ReactKeyboardEvent,
 	useEffect,
 	useMemo,
 	useRef,
@@ -52,6 +51,7 @@ import {
 	type CommonspaceCollectionKind,
 } from "@/design-system/CollectionActionMenu";
 import { CommonspaceLogo } from "@/design-system/CommonspaceLogo";
+import { SidebarSortControl } from "@/design-system/SidebarSortControl";
 import { WorkspaceHeader } from "@/design-system/WorkspaceHeader";
 import { cn } from "@/lib/utils";
 import type { CommonspaceDirectoryKind } from "./CommonspaceDirectory.tsx";
@@ -61,12 +61,14 @@ import {
 	moveChannelAfter,
 	moveChannelBefore,
 	sortChannelSections,
+	sortSidebarSections,
 } from "./channel-sorting.ts";
 import type { CommonspaceStore } from "./commonspace-store.ts";
 import { AgentAvatar } from "./design-system/AgentAvatar.tsx";
 import { folderName } from "./project-files-api.ts";
 import {
 	collectionKey,
+	type SidebarCollectionKind,
 	sidebarPreferencesStore,
 	useSidebarPreferences,
 } from "./sidebar-preferences.ts";
@@ -127,14 +129,15 @@ function Section(props: {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 	onAdd?: () => void;
+	actions?: React.ReactNode;
 	children: React.ReactNode;
 }) {
 	return (
 		<section className="mt-3 first:mt-1">
-			<div className="grid grid-cols-[minmax(0,1fr)_28px] items-center">
+			<div className="flex items-center">
 				<button
 					type="button"
-					className="flex min-h-8 w-full items-center gap-1.5 rounded-sm border-0 bg-transparent px-2 text-left text-xs font-semibold text-sidebar-foreground/65 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+					className="flex min-h-8 min-w-0 flex-1 items-center gap-1.5 rounded-sm border-0 bg-transparent px-2 text-left text-xs font-semibold text-sidebar-foreground/65 hover:bg-sidebar-accent hover:text-sidebar-foreground"
 					aria-expanded={props.open}
 					onClick={() => {
 						props.onOpenChange(!props.open);
@@ -149,6 +152,7 @@ function Section(props: {
 						{props.count}
 					</span>
 				</button>
+				{props.actions}
 				{props.onAdd !== undefined && (
 					<button
 						type="button"
@@ -295,79 +299,6 @@ function SettingsCheckbox({
 	);
 }
 
-const channelSortOptions = [
-	{ mode: "recent", label: "Recent activity", icon: Clock3Icon },
-	{
-		mode: "alphabetical",
-		label: "Alphabetical",
-		icon: ArrowDownAZIcon,
-	},
-	{ mode: "custom", label: "Custom order", icon: ListOrderedIcon },
-] as const;
-
-function ChannelSortControl({
-	mode,
-	onModeChange,
-}: {
-	mode: ChannelSortMode;
-	onModeChange: (mode: ChannelSortMode) => void;
-}) {
-	const activeOption =
-		channelSortOptions.find((option) => option.mode === mode) ??
-		channelSortOptions[0];
-	const ActiveIcon = activeOption.icon;
-
-	return (
-		<div className="mx-2 mb-1 flex min-h-7 flex-wrap items-center justify-between border-y border-sidebar-border/65 px-1">
-			<label
-				htmlFor="channel-sort-mode"
-				className="text-[10px] font-semibold tracking-[0.07em] text-sidebar-foreground/45 uppercase"
-			>
-				Sort
-			</label>
-			<div className="relative flex items-center">
-				<ActiveIcon
-					className="pointer-events-none absolute left-1.5 size-3.5 text-sidebar-foreground/55"
-					aria-hidden="true"
-				/>
-				<select
-					id="channel-sort-mode"
-					aria-label="Sort channels"
-					className="h-6 w-[126px] appearance-none rounded-sm border-0 bg-transparent py-0 pr-5 pl-6 text-[11px] font-medium text-sidebar-foreground hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring"
-					value={mode}
-					onChange={(event) => {
-						const nextMode = event.target.value;
-						if (
-							nextMode === "recent" ||
-							nextMode === "alphabetical" ||
-							nextMode === "custom"
-						)
-							onModeChange(nextMode);
-					}}
-				>
-					{channelSortOptions.map((option) => (
-						<option key={option.mode} value={option.mode}>
-							{option.label}
-						</option>
-					))}
-				</select>
-				<ChevronDownIcon
-					className="pointer-events-none absolute right-1 size-3.5 text-sidebar-foreground/45"
-					aria-hidden="true"
-				/>
-			</div>
-			{mode === "custom" && (
-				<p
-					id="channel-custom-order-help"
-					className="w-full pb-1 text-[10px] leading-4 text-sidebar-foreground/65"
-				>
-					Move within each group: drag or use Alt + ↑ / ↓ on a channel.
-				</p>
-			)}
-		</div>
-	);
-}
-
 const NOTIFICATION_OPTIONS = [
 	[
 		"replies",
@@ -472,37 +403,6 @@ function copyText(value: string) {
 	void navigator.clipboard?.writeText(value).catch(() => undefined);
 }
 
-function orderedSidebarItems<Item extends { id: string }>(
-	items: readonly Item[],
-	kind: CommonspaceCollectionKind,
-	pinnedKeys: readonly string[],
-	recentKeys: readonly string[],
-): { items: Item[]; pinnedCount: number } {
-	const byId = new Map(items.map((item) => [item.id, item]));
-	const pinned = pinnedKeys
-		.filter((key) => key.startsWith(`${kind}:`))
-		.map((key) => byId.get(key.slice(kind.length + 1)))
-		.filter((item): item is Item => item !== undefined);
-	const pinnedIds = new Set(pinned.map((item) => item.id));
-	const recent = [
-		...recentKeys,
-		...items.map((item) => collectionKey(kind, item.id)),
-	]
-		.map((key) => {
-			if (!key.startsWith(`${kind}:`)) return undefined;
-			return byId.get(key.slice(kind.length + 1));
-		})
-		.filter(
-			(item): item is Item => item !== undefined && !pinnedIds.has(item.id),
-		)
-		.filter(
-			(item, index, values) =>
-				values.findIndex((candidate) => candidate.id === item.id) === index,
-		)
-		.slice(0, 10);
-	return { items: [...pinned, ...recent], pinnedCount: pinned.length };
-}
-
 export function CommonspaceSidebar({
 	wide,
 	expandSidebar,
@@ -543,7 +443,10 @@ export function CommonspaceSidebar({
 	const [pathDraft, setPathDraft] = useState("");
 	const [agentIds, setAgentIds] = useState<string[]>([]);
 	const [channelAgentQuery, setChannelAgentQuery] = useState("");
-	const [draggedChannelId, setDraggedChannelId] = useState<string | null>(null);
+	const [draggedCollectionItem, setDraggedCollectionItem] = useState<{
+		kind: SidebarCollectionKind;
+		id: string;
+	} | null>(null);
 	const [channelAgentFilter, setChannelAgentFilter] = useState<
 		"all" | "selected"
 	>("all");
@@ -740,17 +643,38 @@ export function CommonspaceSidebar({
 	const effectivePinnedKeys = preferences.hasStoredPins
 		? preferences.pinnedKeys
 		: defaultPinnedKeys;
-	const projectItems = orderedSidebarItems(
-		projects,
-		"project",
-		effectivePinnedKeys,
-		preferences.recentKeys.project,
-	);
-	const channelPinnedIds = new Set(
-		effectivePinnedKeys
-			.filter((key) => key.startsWith("channel:"))
-			.map((key) => key.slice("channel:".length)),
-	);
+	const pinnedIds = (kind: SidebarCollectionKind) =>
+		new Set(
+			effectivePinnedKeys
+				.filter((key) => key.startsWith(`${kind}:`))
+				.map((key) => key.slice(kind.length + 1)),
+		);
+	const recentIds = (kind: SidebarCollectionKind, ids: readonly string[]) => [
+		...preferences.recentKeys[kind].map((key) => key.slice(kind.length + 1)),
+		...ids,
+	];
+	const projectPinnedIds = pinnedIds("project");
+	const projectSections = sortSidebarSections({
+		items: projects,
+		pinnedIds: projectPinnedIds,
+		mode: preferences.sortModes.project,
+		customOrder: preferences.customOrders.project.map((key) =>
+			key.slice("project:".length),
+		),
+		recentOrder: recentIds(
+			"project",
+			projects.map((project) => project.id),
+		),
+		getName: (project) => project.name,
+	});
+	const projectItems = {
+		items: [
+			...projectSections.pinned,
+			...projectSections.unpinned.slice(0, 10),
+		],
+		pinnedCount: projectSections.pinned.length,
+	};
+	const channelPinnedIds = pinnedIds("channel");
 	const channelLastActiveAt = new Map(
 		channels.map((channel) => {
 			const latestMessage = state?.messages[`channel:${channel.id}`]?.at(-1);
@@ -763,8 +687,8 @@ export function CommonspaceSidebar({
 	const channelSections = sortChannelSections({
 		channels,
 		pinnedIds: channelPinnedIds,
-		mode: preferences.channelSortMode,
-		customOrder: preferences.channelCustomOrder.map((key) =>
+		mode: preferences.sortModes.channel,
+		customOrder: preferences.customOrders.channel.map((key) =>
 			key.slice("channel:".length),
 		),
 		lastActiveAt: channelLastActiveAt,
@@ -776,12 +700,24 @@ export function CommonspaceSidebar({
 		],
 		pinnedCount: channelSections.pinned.length,
 	};
-	const agentItems = orderedSidebarItems(
-		agents,
-		"agent",
-		effectivePinnedKeys,
-		preferences.recentKeys.agent,
-	);
+	const agentPinnedIds = pinnedIds("agent");
+	const agentSections = sortSidebarSections({
+		items: agents,
+		pinnedIds: agentPinnedIds,
+		mode: preferences.sortModes.agent,
+		customOrder: preferences.customOrders.agent.map((key) =>
+			key.slice("agent:".length),
+		),
+		recentOrder: recentIds(
+			"agent",
+			agents.map((agent) => agent.id),
+		),
+		getName: (agent) => agent.displayName,
+	});
+	const agentItems = {
+		items: [...agentSections.pinned, ...agentSections.unpinned.slice(0, 10)],
+		pinnedCount: agentSections.pinned.length,
+	};
 	useEffect(() => {
 		sidebarPreferencesStore.ensurePinnedDefaults(defaultPinnedKeys);
 	}, [defaultPinnedKeys]);
@@ -801,6 +737,117 @@ export function CommonspaceSidebar({
 	};
 	const touchRecent = (kind: CommonspaceCollectionKind, id: string) => {
 		sidebarPreferencesStore.touchRecent(kind, id, defaultPinnedKeys);
+	};
+	const setCollectionSortMode = (
+		kind: SidebarCollectionKind,
+		mode: ChannelSortMode,
+		orderedIds: readonly string[],
+	) => {
+		if (
+			mode === "custom" &&
+			preferences.sortModes[kind] !== "custom" &&
+			preferences.customOrders[kind].length === 0
+		)
+			sidebarPreferencesStore.setCustomOrder(kind, orderedIds);
+		sidebarPreferencesStore.setSortMode(kind, mode);
+	};
+	const reorderableCollection = (kind: SidebarCollectionKind) => {
+		if (kind === "project")
+			return {
+				all: projects.map((project) => project.id),
+				pinned: projectSections.pinned.map((project) => project.id),
+				unpinned: projectSections.unpinned.map((project) => project.id),
+			};
+		if (kind === "agent")
+			return {
+				all: agents.map((agent) => agent.id),
+				pinned: agentSections.pinned.map((agent) => agent.id),
+				unpinned: agentSections.unpinned.map((agent) => agent.id),
+			};
+		return {
+			all: channels.map((channel) => channel.id),
+			pinned: channelSections.pinned.map((channel) => channel.id),
+			unpinned: channelSections.unpinned.map((channel) => channel.id),
+		};
+	};
+	const moveCollectionItem = (
+		kind: SidebarCollectionKind,
+		sourceId: string,
+		targetId: string,
+		moveAfter: boolean,
+	) => {
+		const collection = reorderableCollection(kind);
+		const move = moveAfter ? moveChannelAfter : moveChannelBefore;
+		sidebarPreferencesStore.setCustomOrder(
+			kind,
+			move(
+				preferences.customOrders[kind].map((key) => key.slice(kind.length + 1)),
+				sourceId,
+				targetId,
+				collection.all,
+			),
+		);
+	};
+	const sortableCollectionButtonProps = (
+		kind: SidebarCollectionKind,
+		itemId: string,
+	) => {
+		const custom = preferences.sortModes[kind] === "custom";
+		const collection = reorderableCollection(kind);
+		const section = collection.pinned.includes(itemId)
+			? collection.pinned
+			: collection.unpinned;
+		return {
+			draggable: custom,
+			"aria-keyshortcuts": custom ? "Alt+ArrowUp Alt+ArrowDown" : undefined,
+			"aria-describedby": custom ? `${kind}-custom-order-help` : undefined,
+			onKeyDown: (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+				if (
+					!custom ||
+					!event.altKey ||
+					(event.key !== "ArrowUp" && event.key !== "ArrowDown")
+				)
+					return;
+				event.preventDefault();
+				const itemIndex = section.indexOf(itemId);
+				const targetId =
+					section[itemIndex + (event.key === "ArrowUp" ? -1 : 1)];
+				if (targetId === undefined) return;
+				moveCollectionItem(kind, itemId, targetId, event.key === "ArrowDown");
+			},
+			onDragStart: (event: ReactDragEvent<HTMLButtonElement>) => {
+				if (!custom) return;
+				setDraggedCollectionItem({ kind, id: itemId });
+				event.dataTransfer.effectAllowed = "move";
+				event.dataTransfer.setData("text/plain", itemId);
+			},
+			onDragOver: (event: ReactDragEvent<HTMLButtonElement>) => {
+				if (
+					draggedCollectionItem?.kind === kind &&
+					section.includes(draggedCollectionItem.id)
+				)
+					event.preventDefault();
+			},
+			onDrop: (event: ReactDragEvent<HTMLButtonElement>) => {
+				event.preventDefault();
+				if (
+					draggedCollectionItem?.kind !== kind ||
+					!section.includes(draggedCollectionItem.id)
+				)
+					return;
+				const bounds = event.currentTarget.getBoundingClientRect();
+				moveCollectionItem(
+					kind,
+					draggedCollectionItem.id,
+					itemId,
+					event.clientY >= bounds.top + bounds.height / 2,
+				);
+				setDraggedCollectionItem(null);
+			},
+			onDragEnd: () => {
+				setDraggedCollectionItem(null);
+			},
+		};
 	};
 
 	if (!wide) {
@@ -2150,6 +2197,24 @@ export function CommonspaceSidebar({
 			<div className="min-h-0 flex-1 overflow-y-auto px-2 pb-4 [scrollbar-color:color-mix(in_srgb,var(--sidebar-foreground)_20%,transparent)_transparent] [scrollbar-width:thin]">
 				<Section
 					title="Projects"
+					actions={
+						projects.length > 1 && (
+							<SidebarSortControl
+								kind="project"
+								mode={preferences.sortModes.project}
+								onModeChange={(mode) => {
+									setCollectionSortMode(
+										"project",
+										mode,
+										[
+											...projectSections.pinned,
+											...projectSections.unpinned,
+										].map((project) => project.id),
+									);
+								}}
+							/>
+						)
+					}
 					count={projects.length}
 					open={!preferences.collapsedSections.includes("project")}
 					onOpenChange={(open) => {
@@ -2233,7 +2298,10 @@ export function CommonspaceSidebar({
 							</form>
 						</SidebarDialog>
 					)}
-					{projectItems.pinnedCount > 0 && <NavGroupLabel label="Pinned" />}
+
+					{projectItems.pinnedCount > 0 && (
+						<NavGroupLabel label="Pinned" count={projectItems.pinnedCount} />
+					)}
 					{projectItems.items.map((project, index) => {
 						const active = !settingsOpen && activeProjectViewId === project.id;
 						const folderSummary =
@@ -2241,15 +2309,31 @@ export function CommonspaceSidebar({
 								? "1 folder · working directory"
 								: `${String(project.paths.length)} folders · working + references`;
 						return (
-							<div key={project.id} className="grid gap-0.5">
+							<div
+								key={project.id}
+								className={cn(
+									"grid gap-0.5",
+									draggedCollectionItem?.kind === "project" &&
+										draggedCollectionItem.id === project.id &&
+										"opacity-50",
+								)}
+							>
 								{projectItems.pinnedCount > 0 &&
 									index === projectItems.pinnedCount && (
-										<NavGroupLabel label="Recent" />
+										<NavGroupLabel
+											label="Unpinned"
+											count={projectSections.unpinned.length}
+										/>
 									)}
 								<div className="group grid grid-cols-[minmax(0,1fr)_28px] items-center rounded-sm hover:bg-sidebar-accent focus-within:bg-sidebar-accent has-[button[aria-pressed=true]]:bg-[color-mix(in_srgb,var(--sidebar-foreground)_20%,transparent)]">
 									<button
 										type="button"
-										className="relative grid min-h-8 w-full min-w-0 grid-cols-[20px_minmax(0,1fr)] items-center gap-2 rounded-l-sm border-0 bg-transparent px-2 text-left text-sidebar-foreground/80 aria-pressed:text-sidebar-foreground"
+										{...sortableCollectionButtonProps("project", project.id)}
+										className={cn(
+											"relative grid min-h-8 w-full min-w-0 grid-cols-[20px_minmax(0,1fr)] items-center gap-2 rounded-l-sm border-0 bg-transparent px-2 text-left text-sidebar-foreground/80 aria-pressed:text-sidebar-foreground",
+											preferences.sortModes.project === "custom" &&
+												"cursor-grab pr-6 active:cursor-grabbing",
+										)}
 										aria-label={`Select project ${project.name}`}
 										aria-pressed={active}
 										onClick={() => {
@@ -2271,6 +2355,12 @@ export function CommonspaceSidebar({
 											</strong>
 											<small className="hidden">{folderSummary}</small>
 										</span>
+										{preferences.sortModes.project === "custom" && (
+											<GripVerticalIcon
+												aria-hidden="true"
+												className="pointer-events-none absolute top-1/2 right-1 size-3 -translate-y-1/2 text-sidebar-foreground/45 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+											/>
+										)}
 									</button>
 									{onOpenContextSettings === undefined ? (
 										<CollectionActionButton
@@ -2372,6 +2462,24 @@ export function CommonspaceSidebar({
 
 				<Section
 					title="Channels"
+					actions={
+						channels.length > 1 && (
+							<SidebarSortControl
+								kind="channel"
+								mode={preferences.sortModes.channel}
+								onModeChange={(mode) => {
+									setCollectionSortMode(
+										"channel",
+										mode,
+										[
+											...channelSections.pinned,
+											...channelSections.unpinned,
+										].map((channel) => channel.id),
+									);
+								}}
+							/>
+						)
+					}
 					count={channels.length}
 					open={!preferences.collapsedSections.includes("channel")}
 					onOpenChange={(open) => {
@@ -2507,25 +2615,7 @@ export function CommonspaceSidebar({
 							</form>
 						</SidebarDialog>
 					)}
-					{channels.length > 1 && (
-						<ChannelSortControl
-							mode={preferences.channelSortMode}
-							onModeChange={(mode) => {
-								if (
-									mode === "custom" &&
-									preferences.channelSortMode !== "custom" &&
-									preferences.channelCustomOrder.length === 0
-								)
-									sidebarPreferencesStore.setChannelCustomOrder(
-										[
-											...channelSections.pinned,
-											...channelSections.unpinned,
-										].map((channel) => channel.id),
-									);
-								sidebarPreferencesStore.setChannelSortMode(mode);
-							}}
-						/>
-					)}
+
 					{channelItems.pinnedCount > 0 && (
 						<NavGroupLabel label="Pinned" count={channelItems.pinnedCount} />
 					)}
@@ -2544,7 +2634,9 @@ export function CommonspaceSidebar({
 								key={channel.id}
 								className={cn(
 									"grid gap-0.5",
-									draggedChannelId === channel.id && "opacity-50",
+									draggedCollectionItem?.kind === "channel" &&
+										draggedCollectionItem.id === channel.id &&
+										"opacity-50",
 								)}
 							>
 								{channelItems.pinnedCount > 0 &&
@@ -2557,96 +2649,11 @@ export function CommonspaceSidebar({
 								<div className="group grid grid-cols-[minmax(0,1fr)_28px] items-center rounded-sm hover:bg-sidebar-accent focus-within:bg-sidebar-accent has-[button[aria-pressed=true]]:bg-[color-mix(in_srgb,var(--sidebar-foreground)_20%,transparent)]">
 									<button
 										type="button"
-										draggable={preferences.channelSortMode === "custom"}
-										aria-keyshortcuts={
-											preferences.channelSortMode === "custom"
-												? "Alt+ArrowUp Alt+ArrowDown"
-												: undefined
-										}
-										aria-describedby={
-											preferences.channelSortMode === "custom"
-												? "channel-custom-order-help"
-												: undefined
-										}
-										onKeyDown={(event) => {
-											if (
-												preferences.channelSortMode !== "custom" ||
-												!event.altKey ||
-												(event.key !== "ArrowUp" && event.key !== "ArrowDown")
-											)
-												return;
-											event.preventDefault();
-											const section = channelPinnedIds.has(channel.id)
-												? channelSections.pinned
-												: channelItems.items.slice(channelItems.pinnedCount);
-											const index = section.findIndex(
-												(candidate) => candidate.id === channel.id,
-											);
-											const target =
-												section[index + (event.key === "ArrowUp" ? -1 : 1)];
-											if (target === undefined) return;
-											const move =
-												event.key === "ArrowUp"
-													? moveChannelBefore
-													: moveChannelAfter;
-											sidebarPreferencesStore.setChannelCustomOrder(
-												move(
-													preferences.channelCustomOrder.map((key) =>
-														key.slice("channel:".length),
-													),
-													channel.id,
-													target.id,
-													channels.map((candidate) => candidate.id),
-												),
-											);
-										}}
-										onDragStart={(event) => {
-											if (preferences.channelSortMode !== "custom") return;
-											setDraggedChannelId(channel.id);
-											event.dataTransfer.effectAllowed = "move";
-											event.dataTransfer.setData("text/plain", channel.id);
-										}}
-										onDragOver={(event) => {
-											if (
-												draggedChannelId !== null &&
-												channelPinnedIds.has(draggedChannelId) ===
-													channelPinnedIds.has(channel.id)
-											)
-												event.preventDefault();
-										}}
-										onDrop={(event) => {
-											event.preventDefault();
-											if (
-												draggedChannelId === null ||
-												channelPinnedIds.has(draggedChannelId) !==
-													channelPinnedIds.has(channel.id)
-											)
-												return;
-											const bounds =
-												event.currentTarget.getBoundingClientRect();
-											const move =
-												event.clientY >= bounds.top + bounds.height / 2
-													? moveChannelAfter
-													: moveChannelBefore;
-											sidebarPreferencesStore.setChannelCustomOrder(
-												move(
-													preferences.channelCustomOrder.map((key) =>
-														key.slice("channel:".length),
-													),
-													draggedChannelId,
-													channel.id,
-													channels.map((candidate) => candidate.id),
-												),
-											);
-											setDraggedChannelId(null);
-										}}
-										onDragEnd={() => {
-											setDraggedChannelId(null);
-										}}
+										{...sortableCollectionButtonProps("channel", channel.id)}
 										className={cn(
 											"relative grid min-h-8 w-full min-w-0 grid-cols-[20px_minmax(0,1fr)_auto] items-center gap-2 rounded-l-sm border-0 bg-transparent px-2 text-left text-sidebar-foreground/80 aria-pressed:text-sidebar-foreground",
-											preferences.channelSortMode === "custom" &&
-												"cursor-grab active:cursor-grabbing",
+											preferences.sortModes.channel === "custom" &&
+												"cursor-grab pr-6 active:cursor-grabbing",
 										)}
 										aria-label={`Open channel ${channel.name}${unreadCount === 0 ? "" : `, ${String(unreadCount)} unread`}`}
 										aria-pressed={
@@ -2670,11 +2677,7 @@ export function CommonspaceSidebar({
 											className="grid size-5 place-items-center rounded-sm font-mono text-base text-sidebar-foreground/55"
 											aria-hidden="true"
 										>
-											{preferences.channelSortMode === "custom" ? (
-												<GripVerticalIcon className="size-4" />
-											) : (
-												"#"
-											)}
+											{"#"}
 										</span>
 										<span className="min-w-0">
 											<strong className="block truncate text-[13px] font-medium">
@@ -2692,6 +2695,12 @@ export function CommonspaceSidebar({
 											>
 												{unreadCount > 99 ? "99+" : unreadCount}
 											</span>
+										)}
+										{preferences.sortModes.channel === "custom" && (
+											<GripVerticalIcon
+												aria-hidden="true"
+												className="pointer-events-none absolute top-1/2 right-1 size-3 -translate-y-1/2 text-sidebar-foreground/45 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+											/>
 										)}
 									</button>
 									{onOpenContextSettings === undefined ? (
@@ -2961,6 +2970,23 @@ export function CommonspaceSidebar({
 
 				<Section
 					title="Agents"
+					actions={
+						agents.length > 1 && (
+							<SidebarSortControl
+								kind="agent"
+								mode={preferences.sortModes.agent}
+								onModeChange={(mode) => {
+									setCollectionSortMode(
+										"agent",
+										mode,
+										[...agentSections.pinned, ...agentSections.unpinned].map(
+											(agent) => agent.id,
+										),
+									);
+								}}
+							/>
+						)
+					}
 					count={agents.length}
 					open={!preferences.collapsedSections.includes("agent")}
 					onOpenChange={(open) => {
@@ -3057,8 +3083,8 @@ export function CommonspaceSidebar({
 										>
 											<AgentAvatar agent={agent} />
 											<span>
-												<strong>{agent.displayName}</strong>
-												<small>
+												<strong className="block">{agent.displayName}</strong>
+												<small className="block text-xs text-muted-foreground">
 													{runtimeLabel(agent.adapter)} ·{" "}
 													{agent.model ?? "default model"}
 												</small>
@@ -3197,21 +3223,40 @@ export function CommonspaceSidebar({
 								</SidebarDialog>
 							);
 						})()}
-					{agentItems.pinnedCount > 0 && <NavGroupLabel label="Pinned" />}
+
+					{agentItems.pinnedCount > 0 && (
+						<NavGroupLabel label="Pinned" count={agentItems.pinnedCount} />
+					)}
 					{agentItems.items.map((agent, index) => {
 						const effectiveStatus = activeAgentIds.has(agent.id)
 							? "running"
 							: agent.status;
 						return (
-							<div key={agent.id} className="grid gap-0.5">
+							<div
+								key={agent.id}
+								className={cn(
+									"grid gap-0.5",
+									draggedCollectionItem?.kind === "agent" &&
+										draggedCollectionItem.id === agent.id &&
+										"opacity-50",
+								)}
+							>
 								{agentItems.pinnedCount > 0 &&
 									index === agentItems.pinnedCount && (
-										<NavGroupLabel label="Recent" />
+										<NavGroupLabel
+											label="Unpinned"
+											count={agentSections.unpinned.length}
+										/>
 									)}
 								<div className="group grid grid-cols-[minmax(0,1fr)_28px] items-center rounded-sm hover:bg-sidebar-accent focus-within:bg-sidebar-accent has-[button[aria-pressed=true]]:bg-[color-mix(in_srgb,var(--sidebar-foreground)_20%,transparent)]">
 									<button
 										type="button"
-										className="relative grid min-h-8 w-full min-w-0 grid-cols-[20px_minmax(0,1fr)] items-center gap-2 rounded-l-sm border-0 bg-transparent px-2 text-left text-sidebar-foreground/80 aria-pressed:text-sidebar-foreground"
+										{...sortableCollectionButtonProps("agent", agent.id)}
+										className={cn(
+											"relative grid min-h-8 w-full min-w-0 grid-cols-[20px_minmax(0,1fr)] items-center gap-2 rounded-l-sm border-0 bg-transparent px-2 text-left text-sidebar-foreground/80 aria-pressed:text-sidebar-foreground",
+											preferences.sortModes.agent === "custom" &&
+												"cursor-grab pr-6 active:cursor-grabbing",
+										)}
 										aria-label={`Message agent ${agent.displayName}`}
 										aria-pressed={
 											conversationActive &&
@@ -3244,6 +3289,12 @@ export function CommonspaceSidebar({
 												</span>
 											</small>
 										</span>
+										{preferences.sortModes.agent === "custom" && (
+											<GripVerticalIcon
+												aria-hidden="true"
+												className="pointer-events-none absolute top-1/2 right-1 size-3 -translate-y-1/2 text-sidebar-foreground/45 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+											/>
+										)}
 									</button>
 									{onOpenContextSettings === undefined ? (
 										<CollectionActionButton

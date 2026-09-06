@@ -53,6 +53,8 @@ function kindLabel(item: CommonspaceInboxItem): string {
 			return "Timed out";
 		case "input-request":
 			return "Needs input";
+		case "possible-input-request":
+			return "May need input";
 		case "permission-request":
 			return "Permission";
 	}
@@ -73,6 +75,8 @@ function sessionStatusLabel(session: CommonspaceSessionItem): string {
 	if (session.status === "running") return "Running";
 	if (session.status === "completed") return "Completed";
 	if (session.attentionKind === "input-request") return "Needs input";
+	if (session.attentionKind === "possible-input-request")
+		return "May need input";
 	if (session.attentionKind === "permission-request") return "Permission";
 	if (session.attentionKind === "timeout") return "Timed out";
 	return "Failed";
@@ -83,6 +87,7 @@ function statusClass(label: string): string {
 	if (label === "Mention") return "text-primary";
 	if (
 		label === "Needs input" ||
+		label === "May need input" ||
 		label === "Permission" ||
 		label === "Timed out"
 	)
@@ -366,6 +371,7 @@ export function CommonspaceInbox({
 														"absolute right-[-2px] bottom-[-2px] size-2 rounded-full border-2 border-background bg-muted-foreground",
 														label === "Mention" && "bg-primary",
 														(label === "Needs input" ||
+															label === "May need input" ||
 															label === "Permission" ||
 															label === "Timed out") &&
 															"bg-[var(--status-warning)]",

@@ -6,6 +6,19 @@ interface SortableChannel {
 	createdAt: string;
 }
 
+interface SortableSidebarItem {
+	id: string;
+}
+
+interface SortSidebarSectionsOptions<Item extends SortableSidebarItem> {
+	items: readonly Item[];
+	pinnedIds: ReadonlySet<string>;
+	mode: ChannelSortMode;
+	customOrder: readonly string[];
+	recentOrder: readonly string[];
+	getName: (item: Item) => string;
+}
+
 interface SortChannelSectionsOptions<Channel extends SortableChannel> {
 	channels: readonly Channel[];
 	pinnedIds: ReadonlySet<string>;
@@ -72,23 +85,50 @@ export function sortChannelSections<Channel extends SortableChannel>({
 	pinned: Channel[];
 	unpinned: Channel[];
 } {
+	const recentOrder = [...channels]
+		.sort((left, right) => {
+			const leftActive = lastActiveAt.get(left.id) ?? left.createdAt;
+			const rightActive = lastActiveAt.get(right.id) ?? right.createdAt;
+			return rightActive.localeCompare(leftActive);
+		})
+		.map((channel) => channel.id);
+	return sortSidebarSections({
+		items: channels,
+		pinnedIds,
+		mode,
+		customOrder,
+		recentOrder,
+		getName: (channel) => channel.name,
+	});
+}
+
+export function sortSidebarSections<Item extends SortableSidebarItem>({
+	items,
+	pinnedIds,
+	mode,
+	customOrder,
+	recentOrder,
+	getName,
+}: SortSidebarSectionsOptions<Item>): {
+	pinned: Item[];
+	unpinned: Item[];
+} {
+	const allIds = items.map((item) => item.id);
 	const customRank = new Map(
-		completeChannelOrder(
-			customOrder,
-			channels.map((channel) => channel.id),
-		).map((id, index) => [id, index]),
+		completeChannelOrder(customOrder, allIds).map((id, index) => [id, index]),
 	);
-	const sorted = [...channels].sort((left, right) => {
+	const recentRank = new Map(
+		completeChannelOrder(recentOrder, allIds).map((id, index) => [id, index]),
+	);
+	const sorted = [...items].sort((left, right) => {
 		if (mode === "alphabetical")
-			return left.name.localeCompare(right.name, undefined, {
+			return getName(left).localeCompare(getName(right), undefined, {
 				sensitivity: "base",
 				numeric: true,
 			});
 		if (mode === "custom")
 			return (customRank.get(left.id) ?? 0) - (customRank.get(right.id) ?? 0);
-		const leftActive = lastActiveAt.get(left.id) ?? left.createdAt;
-		const rightActive = lastActiveAt.get(right.id) ?? right.createdAt;
-		return rightActive.localeCompare(leftActive);
+		return (recentRank.get(left.id) ?? 0) - (recentRank.get(right.id) ?? 0);
 	});
 
 	return {

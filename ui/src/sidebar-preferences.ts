@@ -7,8 +7,8 @@ export interface SidebarPreferencesSnapshot {
 	pinnedKeys: string[];
 	recentKeys: Record<SidebarCollectionKind, string[]>;
 	collapsedSections: SidebarCollectionKind[];
-	channelSortMode: ChannelSortMode;
-	channelCustomOrder: string[];
+	sortModes: Record<SidebarCollectionKind, ChannelSortMode>;
+	customOrders: Record<SidebarCollectionKind, string[]>;
 	hasStoredPins: boolean;
 }
 
@@ -21,15 +21,29 @@ type StoredValue =
 const PINNED_STORAGE_KEY = "commonspace-pins";
 const RECENT_STORAGE_KEY = "commonspace-recent";
 const COLLAPSED_STORAGE_KEY = "commonspace-collapsed-sections";
-const CHANNEL_SORT_MODE_STORAGE_KEY = "commonspace-channel-sort-mode";
-const CHANNEL_CUSTOM_ORDER_STORAGE_KEY = "commonspace-channel-custom-order";
 const COLLECTION_KINDS: readonly SidebarCollectionKind[] = [
 	"project",
 	"channel",
 	"agent",
 ];
 
+function sortModeStorageKey(kind: SidebarCollectionKind): string {
+	return `commonspace-${kind}-sort-mode`;
+}
+
+function customOrderStorageKey(kind: SidebarCollectionKind): string {
+	return `commonspace-${kind}-custom-order`;
+}
+
 function emptyRecentKeys(): Record<SidebarCollectionKind, string[]> {
+	return { project: [], channel: [], agent: [] };
+}
+
+function defaultSortModes(): Record<SidebarCollectionKind, ChannelSortMode> {
+	return { project: "recent", channel: "recent", agent: "recent" };
+}
+
+function emptyCustomOrders(): Record<SidebarCollectionKind, string[]> {
 	return { project: [], channel: [], agent: [] };
 }
 
@@ -118,9 +132,9 @@ function readSnapshot(): SidebarPreferencesSnapshot {
 	const pinnedValue = readJson(PINNED_STORAGE_KEY);
 	const recentValue = readJson(RECENT_STORAGE_KEY);
 	const collapsedValue = readJson(COLLAPSED_STORAGE_KEY);
-	const channelSortModeValue = readJson(CHANNEL_SORT_MODE_STORAGE_KEY);
-	const channelCustomOrderValue = readJson(CHANNEL_CUSTOM_ORDER_STORAGE_KEY);
 	const recentKeys = emptyRecentKeys();
+	const sortModes = defaultSortModes();
+	const customOrders = emptyCustomOrders();
 	const recentRecord =
 		typeof recentValue === "object" &&
 		recentValue !== null &&
@@ -135,19 +149,24 @@ function readSnapshot(): SidebarPreferencesSnapshot {
 			);
 		}
 	}
+	for (const kind of COLLECTION_KINDS) {
+		const sortMode = readJson(sortModeStorageKey(kind));
+		if (
+			sortMode === "alphabetical" ||
+			sortMode === "custom" ||
+			sortMode === "recent"
+		)
+			sortModes[kind] = sortMode;
+		customOrders[kind] = validKeys(readJson(customOrderStorageKey(kind)), kind);
+	}
 	return {
 		pinnedKeys: validKeys(pinnedValue),
 		recentKeys,
 		collapsedSections: Array.isArray(collapsedValue)
 			? collapsedValue.filter(isCollectionKind)
 			: [],
-		channelSortMode:
-			channelSortModeValue === "alphabetical" ||
-			channelSortModeValue === "custom" ||
-			channelSortModeValue === "recent"
-				? channelSortModeValue
-				: "recent",
-		channelCustomOrder: validKeys(channelCustomOrderValue, "channel"),
+		sortModes,
+		customOrders,
 		hasStoredPins: Array.isArray(pinnedValue),
 	};
 }
@@ -156,8 +175,10 @@ function updateStorage(snapshot: SidebarPreferencesSnapshot): void {
 	writeJson(PINNED_STORAGE_KEY, snapshot.pinnedKeys);
 	writeJson(RECENT_STORAGE_KEY, snapshot.recentKeys);
 	writeJson(COLLAPSED_STORAGE_KEY, snapshot.collapsedSections);
-	writeJson(CHANNEL_SORT_MODE_STORAGE_KEY, snapshot.channelSortMode);
-	writeJson(CHANNEL_CUSTOM_ORDER_STORAGE_KEY, snapshot.channelCustomOrder);
+	for (const kind of COLLECTION_KINDS) {
+		writeJson(sortModeStorageKey(kind), snapshot.sortModes[kind]);
+		writeJson(customOrderStorageKey(kind), snapshot.customOrders[kind]);
+	}
 }
 
 export function collectionKey(kind: SidebarCollectionKind, id: string): string {
@@ -237,15 +258,24 @@ class SidebarPreferencesStore {
 		this.commit({ collapsedSections: [...sections] });
 	};
 
-	setChannelSortMode = (channelSortMode: ChannelSortMode): void => {
-		this.commit({ channelSortMode });
+	setSortMode = (
+		kind: SidebarCollectionKind,
+		sortMode: ChannelSortMode,
+	): void => {
+		this.commit({
+			sortModes: { ...this.snapshot.sortModes, [kind]: sortMode },
+		});
 	};
 
-	setChannelCustomOrder = (channelIds: readonly string[]): void => {
+	setCustomOrder = (
+		kind: SidebarCollectionKind,
+		itemIds: readonly string[],
+	): void => {
 		this.commit({
-			channelCustomOrder: [
-				...new Set(channelIds.map((id) => collectionKey("channel", id))),
-			],
+			customOrders: {
+				...this.snapshot.customOrders,
+				[kind]: [...new Set(itemIds.map((id) => collectionKey(kind, id)))],
+			},
 		});
 	};
 

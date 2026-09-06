@@ -4,9 +4,13 @@ import { CommonspaceSidebar } from "../CommonspaceSidebar";
 import { sidebarPreferencesStore } from "../sidebar-preferences";
 import {
 	buildChannel,
+	codexAgent,
 	createStoryBootstrap,
 	createStoryStore,
 	designChannel,
+	hermesAgent,
+	primaryProject,
+	secondaryProject,
 	storyBootstrap,
 } from "./story-fixtures";
 
@@ -90,6 +94,28 @@ const channelSortingBootstrap = createStoryBootstrap({
 	},
 });
 
+const alphabeticalProject = {
+	...secondaryProject,
+	id: "project-alpha",
+	name: "Alpha",
+};
+const alphabeticalAgent = {
+	...codexAgent,
+	id: "agent-alpha",
+	displayName: "Alpha Agent",
+};
+const allCollectionSortingBootstrap = createStoryBootstrap({
+	agents: [hermesAgent, codexAgent, alphabeticalAgent],
+	state: {
+		...storyBootstrap.state,
+		projects: [primaryProject, secondaryProject, alphabeticalProject],
+		agents: [
+			...storyBootstrap.state.agents,
+			{ ...alphabeticalAgent, createdAt: "2026-09-04T10:00:00.000Z" },
+		],
+	},
+});
+
 function channelNames(canvasElement: HTMLElement): string[] {
 	return within(canvasElement)
 		.getAllByRole("button", { name: /^Open channel /u })
@@ -105,14 +131,27 @@ function clearStoryFocus(canvasElement: HTMLElement) {
 	if (activeElement instanceof HTMLElement) activeElement.blur();
 }
 
+async function selectSort(
+	canvasElement: HTMLElement,
+	kind: "project" | "channel" | "agent",
+	label: string,
+) {
+	const canvas = within(canvasElement);
+	await userEvent.click(
+		canvas.getByRole("button", { name: new RegExp(`^Sort ${kind}s:`) }),
+	);
+	await userEvent.click(
+		await within(canvasElement.ownerDocument.body).findByRole("menuitemradio", {
+			name: label,
+		}),
+	);
+}
+
 async function prepareChannelSorting(canvasElement: HTMLElement) {
 	const canvas = within(canvasElement);
 	const page = within(canvasElement.ownerDocument.body);
-	await userEvent.selectOptions(
-		canvas.getByLabelText("Sort channels"),
-		"recent",
-	);
-	sidebarPreferencesStore.setChannelCustomOrder([]);
+	await selectSort(canvasElement, "channel", "Recent activity");
+	sidebarPreferencesStore.setCustomOrder("channel", []);
 	await userEvent.click(
 		canvas.getByRole("button", { name: "More actions for builds" }),
 	);
@@ -134,7 +173,9 @@ export const ChannelsByRecentActivity: Story = {
 	play: async ({ canvasElement }) => {
 		const canvas = within(canvasElement);
 		await prepareChannelSorting(canvasElement);
-		await expect(canvas.getByLabelText("Sort channels")).toHaveValue("recent");
+		await expect(
+			canvas.getByRole("button", { name: "Sort channels: Recent activity" }),
+		).toBeVisible();
 		await expect(channelNames(canvasElement)).toEqual([
 			"design-review",
 			"builds",
@@ -153,13 +194,10 @@ export const ChannelsAlphabetically: Story = {
 	play: async ({ canvasElement }) => {
 		const canvas = within(canvasElement);
 		await prepareChannelSorting(canvasElement);
-		await userEvent.selectOptions(
-			canvas.getByLabelText("Sort channels"),
-			"alphabetical",
-		);
-		await expect(canvas.getByLabelText("Sort channels")).toHaveValue(
-			"alphabetical",
-		);
+		await selectSort(canvasElement, "channel", "Alphabetical");
+		await expect(
+			canvas.getByRole("button", { name: "Sort channels: Alphabetical" }),
+		).toBeVisible();
 		await expect(channelNames(canvasElement)).toEqual([
 			"builds",
 			"design-review",
@@ -178,11 +216,10 @@ export const ChannelsInCustomOrder: Story = {
 	play: async ({ canvasElement }) => {
 		const canvas = within(canvasElement);
 		await prepareChannelSorting(canvasElement);
-		await userEvent.selectOptions(
-			canvas.getByLabelText("Sort channels"),
-			"custom",
-		);
-		await expect(canvas.getByLabelText("Sort channels")).toHaveValue("custom");
+		await selectSort(canvasElement, "channel", "Custom order");
+		await expect(
+			canvas.getByRole("button", { name: "Sort channels: Custom order" }),
+		).toBeVisible();
 		const design = canvas.getByRole("button", {
 			name: "Open channel design-review",
 		});
@@ -239,10 +276,7 @@ export const ChannelsRestoreCustomOrder: Story = {
 	play: async ({ canvasElement }) => {
 		const canvas = within(canvasElement);
 		await prepareChannelSorting(canvasElement);
-		await userEvent.selectOptions(
-			canvas.getByLabelText("Sort channels"),
-			"custom",
-		);
+		await selectSort(canvasElement, "channel", "Custom order");
 		await expect(channelNames(canvasElement)).toEqual([
 			"design-review",
 			"builds",
@@ -253,15 +287,9 @@ export const ChannelsRestoreCustomOrder: Story = {
 			canvas.getByRole("button", { name: "Open channel design-review" }),
 		);
 		await userEvent.keyboard("{Alt>}{ArrowDown}{/Alt}");
-		await userEvent.selectOptions(
-			canvas.getByLabelText("Sort channels"),
-			"recent",
-		);
+		await selectSort(canvasElement, "channel", "Recent activity");
 		sidebarPreferencesStore.reload();
-		await userEvent.selectOptions(
-			canvas.getByLabelText("Sort channels"),
-			"custom",
-		);
+		await selectSort(canvasElement, "channel", "Custom order");
 		await expect(channelNames(canvasElement)).toEqual([
 			"builds",
 			"design-review",
@@ -269,6 +297,86 @@ export const ChannelsRestoreCustomOrder: Story = {
 			"announcements",
 		]);
 		clearStoryFocus(canvasElement);
+	},
+};
+
+export const AllCollectionsAlphabetical: Story = {
+	args: {
+		...meta.args,
+		store: createStoryStore(allCollectionSortingBootstrap),
+	},
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		await selectSort(canvasElement, "project", "Alphabetical");
+		await selectSort(canvasElement, "channel", "Alphabetical");
+		await selectSort(canvasElement, "agent", "Alphabetical");
+
+		await expect(
+			canvas
+				.getAllByRole("button", { name: /^Select project /u })
+				.map((button) => button.getAttribute("aria-label")),
+		).toEqual([
+			"Select project Commonspace",
+			"Select project Alpha",
+			"Select project Platform",
+		]);
+		await expect(
+			canvas
+				.getAllByRole("button", { name: /^Message agent /u })
+				.map((button) => button.getAttribute("aria-label")),
+		).toEqual([
+			"Message agent Review Bot",
+			"Message agent Alpha Agent",
+			"Message agent Build Smith",
+		]);
+	},
+};
+
+export const ProjectsAndAgentsInCustomOrder: Story = {
+	args: {
+		...meta.args,
+		store: createStoryStore(allCollectionSortingBootstrap),
+	},
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		for (const kind of ["project", "agent"] as const) {
+			sidebarPreferencesStore.setSortMode(kind, "recent");
+			sidebarPreferencesStore.setCustomOrder(kind, []);
+			await selectSort(canvasElement, kind, "Custom order");
+		}
+
+		const platform = canvas.getByRole("button", {
+			name: "Select project Platform",
+		});
+		const buildSmith = canvas.getByRole("button", {
+			name: "Message agent Build Smith",
+		});
+		await expect(platform).toHaveAttribute("draggable", "true");
+		await expect(buildSmith).toHaveAttribute("draggable", "true");
+
+		await userEvent.click(platform);
+		await userEvent.keyboard("{Alt>}{ArrowDown}{/Alt}");
+		await expect(
+			canvas
+				.getAllByRole("button", { name: /^Select project /u })
+				.map((button) => button.getAttribute("aria-label")),
+		).toEqual([
+			"Select project Commonspace",
+			"Select project Alpha",
+			"Select project Platform",
+		]);
+
+		await userEvent.click(buildSmith);
+		await userEvent.keyboard("{Alt>}{ArrowDown}{/Alt}");
+		await expect(
+			canvas
+				.getAllByRole("button", { name: /^Message agent /u })
+				.map((button) => button.getAttribute("aria-label")),
+		).toEqual([
+			"Message agent Review Bot",
+			"Message agent Alpha Agent",
+			"Message agent Build Smith",
+		]);
 	},
 };
 
