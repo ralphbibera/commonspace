@@ -63,6 +63,8 @@ function title(item: CommonspaceInboxItem): string {
 	if (item.kind === "timeout") return `${item.actorName} timed out${location}`;
 	if (item.kind === "input-request")
 		return `${item.actorName} needs input${location}`;
+	if (item.kind === "possible-input-request")
+		return `${item.actorName} may need input${location}`;
 	return `${item.actorName} replied${location}`;
 }
 

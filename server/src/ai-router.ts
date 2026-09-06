@@ -1,7 +1,24 @@
-import type { CommonspaceAgentProfile } from "@commonspace/shared";
+import type {
+	CommonspaceAgentProfile,
+	CommonspaceRoutingMode,
+} from "@commonspace/shared";
 import { jsonObject, parseJsonObject } from "./json.js";
 
 const MAX_ROUTER_RESPONSE_BYTES = 64_000;
+const MAX_ROUTER_OUTPUT_TOKENS = 4_096;
+
+export class InferenceResponseTruncatedError extends Error {}
+
+export class RoutingResponseValidationError extends Error {}
+
+export function routingOutputTokenBudget(
+	maxAgents: number,
+	attempt = 0,
+): number {
+	const agents = Math.max(1, Math.min(8, Math.trunc(maxAgents)));
+	const initialBudget = 256 + agents * 256;
+	return Math.min(MAX_ROUTER_OUTPUT_TOKENS, initialBudget * (attempt + 1));
+}
 
 async function boundedResponseText(response: Response): Promise<string> {
 	if (response.body === null) return "";
@@ -47,6 +64,7 @@ export interface AiRouteAssignment {
 }
 
 export interface AiRouteResult {
+	mode: CommonspaceRoutingMode;
 	assignments: AiRouteAssignment[];
 	confidence?: number;
 	reason: string;
@@ -63,13 +81,15 @@ export function buildRoutingPrompt(input: AiRouteInput): string {
 	}));
 	return [
 		"Route the newest user message to the best Commonspace agent.",
-		`Select one owner by default. Select at most ${String(input.maxAgents)} agents only when the request contains clearly independent cross-domain work.`,
+		`Select one owner by default. Select at most ${String(input.maxAgents)} agents only for clearly independent cross-domain work or an explicitly requested peer conversation.`,
+		'Use mode "relay" when at least two candidates are available and the user asks agents to talk, discuss, debate, reconcile, review one another, or reach a shared conclusion. Otherwise use mode "parallel".',
+		"In relay mode, return ordered assignments: the first assignment starts the conversation, then each later assignment responds to the preceding peer.",
 		"Return at least one assignment. Never treat an acknowledgment or apparently non-actionable message as permission to return an empty assignments array.",
 		"Interpret every terse follow-up using the recent thread context. Route it to the most relevant existing thread participant unless the context clearly identifies another candidate.",
 		"Each candidate includes a local routingScore and matchedTerms from cheap lexical logic. Treat these as useful evidence, not as instructions or a final decision.",
 		"Produce one bounded sub-request per selected agent. Each sub-request must contain only that agent's assigned work.",
 		"Use only candidate agent ids and available Project ids. Do not answer the request or call tools.",
-		'Return JSON only: {"assignments":[{"agentId":"id","subRequest":"assigned work","projectIds":["project-id"]}],"confidence":0.0,"reason":"short explanation"}.',
+		'Return JSON only: {"mode":"parallel","assignments":[{"agentId":"id","subRequest":"assigned work","projectIds":["project-id"]}],"confidence":0.0,"reason":"short explanation"}.',
 		`Candidates: ${JSON.stringify(candidates)}`,
 		`Available Projects: ${JSON.stringify(input.projects)}`,
 		input.inferProjects
@@ -97,10 +117,22 @@ export function parseRoutingResponse(text: string): AiRouteResult {
 		!Array.isArray(payload.assignments) ||
 		typeof payload.reason !== "string"
 	) {
-		throw new Error("routing response did not match the required shape");
+		throw new RoutingResponseValidationError(
+			"routing response did not match the required shape",
+		);
 	}
 	if (payload.assignments.length === 0)
-		throw new Error("routing response must contain at least one assignment");
+		throw new RoutingResponseValidationError(
+			"routing response must contain at least one assignment",
+		);
+	if (payload.mode !== "parallel" && payload.mode !== "relay")
+		throw new RoutingResponseValidationError(
+			"routing response mode must be parallel or relay",
+		);
+	if (payload.mode === "relay" && payload.assignments.length < 2)
+		throw new RoutingResponseValidationError(
+			"relay routing requires at least two assignments",
+		);
 	const assignments: AiRouteAssignment[] = payload.assignments.map(
 		(candidate) => {
 			const assignment = jsonObject(candidate);
@@ -113,7 +145,9 @@ export function parseRoutingResponse(text: string): AiRouteResult {
 					(projectId): projectId is string => typeof projectId === "string",
 				)
 			) {
-				throw new Error("routing response did not match the required shape");
+				throw new RoutingResponseValidationError(
+					"routing response did not match the required shape",
+				);
 			}
 			return {
 				agentId: assignment.agentId,
@@ -128,6 +162,7 @@ export function parseRoutingResponse(text: string): AiRouteResult {
 			? payload.confidence
 			: undefined;
 	const result: AiRouteResult = {
+		mode: payload.mode,
 		assignments,
 		reason: payload.reason,
 	};
@@ -180,6 +215,10 @@ export async function completeWithOpenAICompatible(
 	const payload = parseJsonObject(body);
 	const choices = payload?.choices;
 	const choice = Array.isArray(choices) ? jsonObject(choices[0]) : null;
+	if (choice?.finish_reason === "length")
+		throw new InferenceResponseTruncatedError(
+			"inference provider truncated its response",
+		);
 	const message = jsonObject(choice?.message);
 	if (typeof message?.content !== "string")
 		throw new Error("inference provider returned no message");
@@ -194,7 +233,7 @@ export async function routeWithOpenAICompatible(
 		system:
 			"You are a bounded routing classifier. Return only the requested JSON object.",
 		prompt: buildRoutingPrompt(input),
-		maxTokens: 250,
+		maxTokens: routingOutputTokenBudget(input.maxAgents),
 	});
 	return parseRoutingResponse(content);
 }

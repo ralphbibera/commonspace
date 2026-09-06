@@ -57,6 +57,7 @@ export interface AcpRunInput {
 	cwd: string;
 	additionalCwds?: readonly string[];
 	message: string;
+	maxResponseChars?: number;
 	images?: readonly AcpImageInput[];
 	files?: readonly AcpFileInput[];
 	sessionId?: string;
@@ -121,6 +122,7 @@ interface ActiveTurn {
 	chunks: string[];
 	resources: AcpResourceLink[];
 	chars: number;
+	maxResponseChars: number;
 	exceededLimit: boolean;
 	settled: Promise<void>;
 	resolveSettled(): void;
@@ -408,6 +410,17 @@ export class AcpAgentProcess {
 				chunks: [],
 				resources: [],
 				chars: 0,
+				maxResponseChars:
+					input.maxResponseChars === undefined
+						? this.#maxResponseChars
+						: Math.min(
+								this.#maxResponseChars,
+								positiveInteger(
+									input.maxResponseChars,
+									this.#maxResponseChars,
+									"ACP response limit",
+								),
+							),
 				exceededLimit: false,
 				settled,
 				resolveSettled,
@@ -892,7 +905,7 @@ export class AcpAgentProcess {
 			update.content.type === "text"
 		) {
 			const nextChars = turn.chars + update.content.text.length;
-			if (nextChars > this.#maxResponseChars) {
+			if (nextChars > turn.maxResponseChars) {
 				if (!turn.exceededLimit) {
 					turn.exceededLimit = true;
 					void connection

@@ -350,12 +350,16 @@ describe("ACP agent process", () => {
 				FAKE_ACP_LOG: logPath,
 				FAKE_ACP_LARGE_CHUNK: "2000",
 			},
-			maxResponseChars: 512,
+			maxResponseChars: 4_096,
 		});
 
 		try {
 			await expect(
-				processClient.run({ cwd: root, message: "Overflow." }),
+				processClient.run({
+					cwd: root,
+					message: "Overflow.",
+					maxResponseChars: 512,
+				}),
 			).rejects.toThrow("response exceeded the Commonspace output limit");
 			await vi.waitFor(async () => {
 				expect(

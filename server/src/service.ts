@@ -68,6 +68,7 @@ import type {
 import {
 	AGENT_ADAPTER_KINDS,
 	AGENT_ADAPTERS,
+	agentMentionName,
 	COMMONSPACE_EXPORT_VERSION,
 	COMMONSPACE_STATE_VERSION,
 	conversationKey,
@@ -91,10 +92,15 @@ import {
 import {
 	buildRoutingPrompt,
 	completeWithOpenAICompatible,
+	InferenceResponseTruncatedError,
 	parseRoutingResponse,
+	RoutingResponseValidationError,
+	routingOutputTokenBudget,
 } from "./ai-router.js";
 import type {
 	CommonspaceMcpGateway,
+	CommonspaceMcpHandoffRequest,
+	CommonspaceMcpHandoffResponse,
 	CommonspaceMcpProvider,
 	CommonspaceMcpScope,
 } from "./commonspace-mcp.js";
@@ -122,6 +128,7 @@ import {
 	projectChannelMemory,
 } from "./memory.js";
 import {
+	finalHandoffAgent,
 	mentionedAgents,
 	mentionedChannelAgents,
 	parseTags,
@@ -157,6 +164,12 @@ import {
 	projectThreadMemory,
 	projectThreadMemoryFromMessages,
 } from "./thread-context.js";
+import {
+	assertWorkspaceExportPlanSize,
+	assertWorkspaceExportSize,
+	assertWorkspaceImportSize,
+	assertWorkspaceProjectMappingsSize,
+} from "./workspace-portability.js";
 
 const MAX_MESSAGE_CHARS = 16_000;
 const MAX_IMAGE_ATTACHMENTS = 4;
@@ -168,11 +181,22 @@ const MAX_MCP_CONTEXT_CHARS = 64_000;
 const MAX_MCP_CONTEXT_MESSAGES = 30;
 const MAX_MCP_CREDENTIALS = 10_000;
 const MAX_MCP_SEARCH_SNIPPET_CHARS = 500;
+const MAX_RELAY_PEER_RESPONSE_CHARS = 4_000;
 const MAX_TRACE_ENTRIES = 128;
 const MAX_TRACE_CHARS = 256_000;
 const DEFAULT_ROUTING_BASE_URL = "https://api.openai.com/v1";
 const SHARED_CONTEXT_PRESSURE_TOKENS = 24_000;
 const MANAGED_AGENT_ID_PATTERN = /^codex-[\p{L}\p{N}][\p{L}\p{N}-]{0,79}$/u;
+
+function boundedRelayPeerResponse(text: string): string {
+	if (text.length <= MAX_RELAY_PEER_RESPONSE_CHARS) return text;
+	const sideLength = MAX_RELAY_PEER_RESPONSE_CHARS / 2;
+	return [
+		text.slice(0, sideLength),
+		"[Peer response truncated; use commonspace_get_context for the full reply.]",
+		text.slice(-sideLength),
+	].join("\n\n");
+}
 
 function searchSnippet(text: string, includedTerms: readonly string[]): string {
 	if (text.length <= MAX_MCP_SEARCH_SNIPPET_CHARS) return text;
@@ -206,19 +230,9 @@ const IMAGE_MIME_TYPES: ReadonlySet<string> = new Set([
 	"image/webp",
 ]);
 
-function completedReplyStatus(
-	text: string,
-): "complete" | "needs_input" | "silent" {
+function completedReplyStatus(text: string): "complete" | "silent" {
 	const value = text.trim();
 	if (value === "") return "silent";
-	if (
-		/\?\s*$/u.test(value) ||
-		/\b(?:need|needs|waiting for|please provide|can you|could you)\b[^.!?]*[?.!]\s*$/iu.test(
-			value,
-		)
-	) {
-		return "needs_input";
-	}
 	return "complete";
 }
 
@@ -252,6 +266,7 @@ export interface AgentRunInput {
 	sessionName: string;
 	/** The one newly delivered Commonspace message, without replayed context. */
 	message: string;
+	maxResponseChars?: number;
 	images?: readonly AgentImageInput[];
 	files?: readonly AgentFileInput[];
 	commonspaceScope?: CommonspaceMcpScope;
@@ -326,6 +341,7 @@ export interface CommonspaceRouteResult {
 	assignments?: Array<Omit<CommonspaceRoutingAssignment, "id">>;
 	/** @deprecated Test-override compatibility while callers migrate to assignments. */
 	agentIds?: string[];
+	mode?: CommonspaceRoutingDecision["mode"];
 	confidence?: number;
 	reason: string;
 }
@@ -384,6 +400,19 @@ interface ActiveAgentRun {
 	agentId: string;
 	scopeKey: string;
 	abortController: AbortController;
+}
+
+interface AgentDeliveryOptions {
+	allowRepeat?: boolean;
+	edge?: string;
+}
+
+function inheritDeliveryAttachments(
+	source: AgentDelivery,
+	target: AgentDelivery,
+): void {
+	if (source.images !== undefined) target.images = source.images;
+	if (source.files !== undefined) target.files = source.files;
 }
 
 interface PendingFollowup {
@@ -1644,6 +1673,8 @@ function sanitizeRoutingDecision(
 		inferredProjectIds,
 		reason,
 	};
+	if (routing.mode === "parallel" || routing.mode === "relay")
+		decision.mode = routing.mode;
 	if (status !== undefined) decision.status = status;
 	if (confidence !== undefined) decision.confidence = confidence;
 	if (startedAt !== null) decision.startedAt = startedAt;
@@ -2302,6 +2333,14 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 	>();
 	private readonly knownInboxItemIds = new Set<string>();
 	private readonly activeAgentRuns = new Map<string, ActiveAgentRun>();
+	private readonly executingAgentRunsByScope = new Map<
+		string,
+		ActiveAgentRun
+	>();
+	private readonly pendingAgentHandoffs = new Map<
+		string,
+		CommonspaceMcpHandoffRequest
+	>();
 	private readonly permissionResolvers = new Map<
 		string,
 		(outcome: AgentPermissionOutcome) => void
@@ -2743,7 +2782,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 				routing:
 					"Human @mentions are explicit assignments. Unmentioned work is routed by participant responsibilities.",
 				handoff:
-					"When another specialist is required, address that peer with @name in the final reply and include a concrete handoff.",
+					"Use commonspace_handoff for one concrete peer request. An unquoted final paragraph beginning with @name remains a supported fallback.",
 				limits:
 					"Handoff to at most one peer at a time. Do not mention peers for status, acknowledgement, or work you can complete yourself.",
 			};
@@ -2842,7 +2881,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 			).filter((agentId) => agentId !== scoped.agent.id);
 			if (peerMentions.length > 0)
 				throw new Error(
-					"post progress cannot address peers; use the final reply for a routed handoff",
+					"post progress cannot address peers; use commonspace_handoff",
 				);
 		}
 		const message: CommonspaceMessage = {
@@ -2862,6 +2901,44 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 		await this.persist();
 		this.broadcastRevision();
 		return { messageId: message.id };
+	}
+
+	async handoff(
+		scope: CommonspaceMcpScope,
+		input: CommonspaceMcpHandoffRequest,
+	): Promise<CommonspaceMcpHandoffResponse> {
+		if (this.closing) throw new Error("Commonspace is shutting down");
+		const scoped = this.resolveMcpScope(scope);
+		if (
+			scoped.channel === undefined ||
+			scoped.thread === undefined ||
+			scope.sessionName === undefined
+		)
+			throw new Error("peer handoffs require an active Channel thread");
+		const activeRun = this.executingAgentRunsByScope.get(
+			`${scoped.agent.id}\u0000${scope.sessionName}`,
+		);
+		if (activeRun === undefined)
+			throw new Error("peer handoffs require an active agent turn");
+		if (this.pendingAgentHandoffs.has(activeRun.id))
+			throw new Error("this agent turn already requested a peer handoff");
+		const request = input.request.normalize("NFKC").trim().slice(0, 4_000);
+		if (request === "") throw new Error("peer handoff request is required");
+		if (input.targetAgentId === scoped.agent.id)
+			throw new Error("an agent cannot hand work to itself");
+		const target = this.configuredAgents().find(
+			(agent) => agent.id === input.targetAgentId,
+		);
+		if (target === undefined || !scoped.channel.agentIds.includes(target.id))
+			throw new Error("peer handoff target is not in this Channel");
+		this.pendingAgentHandoffs.set(activeRun.id, {
+			targetAgentId: target.id,
+			request,
+		});
+		return {
+			targetAgentId: target.id,
+			targetDisplayName: target.displayName,
+		};
 	}
 
 	async bootstrap(): Promise<CommonspaceBootstrap> {
@@ -3003,22 +3080,20 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 		for (const message of Object.values(state.messages).flat()) {
 			for (const attachment of message.attachments ?? []) {
 				if (seen.has(attachment.id)) continue;
-				const { data } = await this.readImageAttachment(attachment.id);
 				seen.add(attachment.id);
 				attachments.push({
 					kind: "image",
 					...attachment,
-					data: data.toString("base64"),
+					data: "",
 				});
 			}
 			for (const file of message.files ?? []) {
 				if (seen.has(file.id)) continue;
-				const { data } = await this.readFileAttachment(file.id);
 				seen.add(file.id);
 				attachments.push({
 					kind: "file",
 					...file,
-					data: data.toString("base64"),
+					data: "",
 				});
 			}
 		}
@@ -3070,19 +3145,31 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 				Object.values(sessions),
 			),
 		];
-		return {
+		const archive: CommonspaceWorkspaceArchive = {
 			format: "commonspace-workspace",
 			version: COMMONSPACE_EXPORT_VERSION,
 			exportedAt,
 			workspace: redactPortableValue(workspace, privateValues),
 			attachments,
 		};
+		assertWorkspaceExportPlanSize(archive);
+		for (const attachment of attachments) {
+			const { data } =
+				attachment.kind === "image"
+					? await this.readImageAttachment(attachment.id)
+					: await this.readFileAttachment(attachment.id);
+			attachment.data = data.toString("base64");
+		}
+		assertWorkspaceExportSize(archive);
+		return archive;
 	}
 
 	async importWorkspace(
 		archiveValue: JsonValue,
 		projectMappings: Record<string, string[]>,
 	): Promise<CommonspaceState> {
+		assertWorkspaceImportSize(archiveValue);
+		assertWorkspaceProjectMappingsSize(projectMappings);
 		return this.withAdmission(async () => {
 			if (
 				this.state.revision !== 0 ||
@@ -5618,6 +5705,13 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 					subRequest: text,
 					projectIds: projects.map((project) => project.id),
 				}));
+			if (
+				rawAssignments.length === 0 ||
+				rawAssignments.length > input.maxAgents
+			)
+				throw new Error(
+					"inference routing returned an invalid assignment count",
+				);
 			const assignments: Array<Omit<CommonspaceRoutingAssignment, "id">> = [];
 			const assignedAgents = new Set<string>();
 			for (const assignment of rawAssignments) {
@@ -5625,14 +5719,12 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 					!allowed.has(assignment.agentId) ||
 					assignedAgents.has(assignment.agentId)
 				)
-					continue;
-				const subRequest = assignment.subRequest
-					.normalize("NFKC")
-					.trim()
-					.slice(0, MAX_MESSAGE_CHARS);
+					throw new Error("inference routing returned an invalid assignment");
+				const subRequest = assignment.subRequest.normalize("NFKC").trim();
 				const projectIds = [...new Set(assignment.projectIds)];
 				if (
 					subRequest === "" ||
+					subRequest.length > MAX_MESSAGE_CHARS ||
 					projectIds.some((projectId) => !allowedProjects.has(projectId))
 				) {
 					throw new Error("inference routing returned an invalid assignment");
@@ -5643,7 +5735,6 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 					subRequest,
 					projectIds,
 				});
-				if (assignments.length >= input.maxAgents) break;
 			}
 			const agentIds = assignments.map((assignment) => assignment.agentId);
 			const reason = result.reason.normalize("NFKC").trim().slice(0, 500);
@@ -5659,6 +5750,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 				agentIds,
 				reason,
 			};
+			if (result.mode !== undefined) routeResult.mode = result.mode;
 			if (confidence !== undefined) routeResult.confidence = confidence;
 			return routeResult;
 		} catch (error) {
@@ -5952,6 +6044,43 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 		const memberIds =
 			prepared.channel?.agentIds ?? thread?.agentIds ?? prepared.agentIds;
 		const delivered = new Set<string>();
+		const routingAssignments = prepared.routing?.assignments ?? [];
+		const relayMode = prepared.routing?.mode === "relay";
+		const remainingRelayAssignments = relayMode
+			? routingAssignments.slice(1)
+			: [];
+		const relayEdges = new Set<string>();
+		let deliveredTurns = 0;
+		const maxRelayTurns = effectiveLimit;
+		const mentionForAgentId = (agentId: string): string => {
+			const agent = prepared.agents.find(
+				(candidate) => candidate.id === agentId,
+			);
+			return `@${agent === undefined ? agentId : agentMentionName(agent)}`;
+		};
+		let relayStopRecorded = false;
+		const recordRelayStop = async (text: string): Promise<void> => {
+			if (relayStopRecorded) return;
+			relayStopRecorded = true;
+			const stop: CommonspaceMessage = {
+				id: messageId(),
+				sourceMessageId: response.accepted.id,
+				conversation: prepared.request.conversation,
+				authorType: "system",
+				authorId: "system",
+				authorName: "Commonspace",
+				text,
+				createdAt: now(),
+				...projectReferenceFields(prepared.projects),
+			};
+			if (thread !== undefined) {
+				stop.threadId = thread.id;
+				stop.parentMessageId = thread.rootMessageId;
+			}
+			this.append(stop);
+			await this.persist();
+			this.broadcastRevision();
+		};
 
 		const rootDelivery: AgentDelivery = {
 			authorType: "user",
@@ -5977,13 +6106,65 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 		const deliver = async (
 			agentId: string,
 			delivery: AgentDelivery,
+			options: AgentDeliveryOptions = {},
 		): Promise<void> => {
-			if (delivered.has(agentId) || delivered.size >= effectiveLimit) return;
+			if (!options.allowRepeat && delivered.has(agentId)) return;
+			if (
+				!relayMode &&
+				!options.allowRepeat &&
+				delivered.size >= effectiveLimit
+			)
+				return;
+			if (
+				(relayMode || options.allowRepeat) &&
+				deliveredTurns >= maxRelayTurns
+			) {
+				await recordRelayStop(
+					`Commonspace stopped the agent relay after ${String(maxRelayTurns)} turns to prevent a loop.`,
+				);
+				return;
+			}
+			if (options.edge !== undefined) {
+				if (relayEdges.has(options.edge)) {
+					const [fromAgentId = "agent", toAgentId = agentId] =
+						options.edge.split("\u0000");
+					await recordRelayStop(
+						`Commonspace stopped the ${mentionForAgentId(fromAgentId)} to ${mentionForAgentId(toAgentId)} handoff because that relay edge already ran.`,
+					);
+					return;
+				}
+				relayEdges.add(options.edge);
+			}
 			delivered.add(agentId);
+			deliveredTurns += 1;
 			const agent = prepared.agents.find(
 				(candidate) => candidate.id === agentId,
 			);
 			if (agent === undefined) return;
+			if (thread !== undefined) {
+				const currentThread = this.state.threads.find(
+					(candidate) => candidate.id === thread.id,
+				);
+				if (
+					currentThread !== undefined &&
+					!currentThread.agentIds.includes(agent.id)
+				) {
+					this.state = {
+						...this.state,
+						revision: this.state.revision + 1,
+						threads: this.state.threads.map((candidate) =>
+							candidate.id === currentThread.id
+								? {
+										...currentThread,
+										agentIds: [...currentThread.agentIds, agent.id],
+									}
+								: candidate,
+						),
+					};
+					await this.persist();
+					this.broadcastRevision();
+				}
+			}
 			const projectById = new Map(
 				prepared.projects.map((project) => [project.id, project]),
 			);
@@ -6067,6 +6248,21 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 								sessionName,
 								projectIds: deliveryProjects.map((project) => project.id),
 							};
+							if (prepared.request.conversation.kind === "channel")
+								commonspaceScope.peers = memberIds.flatMap((memberId) => {
+									if (memberId === agent.id) return [];
+									const peer = prepared.agents.find(
+										(candidate) => candidate.id === memberId,
+									);
+									if (peer === undefined) return [];
+									const scopedPeer: NonNullable<
+										CommonspaceMcpScope["peers"]
+									>[number] = {
+										id: peer.id,
+										displayName: peer.displayName,
+									};
+									return [scopedPeer];
+								});
 							if (thread !== undefined) commonspaceScope.threadId = thread.id;
 							if (deliveryProjects[0] !== undefined)
 								commonspaceScope.projectId = deliveryProjects[0].id;
@@ -6097,17 +6293,26 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 							if (agentModel !== undefined) runInput.model = agentModel;
 							if (agent.nativeProfile === undefined)
 								runInput.reasoning = effectiveReasoning;
-							const result = await this.runAgentWithSessionRecovery(
-								runInput,
-								executionIsCurrent,
-							);
-							return result;
+							this.executingAgentRunsByScope.set(activeRun.scopeKey, activeRun);
+							try {
+								return await this.runAgentWithSessionRecovery(
+									runInput,
+									executionIsCurrent,
+								);
+							} finally {
+								if (
+									this.executingAgentRunsByScope.get(activeRun.scopeKey) ===
+									activeRun
+								)
+									this.executingAgentRunsByScope.delete(activeRun.scopeKey);
+							}
 						} finally {
 							this.endLiveActivity(liveActivityId);
 						}
 					},
 				);
 			} catch (error) {
+				this.pendingAgentHandoffs.delete(activeRun.id);
 				if (!executionIsCurrent()) return;
 				const message = this.publicAgentFailure(error);
 				if (prepared.request.conversation.kind === "dm") {
@@ -6145,7 +6350,15 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 			} finally {
 				this.activeAgentRuns.delete(activeRun.id);
 			}
+			const requestedHandoff = this.pendingAgentHandoffs.get(activeRun.id);
+			this.pendingAgentHandoffs.delete(activeRun.id);
 			if (agentResponse === null || !executionIsCurrent()) return;
+			const requestedHandoffTarget =
+				requestedHandoff === undefined
+					? undefined
+					: prepared.agents.find(
+							(candidate) => candidate.id === requestedHandoff.targetAgentId,
+						);
 			if (agentResponse.sessionId !== undefined)
 				this.rememberAgentSession(
 					agent.id,
@@ -6221,7 +6434,10 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 				authorType: "agent",
 				authorId: agent.id,
 				authorName: agent.displayName,
-				text: agentResponse.text,
+				text:
+					requestedHandoff === undefined || requestedHandoffTarget === undefined
+						? agentResponse.text
+						: `${agentResponse.text}\n\n@${agentMentionName(requestedHandoffTarget)} ${requestedHandoff.request}`,
 				createdAt: completedAt,
 				...projectReferenceFields(deliveryProjects),
 			};
@@ -6239,28 +6455,129 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 			await this.persist();
 			this.broadcastRevision();
 			if (prepared.request.conversation.kind === "channel") {
-				const handoffs = mentionedChannelAgents(
-					memberIds,
-					reply.text,
-					prepared.agents,
-				).filter((id) => !delivered.has(id));
-				await Promise.all(
-					handoffs.map((id) => {
-						const handoff: AgentDelivery = {
+				if (requestedHandoff !== undefined) {
+					const target = requestedHandoffTarget;
+					if (target !== undefined) {
+						const plannedIndex = remainingRelayAssignments.findIndex(
+							(assignment) => assignment.agentId === target.id,
+						);
+						const plannedAssignment =
+							plannedIndex < 0
+								? undefined
+								: remainingRelayAssignments.splice(plannedIndex, 1)[0];
+						const targetAssignment =
+							plannedAssignment ??
+							routingAssignments.find(
+								(assignment) => assignment.agentId === target.id,
+							);
+						const handoffDelivery: AgentDelivery = {
 							authorType: "agent",
 							authorId: agent.id,
 							authorName: agent.displayName,
-							text: reply.text,
+							text: `From ${agent.displayName}:\n\n${requestedHandoff.request}`,
 						};
-						if (delivery.projectIds !== undefined)
-							handoff.projectIds = delivery.projectIds;
-						return deliver(id, handoff);
-					}),
+						if (targetAssignment !== undefined) {
+							handoffDelivery.projectIds = targetAssignment.projectIds;
+							handoffDelivery.routingAssignmentId = targetAssignment.id;
+						} else if (delivery.projectIds !== undefined) {
+							handoffDelivery.projectIds = delivery.projectIds;
+						}
+						inheritDeliveryAttachments(delivery, handoffDelivery);
+						await deliver(target.id, handoffDelivery, {
+							allowRepeat: true,
+							edge: `${agent.id}\u0000${target.id}`,
+						});
+					}
+					return;
+				}
+				if (relayMode) {
+					const mentionedPeerId = finalHandoffAgent(
+						memberIds,
+						reply.text,
+						prepared.agents,
+					);
+					const nextPeerId =
+						mentionedPeerId === agent.id ? undefined : mentionedPeerId;
+					const mentionedAssignmentIndex =
+						nextPeerId === undefined
+							? -1
+							: remainingRelayAssignments.findIndex(
+									(assignment) => assignment.agentId === nextPeerId,
+								);
+					const mentionedAssignment =
+						mentionedAssignmentIndex < 0
+							? undefined
+							: remainingRelayAssignments.splice(
+									mentionedAssignmentIndex,
+									1,
+								)[0];
+					const next =
+						nextPeerId === undefined
+							? remainingRelayAssignments.shift()
+							: mentionedAssignment;
+					const nextAgentId = nextPeerId ?? next?.agentId;
+					if (nextAgentId !== undefined) {
+						const peerResponse = boundedRelayPeerResponse(reply.text);
+						const targetAssignment =
+							next ??
+							routingAssignments.find(
+								(assignment) => assignment.agentId === nextAgentId,
+							);
+						const nextDelivery: AgentDelivery = {
+							authorType: "agent",
+							authorId: agent.id,
+							authorName: agent.displayName,
+							text:
+								next === undefined
+									? `From ${agent.displayName}:\n\n${peerResponse}`
+									: `From ${agent.displayName}:\n\n${peerResponse}\n\nYour relay assignment:\n\n${next.subRequest}`,
+						};
+						if (targetAssignment !== undefined) {
+							nextDelivery.projectIds = targetAssignment.projectIds;
+							nextDelivery.routingAssignmentId = targetAssignment.id;
+						} else if (delivery.projectIds !== undefined) {
+							nextDelivery.projectIds = delivery.projectIds;
+						}
+						inheritDeliveryAttachments(delivery, nextDelivery);
+						await deliver(nextAgentId, nextDelivery, {
+							allowRepeat: nextPeerId !== undefined,
+							edge: `${agent.id}\u0000${nextAgentId}`,
+						});
+					}
+					return;
+				}
+				const mentionedPeerId = finalHandoffAgent(
+					memberIds,
+					reply.text,
+					prepared.agents,
 				);
+				const targetAgentId =
+					mentionedPeerId === agent.id ? undefined : mentionedPeerId;
+				if (targetAgentId !== undefined) {
+					const targetAssignment = routingAssignments.find(
+						(assignment) => assignment.agentId === targetAgentId,
+					);
+					const handoff: AgentDelivery = {
+						authorType: "agent",
+						authorId: agent.id,
+						authorName: agent.displayName,
+						text: `From ${agent.displayName}:\n\n${boundedRelayPeerResponse(reply.text)}`,
+					};
+					if (targetAssignment !== undefined) {
+						handoff.projectIds = targetAssignment.projectIds;
+						handoff.routingAssignmentId = targetAssignment.id;
+					} else if (delivery.projectIds !== undefined) {
+						handoff.projectIds = delivery.projectIds;
+					}
+					inheritDeliveryAttachments(delivery, handoff);
+					await deliver(targetAgentId, handoff, {
+						allowRepeat: true,
+						edge: `${agent.id}\u0000${targetAgentId}`,
+					});
+				}
 			}
 		};
 
-		const routingAssignments = prepared.routing?.assignments ?? [];
 		const rootDeliveries =
 			routingAssignments.length === 0
 				? prepared.agentIds.map((agentId) => ({
@@ -6277,7 +6594,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 						},
 					}));
 		await Promise.all(
-			rootDeliveries
+			(relayMode ? rootDeliveries.slice(0, 1) : rootDeliveries)
 				.slice(0, effectiveLimit)
 				.map(({ agentId, delivery }) => deliver(agentId, delivery)),
 		);
@@ -6352,6 +6669,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 				inferredProjectIds,
 				reason: decision.reason,
 			};
+			if (decision.mode !== undefined) routing.mode = decision.mode;
 			if (decision.confidence !== undefined)
 				routing.confidence = decision.confidence;
 			const thread =
@@ -7085,7 +7403,8 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 					cwd: this.defaultCwd,
 					additionalCwds: [],
 					sessionName,
-					message: `${system}\n\n${prompt}`,
+					message: `${system}\n\nOutput token budget: at most ${String(maxTokens)} tokens.\n\n${prompt}`,
+					maxResponseChars: Math.min(MAX_AGENT_RESPONSE_CHARS, maxTokens * 8),
 					reasoning: "minimal",
 					signal,
 				};
@@ -7129,14 +7448,27 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 		channelId: string,
 		input: CommonspaceRouteInput,
 	): Promise<CommonspaceRouteResult> {
-		return parseRoutingResponse(
-			await this.completeInference(
-				"You are a bounded routing classifier. Return only the requested JSON object.",
-				buildRoutingPrompt(input),
-				250,
-				{ kind: "channel-routing", channelId },
-			),
-		);
+		let retryableFailure: unknown;
+		for (let attempt = 0; attempt < 2; attempt += 1) {
+			try {
+				return parseRoutingResponse(
+					await this.completeInference(
+						"You are a bounded routing classifier. Return only the requested JSON object.",
+						buildRoutingPrompt(input),
+						routingOutputTokenBudget(input.maxAgents, attempt),
+						{ kind: "channel-routing", channelId },
+					),
+				);
+			} catch (error) {
+				if (
+					!(error instanceof InferenceResponseTruncatedError) &&
+					!(error instanceof RoutingResponseValidationError)
+				)
+					throw error;
+				retryableFailure = error;
+			}
+		}
+		throw retryableFailure;
 	}
 
 	private async runAgent(input: AgentRunInput): Promise<AgentRunResult> {
@@ -7306,6 +7638,8 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 					input.signal.removeEventListener("abort", abortSetup);
 				},
 			};
+			if (input.maxResponseChars !== undefined)
+				acpInput.maxResponseChars = input.maxResponseChars;
 			if (input.images !== undefined) acpInput.images = input.images;
 			if (input.files !== undefined) acpInput.files = input.files;
 			if (input.onTraceUpdate !== undefined)

@@ -161,8 +161,12 @@ export interface CommonspaceRoutingCorrection {
 	createdAt: string;
 }
 
+export type CommonspaceRoutingMode = "parallel" | "relay";
+
 export interface CommonspaceRoutingDecision {
 	source: "explicit" | "ai" | "local";
+	/** Relay assignments speak in order; omitted legacy decisions are parallel. */
+	mode?: CommonspaceRoutingMode;
 	status?: "pending" | "resolved" | "failed";
 	startedAt?: string;
 	resolvedAt?: string;

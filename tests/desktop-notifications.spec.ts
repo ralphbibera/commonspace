@@ -97,4 +97,17 @@ describe("desktop notifications", () => {
 			),
 		).toBeNull();
 	});
+
+	it("labels text-inferred attention as uncertain", () => {
+		expect(
+			desktopNotificationForItem(
+				item({ kind: "possible-input-request" }),
+				settings,
+				"http://127.0.0.1:3100",
+			),
+		).toMatchObject({
+			category: "reply",
+			title: "Codex may need input in #general",
+		});
+	});
 });

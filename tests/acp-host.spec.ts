@@ -910,6 +910,7 @@ describe("Commonspace ACP host path", () => {
 			vi.stubEnv(
 				"FAKE_ACP_INFERENCE_RESPONSE",
 				JSON.stringify({
+					mode: "parallel",
 					assignments: [
 						{
 							agentId: worker.id,
