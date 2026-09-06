@@ -2,7 +2,7 @@
 
 A Commonspace workspace archive is a self-contained JSON export of conversation data and attachments. Use it to transfer data into a clean workspace. It does not transfer running agent sessions or replace a full local backup for a version downgrade.
 
-This is the developer reference for archive validation. For export, import, and cleanup steps, see [Operations](operations.md#export-import-and-retention).
+This is the developer reference for archive validation. For export, import, and cleanup steps, see [Operations](../guides/operations.md#export-import-and-retention).
 
 ## Version 1 envelope
 
@@ -34,7 +34,7 @@ The following example shows the envelope and workspace field names. Empty settin
 }
 ```
 
-`format` and `version` identify the archive contract. Archive version 1 is independent of the internal persisted-state version. `exportedAt` and other timestamps use ISO 8601. IDs are opaque strings, and records refer to each other by those IDs. Detailed workspace shapes are defined in [`packages/shared/src/contracts.ts`](../packages/shared/src/contracts.ts).
+`format` and `version` identify the archive contract. Archive version 1 is independent of the internal persisted-state version. `exportedAt` and other timestamps use ISO 8601. IDs are opaque strings, and records refer to each other by those IDs. Detailed workspace shapes are defined in [`packages/shared/src/contracts.ts`](../../packages/shared/src/contracts.ts).
 
 ### Projects
 
@@ -43,6 +43,12 @@ Each Project contains `id`, `name`, `rootCount`, and `createdAt`. Absolute roots
 ### Attachments
 
 Each attachment contains `kind` (`image` or `file`), `id`, `name`, `mimeType`, `size`, and padded base64 `data`. Every attachment referenced by a message must have exactly one matching byte entry. Its metadata, decoded size, and canonical base64 encoding must agree.
+
+### Size contract
+
+Commonspace produces version-1 archives up to 48 MiB of UTF-8 JSON. Before reading attachment bytes, export projects each exact Base64 length from validated stored metadata and combines it with the complete archive metadata size. It aborts an oversized plan, then verifies the final serialized size after reading exact bytes. Export therefore stops with an actionable error instead of loading every oversized attachment or downloading a backup that the supported HTTP workflow cannot restore.
+
+The HTTP importer accepts a version-1 archive value up to 64 MiB for compatibility with earlier exports, explicit Project mappings up to 8 MiB, and a complete request envelope up to 80 MiB. The extra envelope capacity covers mappings and JSON framing; it is not additional archive capacity. Oversized request bodies are rejected before archive validation, and oversized archive or mapping values are rejected before attachment or workspace writes.
 
 ## Privacy boundary
 
@@ -61,6 +67,7 @@ Import restores data into an empty destination and does not merge workspaces:
 3. Every Project root requires an explicit local directory mapping. Unknown, missing, duplicate, non-directory, or surplus mappings fail validation.
 4. Native-session references start empty. Imported conversations remain visible, and the next harness turn establishes new native continuity.
 5. Attachment bytes and state are committed together. If persistence fails, newly copied bytes are removed.
+6. The archive and explicit Project mappings must fit the documented size contract.
 
 Unknown archive versions are rejected. A future format change must increment `version` and document its migration behavior here.
 

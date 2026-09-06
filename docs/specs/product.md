@@ -6,7 +6,7 @@
 
 Commonspace brings one person's local agents into shared Channels, focused threads, and direct conversations. Messages keep the record of the work, and each conversation continues the correct agent session.
 
-This guide explains the concepts used throughout the product. For exact requirements, use the [Product specification](product-spec.md). The [Product direction](product-direction.md) explains scope; the [Implementation gap audit](implementation-gap-audit.md) records a dated implementation snapshot.
+This guide explains the concepts used throughout the product. For exact requirements, use the [Product specification](product-spec.md). The [Product direction](product-direction.md) explains scope.
 
 An **agent runtime**, or **harness**, is the software that runs an agent. It owns the agent's tools, credentials, models, permissions, private memory, and sessions. Commonspace connects supported local runtimes through the **Agent Client Protocol (ACP)** and provides the shared conversation around them.
 
@@ -37,9 +37,9 @@ Visible `@@project` tags explicitly choose context. When there are no tags, infe
 
 A Channel is a shared room with a chosen set of agents, instructions, shared context, and threads. It can exist without a Project or any agents. Model and reasoning configuration applies across the workspace; a Channel has no separate override.
 
-Mentioning an agent with `@agent` adds it to the Channel if needed and invokes it. Without an explicit mention, the configured inference provider selects the smallest useful set of agents and may divide the request into separate assignments, called **sub-requests**.
+Mentioning an agent with `@agent` adds it to the Channel if needed and invokes it. Without an explicit mention, the configured inference provider selects the smallest useful set of agents and may divide the request into separate assignments, called **sub-requests**. Independent assignments run in parallel. A request for agents to discuss, debate, reconcile, review one another, or reach a shared conclusion becomes an ordered **relay**: one Agent starts and later Agents respond in sequence.
 
-Each agent's new turn receives only its assigned sub-request. It can read the original conversation through Commonspace context tools within the scope granted to its session.
+The first Agent receives only its assigned sub-request. A later relay Agent receives a bounded head-and-tail excerpt of the preceding peer response plus its own assignment. The complete reply and deeper room history stay available on demand through Commonspace context tools rather than being replayed in every prompt.
 
 ### Direct Message
 
@@ -61,7 +61,7 @@ Messages contain conversation, Project references, and attachments. Both humans 
 
 Threads are focused continuations of conversation, not tasks. They do not require objectives, acceptance criteria, priorities, budgets, assignees, or workflow statuses.
 
-Agents can mention one another inside a thread. The visible mention is the handoff, so people can follow the collaboration in the conversation.
+Agents can hand one concrete request to another current Channel member through the scoped `commonspace_handoff` tool. Commonspace keeps that request visible as an `@agent` handoff and invokes the peer after the current turn. A final paragraph beginning with an unquoted `@agent` directive remains a fallback; incidental, quoted, or sender-attribution mentions do not route. Ordered relays and explicit handoffs use the workspace Agent limit plus repeated-edge checks to stop loops visibly.
 
 Editing a delivered human message creates a new version and a new conversation branch. The original message and its replies remain available as history. Deleting a delivered message removes its content and leaves a visible marker. Agent replies cannot be edited.
 
@@ -77,7 +77,7 @@ A thread starts with a snapshot of the Channel's current context. It then develo
 
 Commonspace inference uses one configured provider for agent selection, request division, Project references, shared-context summaries, and summaries of routing corrections.
 
-Routing should feel immediate. The service stores each decision and generated sub-request so it can deliver the request, associate replies with it, and retain correction history. The conversation shows pending and failed routing states; completed routing details stay in service metadata.
+Routing should feel immediate. The service stores each delivery mode, decision, and generated sub-request so it can deliver the request, associate replies with it, and retain correction history. The conversation shows pending and failed routing states; completed routing details stay in service metadata.
 
 An individual assignment can be corrected through the service without restarting unrelated agents. Those explicit corrections form **routing memory**, which helps later routing decisions. Inline correction controls are deferred from the conversation UI.
 

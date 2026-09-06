@@ -1,18 +1,18 @@
 # Commonspace design system
 
-The design system gives Commonspace one consistent set of colors, typography, spacing, and components. Use it when building or changing the desktop UI. The [design contract](design.md) defines the intended appearance; this document explains how to implement it without creating competing styles.
+The design system gives Commonspace one consistent set of colors, typography, spacing, and components. Use it when building or changing the desktop UI. The [design contract](../../DESIGN.md) defines the intended appearance; this document explains how to implement it without creating competing styles.
 
 ## Ownership
 
 | Location | Responsibility |
 | --- | --- |
-| [`ui/src/index.css`](../ui/src/index.css) | Semantic theme variables, font roles, radius aliases, base styles, and reduced-motion behavior |
-| [`ui/components.json`](../ui/components.json) | shadcn configuration and component aliases |
+| [`ui/src/index.css`](../../ui/src/index.css) | Semantic theme variables, font roles, radius aliases, base styles, and reduced-motion behavior |
+| [`ui/components.json`](../../ui/components.json) | shadcn configuration and component aliases |
 | `ui/src/components/ui` | Shared UI primitives |
 | `ui/src` | Product components and screen composition |
 | `ui/src/stories` | Isolated component and screen states |
 
-The [Storybook coverage map](storybook-coverage.md) links the dedicated primitive and shell stories. `SidebarSortControl` owns the compact collection-header sort menu. `RunDelivery` owns the shared DM/Thread follow-up tray and delivery buttons; it preserves native form submission values and the existing queue callbacks.
+The [Visual verification guide](visual-verification.md) describes Storybook review. `SidebarSortControl` owns the compact collection-header sort menu. `RunDelivery` owns the shared DM/Thread follow-up tray and delivery buttons; it preserves native form submission values and the existing queue callbacks.
 
 Use Tailwind CSS v4 and the existing shadcn primitives. Prefer an existing component for a repeated control or layout. Add a shared component when it has a clear reusable responsibility; avoid a new abstraction for one small styling change.
 
@@ -33,7 +33,7 @@ The stable aliases in `ui/src/index.css` connect Commonspace's needs to the them
 | `--shadow-soft`, `--shadow-high` | Subtle and elevated shadows |
 | `--motion-fast`, `--motion-base`, `--ease-standard` | Consistent transition timing and easing |
 
-Do not hardcode a second palette in React components. Keep the stable aliases when updating theme variables, and use the radius roles in [design.md](design.md#shapes-and-elevation).
+Do not hardcode a second palette in React components. Keep the stable aliases when updating theme variables, and use the radius roles in [DESIGN.md](../../DESIGN.md#shapes-and-elevation).
 
 To apply a compatible theme, run the following from the repository root, replacing `<theme-url>` with its registry address:
 
@@ -57,7 +57,7 @@ The same visual treatment should mean the same thing across screens. Selected ro
 | Thread | Keep the root, focused reply, and continuation understandable. |
 | Composer | Keep active context visible and provide slash-command and reference suggestions. |
 
-The desktop shell uses the dimensions in [design.md](design.md#layout). Screen components should compose those shared rules rather than define alternate shell geometry.
+The desktop shell uses the dimensions in [DESIGN.md](../../DESIGN.md#layout). Screen components should compose those shared rules rather than define alternate shell geometry.
 
 ## Accessibility
 
@@ -71,6 +71,6 @@ Respect `prefers-reduced-motion`. Use text, icons, and semantic state alongside 
 2. Update the smallest owner and preserve existing behavior.
 3. Add or update the Storybook states that demonstrate the change, including affected empty, loading, error, and selected states.
 4. Inspect the rendered result in Light and Dark modes.
-5. Run the appropriate [development checks](development.md#development-workflow) and complete the [visual review](visual-verification.md).
+5. Run the appropriate [development checks](../guides/development.md#development-workflow) and complete the [visual review](visual-verification.md).
 
-Keep [design.md](design.md) and [UI direction](ui-direction.md) current when changing a visual requirement. Product documentation should explain what users can do; token names and implementation details belong here.
+Keep [DESIGN.md](../../DESIGN.md) current when changing a visual requirement. Product documentation should explain what users can do; token names and implementation details belong here.

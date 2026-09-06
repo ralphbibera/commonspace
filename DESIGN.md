@@ -2,7 +2,7 @@
 
 Commonspace is a desktop workspace for conversations with local agents. Its design should help people find the right conversation, understand the available context, and follow work without losing their place.
 
-This document defines the visual requirements. [UI direction](ui-direction.md) explains how they apply to product surfaces, [Design system](design-system.md) describes their implementation, and [Visual verification](visual-verification.md) explains how to review the result. The [Product specification](product-spec.md) defines behavior.
+This document defines visual requirements and product-surface rules. [Design system](docs/design/design-system.md) describes implementation, [Visual verification](docs/design/visual-verification.md) explains review, and the [Product specification](docs/specs/product-spec.md) defines behavior.
 
 ## Layout
 
@@ -28,9 +28,15 @@ Each surface should answer three questions: where am I, what is selected, and wh
 
 Runtime outcomes belong to Inbox and the conversation or Thread that produced them. Avoid a second surface that repeats the same outcomes without helping the user act.
 
+## Collections and context
+
+Projects, Channels, Agents, Inbox, and Threads use clear titles, compact rows, and visible selection. Projects, Channels, and Agents expose sorting through a compact heading menu with checked choices. Custom order preserves identity, status, pinned/unpinned grouping, drag behavior, and keyboard focus.
+
+Project files and Git changes provide context for conversation. Channel and Thread context remains inspectable without exposing native session identifiers or absolute host paths. Use visible `@@project` references in composers; do not add separate Project-scope pickers for roots, Threads, branches, or reroutes.
+
 ## Color and appearance
 
-The active palette lives in [`ui/src/index.css`](../ui/src/index.css). Components use semantic tokens: names such as `background`, `foreground`, `border`, and `muted` describe a color's purpose. This allows the palette to change without rewriting components.
+The active palette lives in [`ui/src/index.css`](ui/src/index.css). Components use semantic tokens: names such as `background`, `foreground`, `border`, and `muted` describe a color's purpose. This allows the palette to change without rewriting components.
 
 Use neutral surfaces for ordinary content and selection. Reserve stronger color for identity, links, keyboard focus, and meaningful status. An error must also have readable text or an icon; color alone cannot explain it.
 
@@ -65,6 +71,14 @@ Agent activity begins collapsed beneath its reply. When expanded, it presents th
 
 Show pending routing and routing failures where they affect the conversation. Resolved assignment cards, routing reasons, timing, and inline reroute controls are not part of the current conversation layout.
 
+Queued follow-ups sit in a compact tray aligned with the composer. Keep previews and delivery status distinct, allow long previews to expand, and keep the composer usable. Reorder and removal controls need accessible names and consistent placement.
+
+Before workspace data arrives, show loading. Initial connection failure shows an actionable retry. Refreshing loaded data preserves visible content while reporting errors.
+
+## Search
+
+Search keeps its query, filters, result count, and keyboard hints fixed. Only results scroll. Type and Project filters show checked choices and removable selections; clearing filters preserves the query. Pending requests hide stale results, and late responses cannot replace the active search.
+
 ## Controls and states
 
 Controls must look interactive before they are clicked. Related filters should read as one group, with a clear selected state. Menus and suggestions should stay near their trigger, remain within the viewport, and close predictably.
@@ -73,8 +87,6 @@ Design the empty, loading, error, and dense states alongside the normal state. E
 
 Every icon-only control needs an accessible name. Keyboard focus must remain visible, selection must have semantic state, and motion must respect `prefers-reduced-motion`.
 
-## Acceptance
+## Review
 
-Review changed surfaces in a real desktop browser. Check the resting state and the relevant hover, focus, open, selected, empty, dense, and error states. Confirm that the action works, the layout remains usable, and the rendered result meets this document.
-
-Use Storybook for isolated states and `pnpm verify:live` for integrated production behavior. A passing test or a saved screenshot does not establish visual quality; someone must inspect the pixels. Follow the [visual verification loop](visual-verification.md) and record any remaining gaps.
+Use [Visual verification](docs/design/visual-verification.md) for browser, Storybook, interaction, and pixel acceptance. The design contract remains the standard for the rendered result.

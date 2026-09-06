@@ -28,7 +28,7 @@ Commonspace does not currently ship a desktop app wrapper. Follow [Installation]
 | Vite | Serves the development UI at `127.0.0.1:5173` and forwards API requests to the local server. |
 | Express | Serves the local API at `127.0.0.1:3100`. |
 
-Start with [Contributing](../CONTRIBUTING.md) for a fresh checkout and [Development](development.md) for day-to-day commands.
+Start with [Contributing](../../CONTRIBUTING.md) for a fresh checkout and [Development](../guides/development.md) for day-to-day commands.
 
 ## Agent runtimes
 
@@ -40,7 +40,7 @@ Start with [Contributing](../CONTRIBUTING.md) for a fresh checkout and [Developm
 | OpenCode | Native `opencode acp`; account-free fixture verifies **1.18.29**. |
 | Hermes | Installed `hermes acp`, using existing native profiles. |
 
-Codex, Claude Code, Gemini CLI, and OpenCode form the initial baseline. Pi coding agent remains planned until its integration passes the same native-session and scoped MCP requirements. See the [adapter guide](agent-adapters.md) for setup, compatibility evidence, and the format for adding another runtime.
+Codex, Claude Code, Gemini CLI, and OpenCode form the initial baseline. Pi coding agent remains planned until its integration passes the same native-session and scoped MCP requirements. See the [adapter guide](../adapters/agent-adapters.md) for setup, compatibility evidence, and the format for adding another runtime.
 
 ## What the checks cover
 
@@ -48,11 +48,14 @@ Codex, Claude Code, Gemini CLI, and OpenCode form the initial baseline. Pi codin
 | --- | --- | --- |
 | Unit and integration tests | No. | Commonspace's state, API, and other application behavior. |
 | Storybook browser tests | No. | Isolated component and screen behavior. |
+| Playwright E2E | No. | Integrated production UI/API journeys, including navigation, messages, settings, notifications, and restart-visible state. |
+| Reviewed visual baselines | No. | Selected Storybook states compared on macOS; changed baselines fail until inspected and explicitly approved. |
 | `pnpm verify:live` | No. | The built UI and server working together in a desktop browser. Uses managed Chromium locally or system Chrome in CI. |
 | `pnpm verify:npm-package` | No. | A clean npm install starts, serves its API and UI, and shuts down outside the source checkout. |
 | `pnpm verify:service` | No agent credentials. | The macOS source-based service lifecycle in a temporary home, with launchctl and health responses substituted. |
 | `pnpm verify:adapters` | No. | Real Claude Code, Gemini CLI, and OpenCode runtimes, native restart/resume and reset, scoped MCP and progress, using local model API fixtures. |
+| `pnpm verify:routing-quality` | Configured provider/model; key when required. | Opt-in representative decomposition evaluation for Agent responsibilities, preserved constraints, and per-assignment Project scopes. Parser tests do not provide this evidence. |
 | Real Hermes, Codex, and Claude Code checks | Yes. | Agent session start, exact session resumption, and permitted context/progress tools. |
 | Real macOS service check | A local macOS user session. | Installation, startup, update, and rollback with the actual LaunchAgent. |
 
-Normal contribution checks do not need provider credentials or agent session stores. Keep those outside the repository. See [Releasing](releasing.md) for the required integration checks.
+Normal contribution checks do not need provider credentials or agent session stores. Keep those outside the repository. See [Releasing](../releases/releasing.md) for the required integration checks.

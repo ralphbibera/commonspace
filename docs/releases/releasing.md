@@ -17,7 +17,7 @@ Compatibility covers documented HTTP and MCP interfaces, CLI behavior, and the w
 
 Use a prerelease suffix for candidates, such as `0.0.2-rc.1`. Git tags add only `v` and must match exactly. The release workflow publishes prereleases under npm's `next` tag and stable versions under `latest`.
 
-Update the version and changelog through the normal contribution workflow. Release only a reviewed commit. Never move an existing release tag.
+Update the version and release notes through the normal contribution workflow. Release only a reviewed commit. Never move an existing release tag.
 
 ## Build and check locally
 
@@ -58,7 +58,7 @@ Before publishing, record results from the supported environment:
 | `pnpm verify:adapters` | Pinned Claude Code, Gemini CLI, and OpenCode runtimes work against local model fixtures without provider credentials |
 | `pnpm verify:acp:mcp` | Authenticated agents can read permitted context, post progress, and return a reply |
 
-Keep credentials and transcripts local. Copy the [candidate acceptance template](templates/release-acceptance.md) and record the exact commit, package version, commands, results, evidence, and every check not run with its exact reason. A clean npm-package smoke does not establish provider-backed compatibility.
+Keep credentials and transcripts local. Copy the [candidate acceptance template](release-acceptance-template.md) and record the exact commit, package version, commands, results, evidence, and every check not run with its exact reason. A clean npm-package smoke does not establish provider-backed compatibility.
 
 ## Publish
 

@@ -1,10 +1,10 @@
 # Development guide
 
-Use this guide to run Commonspace from source, choose the right verification loop, and change shared or runtime behavior safely. Start with [Contributing](../CONTRIBUTING.md) for the contribution process and [Installation](install.md) if you only want to run the application.
+Use this guide to run Commonspace from source, choose the right verification loop, and change shared or runtime behavior safely. Start with [Contributing](../../CONTRIBUTING.md) for the contribution process and [Installation](../start/install.md) if you only want to run the application.
 
 ## Setup
 
-Use Node.js 22 or newer, Git, and the pnpm version pinned by `packageManager` in [`package.json`](../package.json). Corepack can provide that pnpm version.
+Use Node.js 22 or newer, Git, and the pnpm version pinned by `packageManager` in [`package.json`](../../package.json). Corepack can provide that pnpm version.
 
 From the repository root:
 
@@ -23,25 +23,7 @@ Install the browser used by local checks after installing dependencies:
 pnpm exec playwright install chromium
 ```
 
-## Workspace map
-
-| Location | Responsibility |
-| --- | --- |
-| `cli/src` | Published npm command and packaged UI location |
-| `packages/shared/src` | Versioned contracts and pure shared helpers |
-| `server/src/state.ts` | Deterministic state transitions and migration rules |
-| `server/src/service.ts` | Persistence, routing, context, and native-session coordination |
-| `server/src/app.ts` | Express API, origin guards, event streams, and media responses |
-| `server/src/dev.ts`, `server/src/dev-supervisor.ts` | Development restarts |
-| `server/src/index.ts` | Process startup, configuration, and shutdown |
-| `ui/src/commonspace-store.ts` | Browser state and API coordination |
-| `ui/src/CommonspaceSidebar.tsx` | Workspace navigation |
-| `ui/src/CommonspaceConversation.tsx` | Messages, Threads, commands, and composer |
-| `ui/src/AgentTrace.tsx` | Expandable harness activity |
-| `ui/src/stories` | Isolated screen and component states |
-| `ui/src/main.tsx` | Browser entry point |
-
-Read [Architecture](architecture.md) before a change that crosses these boundaries.
+Read [Architecture](architecture.md) for package ownership before a change that crosses boundaries.
 
 ## Development workflow
 
@@ -64,8 +46,10 @@ Choose checks by the evidence you need:
 | `pnpm check` | The full local gate, including all Storybook browser tests and production application and Storybook builds |
 | `pnpm verify:live` | A fresh production build and the integrated desktop browser flow through both separate development-style servers and the installed single-origin path |
 | `pnpm check:ui` | UI types, the complete Storybook browser suite, and the production UI build |
+| `pnpm test:e2e` | A production build followed by integrated Playwright application flows; use `test:e2e:built` after an already-current build |
+| `pnpm test:visual` | Selected reviewed Storybook pixel baselines; changed images require inspection and explicit approval |
 
-The live verifier uses temporary workspace data and test runtimes. It proves production wiring without proving that an authenticated external agent works. Real harness checks are a separate opt-in step described below.
+The live verifier uses temporary workspace data and test runtimes. It proves production wiring without proving that an authenticated external agent works. Provider-backed harness checks are a separate opt-in step described below.
 
 ## Fast UI loop
 
@@ -92,7 +76,7 @@ pnpm check:ui
 
 Storybook's Vitest suite checks rendering, interactions, and accessibility in a real browser. Pixel comparisons use the separate `pnpm test:visual` command. The optional Chromatic integration also needs a configured project; it is not required for the local workflow.
 
-Use the Light / Dark toolbar to inspect the actual rendering, including overlays. The [Storybook coverage map](storybook-coverage.md) lists dedicated primitive, workspace, routing, sorting, and follow-up states with focused commands. Follow [Visual verification](visual-verification.md) for screenshot review and baseline changes. Keep component permutations in Storybook and use `verify:live` for behavior that depends on the assembled application.
+Use the Light / Dark toolbar to inspect the actual rendering, including overlays. Follow [Visual verification](../design/visual-verification.md) for Storybook states, screenshot review, and baseline changes. Keep component permutations in Storybook and use `verify:live` for behavior that depends on the assembled application.
 
 ## Self-development hot reload
 
@@ -102,9 +86,19 @@ The server continues accepting work while waiting, so continuous activity can de
 
 ## CI and service verification
 
-CI runs static/build checks, unit/integration tests, and browser checks in parallel. The aggregate `check` job succeeds only when all three jobs pass. npm clean-install smoke runs only at the release boundary. GitHub enforces `check` as a merge requirement only after a maintainer configures branch protection; see [Maintaining](maintaining.md).
+CI runs static/build checks, unit/integration tests, Storybook browser checks, integrated Playwright E2E, and reviewed macOS visual baselines. The aggregate `check` job succeeds only when all four jobs pass. npm clean-install smoke runs only at the release boundary. GitHub enforces `check` as a merge requirement only after a maintainer configures branch protection; see [Maintaining](maintaining.md).
 
 CI browser jobs use the runner's installed Chrome. Local checks use Playwright's managed Chromium unless `COMMONSPACE_USE_SYSTEM_CHROME=1` is set.
+
+Workspace-scale measurements are opt-in and never part of the normal test gate:
+
+```bash
+pnpm benchmark:workspace
+COMMONSPACE_BENCHMARK_SIZES=1000,10000,20000 pnpm benchmark:workspace
+COMMONSPACE_BENCHMARK_REPETITIONS=5 pnpm benchmark:workspace
+```
+
+The benchmark discards one warm-up, then runs three measured samples per size by default. It seeds progressively larger synthetic DM transcripts and reports message acceptance/persistence, bootstrap payload and processing, search, export/import, and process heap/RSS deltas as JSON. Run it on an otherwise idle machine and record Node, operating system, CPU architecture, size list, repetition count, dispersion, and raw output with any performance claim.
 
 Normal development does not register a background service. To exercise source-based macOS installation, use `pnpm service:install` with a committed `main` checkout. The service commands and managed paths are documented in [Operations](operations.md#installed-macos-service).
 
@@ -117,7 +111,7 @@ pnpm build:npm
 pnpm verify:npm-package
 ```
 
-`build:npm` bundles Commonspace-owned runtime code, copies the built UI, and writes one ignored tarball under `artifacts/npm/`. External packages remain ordinary npm dependencies. The verifier installs the tarball in a clean temporary prefix and runs it outside the source checkout without agent credentials. See [Installation](install.md) and [Releasing](releasing.md).
+`build:npm` bundles Commonspace-owned runtime code, copies the built UI, and writes one ignored tarball under `artifacts/npm/`. External packages remain ordinary npm dependencies. The verifier installs the tarball in a clean temporary prefix and runs it outside the source checkout without agent credentials. See [Installation](../start/install.md) and [Releasing](../releases/releasing.md).
 
 ## Contract changes
 
@@ -136,18 +130,31 @@ When a persisted shape changes:
 
 The server owns Agent Client Protocol (ACP) integration. ACP connects Commonspace to a supported local harness and reports its session capabilities, activity, and permission choices. Commonspace must reflect those reports without inventing capabilities or changing provider-specific profiles.
 
-Keep activity provider-neutral, bounded, and based only on emitted ACP updates. Runtime-specific credentials, configuration, and native transcripts remain owned by Hermes or Codex.
+Keep activity provider-neutral, bounded, and based only on emitted ACP updates. Runtime-specific credentials, configuration, and native transcripts remain owned by each native harness.
 
-Real harness checks use local credentials and model access, so run only those relevant to the integration being changed:
+`pnpm verify:adapters` checks real Claude Code, Gemini CLI, and OpenCode runtimes against local model API fixtures without an account, including native restart/resume, fresh context, scoped MCP, and progress. These checks also run in the standard test suite. Individual commands are `verify:adapter:claude-code`, `verify:adapter:gemini`, and `verify:adapter:opencode`. See the [adapter guide](../adapters/agent-adapters.md#account-free-runtime-verification).
+
+Provider-backed harness checks use local credentials and model access, so run only those relevant to the integration being changed:
 
 ```bash
 pnpm verify:acp:hermes
 pnpm verify:acp:codex
+pnpm verify:acp:claude-code
 pnpm verify:acp:mcp
 ```
 
-The first two check native session startup and resumption. The MCP check also requires real harnesses to read scoped context and post visible progress. These checks complement deterministic tests; they do not replace them.
+Parser and service tests establish routing contracts; they do not measure model decomposition quality. To evaluate a configured OpenAI-compatible provider against representative cross-responsibility cases with exact constraint tokens and Project scopes, set `COMMONSPACE_ROUTING_BASE_URL`, `COMMONSPACE_ROUTING_MODEL`, and optional `COMMONSPACE_ROUTING_API_KEY`, then run:
+
+```bash
+pnpm verify:routing-quality
+```
+
+This opt-in evaluation may call a remote model and incur provider cost. Record provider/model/version and results; do not turn a mocked JSON parser test into a routing-quality claim.
+
+The first three check native session startup and resumption. The MCP check also requires real harnesses to read scoped context and post visible progress. These checks complement deterministic tests; they do not replace them.
 
 The Codex live checks honor `COMMONSPACE_CODEX_PATH` when testing a particular installed CLI. Use a complete runtime installation, including its Code Mode companion when that feature is enabled. The selected CLI must support the model configured in its native settings; an authenticated but outdated CLI can still fail model requests.
 
 On macOS, `pnpm verify:notifications` checks whether the native notifier accepts a safe test alert. Use **Send test notification** in Workspace settings to check visible delivery and follow any operating-system guidance.
+
+Follow the [agent adapter guide](../adapters/agent-adapters.md) and [proposal template](../adapters/agent-adapter-template.md) when adding a harness. Claude Code checks honor `COMMONSPACE_CLAUDE_CODE_PATH`; `pnpm verify:acp:claude-code` checks native recall after service restart, and `pnpm verify:acp:mcp:claude-code` checks scoped context and progress.

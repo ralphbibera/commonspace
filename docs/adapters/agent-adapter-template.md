@@ -47,4 +47,4 @@ Copy this template into a proposal or pull request. Replace every placeholder wi
 | Optional provider-backed native start and restart/resume | |
 | Real scoped MCP context/progress | |
 
-List unverified capabilities and actionable setup limitations. Synthetic fixtures establish Commonspace policy; real runtime checks establish provider compatibility. Link the [adapter guide](../agent-adapters.md) and relevant acceptance requirements.
+List unverified capabilities and actionable setup limitations. Synthetic fixtures establish Commonspace policy; real runtime checks establish provider compatibility. Link the [adapter guide](agent-adapters.md) and relevant product requirements.

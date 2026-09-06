@@ -2,7 +2,7 @@
 
 Commonspace is a local service with a browser UI. The server owns durable conversation state and connects to supported agent harnesses; the browser presents that state through shared API contracts. This guide explains where behavior belongs and which boundaries a change must preserve.
 
-Read the [Product model](product.md) for the domain and [Development](development.md) for setup and verification.
+Read the [Product model](../specs/product.md) for the domain and [Development](development.md) for setup and verification.
 
 ## Shape
 
@@ -24,6 +24,8 @@ Two protocols connect agent work to the workspace. Agent Client Protocol (ACP) c
 | --- | --- | --- |
 | Cross-process type, API shape, or pure helper | `packages/shared` | Server, UI, tests, and documentation |
 | State transition, migration, persistence, or routing | `server/src/state.ts` or `server/src/service.ts` | Shared contracts, regression tests, and operations docs |
+| Harness-generated file validation and copying | `server/src/file-attachments.ts` | Credential-name, allowed-root, symlink, byte-limit, and ACP attachment tests |
+| Portable archive size policy | `server/src/workspace-portability.ts` | HTTP import limits, portability tests, and archive-format docs |
 | HTTP validation or response status | `server/src/app.ts` | Shared request types and API tests |
 | ACP process or native-session lifecycle | `server/src/acp-runtime.ts` and `server/src/service.ts` | Harness tests and security documentation |
 | Scoped MCP behavior | `server/src/commonspace-mcp.ts` | Shared contracts, ACP tests, and context documentation |
@@ -64,7 +66,7 @@ Unknown or stale detail routes return to Inbox instead of restoring unrelated sa
 
 ### API groups
 
-The HTTP boundary is implemented in [`server/src/app.ts`](../server/src/app.ts). The following groups locate the main capabilities; request and response shapes live in `packages/shared`.
+The HTTP boundary is implemented in [`server/src/app.ts`](../../server/src/app.ts). The following groups locate the main capabilities; request and response shapes live in `packages/shared`.
 
 | Capability | Endpoints |
 | --- | --- |
@@ -117,11 +119,11 @@ Messages and Threads use zero-to-many Project references. A singular compatibili
 
 ## Agent runtimes
 
-Hermes runs through its installed `hermes acp` harness. Discovery reads its existing native profiles; each selected profile has a reusable workspace Agent identity and retains its own native configuration. Codex uses the bundled ACP bridge with the installed Codex CLI. Each Thread or DM generation keeps its own native session. Discovery never creates or rewrites native profiles.
+Hermes runs through its installed `hermes acp` harness. Discovery reads its existing native profiles; each selected profile has a reusable workspace Agent identity and retains its own native configuration. Codex and Claude Code use their bundled ACP bridges with the installed native CLI. Gemini CLI uses native `--acp`; OpenCode uses native `acp`. Gemini compatibility is checked during discovery and launch because later native versions have observed session-resume regressions. Adapter discovery, launch, and settings policy live in `server/src/adapters`; the shared catalog drives registration, validation, and UI labels. See [Adding an agent adapter](../adapters/agent-adapters.md). Each Thread or DM generation keeps its own native session. Discovery never creates or rewrites native profiles.
 
-A native turn receives the newly delivered message or assigned sub-request and ACP resource links for attached files. Shared room context is available through scoped MCP tools instead of being replayed inside every user message. Agent-authored mention handoffs deliver only the new handoff message.
+A native turn receives the newly delivered message or assigned sub-request and ACP resource links for attached files. Shared room context is available through scoped MCP tools on demand instead of being replayed inside every user message. Channel MCP scopes expose current peer IDs through the `commonspace_handoff` schema. A structured handoff records one concrete request during the active run; after that run finishes, the service appends a visible `@agent` handoff and delivers only sender identity plus the request. Later inferred relay turns receive a bounded head-and-tail excerpt of the preceding peer response plus their own assignment; the full reply remains available through scoped context.
 
-Each active native-session scope has one long-lived ACP process. Commonspace closes it on reset, removal, shutdown, or stale-session recovery. `/new` is a hard context boundary: cancellation and generation checks prevent an old reply from entering the replacement conversation.
+Each active native-session scope has one long-lived ACP process. Commonspace closes it on reset, removal, shutdown, or stale-session recovery. Graceful closure lets the bridge flush and stop its native child before bounded forced termination; an intentional transport close must not trigger the protocol-error kill path. `/new` is a hard context boundary: cancellation and generation checks prevent an old reply from entering the replacement conversation.
 
 Resumption uses the saved opaque native-session reference through ACP `session/load`. ACP frames and responses are bounded. Activity, reasoning summaries, plans, tool calls, usage, artifact links, and permission requests come from the harness. Commonspace normalizes those updates without synthesizing missing output or permission choices. A pending permission blocks only its own session. Native turn cancellation covers reset, Channel or Agent removal, timeout, and shutdown.
 
@@ -133,11 +135,11 @@ Resumption uses the saved opaque native-session reference through ACP `session/l
 
 Sidebar sort preferences belong to `ui/src/sidebar-preferences.ts` and persist in browser storage. `ui/src/channel-sorting.ts` orders Channels without changing conversation data. Pinned and unpinned Channels remain separate groups when sorting or reordering.
 
-Project scope is inferred unless the user supplies visible `@@project` references. Composers do not have separate Project pickers for roots, Threads, branches, or reroutes. [UI direction](ui-direction.md) describes the current visual treatment.
+Project scope is inferred unless the user supplies visible `@@project` references. Composers do not have separate Project pickers for roots, Threads, branches, or reroutes. [Design](../../DESIGN.md) describes the current visual treatment.
 
 ## Persistence
 
-The current internal state version is 27, defined by `COMMONSPACE_STATE_VERSION`. Versions 1–26 migrate during load through structural validation and sanitization.
+The current internal state version is 29, defined by `COMMONSPACE_STATE_VERSION`. Versions 1–28 migrate during load through structural validation and sanitization.
 
 Persisted state includes the roster, appearance, workspace model/reasoning settings, host-private native sessions, bounded activity, Inbox read/unread/saved state, notification preferences, attachments, routing decisions and memory, Project references, Channel/Thread context, pins, message versions, deletion markers, permissions, and execution state.
 
@@ -155,13 +157,17 @@ State writes use a `0600` temporary file followed by atomic rename. The prior va
 
 Native alerts are derived from new durable Inbox items after persistence. Existing items become the baseline at startup and import, so historical alerts are not replayed. Notification categories are independent of Inbox read state. Delivery failure cannot fail the originating Agent result.
 
+Execution completion and attention evidence stay separate. Text-only explicit requests derive one **May need input** item without changing the confirmed completed run state. Native permission records take precedence and derive one exact permission item; punctuation alone is never blocking evidence.
+
 Notification links identify conversations, Threads, and messages by their workspace IDs. The client accepts them only when they match current state on the loopback origin.
 
-Portable archive version 1 is independent of internal state version 27. Export contains sanitized workspace records and exact attachment bytes, replaces Project roots with counts, and omits native sessions. Import requires an empty workspace and explicit existing local roots. Retention requires an owner-triggered, revision-bound preview for one inactive conversation. See [Workspace archive format](workspace-archive-format.md).
+Portable archive version 1 is independent of internal state version 29. Export contains sanitized workspace records and exact attachment bytes, replaces Project roots with counts, and omits native sessions. Import requires an empty workspace and explicit existing local roots, and validates all structure, mapping, attachment, and size constraints before writes. Retention requires an owner-triggered, revision-bound preview for one inactive conversation. See [Workspace archive format](../specs/workspace-archive-format.md) for the contract.
 
 ## Routing inference
 
-Inference classifies each unaddressed Channel message after durable acceptance. It stores one bounded sub-request and Project subset per selected harness. Only that assignment is delivered; the original human message remains the canonical record and is available through scoped context.
+Inference classifies each unaddressed Channel message after durable acceptance. It stores `parallel` or `relay`, plus one bounded sub-request and Project subset per selected harness. Parallel assignments may run concurrently. Relay assignments remain ordered: only the first starts from the human request, then each later Agent receives a bounded excerpt of the preceding peer response plus its own assignment. The original human message and complete peer replies remain canonical records available through scoped context.
+
+During an active Channel run, `commonspace_handoff` may register one target and request against that run ID. The service validates the target against current Channel membership, waits for the sender to finish, persists a visible handoff, seats the peer in the Thread if needed, then invokes it. Structured handoffs and relay mentions may return to a prior speaker only on a new directed edge. The visible workspace Agent limit bounds total turns; repeated edges or excess turns produce one durable system outcome instead of another invocation.
 
 For a new root without `@@project` tags, inference may select from all configured Projects. The message and Thread retain the union of the selected references. Explicit valid tags constrain the available set, including replacing inherited scope on an edited branch. Explicit `@agent` addressing always remains authoritative.
 
@@ -169,6 +175,6 @@ A service-level correction can replace the Agent or wording of one assignment. T
 
 Routing stores its own start time, resolution time, and duration separately from harness execution. The conversation shows pending and failed routing, while resolved assignments, reasons, timings, and inline correction controls stay outside the current UI. A failed decision marks the accepted source failed and creates a durable retryable Inbox item; it never silently broadcasts the message.
 
-One Commonspace inference layer handles routing, routing-memory compaction, and Channel/Thread context compaction. It supports a configured agent harness or an OpenAI-compatible endpoint. Harness-backed routing keeps one durable session per Channel, shared across its Threads; each request still supplies only that Thread's bounded context. There is no deterministic provider mode.
+One Commonspace inference layer handles routing, routing-memory compaction, and Channel/Thread context compaction. It supports a configured agent harness or an OpenAI-compatible endpoint. Routing output budgets scale within a fixed bound according to the visible Agent fan-out limit. OpenAI-compatible requests enforce that value through `max_tokens`. ACP exposes no provider-neutral token control, so harness prompts state the token budget and the ACP client enforces a scaled request-specific character ceiling capped by its process-wide response limit. Provider-reported output truncation and invalid JSON may receive one bounded inference retry; the complete decision is validated before any assignment is dispatched. Harness-backed routing keeps one durable session per Channel, shared across its Threads; each request still supplies only that Thread's bounded context. There is no deterministic provider mode.
 
 Stored API keys are never returned to the browser. Changing the endpoint origin clears its stored key. `OPENAI_API_KEY` is used only for the canonical OpenAI origin; other endpoints require their own explicit key when authentication is needed.

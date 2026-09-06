@@ -2,7 +2,7 @@
 
 Use this guide to review a desktop UI change from interaction through rendered appearance. Automated checks can establish that a control works, but visual acceptance also requires inspecting what the user sees.
 
-Review against the Commonspace [design contract](design.md) and [UI direction](ui-direction.md). Keep desktop as the active target, and check both Light and Dark appearance when a change affects colors or surfaces.
+Review against the Commonspace [design contract](../../DESIGN.md). Keep desktop as the active target, and check both Light and Dark appearance when a change affects colors or surfaces.
 
 ## Three checks
 
@@ -59,6 +59,8 @@ The development server also exposes the Components Manifest and an MCP endpoint 
 
 Do not use `--update-snapshots` as an ordinary verification step. Inspect the affected state, decide whether the change is correct, and update only an accepted baseline.
 
+Dedicated stories cover primitives, workspace startup, routing, sorting, follow-up delivery, search, permissions, and runtime activity. Use Storybook for isolated states; use the live verifier for assembled UI/API behavior.
+
 ## Visual review protocol
 
 Review each meaningful state in action order:
@@ -107,7 +109,7 @@ These checks protect usability and provide evidence for review. Pixel inspection
 
 Use this matrix when selecting acceptance states. Every row needs resting, hover, keyboard focus, open/selected, and applicable empty, dense, loading, or error states.
 
-The [Storybook coverage map](storybook-coverage.md) provides focused states for these checks. Use its Light / Dark toolbar for both ordinary content and portaled overlays. Inspect the compact sorting menu, queued-message tray, startup retry, and long dialogs at desktop and narrow-pane widths.
+Use Storybook's Light / Dark toolbar for ordinary content and portaled overlays. Inspect the compact sorting menu, queued-message tray, startup retry, and long dialogs at desktop and narrow-pane widths.
 
 | Surface | Examples to inspect |
 | --- | --- |
@@ -125,6 +127,6 @@ The live verifier covers only part of this matrix. Record missing coverage expli
 
 ## Iteration loop
 
-For each finding, keep its evidence, fix the smallest owning component, rerun the focused journey, and inspect the changed state with adjacent states again. Before accepting a server or visible end-to-end change, run `pnpm check` and `pnpm verify:live` as described in [Development](development.md#development-workflow).
+For each finding, keep its evidence, fix the smallest owning component, rerun the focused journey, and inspect the changed state with adjacent states again. Before accepting a server or visible end-to-end change, run `pnpm check` and `pnpm verify:live` as described in [Development](../guides/development.md#development-workflow).
 
 A baseline is useful only after review. Do not approve a changed image simply because it matches the current implementation.
