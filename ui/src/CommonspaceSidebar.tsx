@@ -173,7 +173,7 @@ function Section(props: {
 
 function NavGroupLabel({ label, count }: { label: string; count?: number }) {
 	return (
-		<p className="mt-1 mr-2 mb-0.5 ml-[30px] flex min-h-5 items-center gap-1.5 px-1 text-[10px] font-semibold tracking-[0.07em] text-sidebar-foreground/45 uppercase">
+		<p className="mt-1 mr-2 mb-0.5 ml-[30px] flex min-h-5 items-center gap-1.5 px-1 text-[10px] font-semibold tracking-[0.07em] text-sidebar-foreground uppercase">
 			<span>{label}</span>
 			{count !== undefined && (
 				<>
