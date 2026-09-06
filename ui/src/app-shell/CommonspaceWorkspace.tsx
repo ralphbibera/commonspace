@@ -1,3 +1,12 @@
+import { LoaderCircleIcon, RefreshCwIcon, UnplugIcon } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+	Empty,
+	EmptyDescription,
+	EmptyHeader,
+	EmptyMedia,
+	EmptyTitle,
+} from "@/components/ui/empty";
 import { CommonspaceConversation } from "../CommonspaceConversation.tsx";
 import { CommonspaceDirectory } from "../CommonspaceDirectory.tsx";
 import { CommonspaceInbox } from "../CommonspaceInbox.tsx";
@@ -14,6 +23,59 @@ interface CommonspaceWorkspaceProps {
 	projectFetcher?: typeof globalThis.fetch;
 	snapshot: CommonspaceClientSnapshot;
 	store: CommonspaceStore;
+}
+
+function WorkspaceConnection({
+	error,
+	onRetry,
+}: {
+	error: string | null;
+	onRetry: () => void;
+}) {
+	const failed = error !== null;
+	return (
+		<main
+			aria-label="Workspace connection"
+			className="flex h-full min-h-0 items-center justify-center overflow-y-auto bg-background p-8"
+		>
+			<Empty
+				role={failed ? "alert" : "status"}
+				className="max-w-md flex-none border border-solid bg-card px-8 py-10"
+			>
+				<EmptyHeader>
+					<EmptyMedia variant="icon">
+						{failed ? (
+							<UnplugIcon aria-hidden="true" />
+						) : (
+							<LoaderCircleIcon
+								aria-hidden="true"
+								className="motion-safe:animate-spin"
+							/>
+						)}
+					</EmptyMedia>
+					<EmptyTitle>
+						<h1>{failed ? "Workspace unavailable" : "Opening workspace"}</h1>
+					</EmptyTitle>
+					<EmptyDescription>
+						{failed
+							? "Check that Commonspace is running, then try again."
+							: "Loading your conversations, projects, and agents…"}
+					</EmptyDescription>
+				</EmptyHeader>
+				{failed && (
+					<>
+						<p className="max-w-full rounded-sm bg-muted px-3 py-2 text-xs leading-relaxed text-foreground [overflow-wrap:anywhere]">
+							{error}
+						</p>
+						<Button variant="outline" onClick={onRetry}>
+							<RefreshCwIcon data-icon="inline-start" aria-hidden="true" />
+							Try again
+						</Button>
+					</>
+				)}
+			</Empty>
+		</main>
+	);
 }
 
 export function CommonspaceWorkspace({
@@ -43,6 +105,17 @@ export function CommonspaceWorkspace({
 		targetMessageId,
 		targetProjectFile,
 	} = navigation;
+
+	if (snapshot.bootstrap === null) {
+		return (
+			<WorkspaceConnection
+				error={snapshot.loading ? null : snapshot.error}
+				onRetry={() => {
+					void store.refresh();
+				}}
+			/>
+		);
+	}
 
 	if (activeProjectViewId !== null) {
 		const projectSettingsRequest =

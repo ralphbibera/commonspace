@@ -42,6 +42,7 @@ See the [Product specification](product-spec.md) for requirements, the [Implemen
 - Images and general files can be attached, downloaded safely, searched, and pinned. Supported agent files are copied only from permitted roots; known credential files are refused.
 - Native permission requests show exactly the runtime's available choices. They remain visible in the conversation and Inbox and block only the affected session.
 - The desktop shell, collections, conversations, Inbox, threads, and Project panes follow the geometry and border rules in [UI direction](ui-direction.md). Final visual polish remains part of release readiness.
+- Dedicated primitive and shell stories close the September 6 Storybook gaps. Expandable queued-message previews, startup retry, and bounded overlays are available for desktop iteration; the [coverage map](storybook-coverage.md) lists focused states and checks.
 - Appearance starts in Light and offers Light, Dark, and System modes. Message focus uses a neutral card treatment. Theme tokens in `ui/src/index.css` allow a theme change without editing React components or layouts.
 
 ### Local operation and data

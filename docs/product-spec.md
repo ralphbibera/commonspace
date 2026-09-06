@@ -235,7 +235,7 @@ Each row gives a stable requirement ID, its release target, the required behavio
 
 | ID | Target | Requirement | Acceptance condition |
 | --- | --- | --- | --- |
-| WRK-01 | v0.0.1 | Run as a local service with browser clients over loopback. | The workspace remains usable without a hosted Commonspace account or cloud control plane. |
+| WRK-01 | v0.0.1 | Run as a local service with browser clients over loopback. | The workspace remains usable without a hosted Commonspace account or cloud control plane. Startup distinguishes loading from an empty workspace, offers retry after connection failure, and preserves already loaded content during refresh. |
 | WRK-02 | v0.0.1 | Keep the service independent from the visible client. | Closing every client does not terminate an accepted or active turn. |
 | WRK-03 | v0.0.1 | Limit structural workspace mutations to the human. | Agents cannot create/delete Projects, Channels, DMs, or Agents through v0.0.1 context tools. |
 | WRK-04 | v0.0.1 | Restore durable state after service or machine restart. | Conversations, context, read state, and resumable native-session mappings survive restart. |
@@ -279,7 +279,7 @@ Each row gives a stable requirement ID, its release target, the required behavio
 | CON-07 | v0.0.1 | Invoke visible Agent mentions as peer handoffs in the same Thread. | Mentioned Agents receive the handoff without a coordinator or private Agent DM. |
 | CON-08 | v0.0.1 | Run different native sessions concurrently and serialize only the same session. | A slow Agent does not block unrelated Agents or Threads. |
 | CON-09 | v0.0.1 | Bound pathological Agent-to-Agent cycles. | Repeated cycles stop with a visible outcome rather than silently looping. |
-| CON-10 | v0.0.1 | Preserve queued follow-ups while a native session is busy. | The user can inspect, reorder, remove, steer where supported, or stop-and-send queued input. |
+| CON-10 | v0.0.1 | Preserve queued follow-ups while a native session is busy. | The user can inspect, reorder, remove, steer where supported, or stop-and-send queued input. A bounded tray shows delivery status and expandable message previews; compact icon actions have accessible names and tooltips in both DMs and Threads. |
 | CON-11 | v0.0.1 | Apply one workspace model and reasoning configuration to every conversation. | Channels do not expose, persist, or apply per-Channel model or reasoning overrides. |
 
 ### 6.5 Commonspace inference, routing, and correction

@@ -26,6 +26,10 @@ Opening a reply focuses the exact reply in its Thread pane. Its Channel root rem
 
 Pending routing and failures remain visible. Resolved routing metadata supports dispatch, reply binding, diagnostics, and correction history at the service boundary; resolved assignment cards and inline reroute controls are outside the current conversation UI.
 
+Queued follow-ups sit in a compact tray aligned with the composer. Keep message previews and delivery status distinct, allow long previews to expand, and bound the tray so the composer remains usable. Reorder and removal actions use consistently sized icons with tooltips. Queue remains a labeled action; Steer and Stop and send use named icon controls beside it.
+
+Before workspace data arrives, show an explicit loading state. An initial connection failure shows its error and a Try again action. Refreshing an already loaded workspace preserves its content, with refresh errors shown in an actionable notice.
+
 ## Appearance
 
 The default appearance is Light. Users can choose Light, Dark, or System, and the choice persists locally. System follows the operating-system preference.

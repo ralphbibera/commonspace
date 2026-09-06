@@ -81,6 +81,10 @@ The tables group findings by the user experience they support. “Working” row
 
 ## Recommended feature order
 
+### September 6 UI follow-up
+
+The dedicated-story gaps identified in the September 6 UI audit are addressed by primitive, workspace, and routing stories; see the [coverage map](storybook-coverage.md). Follow-up UI work also adds shared queued-message presentation, explicit startup/retry states, bounded dialogs, and functional vertical control orientation. This closes those specific gaps without changing the historical status of unrelated capabilities above.
+
 The next release step recorded by this audit was to repeat the real-runtime, isolated service-lifecycle, and browser acceptance gates on a clean supported release machine. The [Roadmap](roadmap.md#release-readiness) and [v0.0.1 acceptance ledger](v0.0.1-acceptance.md#current-release-gates) describe the gates to run for a candidate now.
 
 ## Audit scope

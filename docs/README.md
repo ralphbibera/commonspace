@@ -18,6 +18,7 @@ Start with the guide that matches what you want to do. Installation and contribu
 | Report a bug, propose an improvement, or submit a pull request | [Contributing](../CONTRIBUTING.md) |
 | Find my way around the repository and choose the right tests | [Contributor guide](contributor-guide.md) |
 | Run the application, Storybook, and development checks | [Development](development.md) |
+| Find isolated UI states for design and interaction review | [Storybook coverage](storybook-coverage.md) |
 | Understand which package owns a behavior | [Architecture](architecture.md) |
 | Build or change a screen | [Design](design.md) and [UI direction](ui-direction.md) |
 | Work with shared UI components and tokens | [Design system](design-system.md) |

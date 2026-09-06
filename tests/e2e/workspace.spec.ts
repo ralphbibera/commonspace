@@ -371,7 +371,7 @@ test("refreshes the Inbox, captures native delivery, and opens the exact notific
 		.click();
 
 	await page.getByRole("button", { name: /Open Inbox/iu }).click();
-	await page.getByRole("button", { name: /Activity/iu }).click();
+	await page.getByRole("button", { name: /^Activity/iu }).click();
 	const bootstrap = await page.request
 		.get("/api/bootstrap", { headers: { origin: page.url() } })
 		.then(async (response) => bootstrapSchema.parse(await response.json()));

@@ -24,6 +24,7 @@ export default defineConfig({
 			"**/storybook-static/**",
 			"tests/e2e/**",
 			"tests/storybook-visual.spec.ts",
+			"tests/storybook-interactions.spec.ts",
 		],
 		maxWorkers: process.env.CI === "true" ? 2 : undefined,
 		testTimeout: 30_000,

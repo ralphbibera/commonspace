@@ -1,4 +1,5 @@
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
+import { CheckIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 function DropdownMenu({ ...props }: MenuPrimitive.Root.Props) {
@@ -45,6 +46,37 @@ function DropdownMenuContent({
 
 function DropdownMenuGroup({ ...props }: MenuPrimitive.Group.Props) {
 	return <MenuPrimitive.Group data-slot="dropdown-menu-group" {...props} />;
+}
+
+function DropdownMenuRadioGroup({ ...props }: MenuPrimitive.RadioGroup.Props) {
+	return (
+		<MenuPrimitive.RadioGroup
+			data-slot="dropdown-menu-radio-group"
+			{...props}
+		/>
+	);
+}
+
+function DropdownMenuRadioItem({
+	className,
+	children,
+	...props
+}: MenuPrimitive.RadioItem.Props) {
+	return (
+		<MenuPrimitive.RadioItem
+			data-slot="dropdown-menu-radio-item"
+			className={cn(
+				"relative flex min-h-8 cursor-default items-center gap-2 rounded-sm py-1.5 pr-8 pl-2 text-sm outline-none select-none focus:bg-accent focus:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0",
+				className,
+			)}
+			{...props}
+		>
+			{children}
+			<MenuPrimitive.RadioItemIndicator className="absolute right-2 grid size-4 place-items-center">
+				<CheckIcon aria-hidden="true" />
+			</MenuPrimitive.RadioItemIndicator>
+		</MenuPrimitive.RadioItem>
+	);
 }
 
 function DropdownMenuLabel({
@@ -109,6 +141,8 @@ export {
 	DropdownMenuGroup,
 	DropdownMenuItem,
 	DropdownMenuLabel,
+	DropdownMenuRadioGroup,
+	DropdownMenuRadioItem,
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 };

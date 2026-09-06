@@ -12,6 +12,8 @@ The design system gives Commonspace one consistent set of colors, typography, sp
 | `ui/src` | Product components and screen composition |
 | `ui/src/stories` | Isolated component and screen states |
 
+The [Storybook coverage map](storybook-coverage.md) links the dedicated primitive and shell stories. `SidebarSortControl` owns the compact collection-header sort menu. `RunDelivery` owns the shared DM/Thread follow-up tray and delivery buttons; it preserves native form submission values and the existing queue callbacks.
+
 Use Tailwind CSS v4 and the existing shadcn primitives. Prefer an existing component for a repeated control or layout. Add a shared component when it has a clear reusable responsibility; avoid a new abstraction for one small styling change.
 
 ## Semantic tokens
