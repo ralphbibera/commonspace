@@ -16,6 +16,18 @@ import {
 import { parseReleaseVersion } from "../scripts/release-version.mjs";
 
 const roots = [];
+const npmKeywords = [
+	"agent-client-protocol",
+	"ai-agents",
+	"coding-agents",
+	"collaboration",
+	"developer-tools",
+	"local-first",
+	"mcp",
+	"nodejs",
+	"react",
+	"typescript",
+];
 
 afterEach(async () => {
 	await Promise.all(
@@ -31,6 +43,7 @@ function cliManifest(version = "0.0.1") {
 		type: "module",
 		bin: { commonspace: "dist/index.js" },
 		license: "MIT",
+		keywords: npmKeywords,
 		repository: {
 			type: "git",
 			url: "git+ssh://git@github.com/ralphbibera/commonspace.git",
@@ -60,7 +73,7 @@ function serverManifest(version = "0.0.1") {
 	};
 }
 
-describe("npm release package", () => {
+describe("release version", () => {
 	it("accepts SemVer releases and rejects unsafe package versions", () => {
 		expect(parseReleaseVersion("0.0.1")).toEqual({
 			version: "0.0.1",
@@ -82,7 +95,9 @@ describe("npm release package", () => {
 		])
 			expect(() => parseReleaseVersion(version)).toThrow("version");
 	});
+});
 
+describe("npm release package", () => {
 	it("publishes one CLI package with external runtime dependencies", () => {
 		expect(createNpmPackageManifest(cliManifest(), serverManifest())).toEqual({
 			name: "commonspace",
@@ -92,6 +107,7 @@ describe("npm release package", () => {
 			bin: { commonspace: "dist/index.js" },
 			files: ["dist", "ui-dist"],
 			license: "MIT",
+			keywords: npmKeywords,
 			repository: {
 				type: "git",
 				url: "git+ssh://git@github.com/ralphbibera/commonspace.git",
@@ -135,6 +151,12 @@ describe("npm release package", () => {
 		).toThrow(
 			"cli/package.json dependency express must match server/package.json",
 		);
+		expect(() =>
+			createNpmPackageManifest(
+				{ ...cliManifest(), keywords: ["", "ai-agents"] },
+				serverManifest(),
+			),
+		).toThrow("cli/package.json keywords must be a non-empty string array");
 	});
 
 	it("stages only npm runtime assets", async () => {

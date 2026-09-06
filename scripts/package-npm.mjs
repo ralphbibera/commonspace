@@ -29,6 +29,16 @@ function requiredRecord(value, field) {
 	return value;
 }
 
+function requiredStringArray(value, field) {
+	if (
+		!Array.isArray(value) ||
+		value.length === 0 ||
+		value.some((item) => typeof item !== "string" || item === "")
+	)
+		throw new Error(`${field} must be a non-empty string array`);
+	return value;
+}
+
 export function createNpmPackageManifest(cliManifest, serverManifest) {
 	const name = requiredString(cliManifest.name, "cli/package.json name");
 	const version = requiredString(
@@ -77,6 +87,10 @@ export function createNpmPackageManifest(cliManifest, serverManifest) {
 		bin: requiredRecord(cliManifest.bin, "cli/package.json bin"),
 		files: ["dist", "ui-dist"],
 		license: requiredString(cliManifest.license, "cli/package.json license"),
+		keywords: requiredStringArray(
+			cliManifest.keywords,
+			"cli/package.json keywords",
+		),
 		repository: requiredRecord(
 			cliManifest.repository,
 			"cli/package.json repository",

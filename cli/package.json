@@ -4,6 +4,18 @@
 	"description": "A local-first workspace for projects, channels, direct messages, and coding agents.",
 	"private": true,
 	"license": "MIT",
+	"keywords": [
+		"agent-client-protocol",
+		"ai-agents",
+		"coding-agents",
+		"collaboration",
+		"developer-tools",
+		"local-first",
+		"mcp",
+		"nodejs",
+		"react",
+		"typescript"
+	],
 	"type": "module",
 	"bin": {
 		"commonspace": "dist/index.js"

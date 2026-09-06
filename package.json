@@ -4,6 +4,26 @@
 	"description": "A local-first workspace for projects, channels, direct messages, and coding agents.",
 	"private": true,
 	"license": "MIT",
+	"keywords": [
+		"agent-client-protocol",
+		"ai-agents",
+		"coding-agents",
+		"collaboration",
+		"developer-tools",
+		"local-first",
+		"mcp",
+		"nodejs",
+		"react",
+		"typescript"
+	],
+	"repository": {
+		"type": "git",
+		"url": "git+ssh://git@github.com/ralphbibera/commonspace.git"
+	},
+	"homepage": "https://github.com/ralphbibera/commonspace#readme",
+	"bugs": {
+		"url": "https://github.com/ralphbibera/commonspace/issues"
+	},
 	"type": "module",
 	"scripts": {
 		"dev": "pnpm --filter @commonspace/server --filter @commonspace/ui --parallel --stream run dev",
