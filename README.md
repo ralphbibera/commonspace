@@ -139,3 +139,7 @@ Start with the [documentation guide](docs/README.md), or go directly to:
 ## License
 
 Commonspace is [MIT licensed](LICENSE). © Ralph Bibera.
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=ralphbibera/commonspace&type=Date)](https://www.star-history.com/#ralphbibera/commonspace&Date)
