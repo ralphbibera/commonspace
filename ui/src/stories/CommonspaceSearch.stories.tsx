@@ -5,7 +5,7 @@ import type {
 } from "@commonspace/shared";
 import { COMMONSPACE_SEARCH_KINDS } from "@commonspace/shared";
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect, fn, userEvent, within } from "storybook/test";
+import { expect, fn, userEvent, waitFor, within } from "storybook/test";
 import { CommonspaceSearchDialog } from "../CommonspaceSearch";
 import { errorSearchFetcher, pendingSearchFetcher } from "./story-fixtures";
 
@@ -188,7 +188,8 @@ export const Pending: Story = {
 	args: { fetcher: pendingSearchFetcher },
 	play: async ({ canvasElement }) => {
 		const body = within(canvasElement.ownerDocument.body);
-		await expect(body.getByText("Searching…")).toBeVisible();
+		const status = body.getByText("Searching…");
+		await waitFor(() => expect(status).toBeVisible());
 	},
 };
 
@@ -300,8 +301,9 @@ export const FilterMenuOpen: Story = {
 		await userEvent.click(
 			body.getByRole("button", { name: "Filter result types: All types" }),
 		);
-		await expect(
-			await body.findByRole("menuitemcheckbox", { name: "Channels" }),
-		).toBeVisible();
+		const channels = await body.findByRole("menuitemcheckbox", {
+			name: "Channels",
+		});
+		await waitFor(() => expect(channels).toBeVisible());
 	},
 };

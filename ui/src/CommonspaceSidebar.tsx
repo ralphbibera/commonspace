@@ -1803,7 +1803,7 @@ export function CommonspaceSidebar({
 												>
 													<div
 														className={cn(
-															!notificationSettings.enabled && "opacity-55",
+															!notificationSettings.enabled && "opacity-80",
 														)}
 													>
 														<strong className="block text-[13px]">

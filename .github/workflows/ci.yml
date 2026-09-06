@@ -58,8 +58,6 @@ jobs:
   browser:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    env:
-      COMMONSPACE_USE_SYSTEM_CHROME: "1"
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -71,8 +69,8 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Verify system Chrome
-        run: google-chrome --version
+      - name: Install browser and operating-system dependencies
+        run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:storybook
       - run: pnpm build
       - run: pnpm test:e2e:built

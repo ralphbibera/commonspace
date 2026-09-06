@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { type ComponentProps, useState } from "react";
-import { expect, fn, userEvent, within } from "storybook/test";
+import { expect, fn, userEvent, waitFor, within } from "storybook/test";
 import { SidebarSortControl } from "../design-system/SidebarSortControl";
 
 function SortPreview(args: ComponentProps<typeof SidebarSortControl>) {
@@ -66,14 +66,16 @@ export const SelectOrder: Story = {
 	tags: ["smoke"],
 	play: async ({ canvasElement }) => {
 		const canvas = within(canvasElement);
+		const page = within(canvasElement.ownerDocument.body);
 		await userEvent.click(
 			canvas.getByRole("button", { name: /^Sort channels:/u }),
 		);
-		await userEvent.click(
-			within(canvasElement.ownerDocument.body).getByRole("menuitemradio", {
-				name: "Alphabetical",
-			}),
-		);
+		const alphabetical = await page.findByRole("menuitemradio", {
+			name: "Alphabetical",
+		});
+		await waitFor(() => expect(alphabetical).toBeVisible());
+		await userEvent.click(alphabetical);
+		await waitFor(() => expect(page.queryAllByRole("menu")).toHaveLength(0));
 		await expect(
 			canvas.getByRole("button", { name: "Sort channels: Alphabetical" }),
 		).toBeVisible();

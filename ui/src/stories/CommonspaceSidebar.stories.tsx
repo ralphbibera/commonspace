@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, fn, userEvent, waitFor, within } from "storybook/test";
 import { CommonspaceSidebar } from "../CommonspaceSidebar";
-import { sidebarPreferencesStore } from "../sidebar-preferences";
+import { collectionKey, sidebarPreferencesStore } from "../sidebar-preferences";
 import {
 	buildChannel,
 	codexAgent,
@@ -137,30 +137,27 @@ async function selectSort(
 	label: string,
 ) {
 	const canvas = within(canvasElement);
+	const page = within(canvasElement.ownerDocument.body);
 	await userEvent.click(
 		canvas.getByRole("button", { name: new RegExp(`^Sort ${kind}s:`) }),
 	);
 	await userEvent.click(
-		await within(canvasElement.ownerDocument.body).findByRole("menuitemradio", {
+		await page.findByRole("menuitemradio", {
 			name: label,
 		}),
 	);
+	await waitFor(() => expect(page.queryAllByRole("menu")).toHaveLength(0));
 }
 
 async function prepareChannelSorting(canvasElement: HTMLElement) {
-	const canvas = within(canvasElement);
-	const page = within(canvasElement.ownerDocument.body);
 	await selectSort(canvasElement, "channel", "Recent activity");
 	sidebarPreferencesStore.setCustomOrder("channel", []);
-	await userEvent.click(
-		canvas.getByRole("button", { name: "More actions for builds" }),
-	);
-	const pinAction = page.queryByText("Pin to sidebar");
-	if (pinAction !== null) await userEvent.click(pinAction);
-	else await userEvent.keyboard("{Escape}");
-	await waitFor(() => {
-		expect(page.queryByRole("menu")).not.toBeInTheDocument();
-	});
+	if (
+		!sidebarPreferencesStore
+			.getSnapshot()
+			.pinnedKeys.includes(collectionKey("channel", buildChannel.id))
+	)
+		sidebarPreferencesStore.togglePin("channel", buildChannel.id);
 }
 
 export const Expanded: Story = {};
