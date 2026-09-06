@@ -115,22 +115,23 @@ export const Browse: Story = {};
 
 export const DenseResults: Story = {
 	args: {
-		fetcher: async () =>
-			new Response(
+		fetcher: async (input, init) => {
+			const response = await fetcher(input, init);
+			const data: CommonspaceSearchResponse = await response.json();
+			return new Response(
 				JSON.stringify({
-					query: "",
-					results: results.flatMap((result) =>
+					...data,
+					results: data.results.flatMap((result) =>
 						Array.from({ length: 8 }, (_, index) => ({
 							...result,
 							id: `${result.id}-${index}`,
 							title: `${result.title} ${index + 1}`,
 						})),
 					),
-					appliedFilters: { kinds: [], projectId: null },
-					truncated: false,
 				} satisfies CommonspaceSearchResponse),
 				{ headers: { "content-type": "application/json" } },
-			),
+			);
+		},
 	},
 };
 
