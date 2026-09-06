@@ -2,9 +2,9 @@
 
 This specification defines the requirements for Commonspace v0.0.1 and the conditions that demonstrate each behavior. Use it when designing a change, implementing a feature, or reviewing a release.
 
-Start with the [Product model](product.md) for an introduction to the concepts. The [Product direction](product-direction.md) explains scope, the [Implementation gap audit](implementation-gap-audit.md) records a dated implementation snapshot, and the [Roadmap](roadmap.md) identifies release work and later plans.
+Start with the [Product model](product.md) for an introduction to the concepts. The [Product direction](product-direction.md) explains scope, and the [Roadmap](../../ROADMAP.md) identifies release work and later plans.
 
-For a first read, sections 1–5 explain the product and its main flows. [Section 6](#6-functional-requirements) is the requirement reference, and [section 12](#12-end-to-end-acceptance-scenarios) describes complete user scenarios. [UI direction](ui-direction.md) covers visual design and layout.
+For a first read, use the [Product model](product.md). [Functional requirements](#6-functional-requirements) are the normative reference, and [end-to-end acceptance scenarios](#end-to-end-acceptance-scenarios) cover complete user journeys. [Design](../../DESIGN.md) covers visual design and layout.
 
 ## 1. Product definition
 
@@ -155,11 +155,12 @@ flowchart TD
 1. The human sends a root message in a Channel, with zero or more explicit Project references.
 2. Commonspace persists and displays the message immediately.
 3. The message creates a Thread.
-4. The inference layer resolves missing Project references, selects the smallest useful set of Agents, and decomposes the message when responsibilities differ.
-5. The service stores the selected Agents, sub-requests, Project references, and routing reason. These records support delivery, associate replies with assignments, and retain diagnostics and corrections. The conversation shows pending and failed routing states but omits completed routing details.
-6. Commonspace dispatches each sub-request to that Agent's native session in the Thread.
-7. Different Agent sessions run concurrently. Calls to the same native session are serialized.
-8. Replies, activity, results, and attention states appear under the same Thread.
+4. The inference layer resolves missing Project references, selects the smallest useful set of Agents, decomposes the message when responsibilities differ, and classifies delivery as parallel or relay.
+5. A request for independent work uses parallel delivery. A request for Agents to discuss, debate, reconcile, review one another, or reach a shared conclusion uses an ordered relay with at least two assignments.
+6. The service stores the routing mode, selected Agents, ordered sub-requests, Project references, and routing reason. These records support delivery, associate replies with assignments, and retain diagnostics and corrections. The conversation shows pending and failed routing states but omits completed routing details.
+7. Parallel assignments run concurrently. In a relay, only the first Agent starts; each later Agent receives a bounded head-and-tail excerpt of the preceding peer response plus its own assignment. The complete reply remains available through on-demand context.
+8. Calls to the same native session are serialized.
+9. Replies, activity, results, and attention states appear under the same Thread.
 
 ### 5.4 Explicitly addressed Channel message
 
@@ -173,9 +174,10 @@ flowchart TD
 1. A human reply continues the exact native sessions already mapped to that Thread.
 2. Project references inherit from the Thread unless the new message supplies visible `@@project` tags; there is no separate Channel/Thread Project picker.
 3. A change affects the new message and future Thread defaults, never the context already delivered in earlier turns.
-4. An Agent can mention another Agent in its visible reply.
-5. That mention invokes the Agent in the same Thread with the newly delivered handoff message and bounded shared context.
-6. Repeated Agent-to-Agent cycles stop with a visible outcome before they can loop indefinitely. This does not require a coordinator or task gate.
+4. An Agent can call scoped `commonspace_handoff` once during an active Channel turn with one current peer ID and a concrete request.
+5. Commonspace writes that request as a visible `@agent` handoff, adds the peer to the Thread if needed, and invokes it after the sending turn with only sender identity and the clean request. A final paragraph beginning with an unquoted `@agent` directive remains a fallback; quoted, incidental, or machine-added sender labels do not route.
+6. Structured handoffs may return to an earlier speaker when the directed edge has not already run and the visible workspace Agent limit has capacity.
+7. Self-handoffs, non-member targets, repeated directed edges, and excess relay turns are rejected or stopped with a visible outcome. This does not require a coordinator or task gate.
 
 ### 5.6 Direct Message
 
@@ -223,7 +225,7 @@ Compaction summarizes context so it fits within input limits. It does not delete
 
 ## 6. Functional requirements
 
-Each row gives a stable requirement ID, its release target, the required behavior, and the condition that proves it. Cite these IDs in implementation plans and reviews. The [acceptance ledger](v0.0.1-acceptance.md) maps requirements to recorded evidence.
+Each row gives a stable requirement ID, its release target, the required behavior, and the condition that proves it. Cite these IDs in implementation plans and reviews. Release records contain candidate-specific evidence.
 
 | Target | Meaning |
 | --- | --- |
@@ -246,7 +248,7 @@ Each row gives a stable requirement ID, its release target, the required behavio
 
 | ID | Target | Requirement | Acceptance condition |
 | --- | --- | --- | --- |
-| AGT-01 | v0.0.1 | Add Agents only through an explicit user-initiated discovery flow. | Startup does not silently add Agents. Discovery returns the installed Codex harness and existing Hermes profiles; Commonspace does not create native profiles or synthetic personas. |
+| AGT-01 | v0.0.1 | Add Agents only through an explicit user-initiated discovery flow. | Startup does not silently add Agents. Discovery returns compatible installed Codex, Claude Code, Gemini CLI, and OpenCode harnesses and existing Hermes profiles; Commonspace does not create native profiles or synthetic personas. |
 | AGT-02 | v0.0.1 | Support known ACP harnesses through first-party adapters. | Unsupported arbitrary CLIs are rejected rather than represented as partially functional Agents. |
 | AGT-03 | v0.0.1 | Reuse one Agent identity across Projects, Channels, DMs, and Threads. | No per-Project Agent clone or hidden Project-specific memory identity is created. |
 | AGT-04 | v0.0.1 | Allow workspace-local display name, avatar/emoji, and accent changes. | Native harness identity and configuration remain unchanged; Commonspace does not create synthetic personas or behavior profiles. |
@@ -276,9 +278,9 @@ Each row gives a stable requirement ID, its release target, the required behavio
 | CON-04 | v0.0.1 | Map one native session per participating Agent per Thread. | The same Agent resumes the same Thread session and uses a different session in another Thread. |
 | CON-05 | v0.0.1 | Keep DMs bound to exactly one chosen Agent. | Unaddressed DM messages never trigger Agent selection. |
 | CON-06 | v0.0.1 | Enforce hard `/new` DM generation boundaries. | Old context and late in-flight replies cannot enter the new generation. |
-| CON-07 | v0.0.1 | Invoke visible Agent mentions as peer handoffs in the same Thread. | Mentioned Agents receive the handoff without a coordinator or private Agent DM. |
+| CON-07 | v0.0.1 | Deliver one structured or visible Agent handoff to a current Channel peer in the same Thread. | The target receives only sender identity and the concrete request; the Thread retains a visible `@agent` handoff without a coordinator or private Agent DM. |
 | CON-08 | v0.0.1 | Run different native sessions concurrently and serialize only the same session. | A slow Agent does not block unrelated Agents or Threads. |
-| CON-09 | v0.0.1 | Bound pathological Agent-to-Agent cycles. | Repeated cycles stop with a visible outcome rather than silently looping. |
+| CON-09 | v0.0.1 | Bound pathological Agent-to-Agent cycles. | One handoff is accepted per active turn; self/non-member targets are rejected; the visible workspace Agent limit and repeated directed-edge checks stop cycles with a visible outcome. |
 | CON-10 | v0.0.1 | Preserve queued follow-ups while a native session is busy. | The user can inspect, reorder, remove, steer where supported, or stop-and-send queued input. A bounded tray shows delivery status and expandable message previews; compact icon actions have accessible names and tooltips in both DMs and Threads. |
 | CON-11 | v0.0.1 | Apply one workspace model and reasoning configuration to every conversation. | Channels do not expose, persist, or apply per-Channel model or reasoning overrides. |
 
@@ -289,11 +291,11 @@ Each row gives a stable requirement ID, its release target, the required behavio
 | INF-01 | v0.0.1 | Use one configured inference provider for routing, decomposition, Project resolution, context compaction, and routing-memory compaction. | These functions do not require a visible coordinator Agent or separate provider configurations. |
 | INF-02 | v0.0.1 | Route every unaddressed Channel message through inference. | There is no deterministic/no-inference fallback that silently guesses an Agent. |
 | INF-03 | v0.0.1 | Treat explicit Agent mentions as authoritative. | Inference may split work among mentioned Agents but cannot substitute unmentioned Agents. |
-| INF-04 | v0.0.1 | Select the smallest useful Agent set. | One Agent is preferred when sufficient; distinct responsibilities may select any necessary set. |
+| INF-04 | v0.0.1 | Select the smallest useful Agent set and delivery mode. | One Agent is preferred when sufficient; independent responsibilities use parallel assignments; explicit peer-conversation intent uses an ordered relay with at least two speakers. |
 | INF-05 | v0.0.1 | Remove hidden product-wide Agent fan-out caps. | Explicit or inferred requests are not silently limited to two Agents; any safety ceiling is visible and user-controlled. |
-| INF-06 | v0.0.1 | Generate one bounded sub-request per selected Agent. | Each Agent's new native turn contains only its assigned request; the original remains accessible through bounded context tools. |
-| INF-07 | v0.0.1 | Make routing inspectable. | The selected Agents, sub-requests, Project references, reason, and confidence where available are stored with the source message. |
-| INF-08 | v0.0.1 | Support sub-request rerouting and correction. | A user can redirect one assignment without resending unrelated assignments. Prior attempts remain visible. |
+| INF-06 | v0.0.1 | Generate one bounded sub-request per selected Agent. | A first or parallel native turn contains only its assignment; a later relay turn contains a bounded excerpt of the preceding peer response plus its assignment; the complete reply and deeper context remain available through bounded on-demand tools. |
+| INF-07 | v0.0.1 | Make routing inspectable. | Delivery mode, selected Agents, ordered sub-requests, Project references, reason, and confidence where available are stored with the source message. |
+| INF-08 | v0.0.1 | Support service-level sub-request rerouting and correction. | The service/API can redirect one assignment without resending unrelated assignments, and prior attempts remain stored. Inline conversation controls are deferred. |
 | INF-09 | v0.0.1 | Learn from explicit corrections. | Reroutes are stored as feedback and compacted into bounded routing knowledge used by later decisions. |
 | INF-10 | v0.0.1 | Fail visibly when inference is unavailable or invalid. | The message remains accepted and receives a retryable needs-attention state; Commonspace does not silently broadcast it. |
 | INF-11 | v0.0.1 | Target effectively immediate routing. | The routing stage targets sub-second completion where the configured provider permits and reports separately from harness execution time. |
@@ -335,7 +337,7 @@ Each row gives a stable requirement ID, its release target, the required behavio
 | ACT-02 | Capability-dependent | Render native permission requests with only harness-provided choices. | Selecting a choice returns that exact response to the affected harness session. |
 | ACT-03 | Capability-dependent | Support native stop and steering controls. | Unsupported controls are absent, not disabled promises. |
 | ACT-04 | v0.0.1 | Bind results and evidence to the originating request and sub-request. | Replies can expose changed files, Project/root attribution, activity, and harness-emitted validation evidence. |
-| ACT-05 | v0.0.1 | Surface explicit run outcomes. | Completed, needs input, failed, silent, cancelled, timed out, and interrupted states remain distinguishable. |
+| ACT-05 | v0.0.1 | Surface run outcomes without overstating inference. | Completed execution, text-inferred possible input, confirmed native permissions, failed, silent, cancelled, timed out, and interrupted states remain distinguishable; trailing punctuation alone does not claim a blocked run. |
 | ACT-06 | v0.0.1 | Scope blocking to the affected native session. | A permission request or slow turn does not block the Channel or other Agent sessions. |
 
 ### 6.9 Inbox, search, and notifications
@@ -354,8 +356,8 @@ Each row gives a stable requirement ID, its release target, the required behavio
 | --- | --- | --- | --- |
 | DAT-01 | v0.0.1 | Persist versioned, sanitized state atomically with rollback recovery. | A partial/invalid write does not replace the previous valid state. |
 | DAT-02 | v0.0.1 | Keep Commonspace-managed credential, MCP capability, native-session, and absolute host-path fields private. | Browser, activity, search, and portable archive metadata omit these managed values. This guarantee does not cover sensitive information supplied in conversation text or attachment contents. |
-| DAT-03 | v0.0.1 | Provide an open, versioned export of workspace data and attachments with managed private fields omitted. | The archive format is documented and usable without Commonspace cloud services. It preserves conversation text and exact attachment bytes and is unencrypted private user data. |
-| DAT-04 | v0.0.1 | Validate imports and resolve local resource mappings explicitly. | Import cannot overwrite current state or assume that exported absolute paths exist. |
+| DAT-03 | v0.0.1 | Provide an open, versioned export of workspace data and attachments with managed private fields omitted. | The archive format and supported size contract are documented and usable without Commonspace cloud services. A successful supported export fits the HTTP restoration workflow, preserves exact attachment bytes, and remains unencrypted private user data. |
+| DAT-04 | v0.0.1 | Validate imports and resolve local resource mappings explicitly. | Import cannot overwrite current state or assume that exported absolute paths exist; malformed or oversized input cannot partially activate state or leave copied attachment bytes. |
 | DAT-05 | v0.0.1 | Keep data indefinitely by default and provide explicit retention controls. | No fixed append/load window silently drops accepted messages; destructive cleanup is scoped, previewable, and does not silently rewrite delivered history. |
 | DAT-06 | v0.0.1 | Disclose configured inference data flow. | The user can see whether inference is local or remote and what categories of conversation/context may be sent. |
 | DAT-07 | Later | Migrate transcripts to a relational store only after measured need. | The product model and export format do not depend on the current JSON persistence implementation. |
@@ -401,12 +403,15 @@ For each Channel root or newly routable follow-up, the inference layer produces 
 
 - Resolved explicit and inferred Project references.
 - Selected Agent IDs.
+- Delivery mode: `parallel` or `relay`.
 - One sub-request per selected Agent.
 - Project references relevant to each sub-request.
 - A concise routing reason.
 - Confidence when the provider supplies a meaningful value.
 
 The original human message remains the source record and stays visible. Sub-requests are assignments attached to that message; they must not appear as additional human-authored messages.
+
+The routing response uses a bounded output budget sized for the visible maximum assignment count. Commonspace detects provider-reported truncation where available and may retry inference once. It validates the delivery mode and entire assignment set, including Agent IDs, count, sub-requests, and Project scopes, before dispatching any Agent work. `relay` requires at least two ordered assignments.
 
 ### Reroute semantics
 
@@ -435,7 +440,8 @@ These states explain what happened to a message or agent turn. They belong to th
 | Routing | Commonspace inference is resolving assignments/context. |
 | Queued | Input is waiting for the same native session to become available. |
 | Running | The harness accepted the native turn. |
-| Needs input | A permission or harness question requires the human. |
+| May need input | Completed reply text explicitly asks for information, but the runtime supplied no structured blocking state. |
+| Needs input | A persisted confirmed input state requires the human. Native permissions use their separate exact permission state. |
 | Completed | A normal Agent result was recorded. |
 | Silent | The harness completed without a user-facing reply. |
 | Failed | Routing or harness execution failed with an actionable reason. |
@@ -474,55 +480,10 @@ Workspace archives are unencrypted private user data. Removing Commonspace-manag
 - State changes are versioned, sanitized, migration-tested, and atomically persisted.
 - A failed compaction keeps the last valid context.
 - A failed inference decision never silently becomes an all-Agent broadcast.
+- A routing retry completes and validates before dispatch, so it cannot duplicate Agent execution.
+- A supported export is bounded before download to the size accepted by the documented HTTP import workflow.
 
-## 11. Release slices
-
-These slices record the implementation sequence: establish the service behavior and failure handling, then expose it in the interface. They are not a list of remaining work; use the [Roadmap](roadmap.md) and [Implementation gap audit](implementation-gap-audit.md) for status.
-
-### Slice 0: Restore product invariants
-
-- Preserve every accepted conversation message until an explicit retention action removes it.
-- Remove Commonspace-defined Agent personas and managed identities that do not come from explicit harness discovery.
-- Remove runtime-specific configuration inspection/mutation; expose only capabilities and controls advertised through ACP.
-
-### Slice A: Complete Commonspace inference
-
-- Agent-specific sub-requests.
-- Project-reference inference and per-sub-request references.
-- Durable service-side reroute/correction events.
-- Compacted routing memory.
-- Removal of the hidden two-Agent inference cap.
-
-### Slice B: Complete conversation context and history
-
-- Thread context snapshots and independent Thread compaction.
-- Prospective Thread Project-reference changes.
-- Pins.
-- Human message edit branches and deletion markers.
-
-### Slice C: Complete collaboration artifacts and controls
-
-- General human and Agent attachments.
-- Normalized native permission request/response flow.
-- Runtime/authentication diagnostics.
-
-### Slice D: Complete operability
-
-- Installed background service and clean-machine lifecycle.
-- Desktop notifications.
-- Open export/import and retention controls.
-- Restart/interruption recovery acceptance coverage.
-
-### Slice E: UI/UX implementation
-
-- Visible inferred references and `@@project` autocomplete without dedicated Project-scope controls.
-- Pending and failed routing presentation while resolved metadata and correction controls remain service-side.
-- Channel/Thread context inspector, editor, pins, and compaction controls.
-- Message branch/version navigation and deletion surfaces.
-- File, permission, diagnostics, notification, and data-management surfaces.
-- Desktop keyboard navigation and Light/Dark/System appearance coverage. Narrow and mobile layouts are deferred.
-
-## 12. End-to-end acceptance scenarios
+## End-to-end acceptance scenarios
 
 | ID | Scenario | Required result |
 | --- | --- | --- |
@@ -533,13 +494,13 @@ These slices record the implementation sequence: establish the service behavior 
 | E2E-05 | Use `/new` during an active DM | The old generation is cancelled or isolated, a visible boundary appears, and no late reply crosses into the new session. |
 | E2E-06 | Reach Channel context pressure after a human edit | Context becomes stale, compaction preserves human-authored meaning, and state/source boundaries remain inspectable. |
 | E2E-07 | Edit a delivered routed message | A new visible branch is routed independently while the original branch and native results remain intact. |
-| E2E-08 | Reroute one bad assignment | Only that sub-request is corrected; other Agents are not restarted, and the correction enters routing memory. |
+| E2E-08 | Call the service-level reroute for one bad assignment | Only that sub-request is corrected; other Agents are not restarted, and the correction enters routing memory. Inline conversation controls remain deferred. |
 | E2E-09 | Attach a normal file and receive an Agent file | Both attachments remain bound to their exact messages. Managed attachment metadata omits source host paths and credential fields; the file contents remain unchanged. |
 | E2E-10 | Receive a permission request while the client is closed | The service keeps the request pending, other sessions continue, and reopening shows an exact attention item with harness-provided choices. |
 | E2E-11 | Restart after a conversation exceeds the legacy 500-message boundary | Every accepted message and its context restore, resumable sessions continue exactly, and unrecoverable in-flight work is marked interrupted. |
 | E2E-12 | Export and import into a clean workspace | Conversation data and exact attachment bytes import safely. Managed private fields are omitted from the archive, and local Project roots require explicit remapping. |
 
-## 13. v0.0.1 definition of done
+## v0.0.1 definition of done
 
 Commonspace v0.0.1 is product-complete when:
 
@@ -550,9 +511,9 @@ Commonspace v0.0.1 is product-complete when:
 5. The browser client works at desktop sizes with keyboard-only operation and Light/Dark/System appearance. Narrow and mobile layouts are deferred.
 6. The local service can be installed, started, stopped, updated, and recovered without repository knowledge.
 7. Portable and browser-visible metadata omit Commonspace-managed credentials, absolute paths, native session IDs, and ephemeral capabilities. This guarantee does not imply that user-supplied text or files have been stripped of sensitive content.
-8. Product documentation, the implementation audit, and the roadmap agree on shipped behavior.
+8. Product documentation and the roadmap agree on current behavior.
 
-## 14. Deliberately deferred decisions
+## Deliberately deferred decisions
 
 These decisions do not block v0.0.1 behavior and should be made only when their release slice begins:
 

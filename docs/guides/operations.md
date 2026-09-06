@@ -1,16 +1,10 @@
 # Operations
 
-Use this guide to configure, inspect, update, back up, and recover a local Commonspace instance. [Installation](install.md) covers the first launch. [Development](development.md) covers the source editing workflow.
+Use this guide to configure, inspect, update, back up, and recover a local Commonspace instance. [Installation](../start/install.md) covers the first launch. [Development](development.md) covers the source editing workflow.
 
 ## Runtime
 
-Run the published package in the foreground:
-
-```bash
-npx --yes commonspace@latest
-```
-
-Node.js 22 or newer is required. npm installs external runtime dependencies and the package serves the application and API at `http://127.0.0.1:3100`. Stop the foreground process with Ctrl+C.
+See [Installation](../start/install.md) for the published package and first launch.
 
 To run production builds from source:
 
@@ -113,7 +107,9 @@ Agent Client Protocol (ACP) runs over local child-process input/output. Commonsp
 
 ## Export, import, and retention
 
-Open **Workspace data** in Commonspace settings to export `commonspace-export.json`. The archive excludes credentials, native-session references, temporary capabilities, and known absolute paths from Commonspace-managed fields. It keeps conversation text and exact attachment bytes, which may contain sensitive author-supplied content. Treat the unencrypted archive as private data. See [Workspace archive format](workspace-archive-format.md) for the contract.
+Open **Workspace data** in Commonspace settings to export `commonspace-export.json`. The archive excludes credentials, native-session references, temporary capabilities, and known absolute paths from Commonspace-managed fields. It keeps conversation text and exact attachment bytes, which may contain sensitive author-supplied content. Treat the unencrypted archive as private data. See [Workspace archive format](../specs/workspace-archive-format.md) for the contract.
+
+Export and import enforce the limits in the [workspace archive format](../specs/workspace-archive-format.md) before downloading or writing data.
 
 To import:
 
@@ -136,18 +132,7 @@ curl http://127.0.0.1:3100/api/health
 
 A healthy response is `{"status":"ok"}`. Adjust the port if configured differently. This checks server availability; it does not establish that an agent is authenticated or that a browser interaction works.
 
-Contributor verification commands cover separate boundaries:
-
-| Command | Evidence provided |
-| --- | --- |
-| `pnpm verify:live` | Fresh production build, temporary API/UI servers, and real desktop browser flows through separate and installed single-origin paths |
-| `pnpm build:npm` followed by `pnpm verify:npm-package` | One npm tarball installed and run outside the source checkout |
-| `pnpm verify:service` | Local Git clone, frozen install, build, real plist validation, staged update, and rollback under a temporary home; `launchctl` and health responses are stubbed |
-| `pnpm verify:acp:hermes` | Real Hermes session startup and exact resumption |
-| `pnpm verify:acp:codex` | Real Codex session startup and exact resumption |
-| `pnpm verify:acp:mcp` | Real harness context reads, visible progress, and final response through scoped MCP tools |
-
-ACP checks are opt-in and use locally authenticated harnesses and model access. A package or lifecycle smoke test does not replace real service and harness verification on each supported target.
+See [Development](development.md) for application checks and [Releasing](../releases/releasing.md) for package, service, and harness checks. ACP checks are opt-in and use locally authenticated harnesses and model access.
 
 ## OS notifications
 
@@ -165,7 +150,7 @@ Run `pnpm dev` from the repository root. Confirm that the API is on port `3100` 
 
 ### No supported agent appears
 
-Run `hermes --version` or `codex --version` in the same environment as Commonspace. Open **Add Agent** and request a scan. Discovery lists installed supported harnesses; selecting one adds it to the roster. Previously selected identities remain visible during temporary availability failures so their conversation history is preserved.
+Run the affected runtime's version command in the same environment as Commonspace. Check the [supported runtimes](../start/support.md#agent-runtimes), then open **Add Agent** and request a scan. Discovery lists installed supported harnesses; selecting one adds it to the roster. Previously selected identities remain visible during temporary availability failures so their conversation history is preserved.
 
 ### Project path rejected
 
@@ -173,7 +158,7 @@ Use an absolute path to an existing directory. Commonspace resolves it through `
 
 ### Agent authentication fails
 
-Authenticate through the affected Hermes or Codex installation and retry. Commonspace uses the harness's supported credential store. Unsafe mode does not solve authentication.
+Authenticate through the affected native runtime installation and retry. Commonspace uses the harness's supported credential store. Unsafe mode does not solve authentication.
 
 ### Routing inference fails
 
@@ -187,7 +172,7 @@ Commonspace lists known credential-bearing files but does not preview their cont
 
 ### ACP bridge fails to start
 
-Run `hermes acp --check` or `codex --version` in the same environment as Commonspace. Check the executable overrides in [Runtime configuration](#runtime-configuration). A successful version check establishes that the executable is reachable; an ACP session check establishes that the integration can start.
+Run the affected runtime's version or ACP check in the same environment as Commonspace. Check the executable overrides in [Runtime configuration](#runtime-configuration). A successful version check establishes that the executable is reachable; an ACP session check establishes that the integration can start.
 
 ### A native session cannot resume
 
@@ -195,7 +180,7 @@ Commonspace starts a replacement native session only when the provider explicitl
 
 ### An agent misses Channel context
 
-Check that the run uses ACP and that local `/api/mcp` requests are not returning `401`. Channel agents receive a native `commonspace_get_context` tool whose description requires a call at the start of the turn. Shared room context is supplied through that tool instead of being repeated inside the user message.
+Check that the run uses ACP and that local `/api/mcp` requests are not returning `401`. Channel agents receive scoped Commonspace tools. `commonspace_handoff` exposes current peer IDs in its schema and queues one clean peer request; `commonspace_get_context` reads deeper shared room context on demand instead of repeating it inside every user message.
 
 ### A reply has no activity trace
 

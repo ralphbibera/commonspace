@@ -31,4 +31,4 @@ Security fixes target `main` and the latest release. Older versions do not have 
 
 These protections do not make Commonspace a secret manager or every Project file safe to share. Agents may read files and contact model services according to their permissions and provider settings. Keep secrets out of messages, screenshots, and files you ask agents to inspect.
 
-See [Operations](docs/operations.md) for local storage, configuration, and recovery details.
+See [Operations](docs/guides/operations.md) for local storage, configuration, and recovery details.

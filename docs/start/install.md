@@ -10,7 +10,7 @@ Check Node.js:
 node --version
 ```
 
-The command must report version 22 or newer. macOS and Linux are supported. Windows is not currently validated. See the [support matrix](support-matrix.md) for current runtime coverage.
+The command must report version 22 or newer. macOS and Linux are supported. Windows is not currently validated. See the [support matrix](support.md) for current runtime coverage.
 
 ## Start Commonspace
 
@@ -41,7 +41,7 @@ Workspace data is stored in `~/.commonspace` by default. Set `COMMONSPACE_HOME` 
 
 You can open the workspace without an agent. To send your first message:
 
-1. Install and configure a [supported Codex, Claude Code, Gemini CLI, OpenCode, or Hermes runtime](support-matrix.md#agent-runtimes) separately, then choose **Add Agent** in Commonspace and select it.
+1. Install and configure a [supported Codex, Claude Code, Gemini CLI, OpenCode, or Hermes runtime](support.md#agent-runtimes) separately, then choose **Add Agent** in Commonspace and select it.
 2. Select the agent in the sidebar to open its **Direct Message**, then send a message. This conversation goes directly to that agent and does not need Channel routing setup.
 3. For code work, create a **Project** with the relevant local folder or folders. In a message, type `@@` and select the Project to insert its `@@project` reference.
 
@@ -57,36 +57,23 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-Open `http://127.0.0.1:5173`. See [Development](development.md) for checks and focused workflows.
+Open `http://127.0.0.1:5173`. See [Development](../guides/development.md) for checks and focused workflows.
 
 ## Run in the background on macOS
 
-The published npm package runs in the foreground. A source checkout can install the existing per-user macOS LaunchAgent:
+The published npm package runs in the foreground. A source checkout can install the per-user macOS LaunchAgent:
 
 ```bash
 pnpm service:install
 ~/.local/bin/commonspace status
 ```
 
-Source-based service updates clone and build the configured Git repository. Finish or stop active agent work before updating:
-
-```bash
-~/.local/bin/commonspace update
-~/.local/bin/commonspace status
-```
-
-The service keeps one previous application build. A failed startup restores it automatically. Explicit rollback changes application files, not saved data:
-
-```bash
-~/.local/bin/commonspace rollback
-```
-
-Back up `~/.commonspace` before downgrading across saved-data migrations. See [Operations](operations.md#backup-and-rollback).
+The service installs committed source, not uncommitted checkout edits. See [Operations](../guides/operations.md#installed-macos-service) for lifecycle commands, logs, updates, rollback, and backup guidance.
 
 ## Get help
 
-See [Operations](operations.md) for logs, configuration, and common failures. Bug reports should include the Commonspace version, operating system, Node.js version, and reproduction steps. Keep credentials, agent transcripts, native session IDs, and workspace state out of reports.
+See [Operations](../guides/operations.md) for logs, configuration, and common failures. Bug reports should include the Commonspace version, operating system, Node.js version, and reproduction steps. Keep credentials, agent transcripts, native session IDs, and workspace state out of reports.
 
-Follow the [security policy](../SECURITY.md) for suspected vulnerabilities. To contribute, start with [Contributing](../CONTRIBUTING.md).
+Follow the [security policy](../../SECURITY.md) for suspected vulnerabilities. To contribute, start with [Contributing](../../CONTRIBUTING.md).
 
-Commonspace is [MIT licensed](../LICENSE). The npm package includes this project license.
+Commonspace is [MIT licensed](../../LICENSE). The npm package includes this project license.

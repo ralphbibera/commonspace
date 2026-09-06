@@ -33,6 +33,7 @@ Allowed results: `Pass`, `Fail`, or `Not run — <exact reason>`. Link local or 
 | Clean npm install and startup/API/UI/shutdown | `pnpm verify:npm-package` | | |
 | Mocked macOS service lifecycle | `pnpm verify:service` | | `launchctl` and health responses are substituted |
 | Account-free pinned adapter fixtures | `pnpm verify:adapters` | | Focused rerun of tests included by `pnpm check`; real CLIs against local model fixtures |
+| Provider routing quality | `pnpm verify:routing-quality` | | Record endpoint locality, provider/model/version, cases, and cost boundary |
 
 ## Real release acceptance
 

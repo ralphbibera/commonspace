@@ -1,6 +1,6 @@
 # Maintaining Commonspace
 
-Maintainers review contributions, handle reports, and prepare releases. [CODEOWNERS](../.github/CODEOWNERS) identifies the reviewers for each part of the repository.
+Maintainers review contributions, handle reports, and prepare releases. [CODEOWNERS](../../.github/CODEOWNERS) identifies the reviewers for each part of the repository.
 
 ## Handle issues and proposals
 
@@ -12,7 +12,7 @@ Small fixes may arrive directly as pull requests. Do not require an issue that r
 
 ## Review a pull request
 
-Use [Contributing](../CONTRIBUTING.md) as the review standard. A change should have:
+Use [Contributing](../../CONTRIBUTING.md) as the review standard. A change should have:
 
 - a clear problem and an explanation of the resulting behavior;
 - one logical purpose and an appropriate place in the code;
@@ -22,9 +22,9 @@ Use [Contributing](../CONTRIBUTING.md) as the review standard. A change should h
 - resolved substantive feedback and maintainer approval;
 - disclosure of AI assistance and a review of the complete diff.
 
-Check that documentation follows the [writing guidance](../CONTRIBUTING.md#write-useful-documentation). Reviewers should be able to understand the change from its description and linked issues.
+Check that documentation follows the [writing guidance](../../CONTRIBUTING.md#documentation-and-privacy). Reviewers should be able to understand the change from its description and linked issues.
 
-Use conventional commit messages. See [Releasing](releasing.md) for the release process.
+Use conventional commit messages. See [Releasing](../releases/releasing.md) for the release process.
 
 ## Review workflows and dependencies
 
@@ -52,22 +52,12 @@ Keep default workflow permissions read-only. Check jobs that request write acces
 
 ## Handle security and conduct reports
 
-Follow [Security](../SECURITY.md) and the [Code of Conduct](../CODE_OF_CONDUCT.md). Arrange a confidential route before asking someone for sensitive details. Do not request workspace state or agent transcripts in ordinary issues.
+Follow [Security](../../SECURITY.md) and the [Code of Conduct](../../CODE_OF_CONDUCT.md). Arrange a confidential route before asking someone for sensitive details. Do not request workspace state or agent transcripts in ordinary issues.
 
 Maintain working confidential reporting routes for security and conduct concerns, and keep the policies current. Do not promise response times or long-term version support that the maintainer group cannot provide.
 
 Security fixes target `main` and the latest release. Document affected versions, the upgrade path, and any saved-data compatibility limits.
 
-## Release readiness checklist
+## Release readiness
 
-Before a release:
-
-- Review both current files and Git history for credentials, private paths, agent session data, internal links, and generated artifacts. Deleting a file from the latest commit does not remove it from history.
-- Review screenshots, fixtures, examples, and bundled dependencies for private content and license requirements.
-- Check that the README, installation instructions, contribution guide, support matrix, license, security policy, and conduct policy match the candidate.
-- Verify the private security and conduct reporting routes.
-- Check branch rules, required CI, and contribution templates in GitHub.
-- Verify the npm tarball through a clean installation. Record real agent and macOS service results, plus any checks or platforms not exercised.
-- Review the release notes, backup and migration instructions, and known limitations.
-
-Complete the publication review described in [Releasing](releasing.md#publish).
+Use [Releasing](../releases/releasing.md) for versioning, verification, publication, and release notes. Maintainers should also review current files, Git history, reporting routes, branch rules, and private-data exposure before publication.

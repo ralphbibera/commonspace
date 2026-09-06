@@ -7,7 +7,7 @@ body:
     attributes:
       label: Document or page
       description: Link the affected page or repository file.
-      placeholder: docs/development.md
+      placeholder: docs/guides/development.md
     validations:
       required: true
   - type: textarea
