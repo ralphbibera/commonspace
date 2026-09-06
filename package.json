@@ -21,7 +21,8 @@
 		"test:storybook:watch": "pnpm --filter @commonspace/ui test-storybook",
 		"test:visual": "playwright test --config playwright.visual.config.ts",
 		"e2e:server": "node server/node_modules/tsx/dist/cli.mjs scripts/e2e-server.mjs",
-		"test:e2e": "pnpm build && playwright test --config tests/e2e/playwright.config.ts",
+		"test:e2e": "pnpm build && pnpm test:e2e:built",
+		"test:e2e:built": "playwright test --config tests/e2e/playwright.config.ts",
 		"test:e2e:headed": "pnpm build && playwright test --config tests/e2e/playwright.config.ts --headed",
 		"check:ui:smoke": "pnpm --filter @commonspace/ui typecheck && pnpm test:storybook:smoke",
 		"check:ui": "pnpm --filter @commonspace/ui typecheck && pnpm test:storybook && pnpm --filter @commonspace/ui build",
@@ -39,6 +40,7 @@
 		"build:npm": "pnpm build && pnpm package:npm",
 		"package:npm": "node scripts/package-npm.mjs",
 		"verify:npm-package": "node scripts/verify-npm-package.mjs",
+		"benchmark:workspace": "node --expose-gc server/node_modules/tsx/dist/cli.mjs scripts/benchmark-workspace.ts",
 		"service:install": "node scripts/commonspace-service.mjs install --source .",
 		"service:update": "node scripts/commonspace-service.mjs update",
 		"service:start": "node scripts/commonspace-service.mjs start",
@@ -56,7 +58,8 @@
 		"verify:adapter:claude-code": "vitest run tests/native-agent-integration.spec.ts -t 'Claude Code'",
 		"verify:adapter:gemini": "vitest run tests/native-agent-integration.spec.ts -t 'Gemini CLI'",
 		"verify:adapter:opencode": "vitest run tests/native-agent-integration.spec.ts -t 'OpenCode'",
-		"verify:adapters": "vitest run tests/native-agent-integration.spec.ts"
+		"verify:adapters": "vitest run tests/native-agent-integration.spec.ts",
+		"verify:routing-quality": "COMMONSPACE_ROUTING_EVAL=1 vitest run tests/routing-quality.eval.spec.ts --testTimeout=60000"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.5.9",

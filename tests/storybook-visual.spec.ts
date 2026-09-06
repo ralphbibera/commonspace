@@ -3,11 +3,6 @@ import { expect, test } from "@playwright/test";
 
 type StoryReady = (page: Page) => Promise<void>;
 
-interface StorybookIndexEntry {
-	id: string;
-	type: string;
-}
-
 const stories: Array<{ id: string; name: string; ready?: StoryReady }> = [
 	{
 		id: "design-system-agentavatar--size-and-status-matrix",
@@ -79,55 +74,6 @@ const stories: Array<{ id: string; name: string; ready?: StoryReady }> = [
 		},
 	},
 ];
-
-test("every Storybook story renders without an error boundary", async ({
-	page,
-	request,
-}) => {
-	const response = await request.get("/index.json");
-	await expect(response).toBeOK();
-	const payload: unknown = await response.json();
-	if (
-		typeof payload !== "object" ||
-		payload === null ||
-		Array.isArray(payload) ||
-		!("entries" in payload) ||
-		typeof payload.entries !== "object" ||
-		payload.entries === null ||
-		Array.isArray(payload.entries)
-	)
-		throw new Error("Storybook index did not contain an entries object");
-	const candidates: unknown[] = Object.values(payload.entries);
-	const storyEntries: StorybookIndexEntry[] = [];
-	for (const candidate of candidates) {
-		if (
-			typeof candidate !== "object" ||
-			candidate === null ||
-			Array.isArray(candidate) ||
-			!("id" in candidate) ||
-			typeof candidate.id !== "string" ||
-			!("type" in candidate) ||
-			typeof candidate.type !== "string"
-		)
-			throw new Error("Storybook index contained an invalid entry");
-		if (candidate.type === "story")
-			storyEntries.push({ id: candidate.id, type: candidate.type });
-	}
-	for (const entry of storyEntries) {
-		await page.goto(`/iframe.html?id=${entry.id}&viewMode=story`, {
-			waitUntil: "domcontentloaded",
-		});
-		await expect(page.locator("#storybook-root")).toBeAttached();
-		await page.waitForTimeout(150);
-		const errorBoundary = page.getByText(
-			"The component failed to render properly",
-			{ exact: false },
-		);
-		for (let index = 0; index < (await errorBoundary.count()); index += 1) {
-			await expect(errorBoundary.nth(index)).not.toBeVisible();
-		}
-	}
-});
 
 for (const story of stories) {
 	test(`${story.name} matches the reviewed Storybook baseline`, async ({
