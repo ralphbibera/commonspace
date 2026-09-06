@@ -94,210 +94,199 @@ const fileAttachmentSchema = z.object({
 	data: z.string(),
 });
 
-function requestSchema<Output>(schema: z.ZodType): z.ZodType<Output> {
-	return schema.pipe(z.custom<Output>());
-}
-
-const importWorkspaceBodySchema = requestSchema<{
+const importWorkspaceBodySchema = z.object({
+	archive: z.json(),
+	projectMappings: z.record(z.string(), z.array(z.string())),
+}) satisfies z.ZodType<{
 	archive: JsonValue;
 	projectMappings: Record<string, string[]>;
-}>(
-	z.object({
-		archive: z.json(),
-		projectMappings: z.record(z.string(), z.array(z.string())),
-	}),
-);
-const retentionPreviewBodySchema = requestSchema<{
+}>;
+const retentionPreviewBodySchema = z.object({
+	conversation: conversationSchema,
+}) satisfies z.ZodType<{
 	conversation: ConversationRef;
-}>(z.object({ conversation: conversationSchema }));
-const applyRetentionRequestSchema = requestSchema<ApplyRetentionRequest>(
+}>;
+const applyRetentionRequestSchema = z.object({
+	conversation: conversationSchema,
+	expectedRevision: z.number(),
+}) satisfies z.ZodType<ApplyRetentionRequest>;
+const routingConfigurationSchema = z.discriminatedUnion("provider", [
+	z.object({ provider: z.literal("harness"), harnessAgentId: z.string() }),
 	z.object({
-		conversation: conversationSchema,
-		expectedRevision: z.number(),
+		provider: z.literal("openai-compatible"),
+		model: z.string(),
+		baseUrl: z.string().optional(),
+		apiKey: z.string().nullable().optional(),
 	}),
-);
-const routingConfigurationSchema =
-	requestSchema<UpdateRoutingConfigurationRequest>(
-		z.discriminatedUnion("provider", [
-			z.object({ provider: z.literal("harness"), harnessAgentId: z.string() }),
-			z.object({
-				provider: z.literal("openai-compatible"),
-				model: z.string(),
-				baseUrl: z.string().optional(),
-				apiKey: z.string().nullable().optional(),
-			}),
-		]),
-	);
-const workspaceSettingsSchema = requestSchema<UpdateWorkspaceSettingsRequest>(
-	z.object({
-		routing: routingConfigurationSchema,
-		defaults: z.object({
-			model: z.string().nullable(),
-			reasoning: reasoningSchema,
-			maxAgentsPerTurn: z.number(),
-			memoryThreads: z.number(),
-		}),
+]) satisfies z.ZodType<UpdateRoutingConfigurationRequest>;
+const workspaceSettingsSchema = z.object({
+	routing: routingConfigurationSchema,
+	defaults: z.object({
+		model: z.string().nullable(),
+		reasoning: reasoningSchema,
+		maxAgentsPerTurn: z.number(),
+		memoryThreads: z.number(),
 	}),
-);
+}) satisfies z.ZodType<UpdateWorkspaceSettingsRequest>;
 const contextRequestSchema =
-	requestSchema<UpdateChannelContextRequest>(contextRequestShape);
+	contextRequestShape satisfies z.ZodType<UpdateChannelContextRequest>;
 const threadContextRequestSchema =
-	requestSchema<UpdateThreadContextRequest>(contextRequestShape);
-const discoverAgentsRequestSchema = requestSchema<DiscoverAgentsRequest>(
-	z.object({ adapter: z.enum(AGENT_ADAPTER_KINDS) }),
-);
-const mutationSchema = requestSchema<CommonspaceMutation>(
-	z.discriminatedUnion(
-		"action",
-		[
-			z.object({ action: z.literal("mark-inbox-read") }),
-			z.object({
-				action: z.literal("mark-inbox-item-read"),
-				messageId: z.string(),
-			}),
-			z.object({
-				action: z.literal("set-inbox-item-saved"),
-				messageId: z.string(),
-				saved: z.boolean(),
-			}),
-			z.object({
-				action: z.literal("set-session-followed"),
-				sessionId: z.string(),
-				followed: z.boolean(),
-			}),
-			z.object({
-				action: z.literal("set-session-muted"),
-				sessionId: z.string(),
-				muted: z.boolean(),
-			}),
-			z.object({
-				action: z.literal("set-notifications"),
-				notifications: notificationSettingsSchema,
-			}),
-			z.object({
-				action: z.literal("create-project"),
-				name: z.string(),
-				paths: z.array(z.string()),
-			}),
-			z.object({
-				action: z.literal("add-project-path"),
-				projectId: z.string(),
-				path: z.string(),
-			}),
-			z.object({ action: z.literal("remove-project"), projectId: z.string() }),
-			z.object({
-				action: z.literal("create-channel"),
-				name: z.string(),
-				agentIds: z.array(z.string()),
-			}),
-			z.object({
-				action: z.literal("set-channel-agents"),
-				channelId: z.string(),
-				agentIds: z.array(z.string()),
-			}),
-			z.object({
-				action: z.literal("set-channel-context"),
-				channelId: z.string(),
-				instructions: z.string(),
-			}),
-			z.object({
-				action: z.literal("set-channel-memory"),
-				channelId: z.string(),
-				summary: z.string(),
-				decisions: z.array(z.string()).optional(),
-				openQuestions: z.array(z.string()).optional(),
-			}),
-			z.object({
-				action: z.literal("set-channel-configuration"),
-				channelId: z.string(),
-				agentIds: z.array(z.string()),
-				instructions: z.string(),
-				summary: z.string(),
-				decisions: z.array(z.string()).optional(),
-				openQuestions: z.array(z.string()).optional(),
-			}),
-			z.object({
-				action: z.literal("set-defaults"),
-				model: z.string().nullable().optional(),
-				reasoning: reasoningSchema.optional(),
-				maxAgentsPerTurn: z.number().optional(),
-				memoryThreads: z.number().optional(),
-			}),
-			z.object({
-				action: z.literal("add-discovered-agent"),
-				agentId: z.string(),
-				adapter: z.enum(AGENT_ADAPTER_KINDS).optional(),
-				fullAccess: z.boolean().optional(),
-			}),
-			z.object({
-				action: z.literal("update-agent-profile"),
-				agentId: z.string(),
-				displayName: z.string(),
-				avatarEmoji: z.string().optional(),
-				accentColor: z.string().optional(),
-				fullAccess: z.boolean().optional(),
-			}),
-			z.object({ action: z.literal("remove-agent"), agentId: z.string() }),
-			z.object({ action: z.literal("reset-dm"), agentId: z.string() }),
-			z.object({ action: z.literal("remove-channel"), channelId: z.string() }),
-		],
-		{ error: "unknown mutation" },
-	),
-);
-const sendMessageRequestSchema = requestSchema<SendMessageRequest>(
-	z.object({
-		conversation: conversationSchema,
-		text: z.string(),
-		projectIds: z.array(z.string()).optional(),
-		projectId: z.string().optional(),
-		threadId: z.string().optional(),
-		targetAgentId: z.string().optional(),
-		attachments: z.array(imageAttachmentSchema).optional(),
-		files: z.array(fileAttachmentSchema).optional(),
-		delivery: z.enum(["queue", "steer", "stop-and-send"]).optional(),
-	}),
-);
-const rerouteAssignmentSchema = requestSchema<RerouteAssignmentRequest>(
-	z.object({
-		sourceMessageId: z.string(),
-		assignmentId: z.string(),
-		agentId: z.string(),
-		subRequest: z.string(),
-		projectIds: z.array(z.string()),
-	}),
-);
-const editMessageBodySchema = requestSchema<
-	Omit<EditMessageRequest, "messageId">
->(z.object({ text: z.string(), projectIds: z.array(z.string()).optional() }));
-const addPinRequestSchema = requestSchema<AddPinRequest>(
-	z.discriminatedUnion("kind", [
+	contextRequestShape satisfies z.ZodType<UpdateThreadContextRequest>;
+const discoverAgentsRequestSchema = z.object({
+	adapter: z.enum(AGENT_ADAPTER_KINDS),
+}) satisfies z.ZodType<DiscoverAgentsRequest>;
+const mutationSchema = z.discriminatedUnion(
+	"action",
+	[
+		z.object({ action: z.literal("mark-inbox-read") }),
 		z.object({
-			scope: pinScopeSchema,
-			kind: z.literal("message"),
+			action: z.literal("mark-inbox-item-read"),
 			messageId: z.string(),
 		}),
 		z.object({
-			scope: pinScopeSchema,
-			kind: z.literal("attachment"),
+			action: z.literal("set-inbox-item-unread"),
 			messageId: z.string(),
-			attachmentId: z.string(),
+			unread: z.boolean(),
 		}),
 		z.object({
-			scope: pinScopeSchema,
-			kind: z.literal("note"),
-			note: z.string(),
+			action: z.literal("set-inbox-item-saved"),
+			messageId: z.string(),
+			saved: z.boolean(),
 		}),
-	]),
-);
-const stopAgentRunsSchema = requestSchema<StopAgentRunsRequest>(
-	z.object({ messageId: z.string(), agentId: z.string().optional() }),
-);
-const reorderFollowupSchema = requestSchema<ReorderFollowupRequest>(
-	z.object({ messageId: z.string(), direction: z.enum(["up", "down"]) }),
-);
-const removeFollowupSchema = requestSchema<RemoveFollowupRequest>(
-	z.object({ messageId: z.string() }),
-);
+		z.object({
+			action: z.literal("set-session-followed"),
+			sessionId: z.string(),
+			followed: z.boolean(),
+		}),
+		z.object({
+			action: z.literal("set-session-muted"),
+			sessionId: z.string(),
+			muted: z.boolean(),
+		}),
+		z.object({
+			action: z.literal("set-notifications"),
+			notifications: notificationSettingsSchema,
+		}),
+		z.object({
+			action: z.literal("create-project"),
+			name: z.string(),
+			paths: z.array(z.string()),
+		}),
+		z.object({
+			action: z.literal("add-project-path"),
+			projectId: z.string(),
+			path: z.string(),
+		}),
+		z.object({ action: z.literal("remove-project"), projectId: z.string() }),
+		z.object({
+			action: z.literal("create-channel"),
+			name: z.string(),
+			agentIds: z.array(z.string()),
+		}),
+		z.object({
+			action: z.literal("set-channel-agents"),
+			channelId: z.string(),
+			agentIds: z.array(z.string()),
+		}),
+		z.object({
+			action: z.literal("set-channel-context"),
+			channelId: z.string(),
+			instructions: z.string(),
+		}),
+		z.object({
+			action: z.literal("set-channel-memory"),
+			channelId: z.string(),
+			summary: z.string(),
+			decisions: z.array(z.string()).optional(),
+			openQuestions: z.array(z.string()).optional(),
+		}),
+		z.object({
+			action: z.literal("set-channel-configuration"),
+			channelId: z.string(),
+			agentIds: z.array(z.string()),
+			instructions: z.string(),
+			summary: z.string(),
+			decisions: z.array(z.string()).optional(),
+			openQuestions: z.array(z.string()).optional(),
+		}),
+		z.object({
+			action: z.literal("set-defaults"),
+			model: z.string().nullable().optional(),
+			reasoning: reasoningSchema.optional(),
+			maxAgentsPerTurn: z.number().optional(),
+			memoryThreads: z.number().optional(),
+		}),
+		z.object({
+			action: z.literal("add-discovered-agent"),
+			agentId: z.string(),
+			adapter: z.enum(AGENT_ADAPTER_KINDS).optional(),
+			fullAccess: z.boolean().optional(),
+		}),
+		z.object({
+			action: z.literal("update-agent-profile"),
+			agentId: z.string(),
+			displayName: z.string(),
+			avatarEmoji: z.string().optional(),
+			accentColor: z.string().optional(),
+			fullAccess: z.boolean().optional(),
+		}),
+		z.object({ action: z.literal("remove-agent"), agentId: z.string() }),
+		z.object({ action: z.literal("reset-dm"), agentId: z.string() }),
+		z.object({ action: z.literal("remove-channel"), channelId: z.string() }),
+	],
+	{ error: "unknown mutation" },
+) satisfies z.ZodType<CommonspaceMutation>;
+const sendMessageRequestSchema = z.object({
+	conversation: conversationSchema,
+	text: z.string(),
+	projectIds: z.array(z.string()).optional(),
+	projectId: z.string().optional(),
+	threadId: z.string().optional(),
+	targetAgentId: z.string().optional(),
+	attachments: z.array(imageAttachmentSchema).optional(),
+	files: z.array(fileAttachmentSchema).optional(),
+	delivery: z.enum(["queue", "steer", "stop-and-send"]).optional(),
+}) satisfies z.ZodType<SendMessageRequest>;
+const rerouteAssignmentSchema = z.object({
+	sourceMessageId: z.string(),
+	assignmentId: z.string(),
+	agentId: z.string(),
+	subRequest: z.string(),
+	projectIds: z.array(z.string()),
+}) satisfies z.ZodType<RerouteAssignmentRequest>;
+const editMessageBodySchema = z.object({
+	text: z.string(),
+	projectIds: z.array(z.string()).optional(),
+}) satisfies z.ZodType<Omit<EditMessageRequest, "messageId">>;
+const addPinRequestSchema = z.discriminatedUnion("kind", [
+	z.object({
+		scope: pinScopeSchema,
+		kind: z.literal("message"),
+		messageId: z.string(),
+	}),
+	z.object({
+		scope: pinScopeSchema,
+		kind: z.literal("attachment"),
+		messageId: z.string(),
+		attachmentId: z.string(),
+	}),
+	z.object({
+		scope: pinScopeSchema,
+		kind: z.literal("note"),
+		note: z.string(),
+	}),
+]) satisfies z.ZodType<AddPinRequest>;
+const stopAgentRunsSchema = z.object({
+	messageId: z.string(),
+	agentId: z.string().optional(),
+}) satisfies z.ZodType<StopAgentRunsRequest>;
+const reorderFollowupSchema = z.object({
+	messageId: z.string(),
+	direction: z.enum(["up", "down"]),
+}) satisfies z.ZodType<ReorderFollowupRequest>;
+const removeFollowupSchema = z.object({
+	messageId: z.string(),
+}) satisfies z.ZodType<RemoveFollowupRequest>;
 const editorTargetSchema = z.object({
 	path: z.string(),
 	rootIndex: z.number(),

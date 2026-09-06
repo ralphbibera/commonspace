@@ -1,8 +1,5 @@
-import type {
-	CommonspaceAgentProfile,
-	CommonspaceRoutingMode,
-} from "@commonspace/shared";
-import { jsonObject, parseJsonObject } from "./json.js";
+import type { CommonspaceAgentProfile } from "@commonspace/shared";
+import { z } from "zod";
 
 const MAX_ROUTER_RESPONSE_BYTES = 64_000;
 const MAX_ROUTER_OUTPUT_TOKENS = 4_096;
@@ -10,6 +7,52 @@ const MAX_ROUTER_OUTPUT_TOKENS = 4_096;
 export class InferenceResponseTruncatedError extends Error {}
 
 export class RoutingResponseValidationError extends Error {}
+
+const aiRouteAssignmentSchema = z.object({
+	agentId: z.string(),
+	subRequest: z.string(),
+	projectIds: z.array(z.string()),
+});
+
+const aiRouteResultSchema = z
+	.object({
+		assignments: z.array(aiRouteAssignmentSchema).min(1, {
+			error: "routing response must contain at least one assignment",
+		}),
+		mode: z.enum(["parallel", "relay"], {
+			error: "routing response mode must be parallel or relay",
+		}),
+		confidence: z.number().optional(),
+		reason: z.string(),
+	})
+	.check((context) => {
+		if (
+			context.value.mode === "relay" &&
+			context.value.assignments.length < 2
+		) {
+			context.issues.push({
+				code: "custom",
+				message: "relay routing requires at least two assignments",
+				path: ["assignments"],
+				input: context.value.assignments,
+			});
+		}
+	})
+	.transform(({ mode, assignments, confidence, reason }) =>
+		confidence === undefined
+			? { mode, assignments, reason }
+			: { mode, assignments, confidence, reason },
+	);
+export type AiRouteResult = z.infer<typeof aiRouteResultSchema>;
+
+const openAiChatCompletionSchema = z.object({
+	choices: z.array(
+		z.object({
+			finish_reason: z.string().nullable().optional(),
+			message: z.object({ content: z.string() }).optional(),
+		}),
+	),
+});
 
 export function routingOutputTokenBudget(
 	maxAgents: number,
@@ -57,19 +100,6 @@ export interface AiRouteInput {
 	maxAgents: number;
 }
 
-export interface AiRouteAssignment {
-	agentId: string;
-	subRequest: string;
-	projectIds: string[];
-}
-
-export interface AiRouteResult {
-	mode: CommonspaceRoutingMode;
-	assignments: AiRouteAssignment[];
-	confidence?: number;
-	reason: string;
-}
-
 export function buildRoutingPrompt(input: AiRouteInput): string {
 	const candidates = input.candidates.map((candidate) => ({
 		id: candidate.id,
@@ -111,63 +141,28 @@ export function parseRoutingResponse(text: string): AiRouteResult {
 	const candidate =
 		fenced ??
 		normalized.slice(normalized.indexOf("{"), normalized.lastIndexOf("}") + 1);
-	const payload = parseJsonObject(candidate);
-	if (
-		payload === null ||
-		!Array.isArray(payload.assignments) ||
-		typeof payload.reason !== "string"
-	) {
+	let value: unknown;
+	try {
+		value = JSON.parse(candidate);
+	} catch (cause) {
 		throw new RoutingResponseValidationError(
 			"routing response did not match the required shape",
+			{ cause },
 		);
 	}
-	if (payload.assignments.length === 0)
-		throw new RoutingResponseValidationError(
-			"routing response must contain at least one assignment",
-		);
-	if (payload.mode !== "parallel" && payload.mode !== "relay")
-		throw new RoutingResponseValidationError(
-			"routing response mode must be parallel or relay",
-		);
-	if (payload.mode === "relay" && payload.assignments.length < 2)
-		throw new RoutingResponseValidationError(
-			"relay routing requires at least two assignments",
-		);
-	const assignments: AiRouteAssignment[] = payload.assignments.map(
-		(candidate) => {
-			const assignment = jsonObject(candidate);
-			if (
-				assignment === null ||
-				typeof assignment.agentId !== "string" ||
-				typeof assignment.subRequest !== "string" ||
-				!Array.isArray(assignment.projectIds) ||
-				!assignment.projectIds.every(
-					(projectId): projectId is string => typeof projectId === "string",
-				)
-			) {
-				throw new RoutingResponseValidationError(
-					"routing response did not match the required shape",
-				);
-			}
-			return {
-				agentId: assignment.agentId,
-				subRequest: assignment.subRequest,
-				projectIds: assignment.projectIds,
-			};
-		},
-	);
-	const confidence =
-		typeof payload.confidence === "number" &&
-		Number.isFinite(payload.confidence)
-			? payload.confidence
-			: undefined;
-	const result: AiRouteResult = {
-		mode: payload.mode,
-		assignments,
-		reason: payload.reason,
-	};
-	if (confidence !== undefined) result.confidence = confidence;
-	return result;
+	const parsed = aiRouteResultSchema.safeParse(value);
+	if (!parsed.success) {
+		const issue = parsed.error.issues[0];
+		const message =
+			issue?.message === "routing response mode must be parallel or relay" ||
+			issue?.message ===
+				"routing response must contain at least one assignment" ||
+			issue?.message === "relay routing requires at least two assignments"
+				? issue.message
+				: "routing response did not match the required shape";
+		throw new RoutingResponseValidationError(message, { cause: parsed.error });
+	}
+	return parsed.data;
 }
 
 export interface OpenAiInferenceOptions {
@@ -212,17 +207,26 @@ export async function completeWithOpenAICompatible(
 		throw new Error(
 			`inference provider returned HTTP ${String(response.status)}`,
 		);
-	const payload = parseJsonObject(body);
-	const choices = payload?.choices;
-	const choice = Array.isArray(choices) ? jsonObject(choices[0]) : null;
+	let value: unknown;
+	try {
+		value = JSON.parse(body);
+	} catch (cause) {
+		throw new Error("inference provider returned invalid JSON", { cause });
+	}
+	const parsed = openAiChatCompletionSchema.safeParse(value);
+	if (!parsed.success)
+		throw new Error("inference provider returned no message", {
+			cause: parsed.error,
+		});
+	const [choice] = parsed.data.choices;
 	if (choice?.finish_reason === "length")
 		throw new InferenceResponseTruncatedError(
 			"inference provider truncated its response",
 		);
-	const message = jsonObject(choice?.message);
-	if (typeof message?.content !== "string")
+	const content = choice?.message?.content;
+	if (content === undefined)
 		throw new Error("inference provider returned no message");
-	return message.content;
+	return content;
 }
 
 export async function routeWithOpenAICompatible(
