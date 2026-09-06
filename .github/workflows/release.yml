@@ -34,6 +34,14 @@ jobs:
     env:
       RELEASE_TAG: ${{ inputs.tag }}
     steps:
+      - name: Require workflow dispatch from main
+        env:
+          WORKFLOW_REF: ${{ github.ref }}
+        run: |
+          if [[ "$WORKFLOW_REF" != "refs/heads/main" ]]; then
+            echo "::error::Run the release workflow from main."
+            exit 1
+          fi
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: refs/tags/${{ env.RELEASE_TAG }}
@@ -91,7 +99,7 @@ jobs:
           retention-days: 1
 
   publish:
-    if: ${{ ! inputs.dry_run }}
+    if: ${{ ! inputs.dry_run && github.repository == 'ralphbibera/commonspace' }}
     needs: [resolve, verify]
     runs-on: ubuntu-24.04
     timeout-minutes: 10

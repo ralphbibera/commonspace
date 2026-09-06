@@ -32,6 +32,16 @@ Treat workflow and dependency changes as executable code. Contribution workflows
 
 Review permission changes explicitly. Dependency updates do not authorize additional access or automatic merging. Review tools can help find problems, but the maintainer remains responsible for the decision.
 
+Keep these repository controls enabled:
+
+- require approval before workflows from every external contributor;
+- allow GitHub-owned actions plus the explicitly selected `pnpm/action-setup`, and require full commit-SHA pins;
+- keep the default workflow token read-only and prevent it from approving pull requests;
+- use GitHub-hosted runners only for untrusted pull request code;
+- keep secret scanning, push protection, Dependabot alerts, and Dependabot security updates enabled.
+
+The `npm-release` environment requires owner approval and accepts deployments only from `main`. The release workflow also rejects dispatches from another ref, rechecks its tag before publication, and cannot publish while `NPM_RELEASE_ENABLED` is absent. Add that variable only after npm package ownership and trusted publishing are configured.
+
 ## Configure GitHub
 
 Configure branch rules and required checks in the repository's GitHub settings. Use rules supported by the repository's plan.
