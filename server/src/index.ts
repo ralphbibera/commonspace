@@ -158,6 +158,20 @@ export async function runCommonspaceCli(): Promise<void> {
 		serverOptions.hermesAcpCommand = process.env.COMMONSPACE_HERMES_ACP_PATH;
 	if (process.env.COMMONSPACE_CODEX_ACP_PATH !== undefined)
 		serverOptions.codexAcpCommand = process.env.COMMONSPACE_CODEX_ACP_PATH;
+	if (process.env.COMMONSPACE_CLAUDE_CODE_PATH !== undefined)
+		serverOptions.claudeCodePath = process.env.COMMONSPACE_CLAUDE_CODE_PATH;
+	if (process.env.COMMONSPACE_CLAUDE_CODE_ACP_PATH !== undefined)
+		serverOptions.claudeCodeAcpCommand =
+			process.env.COMMONSPACE_CLAUDE_CODE_ACP_PATH;
+	if (process.env.COMMONSPACE_GEMINI_PATH !== undefined)
+		serverOptions.geminiPath = process.env.COMMONSPACE_GEMINI_PATH;
+	if (process.env.COMMONSPACE_GEMINI_ACP_PATH !== undefined)
+		serverOptions.geminiAcpCommand = process.env.COMMONSPACE_GEMINI_ACP_PATH;
+	if (process.env.COMMONSPACE_OPENCODE_PATH !== undefined)
+		serverOptions.opencodePath = process.env.COMMONSPACE_OPENCODE_PATH;
+	if (process.env.COMMONSPACE_OPENCODE_ACP_PATH !== undefined)
+		serverOptions.opencodeAcpCommand =
+			process.env.COMMONSPACE_OPENCODE_ACP_PATH;
 	if (process.env.COMMONSPACE_UI_ROOT !== undefined)
 		serverOptions.uiRoot = process.env.COMMONSPACE_UI_ROOT;
 	const running = await startCommonspaceServer(serverOptions);

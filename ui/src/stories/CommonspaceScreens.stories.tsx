@@ -564,6 +564,31 @@ export const AddAgentDiscoveredResults: Story = {
 	},
 };
 
+function discoveredHarnessStory(label: string): Story {
+	return {
+		args: { store: createStoryStore(discoveryStoryBootstrap) },
+		play: async ({ canvasElement }) => {
+			const page = within(canvasElement.ownerDocument.body);
+			await userEvent.click(page.getByRole("button", { name: "Add agent" }));
+			await userEvent.click(
+				page.getByRole("button", { name: `Choose ${label} harness` }),
+			);
+			await expect(
+				page.getByRole("button", { name: `Add discovered agent ${label}` }),
+			).toBeVisible();
+			await expect(
+				page.queryByRole("button", {
+					name: "Add discovered agent Hermes Reviewer",
+				}),
+			).not.toBeInTheDocument();
+		},
+	};
+}
+
+export const AddClaudeCode = discoveredHarnessStory("Claude Code");
+export const AddGemini = discoveredHarnessStory("Gemini CLI");
+export const AddOpenCode = discoveredHarnessStory("OpenCode");
+
 export const EmptyWorkspace: Story = {
 	args: { store: createStoryStore(emptyBootstrap) },
 };

@@ -50,7 +50,13 @@
 		"biome:lint": "biome lint .",
 		"biome:format": "biome format .",
 		"check": "pnpm biome:check && pnpm lint && pnpm typecheck && pnpm test && pnpm test:storybook && pnpm build && pnpm build:storybook",
-		"start": "pnpm --filter @commonspace/server start"
+		"start": "pnpm --filter @commonspace/server start",
+		"verify:acp:claude-code": "COMMONSPACE_LIVE_ACP=1 vitest run tests/live-acp.spec.ts -t 'Claude Code sessions' --testTimeout=240000",
+		"verify:acp:mcp:claude-code": "COMMONSPACE_LIVE_ACP_MCP=1 vitest run tests/live-acp-mcp.spec.ts -t 'real Claude Code' --testTimeout=240000",
+		"verify:adapter:claude-code": "vitest run tests/native-agent-integration.spec.ts -t 'Claude Code'",
+		"verify:adapter:gemini": "vitest run tests/native-agent-integration.spec.ts -t 'Gemini CLI'",
+		"verify:adapter:opencode": "vitest run tests/native-agent-integration.spec.ts -t 'OpenCode'",
+		"verify:adapters": "vitest run tests/native-agent-integration.spec.ts"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.5.9",

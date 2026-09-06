@@ -1,4 +1,5 @@
 import {
+	AGENT_ADAPTERS,
 	type CommonspaceAgentProfile,
 	type CommonspaceBootstrap,
 	type ConversationRef,
@@ -133,7 +134,7 @@ function directoryItems(
 		id: agent.id,
 		kind: "agent",
 		name: agent.displayName,
-		description: `${agent.adapter === "codex" ? "Codex" : "Hermes"} · ${agent.model ?? "profile default"}`,
+		description: `${AGENT_ADAPTERS[agent.adapter].label} · ${agent.model ?? "profile default"}`,
 		meta:
 			agent.status === "running"
 				? "Working"

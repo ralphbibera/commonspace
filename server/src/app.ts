@@ -1,6 +1,7 @@
 import type { IncomingMessage } from "node:http";
 import {
 	type AddPinRequest,
+	AGENT_ADAPTER_KINDS,
 	type ApplyRetentionRequest,
 	COMMONSPACE_SEARCH_KINDS,
 	type CommonspaceLiveAgentActivity,
@@ -140,7 +141,7 @@ const contextRequestSchema =
 const threadContextRequestSchema =
 	requestSchema<UpdateThreadContextRequest>(contextRequestShape);
 const discoverAgentsRequestSchema = requestSchema<DiscoverAgentsRequest>(
-	z.object({ adapter: z.enum(["hermes", "codex"]) }),
+	z.object({ adapter: z.enum(AGENT_ADAPTER_KINDS) }),
 );
 const mutationSchema = requestSchema<CommonspaceMutation>(
 	z.discriminatedUnion(
@@ -222,6 +223,7 @@ const mutationSchema = requestSchema<CommonspaceMutation>(
 			z.object({
 				action: z.literal("add-discovered-agent"),
 				agentId: z.string(),
+				adapter: z.enum(AGENT_ADAPTER_KINDS).optional(),
 				fullAccess: z.boolean().optional(),
 			}),
 			z.object({

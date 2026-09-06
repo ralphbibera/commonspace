@@ -41,11 +41,19 @@ The server reads these variables at startup. They apply to the foreground proces
 | `COMMONSPACE_CODEX_PATH` | Codex executable; defaults to `codex`. |
 | `COMMONSPACE_HERMES_ACP_PATH` | Overrides the Hermes ACP executable; otherwise uses `COMMONSPACE_HERMES_PATH`. |
 | `COMMONSPACE_CODEX_ACP_PATH` | Overrides the Codex ACP bridge executable; the bundled bridge is used by default. |
+| `COMMONSPACE_CLAUDE_CODE_PATH` | Claude Code executable for discovery and the ACP bridge; defaults to `claude`. |
+| `COMMONSPACE_CLAUDE_CODE_ACP_PATH` | Overrides the Claude ACP bridge executable; the bundled bridge is used by default. |
+| `COMMONSPACE_GEMINI_PATH` | Gemini CLI executable; defaults to `gemini`. Requires stable `>=0.39.1` and `<0.44.0`; use tested `0.43.0`. |
+| `COMMONSPACE_GEMINI_ACP_PATH` | Overrides the executable used with `--acp`; defaults to the Gemini CLI executable. |
+| `COMMONSPACE_OPENCODE_PATH` | OpenCode executable; defaults to `opencode`. Native fixture verifies `1.18.29`. |
+| `COMMONSPACE_OPENCODE_ACP_PATH` | Overrides the executable used with `acp`; defaults to the OpenCode executable. |
 | `COMMONSPACE_HERMES_YOLO=1` | Explicitly enables Hermes unsafe mode. |
-| `COMMONSPACE_AGENT_YOLO=1` | Explicitly enables Codex unsafe mode. |
+| `COMMONSPACE_AGENT_YOLO=1` | Explicitly enables Full access for Codex, Claude Code, Gemini CLI, and OpenCode. |
 | `OPENAI_API_KEY` | Inference key fallback for the canonical OpenAI origin only. Other endpoints require an explicit configured key when needed. |
 
 Unsafe modes change harness permission behavior. They do not authenticate a harness or repair routing configuration.
+
+Agent Full access changes replace cached ACP processes while keeping native session references. Either effective access change also stops that agent's active work and cancels its pending permissions; queued work uses the latest setting. An operator-level unsafe environment flag still applies even when the Agent's own Full access toggle is off.
 
 Configure inference in Workspace settings using a supported harness or an OpenAI-compatible endpoint. Stored endpoint keys are not returned to the browser. Changing the endpoint's origin clears its stored key, so enter the appropriate key again after that change.
 
@@ -222,6 +230,6 @@ cp -R ~/.commonspace ~/commonspace-backup-YYYYMMDD
 
 Replace `YYYYMMDD` with your backup date, and adjust the source if using `COMMONSPACE_HOME`. The copy includes routing configuration and attachments; keep it private. Native harness stores remain separate and are not included.
 
-The current internal state version is 27 and migrates versions 1–26 on startup. Each write retains the previous valid primary as `state.backup.json`. If the primary is invalid and the backup is valid, startup preserves the primary as `state.corrupt.json` and recovers the backup. If both are invalid, startup stops without replacing them.
+The current internal state version is 29 and migrates versions 1–28 on startup. Each write retains the previous valid primary as `state.backup.json`. If the primary is invalid and the backup is valid, startup preserves the primary as `state.corrupt.json` and recovers the backup. If both are invalid, startup stops without replacing them.
 
 The automatic state backup protects against an invalid write; it is not a complete archive of earlier releases. Application rollback does not reverse migrations. Before starting an older build, restore a data backup compatible with that build, and keep a separate copy of the current data so the recovery attempt remains reversible.

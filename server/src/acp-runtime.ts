@@ -65,6 +65,7 @@ export interface AcpRunInput {
 	/** Provider-native model selector exposed by ACP's session model extension. */
 	modelId?: string;
 	configOptions?: Readonly<Record<string, string | boolean>>;
+	signal?: AbortSignal;
 	onSessionReady?(sessionId: string): void;
 	onTraceUpdate?(entries: readonly CommonspaceTraceEntry[]): void;
 	onPermissionRequest?(
@@ -343,7 +344,7 @@ export class AcpAgentProcess {
 	readonly #sessionBindings = new Map<string, string>();
 	readonly #activeTurns = new Map<string, ActiveTurn>();
 	readonly #appliedSettings = new Map<string, string>();
-	readonly #availableConfigIds = new Map<string, Set<string>>();
+	readonly #availableConfigOptions = new Map<string, SessionConfigOption[]>();
 	readonly #availableModeIds = new Map<string, Set<string>>();
 	readonly #modelStates = new Map<string, SessionModelStateCompat>();
 	#child: ChildProcessWithoutNullStreams | undefined;
@@ -351,6 +352,7 @@ export class AcpAgentProcess {
 	#initializeResponse: InitializeResponse | undefined;
 	#starting: Promise<void> | undefined;
 	#closing = false;
+	#closePromise: Promise<void> | undefined;
 	#stderr = "";
 
 	constructor(options: AcpAgentProcessOptions) {
@@ -376,6 +378,7 @@ export class AcpAgentProcess {
 
 	async run(input: AcpRunInput): Promise<AcpRunResult> {
 		if (this.#closing) throw new Error("ACP process is closed");
+		input.signal?.throwIfAborted();
 		if (
 			input.message === "" &&
 			(input.images?.length ?? 0) === 0 &&
@@ -383,14 +386,17 @@ export class AcpAgentProcess {
 		)
 			throw new Error("ACP message, image, or file is required");
 		await this.#ensureStarted();
+		input.signal?.throwIfAborted();
 		const connection = this.#connection;
 		if (connection === undefined || connection.signal.aborted)
 			throw new Error("ACP process is not connected");
 
 		const setup = await this.#ensureSession(connection, input);
+		input.signal?.throwIfAborted();
 		const sessionId = setup.sessionId;
 		try {
 			await this.#configureSession(connection, setup, input);
+			input.signal?.throwIfAborted();
 			if (this.#activeTurns.has(sessionId))
 				throw new Error("ACP native session already has an active turn");
 
@@ -415,6 +421,7 @@ export class AcpAgentProcess {
 			this.#activeTurns.set(sessionId, turn);
 			try {
 				input.onSessionReady?.(sessionId);
+				input.signal?.throwIfAborted();
 				const prompt: ContentBlock[] = [
 					...(input.message === ""
 						? []
@@ -496,8 +503,12 @@ export class AcpAgentProcess {
 		return true;
 	}
 
-	async close(): Promise<void> {
-		if (this.#closing) return;
+	close(): Promise<void> {
+		this.#closePromise ??= this.#close();
+		return this.#closePromise;
+	}
+
+	async #close(): Promise<void> {
 		this.#closing = true;
 		const connection = this.#connection;
 		const child = this.#child;
@@ -509,7 +520,7 @@ export class AcpAgentProcess {
 		this.#loadedSessions.clear();
 		this.#sessionBindings.clear();
 		this.#appliedSettings.clear();
-		this.#availableConfigIds.clear();
+		this.#availableConfigOptions.clear();
 		this.#availableModeIds.clear();
 		this.#modelStates.clear();
 	}
@@ -561,7 +572,7 @@ export class AcpAgentProcess {
 			this.#loadedSessions.clear();
 			this.#sessionBindings.clear();
 			this.#appliedSettings.clear();
-			this.#availableConfigIds.clear();
+			this.#availableConfigOptions.clear();
 			this.#availableModeIds.clear();
 			this.#modelStates.clear();
 		});
@@ -626,6 +637,7 @@ export class AcpAgentProcess {
 				this.#maxProtocolFrameBytes,
 			);
 			protocolFrames.once("error", (error) => {
+				if (this.#closing) return;
 				this.#connection?.close(error);
 				void this.#terminateChild(child, "SIGKILL");
 			});
@@ -658,7 +670,7 @@ export class AcpAgentProcess {
 			this.#initializeResponse = initializeResponse;
 		} catch (error) {
 			this.#connection?.close(error);
-			await this.#terminateChild(child, "SIGKILL");
+			if (!this.#closing) await this.#terminateChild(child, "SIGKILL");
 			throw error;
 		}
 	}
@@ -703,7 +715,7 @@ export class AcpAgentProcess {
 					this.#loadedSessions.add(input.sessionId);
 					this.#sessionBindings.set(input.sessionId, binding);
 					this.#appliedSettings.delete(input.sessionId);
-					this.#availableConfigIds.delete(input.sessionId);
+					this.#availableConfigOptions.delete(input.sessionId);
 					this.#availableModeIds.delete(input.sessionId);
 					this.#modelStates.delete(input.sessionId);
 					return {
@@ -739,7 +751,7 @@ export class AcpAgentProcess {
 		this.#loadedSessions.add(response.sessionId);
 		this.#sessionBindings.set(response.sessionId, binding);
 		this.#appliedSettings.delete(response.sessionId);
-		this.#availableConfigIds.delete(response.sessionId);
+		this.#availableConfigOptions.delete(response.sessionId);
 		this.#availableModeIds.delete(response.sessionId);
 		this.#modelStates.delete(response.sessionId);
 		return {
@@ -762,10 +774,7 @@ export class AcpAgentProcess {
 			);
 		}
 		if (setup.configOptions !== undefined && setup.configOptions !== null) {
-			this.#availableConfigIds.set(
-				setup.sessionId,
-				new Set(setup.configOptions.map((option) => option.id)),
-			);
+			this.#availableConfigOptions.set(setup.sessionId, setup.configOptions);
 		}
 		if (setup.models !== undefined && setup.models !== null) {
 			this.#modelStates.set(setup.sessionId, setup.models);
@@ -820,22 +829,45 @@ export class AcpAgentProcess {
 			modelState.currentModelId = modelId;
 		}
 
-		const availableConfigIds = this.#availableConfigIds.get(setup.sessionId);
-		for (const [configId, value] of Object.entries(desiredConfig)) {
-			if (availableConfigIds?.has(configId) !== true) continue;
-			const current = setup.configOptions?.find(
-				(option) => option.id === configId,
-			)?.currentValue;
-			if (current === value) continue;
-			await this.#request("session/set_config_option", (signal) =>
-				connection.agent.request(
-					methods.agent.session.setConfigOption,
-					typeof value === "boolean"
-						? { sessionId: setup.sessionId, configId, type: "boolean", value }
-						: { sessionId: setup.sessionId, configId, value },
-					{ cancellationSignal: signal },
-				),
+		const priority = (id: string) =>
+			this.#availableConfigOptions
+				.get(setup.sessionId)
+				?.find((option) => option.id === id)?.category === "model"
+				? 0
+				: 1;
+		const requestedOptions = Object.entries(desiredConfig).sort(
+			([left], [right]) => priority(left) - priority(right),
+		);
+		for (const [configId, value] of requestedOptions) {
+			const option = this.#availableConfigOptions
+				.get(setup.sessionId)
+				?.find((candidate) => candidate.id === configId);
+			if (option === undefined || option.currentValue === value) continue;
+			if (option.type === "boolean") {
+				if (typeof value !== "boolean") continue;
+			} else {
+				if (typeof value !== "string") continue;
+				const choices = option.options.flatMap((choice) =>
+					"options" in choice ? choice.options : [choice],
+				);
+				if (
+					option.category !== "model" &&
+					!choices.some((choice) => choice.value === value)
+				)
+					continue;
+			}
+			const response = await this.#request(
+				"session/set_config_option",
+				(signal) =>
+					connection.agent.request(
+						methods.agent.session.setConfigOption,
+						typeof value === "boolean"
+							? { sessionId: setup.sessionId, configId, type: "boolean", value }
+							: { sessionId: setup.sessionId, configId, value },
+						{ cancellationSignal: signal },
+					),
 			);
+			this.#availableConfigOptions.set(setup.sessionId, response.configOptions);
 		}
 		this.#appliedSettings.set(setup.sessionId, fingerprint);
 	}
@@ -844,6 +876,14 @@ export class AcpAgentProcess {
 		notification: SessionNotification,
 		connection: ClientConnection["agent"],
 	): void {
+		if (notification.update.sessionUpdate === "config_option_update") {
+			this.#availableConfigOptions.set(
+				notification.sessionId,
+				notification.update.configOptions,
+			);
+			this.#appliedSettings.delete(notification.sessionId);
+			return;
+		}
 		const turn = this.#activeTurns.get(notification.sessionId);
 		if (turn === undefined) return;
 		const update = notification.update;
@@ -1104,38 +1144,55 @@ export class AcpAgentProcess {
 		child: ChildProcessWithoutNullStreams,
 		signal: NodeJS.Signals,
 	): Promise<void> {
-		if (child.exitCode !== null || child.signalCode !== null) return;
-		const exited = new Promise<void>((resolve) =>
-			child.once("exit", () => resolve()),
-		);
 		const detached = process.platform !== "win32";
-		if (detached && child.pid !== undefined) {
-			try {
-				process.kill(-child.pid, signal);
-			} catch {
-				child.kill(signal);
+		const childAlive = () =>
+			child.exitCode === null && child.signalCode === null;
+		const groupAlive = () => {
+			if (detached && child.pid !== undefined) {
+				try {
+					process.kill(-child.pid, 0);
+					return true;
+				} catch (error) {
+					// Inaccessible groups are unknown, so retain the bounded grace and
+					// cleanup attempt. Only ESRCH proves that the group has exited.
+					return !(
+						error instanceof Error &&
+						"code" in error &&
+						error.code === "ESRCH"
+					);
+				}
 			}
-		} else {
-			child.kill(signal);
-		}
-		const didExit = await Promise.race([
-			exited.then(() => true),
-			new Promise<false>((resolve) => setTimeout(() => resolve(false), 1_000)),
-		]);
-		if (!didExit && signal !== "SIGKILL") {
+			return childAlive();
+		};
+		const forceKill = () => {
 			if (detached && child.pid !== undefined) {
 				try {
 					process.kill(-child.pid, "SIGKILL");
+					return;
 				} catch {
-					child.kill("SIGKILL");
+					// Windows and restricted hosts may only permit direct-child signals.
 				}
-			} else {
-				child.kill("SIGKILL");
 			}
-			await Promise.race([
-				exited,
-				new Promise<void>((resolve) => setTimeout(resolve, 1_000)),
-			]);
+			if (childAlive()) child.kill("SIGKILL");
+		};
+		const waitForExit = async () => {
+			const deadline = performance.now() + 1_000;
+			while (groupAlive() && performance.now() < deadline)
+				await new Promise<void>((resolve) => setTimeout(resolve, 10));
+			return !groupAlive();
+		};
+		if (signal === "SIGKILL") {
+			forceKill();
+		} else if (childAlive()) {
+			// The bridge must flush and close its native child before group cleanup.
+			child.stdin.end();
+			child.kill(signal);
+		}
+		// A bridge may exit before its native child; keep the same bounded grace
+		// for remaining descendants, then reap the group even if the bridge exited.
+		if (!(await waitForExit())) {
+			forceKill();
+			await waitForExit();
 		}
 	}
 }

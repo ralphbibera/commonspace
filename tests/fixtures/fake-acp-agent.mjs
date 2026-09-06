@@ -10,6 +10,7 @@ const loadedSessionIds = new Set();
 let processMcpServers;
 const pendingPrompts = new Map();
 let pendingPermissionPrompt;
+let selectedModel = "default";
 
 async function writeFrame(frame) {
 	process.stdout.write(`${JSON.stringify(frame)}\n`);
@@ -20,6 +21,36 @@ async function record(frame) {
 }
 
 function sessionSettings() {
+	if (process.env.FAKE_ACP_DYNAMIC_SETTINGS === "1") {
+		return {
+			configOptions: [
+				{
+					id: "model",
+					category: "model",
+					name: "Model",
+					type: "select",
+					currentValue: selectedModel,
+					options: [
+						{ value: "default", name: "Default" },
+						{ value: "gpt-test", name: "Test" },
+					],
+				},
+				{
+					id: "effort",
+					category: "thought_level",
+					name: "Effort",
+					type: "select",
+					currentValue: "medium",
+					options: [
+						{
+							value: selectedModel === "gpt-test" ? "max" : "high",
+							name: "Supported effort",
+						},
+					],
+				},
+			],
+		};
+	}
 	if (process.env.FAKE_ACP_HERMES_SETTINGS === "1") {
 		return {
 			modes: {
@@ -79,6 +110,21 @@ function sessionSettings() {
 
 const lines = createInterface({ input: process.stdin, crlfDelay: Infinity });
 
+if (process.env.FAKE_ACP_SHUTDOWN_DELAY_MS !== undefined) {
+	let stopping = false;
+	const flushAndStop = async () => {
+		if (stopping) return;
+		stopping = true;
+		await new Promise((resolve) =>
+			setTimeout(resolve, Number(process.env.FAKE_ACP_SHUTDOWN_DELAY_MS)),
+		);
+		await record({ event: "native-flushed" });
+		process.exit(0);
+	};
+	process.on("SIGTERM", flushAndStop);
+	lines.on("close", flushAndStop);
+}
+
 for await (const line of lines) {
 	const frame = JSON.parse(line);
 	if (
@@ -90,6 +136,11 @@ for await (const line of lines) {
 		);
 	}
 	await record(frame);
+	if (frame.method === process.env.FAKE_ACP_DELAY_METHOD) {
+		await new Promise((resolve) =>
+			setTimeout(resolve, Number(process.env.FAKE_ACP_SETUP_DELAY_MS ?? 0)),
+		);
+	}
 
 	if (frame.id === "permission-1" && pendingPermissionPrompt !== undefined) {
 		const pending = pendingPermissionPrompt;
@@ -118,6 +169,7 @@ for await (const line of lines) {
 		if (process.env.FAKE_ACP_CAPTURE_ENV === "1") {
 			await record({
 				event: "environment",
+				opencodePermission: process.env.OPENCODE_PERMISSION ?? null,
 				noBrowser: process.env.NO_BROWSER ?? null,
 				argv: process.argv.slice(2),
 				codexConfig:
@@ -196,6 +248,27 @@ for await (const line of lines) {
 	}
 
 	if (frame.method === "session/set_config_option") {
+		if (process.env.FAKE_ACP_DYNAMIC_SETTINGS === "1") {
+			const option = sessionSettings().configOptions.find(
+				(candidate) => candidate.id === frame.params.configId,
+			);
+			if (
+				!option.options.some(
+					(candidate) => candidate.value === frame.params.value,
+				)
+			) {
+				await writeFrame({
+					jsonrpc: "2.0",
+					id: frame.id,
+					error: {
+						code: -32602,
+						message: "Setting not advertised by current model",
+					},
+				});
+				continue;
+			}
+			if (frame.params.configId === "model") selectedModel = frame.params.value;
+		}
 		await writeFrame({
 			jsonrpc: "2.0",
 			id: frame.id,
@@ -205,6 +278,20 @@ for await (const line of lines) {
 	}
 
 	if (frame.method === "session/prompt") {
+		if (process.env.FAKE_ACP_NATIVE_MODEL_UPDATE === "1") {
+			selectedModel = "default";
+			await writeFrame({
+				jsonrpc: "2.0",
+				method: "session/update",
+				params: {
+					sessionId: frame.params.sessionId,
+					update: {
+						sessionUpdate: "config_option_update",
+						configOptions: sessionSettings().configOptions,
+					},
+				},
+			});
+		}
 		if (process.env.FAKE_ACP_HANG_PROMPT === "1") {
 			pendingPrompts.set(frame.params.sessionId, frame.id);
 			continue;

@@ -5,9 +5,11 @@ import type {
 	CommonspaceState,
 } from "@commonspace/shared";
 import {
+	AGENT_ADAPTERS,
 	agentTagName,
 	COMMONSPACE_STATE_VERSION,
 	DEFAULT_COMMONSPACE_NOTIFICATION_SETTINGS,
+	isAgentAdapterKind,
 	uniqueAgentDisplayName,
 } from "@commonspace/shared";
 import type { JsonValue } from "./json.js";
@@ -215,7 +217,7 @@ export function addDiscoveredAgent(
 	agent: CommonspaceAgentProfile,
 	dependencies: StateDependencies = defaults,
 ): CommonspaceState {
-	if (agent.adapter !== "hermes" && agent.adapter !== "codex")
+	if (!isAgentAdapterKind(agent.adapter))
 		throw new Error("unsupported agent adapter");
 	if (
 		agent.adapter === "hermes" &&
@@ -239,6 +241,15 @@ export function addDiscoveredAgent(
 		if (!knownHarness && !legacyProfile)
 			throw new Error("invalid discovered Codex identity");
 	}
+	if (
+		(agent.adapter === "claude-code" ||
+			agent.adapter === "gemini" ||
+			agent.adapter === "opencode") &&
+		(agent.id !== agent.adapter || agent.nativeProfile !== undefined)
+	)
+		throw new Error(
+			`invalid discovered ${AGENT_ADAPTERS[agent.adapter].label} identity`,
+		);
 	const displayName = uniqueAgentDisplayName(
 		normalizedName(agent.displayName, "agent"),
 		agent.adapter,

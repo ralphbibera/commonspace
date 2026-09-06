@@ -51,6 +51,22 @@ describe("Commonspace live event decoding", () => {
 		);
 	});
 
+	it("preserves Claude Code activity and rejects unknown runtimes", () => {
+		const event = {
+			...validActivityEvent,
+			activities: [{ ...validActivity, adapter: "claude-code" }],
+		};
+		expect(parseActivityEventData(JSON.stringify(event))).toEqual(event);
+		expect(
+			parseActivityEventData(
+				JSON.stringify({
+					...event,
+					activities: [{ ...validActivity, adapter: "unsupported-cli" }],
+				}),
+			),
+		).toBeNull();
+	});
+
 	it("rejects an activity event when a nested contract is malformed", () => {
 		const invalidActivity = {
 			...validActivityEvent,

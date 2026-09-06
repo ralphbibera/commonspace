@@ -7,7 +7,11 @@ Notable changes to Commonspace. See the [versioning policy](docs/releasing.md#ch
 ### Conversations and agents
 
 - Channels, Direct Messages, and Threads keep requests, replies, decisions, and agent handoffs in one conversation record.
-- Hermes and Codex connect through the Agent Client Protocol (ACP). Agent discovery selects the installed Codex harness or an existing Hermes profile; runtimes retain their tools, credentials, permissions, and native sessions.
+- Codex, Claude Code, Gemini CLI, OpenCode, and Hermes connect through the Agent Client Protocol (ACP). Agent discovery selects a compatible installed harness or an existing Hermes profile; runtimes retain their tools, credentials, permissions, and native sessions.
+- A typed adapter registry and [authoring guide](docs/agent-adapters.md) separate native discovery, launch, and settings from the shared ACP lifecycle. Claude Code adds native-session resumption, activity, permissions, and scoped context through its bundled bridge.
+- Claude Code, Gemini CLI, and OpenCode integration tests exercise real runtimes without provider credentials, using local model API fixtures. Graceful ACP shutdown preserves native-child cleanup before forced termination.
+- Gemini CLI uses native ACP with a compatibility check for stable `>=0.39.1` and `<0.44.0` (tested 0.43.0); later tested versions regress session resume. OpenCode uses native ACP (tested 1.18.29). Both retain native configuration and credentials.
+- Changing effective Full access cancels active work and pending permissions, refreshes native processes, and preserves saved session references. Queued requests use current permissions. Stop during ACP setup cannot dispatch a later prompt.
 - Conversations resume their exact agent session. `/new` starts a fresh Direct Message session. Independent sessions run concurrently; requests to the same session run in order. Temporary authentication or transport failures preserve session continuity.
 - Explicit `@agent` mentions choose responders and support peer handoffs. Unaddressed Channel messages use configured inference to select agents and assign relevant requests. Service-level corrections preserve earlier replies and inform later routing; pending and failed routing remain visible.
 - Busy sessions retain follow-ups with reordering, removal, steering where supported, and stop-and-send controls. Replies distinguish completion, input requests, failure, cancellation, timeout, and interruption.

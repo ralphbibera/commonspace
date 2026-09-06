@@ -1,7 +1,9 @@
-export const COMMONSPACE_STATE_VERSION = 27 as const;
-export const COMMONSPACE_EXPORT_VERSION = 1 as const;
+import type { AgentAdapterKind } from "./agent-adapters.js";
 
-export type AgentAdapterKind = "hermes" | "codex";
+export type { AgentAdapterKind } from "./agent-adapters.js";
+
+export const COMMONSPACE_STATE_VERSION = 29 as const;
+export const COMMONSPACE_EXPORT_VERSION = 1 as const;
 
 export type CommonspaceReasoning =
 	| "none"
@@ -631,7 +633,12 @@ export type CommonspaceMutation =
 			maxAgentsPerTurn?: number;
 			memoryThreads?: number;
 	  }
-	| { action: "add-discovered-agent"; agentId: string; fullAccess?: boolean }
+	| {
+			action: "add-discovered-agent";
+			agentId: string;
+			adapter?: AgentAdapterKind;
+			fullAccess?: boolean;
+	  }
 	| {
 			action: "update-agent-profile";
 			agentId: string;

@@ -2,6 +2,7 @@ import type {
 	CommonspaceAgentTrace,
 	CommonspaceTraceEntry,
 } from "@commonspace/shared";
+import { AGENT_ADAPTERS } from "@commonspace/shared";
 import { useId, useState } from "react";
 import { cn } from "@/lib/utils";
 
@@ -11,7 +12,7 @@ interface AgentTraceProps {
 }
 
 function runtimeName(trace: CommonspaceAgentTrace): string {
-	return trace.adapter === "codex" ? "Codex" : "Hermes";
+	return AGENT_ADAPTERS[trace.adapter].label;
 }
 
 function durationLabel(startedAt: string, completedAt: string): string {

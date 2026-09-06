@@ -4,6 +4,7 @@ import type {
 	CommonspaceLiveAgentActivity,
 	CommonspaceTraceEntry,
 } from "@commonspace/shared";
+import { AGENT_ADAPTERS } from "@commonspace/shared";
 import { ChevronDownIcon, SquareIcon } from "lucide-react";
 import { useId, useState } from "react";
 import { AgentTraceTimeline } from "./AgentTrace.tsx";
@@ -11,7 +12,7 @@ import { AgentAvatar } from "./design-system/AgentAvatar.tsx";
 import { cn } from "./lib/utils.ts";
 
 function runtimeLabel(adapter: AgentAdapterKind): string {
-	return adapter === "codex" ? "Codex" : "Hermes";
+	return AGENT_ADAPTERS[adapter].label;
 }
 
 function waitingActivityText(adapter: AgentAdapterKind): string {

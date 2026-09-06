@@ -372,12 +372,41 @@ describe("standalone Commonspace server", () => {
 		expect(JSON.stringify(codexDiscovery)).not.toContain("nativeProfile");
 		expect(discoveryCalls).toBe(2);
 
-		const unsupportedResponse = await fetch(
+		const claudeDiscoveryResponse = await fetch(
 			`${running.url}/api/discover-agents`,
 			{
 				method: "POST",
 				headers: { origin: running.url, "content-type": "application/json" },
 				body: JSON.stringify({ adapter: "claude-code" }),
+			},
+		);
+		expect(claudeDiscoveryResponse.status).toBe(200);
+		await expect(claudeDiscoveryResponse.json()).resolves.toMatchObject({
+			discoveredAgents: expect.arrayContaining([
+				expect.objectContaining({ id: "claude-code", adapter: "claude-code" }),
+			]),
+		});
+
+		for (const adapter of ["gemini", "opencode"]) {
+			const response = await fetch(`${running.url}/api/discover-agents`, {
+				method: "POST",
+				headers: { origin: running.url, "content-type": "application/json" },
+				body: JSON.stringify({ adapter }),
+			});
+			expect(response.status).toBe(200);
+			await expect(response.json()).resolves.toMatchObject({
+				discoveredAgents: expect.arrayContaining([
+					expect.objectContaining({ id: adapter, adapter }),
+				]),
+			});
+		}
+
+		const unsupportedResponse = await fetch(
+			`${running.url}/api/discover-agents`,
+			{
+				method: "POST",
+				headers: { origin: running.url, "content-type": "application/json" },
+				body: JSON.stringify({ adapter: "unsupported-cli" }),
 			},
 		);
 		expect(unsupportedResponse.status).toBe(400);
@@ -393,7 +422,7 @@ describe("standalone Commonspace server", () => {
 				expect.objectContaining({ adapter: "hermes", installed: true }),
 			]),
 		});
-		expect(discoveryCalls).toBe(4);
+		expect(discoveryCalls).toBe(10);
 
 		const exportResponse = await fetch(`${running.url}/api/export`, {
 			headers: { origin: running.url },

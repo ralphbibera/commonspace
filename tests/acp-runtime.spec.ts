@@ -20,6 +20,122 @@ afterEach(async () => {
 });
 
 describe("ACP agent process", () => {
+	it.skipIf(process.platform === "win32")(
+		"reaps a native child even when its bridge exits before cleanup",
+		async () => {
+			const root = await mkdtemp(join(tmpdir(), "commonspace-acp-orphan-"));
+			roots.push(root);
+			const pidPath = join(root, "native.pid");
+			const processClient = new AcpAgentProcess({
+				command: process.execPath,
+				args: [
+					fileURLToPath(
+						new URL("./fixtures/acp-shutdown-agent.mjs", import.meta.url),
+					),
+				],
+				cwd: root,
+				env: {
+					...process.env,
+					FAKE_ACP_LEAVE_CHILD: "1",
+					FAKE_ACP_CHILD_PID_FILE: pidPath,
+				},
+			});
+			let nativePid: number | undefined;
+			try {
+				await processClient.run({ cwd: root, message: "Start native worker." });
+				nativePid = Number(await readFile(pidPath, "utf8"));
+				await processClient.close();
+				const pid = nativePid;
+				expect(() => process.kill(pid, 0)).toThrow();
+			} finally {
+				await processClient.close();
+				if (nativePid !== undefined) {
+					try {
+						process.kill(nativePid, "SIGKILL");
+					} catch {
+						/* Already reaped. */
+					}
+				}
+			}
+		},
+	);
+
+	it("lets the bridge flush its native child before terminating the process group", async () => {
+		const root = await mkdtemp(join(tmpdir(), "commonspace-acp-shutdown-"));
+		roots.push(root);
+		const flushPath = join(root, "native-session.txt");
+		const processClient = new AcpAgentProcess({
+			command: process.execPath,
+			args: [
+				fileURLToPath(
+					new URL("./fixtures/acp-shutdown-agent.mjs", import.meta.url),
+				),
+			],
+			cwd: root,
+			env: { ...process.env, FAKE_ACP_FLUSH_FILE: flushPath },
+		});
+		try {
+			await processClient.run({
+				cwd: root,
+				message: "Complete before shutdown.",
+			});
+		} finally {
+			await processClient.close();
+		}
+		expect(await readFile(flushPath, "utf8")).toBe("native session saved");
+	});
+
+	it("selects the model before model-dependent settings and omits unadvertised values", async () => {
+		const root = await mkdtemp(join(tmpdir(), "commonspace-acp-config-"));
+		roots.push(root);
+		const logPath = join(root, "frames.ndjson");
+		const processClient = new AcpAgentProcess({
+			command: process.execPath,
+			args: [fixturePath],
+			cwd: root,
+			env: {
+				...process.env,
+				FAKE_ACP_LOG: logPath,
+				FAKE_ACP_DYNAMIC_SETTINGS: "1",
+				FAKE_ACP_NATIVE_MODEL_UPDATE: "1",
+			},
+		});
+		try {
+			const first = await processClient.run({
+				cwd: root,
+				message: "Use the selected model.",
+				configOptions: { effort: "max", model: "gpt-test" },
+			});
+			const second = await processClient.run({
+				cwd: root,
+				sessionId: first.sessionId,
+				message: "Keep supported settings.",
+				configOptions: { effort: "unsupported" },
+			});
+			expect(second.text).toBe("Echo: Keep supported settings.");
+			await processClient.run({
+				cwd: root,
+				sessionId: first.sessionId,
+				message: "Respect the native model change.",
+				configOptions: { effort: "max" },
+			});
+			const frames = (await readFile(logPath, "utf8"))
+				.trim()
+				.split("\n")
+				.map((line) => JSON.parse(line));
+			expect(
+				frames
+					.filter((frame) => frame.method === "session/set_config_option")
+					.map((frame) => [frame.params.configId, frame.params.value]),
+			).toEqual([
+				["model", "gpt-test"],
+				["effort", "max"],
+			]);
+		} finally {
+			await processClient.close();
+		}
+	});
+
 	it("starts a session and sends only the new message as the prompt", async () => {
 		const root = await mkdtemp(join(tmpdir(), "commonspace-acp-"));
 		roots.push(root);
@@ -301,6 +417,7 @@ describe("ACP agent process", () => {
 			cwd: root,
 			message: "Never delivered.",
 		});
+		const rejected = expect(running).rejects.toThrow();
 		await delay(25);
 
 		await expect(
@@ -309,7 +426,7 @@ describe("ACP agent process", () => {
 				delay(1_000).then(() => "timed-out"),
 			]),
 		).resolves.toBe("closed");
-		await expect(running).rejects.toThrow();
+		await rejected;
 	});
 
 	it("reloads an active native session when its session-scoped MCP binding changes", async () => {
