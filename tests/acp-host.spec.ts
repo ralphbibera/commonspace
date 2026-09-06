@@ -1,4 +1,12 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+	mkdir,
+	mkdtemp,
+	readdir,
+	readFile,
+	rm,
+	symlink,
+	writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -233,6 +241,135 @@ describe("Commonspace ACP host path", () => {
 		expect(JSON.stringify(await service.bootstrap())).not.toContain(
 			pathToFileURL(generated).href,
 		);
+		await service.close();
+	});
+
+	it("rejects a credential-bearing ACP source hidden behind a safe display name", async () => {
+		const root = await mkdtemp(
+			join(tmpdir(), "commonspace-acp-credential-source-"),
+		);
+		roots.push(root);
+		const workspace = join(root, "workspace");
+		await mkdir(workspace);
+		const generated = join(workspace, ".env");
+		await writeFile(generated, "SYNTHETIC_TOKEN=not-a-secret");
+		vi.stubEnv("FAKE_ACP_RESOURCE_URI", pathToFileURL(generated).href);
+		vi.stubEnv("FAKE_ACP_RESOURCE_NAME", "report.txt");
+		vi.stubEnv("FAKE_ACP_RESOURCE_MIME", "text/plain");
+		const service = new CommonspaceHostService(
+			{},
+			{ ...acpConfig(root), defaultCwd: workspace },
+			{ discoverAgents: discoverTestHarnesses },
+		);
+		await service.initialize();
+		await addTestHarness(service, "codex", "Review Bot");
+
+		await service.send({
+			conversation: { kind: "dm", id: "codex" },
+			text: "Create the report.",
+		});
+		await service.whenIdle();
+
+		const reply = service
+			.snapshot()
+			.messages["dm:codex"]?.find((message) => message.authorType === "agent");
+		expect(reply?.files).toBeUndefined();
+		await service.close();
+	});
+
+	it.each([
+		{
+			caseName: "prohibited display name",
+			resourceName: "report.txt",
+			targetName: "report.txt",
+			displayName: ".env.local",
+			outside: false,
+		},
+		{
+			caseName: "credential-bearing resolved symlink target",
+			resourceName: "report.txt",
+			targetName: "credentials.json",
+			displayName: "report.txt",
+			outside: false,
+		},
+		{
+			caseName: "credential-bearing symlink source name",
+			resourceName: "id_ed25519",
+			targetName: "report.txt",
+			displayName: "report.txt",
+			outside: false,
+		},
+		{
+			caseName: "symlink target outside the allowed root",
+			resourceName: "report.txt",
+			targetName: "outside.txt",
+			displayName: "report.txt",
+			outside: true,
+		},
+	] as const)("rejects ACP resource with $caseName", async (fixture) => {
+		const root = await mkdtemp(join(tmpdir(), "commonspace-acp-file-guard-"));
+		roots.push(root);
+		const workspace = join(root, "workspace");
+		await mkdir(workspace);
+		const target = join(fixture.outside ? root : workspace, fixture.targetName);
+		await writeFile(target, "synthetic fixture bytes");
+		const resource = join(workspace, fixture.resourceName);
+		if (resource !== target) await symlink(target, resource);
+		vi.stubEnv("FAKE_ACP_RESOURCE_URI", pathToFileURL(resource).href);
+		vi.stubEnv("FAKE_ACP_RESOURCE_NAME", fixture.displayName);
+		vi.stubEnv("FAKE_ACP_RESOURCE_MIME", "text/plain");
+		const service = new CommonspaceHostService(
+			{},
+			{ ...acpConfig(root), defaultCwd: workspace },
+			{ discoverAgents: discoverTestHarnesses },
+		);
+		await service.initialize();
+		await addTestHarness(service, "codex", "Review Bot");
+
+		await service.send({
+			conversation: { kind: "dm", id: "codex" },
+			text: "Create the report.",
+		});
+		await service.whenIdle();
+
+		const reply = service
+			.snapshot()
+			.messages["dm:codex"]?.find((message) => message.authorType === "agent");
+		expect(reply?.files).toBeUndefined();
+		expect(await readdir(join(root, "attachments"))).toEqual([]);
+		await service.close();
+	});
+
+	it("does not include an invalid ACP resource path in warnings", async () => {
+		const root = await mkdtemp(join(tmpdir(), "commonspace-acp-file-warning-"));
+		roots.push(root);
+		const workspace = join(root, "workspace");
+		await mkdir(workspace);
+		const missing = join(workspace, "private-missing-report.txt");
+		vi.stubEnv("FAKE_ACP_RESOURCE_URI", pathToFileURL(missing).href);
+		vi.stubEnv("FAKE_ACP_RESOURCE_NAME", "report.txt");
+		vi.stubEnv("FAKE_ACP_RESOURCE_MIME", "text/plain");
+		const warn = vi.fn();
+		const service = new CommonspaceHostService(
+			{ warn },
+			{ ...acpConfig(root), defaultCwd: workspace },
+			{ discoverAgents: discoverTestHarnesses },
+		);
+		await service.initialize();
+		await addTestHarness(service, "codex", "Review Bot");
+
+		await service.send({
+			conversation: { kind: "dm", id: "codex" },
+			text: "Create the report.",
+		});
+		await service.whenIdle();
+
+		const reply = service
+			.snapshot()
+			.messages["dm:codex"]?.find((message) => message.authorType === "agent");
+		expect(reply?.files).toBeUndefined();
+		expect(await readdir(join(root, "attachments"))).toEqual([]);
+		expect(JSON.stringify(warn.mock.calls)).not.toContain(missing);
 		await service.close();
 	});
 

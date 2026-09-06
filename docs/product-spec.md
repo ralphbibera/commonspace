@@ -324,7 +324,7 @@ Each row gives a stable requirement ID, its release target, the required behavio
 | FIL-01 | v0.0.1 | Allow humans to attach general local files to messages. | Supported files persist, render or download safely, and reach the intended Agent session. |
 | FIL-02 | Capability-dependent | Accept harness-generated files as Agent attachments. | A supported ACP artifact becomes a durable Commonspace attachment whose managed metadata omits its source host path. File contents remain unchanged. |
 | FIL-03 | v0.0.1 | Bind attachments to exact message versions. | Editing/branching does not silently move an attachment to another version. |
-| FIL-04 | v0.0.1 | Block known credential-bearing files. | Common secret, key, token, and credential containers cannot be attached or previewed. |
+| FIL-04 | v0.0.1 | Block known credential-bearing files. | Human files and harness artifacts validate proposed names; harness artifacts also validate source and canonical resolved filenames before bytes are copied. Symlinks cannot disguise a credential file or escape an allowed root. |
 | FIL-05 | v0.0.1 | Keep Project file/Git surfaces read-oriented. | Commonspace may show files, changes, diffs, and emitted verification but does not become a Git client or execution manager. |
 
 ### 6.8 Harness activity, controls, and outcomes

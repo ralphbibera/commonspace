@@ -9,8 +9,8 @@ import {
 	writeFile,
 } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, isAbsolute, join, relative } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { isAbsolute, join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 import type { McpServer as AcpMcpServer } from "@agentclientprotocol/sdk";
 import type {
@@ -107,6 +107,15 @@ import {
 	createDesktopNotifier,
 	desktopNotificationForItem,
 } from "./desktop-notifications.js";
+import {
+	type AgentGeneratedFile,
+	credentialBearingFileName,
+	MAX_FILE_ATTACHMENT_BYTES,
+	MAX_FILE_ATTACHMENTS,
+	MAX_FILE_ATTACHMENTS_BYTES,
+	type PreparedFileAttachment,
+	prepareAgentFileAttachments,
+} from "./file-attachments.js";
 import { type JsonObject, type JsonValue, jsonObject } from "./json.js";
 import {
 	mergeChannelMemoryProjection,
@@ -153,9 +162,6 @@ const MAX_MESSAGE_CHARS = 16_000;
 const MAX_IMAGE_ATTACHMENTS = 4;
 const MAX_IMAGE_ATTACHMENT_BYTES = 8 * 1024 * 1024;
 const MAX_IMAGE_ATTACHMENTS_BYTES = 16 * 1024 * 1024;
-const MAX_FILE_ATTACHMENTS = 8;
-const MAX_FILE_ATTACHMENT_BYTES = 8 * 1024 * 1024;
-const MAX_FILE_ATTACHMENTS_BYTES = 16 * 1024 * 1024;
 const MAX_AGENT_RESPONSE_CHARS = 64_000;
 const MAX_MCP_CONTEXT_CHARS = 64_000;
 
@@ -280,12 +286,7 @@ export interface AgentRunResult {
 	files?: AgentGeneratedFile[];
 }
 
-export interface AgentGeneratedFile {
-	name: string;
-	uri: string;
-	mimeType?: string;
-	size?: number;
-}
+export type { AgentGeneratedFile } from "./file-attachments.js";
 
 export interface AgentPermissionRequest {
 	toolCallId: string;
@@ -363,11 +364,6 @@ interface PrivateRoutingConfiguration
 
 interface PreparedImageAttachment {
 	metadata: CommonspaceImageAttachment;
-	data: Buffer;
-}
-
-interface PreparedFileAttachment {
-	metadata: CommonspaceFileAttachment;
 	data: Buffer;
 }
 
@@ -671,22 +667,6 @@ function prepareImageAttachments(
 		});
 	}
 	return attachments;
-}
-
-function credentialBearingFileName(name: string): boolean {
-	const lower = name.toLocaleLowerCase();
-	return (
-		/^\.env(?:\.|$)/u.test(lower) ||
-		lower === ".npmrc" ||
-		lower === ".netrc" ||
-		/^(?:id_rsa|id_ed25519|credentials?|secrets?|tokens?)(?:\.|$)/u.test(
-			lower,
-		) ||
-		/(?:^|[._-])(?:service-account|credentials?|secrets?|tokens?)(?:[._-]|$)/u.test(
-			lower,
-		) ||
-		/\.(?:pem|key|p12|pfx|kdbx)$/u.test(lower)
-	);
 }
 
 function prepareFileAttachments(
@@ -6216,11 +6196,16 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 						};
 			let agentFiles: PreparedFileAttachment[] = [];
 			try {
-				agentFiles = await this.prepareAgentFileAttachments(
+				agentFiles = await prepareAgentFileAttachments(
 					agentResponse.files,
 					projectRoots.length === 0
 						? [this.defaultCwd]
 						: projectRoots.map((root) => root.path),
+					() => {
+						this.environment.logger?.warn(
+							"Commonspace ignored invalid Agent file.",
+						);
+					},
 				);
 				await this.persistFileAttachments(agentFiles);
 			} catch (error) {
@@ -7490,69 +7475,6 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 			await this.removeFileAttachments(storedIds);
 			throw error;
 		}
-	}
-
-	private async prepareAgentFileAttachments(
-		files: readonly AgentGeneratedFile[] | undefined,
-		allowedRoots: readonly string[],
-	): Promise<PreparedFileAttachment[]> {
-		const prepared: PreparedFileAttachment[] = [];
-		let totalBytes = 0;
-		for (const candidate of files?.slice(0, MAX_FILE_ATTACHMENTS) ?? []) {
-			try {
-				const url = new URL(candidate.uri);
-				if (url.protocol !== "file:") continue;
-				const path = await realpath(fileURLToPath(url));
-				const insideAllowedRoot = allowedRoots.some((root) => {
-					const child = relative(root, path);
-					return (
-						child === "" || (!child.startsWith("..") && !isAbsolute(child))
-					);
-				});
-				if (!insideAllowedRoot) continue;
-				const info = await stat(path);
-				if (
-					!info.isFile() ||
-					info.size < 1 ||
-					info.size > MAX_FILE_ATTACHMENT_BYTES
-				)
-					continue;
-				const requestedName = candidate.name.normalize("NFKC").trim();
-				const name = requestedName === "" ? basename(path) : requestedName;
-				if (
-					name.includes("/") ||
-					name.includes("\\") ||
-					credentialBearingFileName(name)
-				)
-					continue;
-				const mimeType =
-					candidate.mimeType?.trim().toLocaleLowerCase() ??
-					"application/octet-stream";
-				if (
-					!/^[a-z0-9][a-z0-9!#$&^_.+-]*\/[a-z0-9][a-z0-9!#$&^_.+-]*$/u.test(
-						mimeType,
-					)
-				)
-					continue;
-				const data = await readFile(path);
-				totalBytes += data.length;
-				if (totalBytes > MAX_FILE_ATTACHMENTS_BYTES) break;
-				prepared.push({
-					metadata: {
-						id: crypto.randomUUID(),
-						name,
-						mimeType,
-						size: data.length,
-					},
-					data,
-				});
-			} catch (error) {
-				this.environment.logger?.warn(
-					`Commonspace ignored invalid Agent file: ${error instanceof Error ? error.message : String(error)}`,
-				);
-			}
-		}
-		return prepared;
 	}
 
 	private async removeImageAttachments(ids: readonly string[]): Promise<void> {

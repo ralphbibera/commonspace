@@ -92,7 +92,7 @@ Server-sent events carry durable state revisions and separate temporary activity
 - It stores native-session mappings, resumes exact sessions, and recovers sessions only when a harness explicitly reports them missing.
 - It accepts work immediately, coordinates independent sessions concurrently, and serializes work targeting the same native session.
 - It retains routing assignments and corrections, binds replies to those assignments, and preserves prior attempts.
-- It stores bounded image and general-file attachments, rejects known credential-bearing names, and imports harness artifacts only from permitted roots.
+- It stores bounded image and general-file attachments, rejects known credential-bearing source, resolved, and display names before reading bytes, and imports harness artifacts only from permitted canonical roots. Harness files are opened without following the final symlink, rechecked by canonical path and file identity, then read through the same descriptor with a validated-size-plus-one ceiling so replacement or growth cannot bypass limits.
 - It exposes readiness diagnostics, inference data-flow information, notifications, portable archives, and explicit retention.
 
 `server/src/app.ts` owns HTTP limits, loopback and same-origin guards, event framing, status codes, health checks, security headers, and optional static UI delivery. `server/src/acp-runtime.ts` owns the ACP client and subprocess lifecycle. `server/src/commonspace-mcp.ts` owns temporary capabilities and scoped tools. `server/src/index.ts` owns configuration, startup, signals, and graceful shutdown.
