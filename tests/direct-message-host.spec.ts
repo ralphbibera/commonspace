@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { deriveCommonspaceInboxItems } from "@commonspace/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	type AgentRunInput,
@@ -242,11 +243,21 @@ describe("Commonspace direct-message host sessions", () => {
 	});
 
 	it.each([
-		["What input should I use?", "needs_input"],
-		["", "silent"],
+		[
+			"Implemented and verified. Would you like anything else?",
+			"complete",
+			null,
+		],
+		["I need no further input. Work is complete.", "complete", null],
+		[
+			"I need the API URL before I can continue.",
+			"complete",
+			"possible-input-request",
+		],
+		["", "silent", null],
 	] as const)(
 		"classifies completed DM outcomes: %s",
-		async (text, expectedStatus) => {
+		async (text, expectedStatus, expectedAttentionKind) => {
 			const root = await mkdtemp(join(tmpdir(), "commonspace-dm-outcome-"));
 			roots.push(root);
 			const service = new CommonspaceHostService(
@@ -271,6 +282,14 @@ describe("Commonspace direct-message host sessions", () => {
 
 			expect(service.snapshot().messages["dm:codex"]?.[0]?.replyStatus).toBe(
 				expectedStatus,
+			);
+			const inputItems = deriveCommonspaceInboxItems(service.snapshot()).filter(
+				(item) =>
+					item.kind === "input-request" ||
+					item.kind === "possible-input-request",
+			);
+			expect(inputItems.map((item) => item.kind)).toEqual(
+				expectedAttentionKind === null ? [] : [expectedAttentionKind],
 			);
 		},
 	);

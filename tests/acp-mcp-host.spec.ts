@@ -143,6 +143,68 @@ describe("Commonspace ACP session context", () => {
 		});
 	});
 
+	it("routes a native MCP handoff to another Channel agent with a clean prompt", async () => {
+		const root = await mkdtemp(join(tmpdir(), "commonspace-acp-mcp-handoff-"));
+		roots.push(root);
+		vi.stubEnv("FAKE_ACP_USE_MCP", "1");
+		vi.stubEnv("FAKE_ACP_HANDOFF_TRIGGER", "HANDOFF_TO_FRONTEND");
+		vi.stubEnv("FAKE_ACP_HANDOFF_TARGET", "frontend");
+		vi.stubEnv("FAKE_ACP_HANDOFF_REQUEST", "Review the API boundary.");
+		const agents = ["backend", "frontend"].map((id) => ({
+			id,
+			displayName: id.slice(0, 1).toLocaleUpperCase() + id.slice(1),
+			adapter: "hermes" as const,
+			model: "gpt-test",
+			status: "stopped" as const,
+		}));
+		const running = await startCommonspaceServer({
+			root,
+			port: 0,
+			hermesAcpCommand: process.execPath,
+			hermesAcpArgs: [fixturePath],
+			dependencies: {
+				discoverAgents: async () => agents,
+			},
+			logger: { info: () => undefined, warn: () => undefined },
+		});
+		runningServers.push(running);
+		await running.service.discoverAgents("hermes");
+		for (const agent of agents) {
+			await running.service.mutate({
+				action: "add-discovered-agent",
+				agentId: agent.id,
+				adapter: "hermes",
+			});
+		}
+		const channel = mustExist(
+			(
+				await running.service.mutate({
+					action: "create-channel",
+					name: "engineering",
+					agentIds: agents.map((agent) => agent.id),
+				})
+			).channels[0],
+		);
+
+		await running.service.send({
+			conversation: { kind: "channel", id: channel.id },
+			text: "@backend HANDOFF_TO_FRONTEND",
+		});
+		await running.service.whenIdle();
+
+		const replies = (
+			running.service.snapshot().messages[`channel:${channel.id}`] ?? []
+		).filter((message) => message.authorType === "agent");
+		expect(replies.map((message) => message.authorId)).toEqual([
+			"backend",
+			"frontend",
+		]);
+		expect(replies[0]?.text).toContain("@frontend Review the API boundary.");
+		expect(replies[1]?.text).toContain(
+			"Echo: From Backend:\n\nReview the API boundary.",
+		);
+	});
+
 	it("revokes the old MCP capability at a hard DM reset boundary", async () => {
 		const root = await mkdtemp(join(tmpdir(), "commonspace-acp-mcp-reset-"));
 		roots.push(root);

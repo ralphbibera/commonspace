@@ -43,10 +43,13 @@ import {
 } from "./project-files.js";
 import { searchCommonspace } from "./search.js";
 import type { CommonspaceHostService } from "./service.js";
+import {
+	MAX_WORKSPACE_IMPORT_BODY_BYTES,
+	WorkspacePortabilitySizeError,
+} from "./workspace-portability.js";
 
 const MAX_BODY_BYTES = 128 * 1024;
 const MAX_SEND_BODY_BYTES = 24 * 1024 * 1024;
-const MAX_IMPORT_BODY_BYTES = 64 * 1024 * 1024;
 
 const conversationSchema = z.object({
 	kind: z.enum(["channel", "dm"]),
@@ -357,6 +360,8 @@ export interface CreateCommonspaceAppOptions {
 	mcpGateway?: CommonspaceMcpGateway;
 	directoryPicker?: () => Promise<string | null>;
 	uiRoot?: string;
+	/** Deterministic transport-boundary test override. */
+	workspaceImportBodyLimitBytes?: number;
 }
 
 export function requestIsSameOrigin(
@@ -458,6 +463,7 @@ export function createCommonspaceApp({
 	mcpGateway,
 	directoryPicker,
 	uiRoot,
+	workspaceImportBodyLimitBytes = MAX_WORKSPACE_IMPORT_BODY_BYTES,
 }: CreateCommonspaceAppOptions): Express {
 	const app = express();
 	const pickDirectory = directoryPicker ?? selectLocalDirectory;
@@ -475,7 +481,10 @@ export function createCommonspaceApp({
 		next();
 	});
 	app.use("/api/send", express.json({ limit: MAX_SEND_BODY_BYTES }));
-	app.use("/api/import", express.json({ limit: MAX_IMPORT_BODY_BYTES }));
+	app.use(
+		"/api/import",
+		express.json({ limit: workspaceImportBodyLimitBytes }),
+	);
 	app.use("/api", express.json({ limit: MAX_BODY_BYTES }));
 
 	app.get("/api/health", (_req, res) => {
@@ -519,8 +528,11 @@ export function createCommonspaceApp({
 			);
 			res.json(await service.exportWorkspace());
 		} catch (error) {
-			res.status(500).json({
-				code: "workspace_export_failed",
+			const tooLarge = error instanceof WorkspacePortabilitySizeError;
+			res.status(tooLarge ? 413 : 500).json({
+				code: tooLarge
+					? "workspace_export_too_large"
+					: "workspace_export_failed",
 				error: requestErrorMessage(error),
 			});
 		}
@@ -533,8 +545,11 @@ export function createCommonspaceApp({
 				await service.importWorkspace(body.archive, body.projectMappings),
 			);
 		} catch (error) {
-			res.status(400).json({
-				code: "workspace_import_failed",
+			const tooLarge = error instanceof WorkspacePortabilitySizeError;
+			res.status(tooLarge ? 413 : 400).json({
+				code: tooLarge
+					? "workspace_import_too_large"
+					: "workspace_import_failed",
 				error: requestErrorMessage(error),
 			});
 		}

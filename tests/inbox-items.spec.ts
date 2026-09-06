@@ -220,7 +220,7 @@ describe("Commonspace Inbox items", () => {
 
 		expect(items.map((item) => item.kind)).toEqual([
 			"mention",
-			"input-request",
+			"possible-input-request",
 			"timeout",
 			"failure",
 			"completion",

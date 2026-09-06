@@ -143,6 +143,22 @@ export function mentionedAgents(
 	];
 }
 
+export function finalHandoffAgent(
+	memberIds: readonly string[],
+	text: string,
+	agents: readonly Pick<CommonspaceAgentProfile, "id" | "displayName">[],
+): string | undefined {
+	const finalParagraph = text
+		.trim()
+		.split(/\r?\n[\t ]*\r?\n/u)
+		.at(-1)
+		?.trim();
+	if (finalParagraph === undefined || !finalParagraph.startsWith("@"))
+		return undefined;
+	if (parseTags(finalParagraph).agents.includes("all")) return undefined;
+	return mentionedChannelAgents(memberIds, finalParagraph, agents)[0];
+}
+
 const ROUTING_STOP_WORDS = new Set([
 	"about",
 	"after",

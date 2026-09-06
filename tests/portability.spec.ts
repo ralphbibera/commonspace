@@ -1,17 +1,198 @@
-import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { createCommonspaceApp } from "../server/src/app.ts";
+import {
+	type RunningCommonspaceServer,
+	startCommonspaceServer,
+} from "../server/src/index.ts";
 import { CommonspaceHostService } from "../server/src/service.ts";
+import { createInitialState } from "../server/src/state.ts";
 import { addTestHarness, discoverTestHarnesses } from "./test-harnesses.ts";
 import { mustExist } from "./test-helpers.ts";
 
 const roots: string[] = [];
+const servers: RunningCommonspaceServer[] = [];
 
 afterEach(async () => {
+	await Promise.all(servers.splice(0).map((server) => server.close()));
 	await Promise.all(
 		roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
 	);
+});
+
+describe("workspace portability HTTP workflow", () => {
+	it("rejects an oversized export plan before reading attachment bytes", async () => {
+		const root = await mkdtemp(
+			join(tmpdir(), "commonspace-export-plan-limit-"),
+		);
+		roots.push(root);
+		const state = createInitialState();
+		state.agents = [
+			{
+				id: "codex",
+				displayName: "Review Bot",
+				adapter: "codex",
+				model: null,
+				createdAt: "2026-01-01T00:00:00.000Z",
+			},
+		];
+		state.messages["dm:codex"] = [
+			{
+				id: randomUUID(),
+				conversation: { kind: "dm", id: "codex" },
+				authorType: "user",
+				authorId: "user",
+				authorName: "You",
+				text: "Synthetic oversized export plan.",
+				createdAt: "2026-01-01T00:00:00.000Z",
+				replyStatus: "complete",
+				files: Array.from({ length: 7 }, (_, index) => ({
+					id: randomUUID(),
+					name: `fixture-${String(index)}.bin`,
+					mimeType: "application/octet-stream",
+					size: 8 * 1024 * 1024,
+				})),
+			},
+		];
+		await writeFile(join(root, "state.json"), JSON.stringify(state));
+		const service = new CommonspaceHostService(
+			{},
+			{ root },
+			{
+				discoverAgents: discoverTestHarnesses,
+			},
+		);
+		await service.initialize();
+
+		await expect(service.exportWorkspace()).rejects.toThrow(
+			"workspace archive exceeds the supported 48 MiB limit",
+		);
+	});
+
+	it("restores combined attachments larger than the generic API body limit", async () => {
+		const sourceRoot = await mkdtemp(
+			join(tmpdir(), "commonspace-http-export-source-"),
+		);
+		roots.push(sourceRoot);
+		const source = await startCommonspaceServer({
+			root: sourceRoot,
+			port: 0,
+			logger: { warn: () => undefined, info: () => undefined },
+			dependencies: {
+				discoverAgents: discoverTestHarnesses,
+				runAgent: async () => ({ text: "Portable reply." }),
+			},
+		});
+		servers.push(source);
+		await addTestHarness(source.service, "codex", "Review Bot");
+		const fixtureBytes = [
+			Buffer.alloc(96 * 1024, 0x61),
+			Buffer.alloc(96 * 1024, 0x62),
+			Buffer.alloc(96 * 1024, 0x63),
+		];
+		await source.service.send({
+			conversation: { kind: "dm", id: "codex" },
+			text: "Preserve every attachment.",
+			files: fixtureBytes.map((data, index) => ({
+				name: `fixture-${String(index)}.bin`,
+				mimeType: "application/octet-stream",
+				data: data.toString("base64"),
+			})),
+		});
+		await source.service.whenIdle();
+
+		const exportResponse = await fetch(`${source.url}/api/export`, {
+			headers: { origin: source.url },
+		});
+		expect(exportResponse.status).toBe(200);
+		const archive = await exportResponse.json();
+		const importBody = JSON.stringify({ archive, projectMappings: {} });
+		expect(Buffer.byteLength(importBody)).toBeGreaterThan(128 * 1024);
+
+		const targetRoot = await mkdtemp(
+			join(tmpdir(), "commonspace-http-export-target-"),
+		);
+		roots.push(targetRoot);
+		const target = await startCommonspaceServer({
+			root: targetRoot,
+			port: 0,
+			logger: { warn: () => undefined, info: () => undefined },
+			dependencies: { discoverAgents: discoverTestHarnesses },
+		});
+		servers.push(target);
+		const importResponse = await fetch(`${target.url}/api/import`, {
+			method: "POST",
+			headers: {
+				origin: target.url,
+				"content-type": "application/json",
+			},
+			body: importBody,
+		});
+		expect(importResponse.status).toBe(200);
+
+		const importedFiles =
+			target.service.snapshot().messages["dm:codex"]?.[0]?.files ?? [];
+		expect(importedFiles).toHaveLength(fixtureBytes.length);
+		for (const [index, file] of importedFiles.entries()) {
+			await expect(target.service.readFileAttachment(file.id)).resolves.toEqual(
+				{
+					metadata: file,
+					data: fixtureBytes[index],
+				},
+			);
+		}
+
+		const constrainedRoot = await mkdtemp(
+			join(tmpdir(), "commonspace-http-export-constrained-"),
+		);
+		roots.push(constrainedRoot);
+		const constrainedService = new CommonspaceHostService(
+			{},
+			{ root: constrainedRoot },
+			{ discoverAgents: discoverTestHarnesses },
+		);
+		await constrainedService.initialize();
+		const constrainedServer = createServer(
+			createCommonspaceApp({
+				service: constrainedService,
+				workspaceImportBodyLimitBytes: 128 * 1024,
+			}),
+		);
+		await new Promise<void>((resolve) =>
+			constrainedServer.listen(0, "127.0.0.1", resolve),
+		);
+		const address = constrainedServer.address();
+		if (address === null || typeof address === "string")
+			throw new Error("constrained import server did not bind");
+		const constrainedUrl = `http://127.0.0.1:${String(address.port)}`;
+		try {
+			const oversizedResponse = await fetch(`${constrainedUrl}/api/import`, {
+				method: "POST",
+				headers: {
+					origin: constrainedUrl,
+					"content-type": "application/json",
+				},
+				body: importBody,
+			});
+			expect(oversizedResponse.status).toBe(413);
+			await expect(oversizedResponse.json()).resolves.toMatchObject({
+				code: "body_too_large",
+			});
+			expect(constrainedService.snapshot().revision).toBe(0);
+		} finally {
+			await new Promise<void>((resolve, reject) =>
+				constrainedServer.close((error) => {
+					if (error === undefined) resolve();
+					else reject(error);
+				}),
+			);
+			await constrainedService.close();
+		}
+	});
 });
 
 const archiveShapes = ["current", "legacy defaults", "legacy overrides"];

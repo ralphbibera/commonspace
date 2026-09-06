@@ -82,6 +82,7 @@ beforeEach(() => {
 						{
 							message: {
 								content: JSON.stringify({
+									mode: "parallel",
 									assignments:
 										selected === undefined
 											? []
@@ -1054,14 +1055,728 @@ describe("Commonspace host authority", () => {
 		expect(runAgent).toHaveBeenCalledTimes(2);
 	});
 
-	it("delivers an agent-authored mention once as only the new handoff delta", async () => {
+	it("starts one speaker and passes each peer response through an inferred relay", async () => {
+		const root = await mkdtemp(join(tmpdir(), "commonspace-relay-room-"));
+		roots.push(root);
+		const backend = deferred<string>();
+		const frontend = deferred<string>();
+		const infrastructure = deferred<string>();
+		const runAgent = vi.fn((input: AgentRunInput) => {
+			switch (input.agent.id) {
+				case "backend":
+					return backend.promise;
+				case "frontend":
+					return frontend.promise;
+				case "infrastructure":
+					return infrastructure.promise;
+				default:
+					throw new Error("unexpected relay agent");
+			}
+		});
+		const agents = ["backend", "frontend", "infrastructure"].map((id) => ({
+			id,
+			displayName: id.slice(0, 1).toLocaleUpperCase() + id.slice(1),
+			adapter: "hermes" as const,
+			model: "test",
+			status: "stopped" as const,
+		}));
+		const service = new CommonspaceHostService(
+			{},
+			{ root },
+			{
+				discoverAgents: async () => agents,
+				runAgent,
+				routeAgents: async () => ({
+					mode: "relay" as const,
+					assignments: [
+						{
+							agentId: "backend",
+							subRequest: "Define the server boundary.",
+							projectIds: [],
+						},
+						{
+							agentId: "frontend",
+							subRequest: "Reconcile client dependencies.",
+							projectIds: [],
+						},
+						{
+							agentId: "infrastructure",
+							subRequest: "Synthesize the shared boundary.",
+							projectIds: [],
+						},
+					],
+					reason: "The user requested a sequential peer discussion.",
+				}),
+			},
+		);
+		await service.initialize();
+		await addDiscoveredAgents(service, "backend", "frontend", "infrastructure");
+		const channel = mustExist(
+			(
+				await service.mutate({
+					action: "create-channel",
+					name: "engineering",
+					agentIds: agents.map((agent) => agent.id),
+				})
+			).channels[0],
+		);
+
+		await service.send({
+			conversation: { kind: "channel", id: channel.id },
+			text: "Talk to each other and agree on the ownership boundary.",
+		});
+		await vi.waitFor(() => {
+			expect(runAgent.mock.calls.map((call) => call[0].agent.id)).toEqual([
+				"backend",
+			]);
+		});
+
+		backend.resolve("Backend owns API contracts.");
+		await vi.waitFor(() => {
+			expect(runAgent.mock.calls.map((call) => call[0].agent.id)).toEqual([
+				"backend",
+				"frontend",
+			]);
+		});
+		expect(runAgent.mock.calls[1]?.[0].message).toBe(
+			"From Backend:\n\nBackend owns API contracts.\n\nYour relay assignment:\n\nReconcile client dependencies.",
+		);
+
+		frontend.resolve("Frontend accepts the API contract.");
+		await vi.waitFor(() => {
+			expect(runAgent.mock.calls.map((call) => call[0].agent.id)).toEqual([
+				"backend",
+				"frontend",
+				"infrastructure",
+			]);
+		});
+		expect(runAgent.mock.calls[2]?.[0].message).toBe(
+			"From Frontend:\n\nFrontend accepts the API contract.\n\nYour relay assignment:\n\nSynthesize the shared boundary.",
+		);
+
+		infrastructure.resolve("Ownership boundary agreed.");
+		await service.whenIdle();
+		const messages = service.snapshot().messages[`channel:${channel.id}`] ?? [];
+		expect(
+			messages
+				.filter((message) => message.authorType === "agent")
+				.map((message) => message.authorId),
+		).toEqual(["backend", "frontend", "infrastructure"]);
+		expect(
+			messages.find((message) => message.authorType === "user")?.routing?.mode,
+		).toBe("relay");
+
+		await service.close();
+		const restarted = new CommonspaceHostService(
+			{},
+			{ root },
+			{ discoverAgents: async () => agents, runAgent },
+		);
+		await restarted.initialize();
+		expect(
+			restarted
+				.snapshot()
+				.messages[`channel:${channel.id}`]?.find(
+					(message) => message.authorType === "user",
+				)?.routing?.mode,
+		).toBe("relay");
+		await restarted.close();
+	});
+
+	it("bounds relayed peer text while preserving the next assignment", async () => {
+		const root = await mkdtemp(join(tmpdir(), "commonspace-relay-bounds-"));
+		roots.push(root);
+		const agents = ["backend", "frontend"].map((id) => ({
+			id,
+			displayName: id.slice(0, 1).toLocaleUpperCase() + id.slice(1),
+			adapter: "hermes" as const,
+			model: "test",
+			status: "stopped" as const,
+		}));
+		const runAgent = vi.fn(async (input: AgentRunInput) =>
+			input.agent.id === "backend"
+				? `${"x".repeat(2_500)}PEER_MIDDLE${"y".repeat(2_500)}`
+				: "Frontend reviewed it.",
+		);
+		const service = new CommonspaceHostService(
+			{},
+			{ root },
+			{
+				discoverAgents: async () => agents,
+				runAgent,
+				routeAgents: async () => ({
+					mode: "relay" as const,
+					assignments: [
+						{
+							agentId: "backend",
+							subRequest: "Start.",
+							projectIds: [],
+						},
+						{
+							agentId: "frontend",
+							subRequest: "Preserve TARGET_ASSIGNMENT.",
+							projectIds: [],
+						},
+					],
+					reason: "Bounded relay test.",
+				}),
+			},
+		);
+		await service.initialize();
+		await addDiscoveredAgents(service, "backend", "frontend");
+		const channel = mustExist(
+			(
+				await service.mutate({
+					action: "create-channel",
+					name: "engineering",
+					agentIds: agents.map((agent) => agent.id),
+				})
+			).channels[0],
+		);
+
+		await service.send({
+			conversation: { kind: "channel", id: channel.id },
+			text: "Discuss this without replaying oversized context.",
+			attachments: [
+				{
+					name: "boundary.png",
+					mimeType: "image/png",
+					data: "iVBORw==",
+				},
+			],
+		});
+		await service.whenIdle();
+
+		const relayed = mustExist(runAgent.mock.calls[1]?.[0].message);
+		expect(relayed.length).toBeLessThan(4_200);
+		expect(relayed).not.toContain("PEER_MIDDLE");
+		expect(relayed).toContain(
+			"Peer response truncated; use commonspace_get_context for the full reply.",
+		);
+		expect(relayed).toContain("Preserve TARGET_ASSIGNMENT.");
+		expect(runAgent.mock.calls[1]?.[0].images).toEqual([
+			{
+				name: "boundary.png",
+				mimeType: "image/png",
+				data: "iVBORw==",
+			},
+		]);
+	});
+
+	it("delivers a structured peer handoff and one bounded return", async () => {
+		const root = await mkdtemp(
+			join(tmpdir(), "commonspace-structured-handoff-"),
+		);
+		roots.push(root);
+		const serviceRef: { current?: CommonspaceHostService } = {};
+		let backendRuns = 0;
+		const runAgent = vi.fn(async (input: AgentRunInput) => {
+			if (input.commonspaceScope === undefined)
+				throw new Error("expected Commonspace MCP scope");
+			if (input.agent.id === "backend") {
+				backendRuns += 1;
+				if (backendRuns === 1) {
+					await mustExist(serviceRef.current).handoff(input.commonspaceScope, {
+						targetAgentId: "frontend",
+						request: "Review the API boundary.",
+					});
+					return "Backend API boundary ready.";
+				}
+				return "Backend accepted the review.";
+			}
+			await mustExist(serviceRef.current).handoff(input.commonspaceScope, {
+				targetAgentId: "backend",
+				request: "Frontend accepts the API boundary.",
+			});
+			return "Frontend review complete.";
+		});
+		const agents = ["backend", "frontend"].map((id) => ({
+			id,
+			displayName: id.slice(0, 1).toLocaleUpperCase() + id.slice(1),
+			adapter: "hermes" as const,
+			model: "test",
+			status: "stopped" as const,
+		}));
+		const service = new CommonspaceHostService(
+			{},
+			{ root },
+			{
+				discoverAgents: async () => agents,
+				runAgent,
+			},
+		);
+		serviceRef.current = service;
+		await service.initialize();
+		await addDiscoveredAgents(service, "backend", "frontend");
+		const channel = mustExist(
+			(
+				await service.mutate({
+					action: "create-channel",
+					name: "engineering",
+					agentIds: agents.map((agent) => agent.id),
+				})
+			).channels[0],
+		);
+
+		await service.send({
+			conversation: { kind: "channel", id: channel.id },
+			text: "@backend define the API boundary and ask Frontend to review it.",
+		});
+		await service.whenIdle();
+		expect(runAgent.mock.calls.map((call) => call[0].agent.id)).toEqual([
+			"backend",
+			"frontend",
+			"backend",
+		]);
+		expect(runAgent.mock.calls[0]?.[0]).toMatchObject({
+			message:
+				"@backend define the API boundary and ask Frontend to review it.",
+			commonspaceScope: {
+				peers: [{ id: "frontend", displayName: "Frontend" }],
+			},
+		});
+		expect(runAgent.mock.calls[1]?.[0].message).toBe(
+			"From Backend:\n\nReview the API boundary.",
+		);
+		expect(runAgent.mock.calls[2]?.[0].message).toBe(
+			"From Frontend:\n\nFrontend accepts the API boundary.",
+		);
+		const replies = (service.snapshot().messages[`channel:${channel.id}`] ?? [])
+			.filter((message) => message.authorType === "agent")
+			.map((message) => ({ authorId: message.authorId, text: message.text }));
+		expect(replies).toEqual([
+			{
+				authorId: "backend",
+				text: "Backend API boundary ready.\n\n@frontend Review the API boundary.",
+			},
+			{
+				authorId: "frontend",
+				text: "Frontend review complete.\n\n@backend Frontend accepts the API boundary.",
+			},
+			{ authorId: "backend", text: "Backend accepted the review." },
+		]);
+		expect(
+			service
+				.snapshot()
+				.threads.find((thread) => thread.channelId === channel.id)?.agentIds,
+		).toEqual(["backend", "frontend"]);
+	});
+
+	it("preserves a planned relay assignment and Project scope through a structured handoff", async () => {
+		const root = await mkdtemp(join(tmpdir(), "commonspace-relay-scope-"));
+		roots.push(root);
+		const backendRoot = join(root, "backend");
+		const frontendRoot = join(root, "frontend");
+		await mkdir(backendRoot);
+		await mkdir(frontendRoot);
+		const serviceRef: { current?: CommonspaceHostService } = {};
+		const agents = ["backend", "frontend"].map((id) => ({
+			id,
+			displayName: id.slice(0, 1).toLocaleUpperCase() + id.slice(1),
+			adapter: "hermes" as const,
+			model: "test",
+			status: "stopped" as const,
+		}));
+		let backendProjectId = "";
+		let frontendProjectId = "";
+		let backendRuns = 0;
+		const runAgent = vi.fn(async (input: AgentRunInput) => {
+			if (input.commonspaceScope === undefined)
+				throw new Error("expected Commonspace MCP scope");
+			if (input.agent.id === "backend") {
+				backendRuns += 1;
+				if (backendRuns === 1) {
+					await mustExist(serviceRef.current).handoff(input.commonspaceScope, {
+						targetAgentId: "frontend",
+						request: "Review the client contract.",
+					});
+					return "Backend contract ready.";
+				}
+				return "Backend accepted the client review.";
+			}
+			return "Frontend contract reviewed.\n\n@backend Accept the client review.";
+		});
+		const service = new CommonspaceHostService(
+			{},
+			{ root },
+			{
+				discoverAgents: async () => agents,
+				runAgent,
+				routeAgents: async () => ({
+					mode: "relay" as const,
+					assignments: [
+						{
+							agentId: "backend",
+							subRequest: "Define the API contract.",
+							projectIds: [backendProjectId],
+						},
+						{
+							agentId: "frontend",
+							subRequest: "Review the client contract.",
+							projectIds: [frontendProjectId],
+						},
+					],
+					reason: "Backend defines the contract before frontend review.",
+				}),
+			},
+		);
+		serviceRef.current = service;
+		await service.initialize();
+		await addDiscoveredAgents(service, "backend", "frontend");
+		const backendProject = mustExist(
+			(
+				await service.mutate({
+					action: "create-project",
+					name: "Backend",
+					paths: [backendRoot],
+				})
+			).projects.find((project) => project.name === "Backend"),
+		);
+		const frontendProject = mustExist(
+			(
+				await service.mutate({
+					action: "create-project",
+					name: "Frontend",
+					paths: [frontendRoot],
+				})
+			).projects.find((project) => project.name === "Frontend"),
+		);
+		backendProjectId = backendProject.id;
+		frontendProjectId = frontendProject.id;
+		const channel = mustExist(
+			(
+				await service.mutate({
+					action: "create-channel",
+					name: "engineering",
+					agentIds: agents.map((agent) => agent.id),
+				})
+			).channels[0],
+		);
+
+		await service.send({
+			conversation: { kind: "channel", id: channel.id },
+			projectIds: [backendProject.id, frontendProject.id],
+			text: "Discuss the API and client contract.",
+		});
+		await service.whenIdle();
+
+		expect(runAgent.mock.calls[1]?.[0].cwd).toBe(await realpath(frontendRoot));
+		expect(runAgent.mock.calls[2]?.[0].cwd).toBe(await realpath(backendRoot));
+		const messages = service.snapshot().messages[`channel:${channel.id}`] ?? [];
+		const source = mustExist(
+			messages.find((message) => message.authorType === "user"),
+		);
+		const frontendAssignment = mustExist(
+			source.routing?.assignments.find(
+				(assignment) => assignment.agentId === "frontend",
+			),
+		);
+		const backendAssignment = mustExist(
+			source.routing?.assignments.find(
+				(assignment) => assignment.agentId === "backend",
+			),
+		);
+		expect(
+			messages.find(
+				(message) =>
+					message.authorType === "agent" && message.authorId === "frontend",
+			)?.routingAssignmentId,
+		).toBe(frontendAssignment.id);
+		expect(
+			messages.findLast(
+				(message) =>
+					message.authorType === "agent" && message.authorId === "backend",
+			)?.routingAssignmentId,
+		).toBe(backendAssignment.id);
+	});
+
+	it("restricts each active turn to one current Channel peer handoff", async () => {
+		const root = await mkdtemp(join(tmpdir(), "commonspace-handoff-scope-"));
+		roots.push(root);
+		const serviceRef: { current?: CommonspaceHostService } = {};
+		const agents = ["backend", "frontend", "outsider"].map((id) => ({
+			id,
+			displayName: id.slice(0, 1).toLocaleUpperCase() + id.slice(1),
+			adapter: "hermes" as const,
+			model: "test",
+			status: "stopped" as const,
+		}));
+		const runAgent = vi.fn(async (input: AgentRunInput) => {
+			if (input.commonspaceScope === undefined)
+				throw new Error("expected Commonspace MCP scope");
+			if (input.agent.id === "frontend") return "Frontend completed review.";
+			await expect(
+				mustExist(serviceRef.current).handoff(input.commonspaceScope, {
+					targetAgentId: "backend",
+					request: "Self handoff.",
+				}),
+			).rejects.toThrow("an agent cannot hand work to itself");
+			await expect(
+				mustExist(serviceRef.current).handoff(input.commonspaceScope, {
+					targetAgentId: "outsider",
+					request: "Outside handoff.",
+				}),
+			).rejects.toThrow("peer handoff target is not in this Channel");
+			await mustExist(serviceRef.current).handoff(input.commonspaceScope, {
+				targetAgentId: "frontend",
+				request: "Review this boundary.",
+			});
+			await expect(
+				mustExist(serviceRef.current).handoff(input.commonspaceScope, {
+					targetAgentId: "frontend",
+					request: "Duplicate handoff.",
+				}),
+			).rejects.toThrow("this agent turn already requested a peer handoff");
+			return "Backend requested review.";
+		});
+		const service = new CommonspaceHostService(
+			{},
+			{ root },
+			{
+				discoverAgents: async () => agents,
+				runAgent,
+			},
+		);
+		serviceRef.current = service;
+		await service.initialize();
+		await addDiscoveredAgents(service, "backend", "frontend", "outsider");
+		const channel = mustExist(
+			(
+				await service.mutate({
+					action: "create-channel",
+					name: "engineering",
+					agentIds: ["backend", "frontend"],
+				})
+			).channels[0],
+		);
+
+		await service.send({
+			conversation: { kind: "channel", id: channel.id },
+			text: "@backend ask Frontend to review this.",
+		});
+		await service.whenIdle();
+
+		expect(runAgent.mock.calls.map((call) => call[0].agent.id)).toEqual([
+			"backend",
+			"frontend",
+		]);
+	});
+
+	it("stops a repeated structured handoff edge with a visible outcome", async () => {
+		const root = await mkdtemp(join(tmpdir(), "commonspace-handoff-loop-"));
+		roots.push(root);
+		const serviceRef: { current?: CommonspaceHostService } = {};
+		const agents = ["backend", "frontend"].map((id) => ({
+			id,
+			displayName: id.slice(0, 1).toLocaleUpperCase() + id.slice(1),
+			adapter: "hermes" as const,
+			model: "test",
+			status: "stopped" as const,
+		}));
+		const runAgent = vi.fn(async (input: AgentRunInput) => {
+			if (input.commonspaceScope === undefined)
+				throw new Error("expected Commonspace MCP scope");
+			const targetAgentId =
+				input.agent.id === "backend" ? "frontend" : "backend";
+			await mustExist(serviceRef.current).handoff(input.commonspaceScope, {
+				targetAgentId,
+				request: `Continue with ${targetAgentId}.`,
+			});
+			return `${input.agent.displayName} replied.`;
+		});
+		const service = new CommonspaceHostService(
+			{},
+			{ root },
+			{
+				discoverAgents: async () => agents,
+				runAgent,
+			},
+		);
+		serviceRef.current = service;
+		await service.initialize();
+		await addDiscoveredAgents(service, "backend", "frontend");
+		const channel = mustExist(
+			(
+				await service.mutate({
+					action: "create-channel",
+					name: "engineering",
+					agentIds: agents.map((agent) => agent.id),
+				})
+			).channels[0],
+		);
+
+		await service.send({
+			conversation: { kind: "channel", id: channel.id },
+			text: "@backend start a bounded discussion.",
+		});
+		await service.whenIdle();
+
+		expect(runAgent.mock.calls.map((call) => call[0].agent.id)).toEqual([
+			"backend",
+			"frontend",
+			"backend",
+		]);
+		expect(
+			(service.snapshot().messages[`channel:${channel.id}`] ?? []).some(
+				(message) =>
+					message.authorType === "system" &&
+					message.text ===
+						"Commonspace stopped the @backend to @frontend handoff because that relay edge already ran.",
+			),
+		).toBe(true);
+	});
+
+	it("stops a peer relay at the visible workspace agent limit", async () => {
+		const root = await mkdtemp(join(tmpdir(), "commonspace-relay-turn-limit-"));
+		roots.push(root);
+		const agents = Array.from({ length: 5 }, (_, index) => ({
+			id: `agent-${String(index + 1)}`,
+			displayName: `Agent ${String(index + 1)}`,
+			adapter: "hermes" as const,
+			model: "test",
+			status: "stopped" as const,
+		}));
+		const serviceRef: { current?: CommonspaceHostService } = {};
+		const runAgent = vi.fn(async (input: AgentRunInput) => {
+			if (input.commonspaceScope === undefined)
+				throw new Error("expected Commonspace MCP scope");
+			const index = agents.findIndex((agent) => agent.id === input.agent.id);
+			const next = agents[index + 1];
+			if (next !== undefined)
+				await mustExist(serviceRef.current).handoff(input.commonspaceScope, {
+					targetAgentId: next.id,
+					request: `Continue with ${next.displayName}.`,
+				});
+			return `${input.agent.displayName} replied.`;
+		});
+		const service = new CommonspaceHostService(
+			{},
+			{ root },
+			{
+				discoverAgents: async () => agents,
+				runAgent,
+			},
+		);
+		serviceRef.current = service;
+		await service.initialize();
+		await addDiscoveredAgents(service, ...agents.map((agent) => agent.id));
+		await service.mutate({ action: "set-defaults", maxAgentsPerTurn: 3 });
+		const channel = mustExist(
+			(
+				await service.mutate({
+					action: "create-channel",
+					name: "engineering",
+					agentIds: agents.map((agent) => agent.id),
+				})
+			).channels[0],
+		);
+
+		await service.send({
+			conversation: { kind: "channel", id: channel.id },
+			text: "@agent-1 start a bounded peer relay.",
+		});
+		await service.whenIdle();
+
+		expect(runAgent.mock.calls.map((call) => call[0].agent.id)).toEqual(
+			agents.slice(0, 3).map((agent) => agent.id),
+		);
+		expect(
+			(service.snapshot().messages[`channel:${channel.id}`] ?? []).some(
+				(message) =>
+					message.authorType === "system" &&
+					message.text ===
+						"Commonspace stopped the agent relay after 3 turns to prevent a loop.",
+			),
+		).toBe(true);
+	});
+
+	it("lets a relay speaker choose the next Channel peer with a visible mention", async () => {
+		const root = await mkdtemp(join(tmpdir(), "commonspace-relay-choice-"));
+		roots.push(root);
+		const runAgent = vi.fn(async (input: AgentRunInput) => {
+			switch (input.agent.id) {
+				case "backend":
+					return "Need runtime input first.\n\n@infrastructure inspect the boundary.";
+				case "infrastructure":
+					return "Runtime boundary is safe.";
+				case "frontend":
+					return "Client boundary reconciled.";
+				default:
+					throw new Error("unexpected relay agent");
+			}
+		});
+		const agents = ["backend", "frontend", "infrastructure"].map((id) => ({
+			id,
+			displayName: id.slice(0, 1).toLocaleUpperCase() + id.slice(1),
+			adapter: "hermes" as const,
+			model: "test",
+			status: "stopped" as const,
+		}));
+		const service = new CommonspaceHostService(
+			{},
+			{ root },
+			{
+				discoverAgents: async () => agents,
+				runAgent,
+				routeAgents: async () => ({
+					mode: "relay" as const,
+					assignments: [
+						{
+							agentId: "backend",
+							subRequest: "Start the boundary discussion.",
+							projectIds: [],
+						},
+						{
+							agentId: "frontend",
+							subRequest: "Reconcile the client boundary.",
+							projectIds: [],
+						},
+						{
+							agentId: "infrastructure",
+							subRequest: "Validate the runtime boundary.",
+							projectIds: [],
+						},
+					],
+					reason: "Sequential specialist discussion.",
+				}),
+			},
+		);
+		await service.initialize();
+		await addDiscoveredAgents(service, "backend", "frontend", "infrastructure");
+		const channel = mustExist(
+			(
+				await service.mutate({
+					action: "create-channel",
+					name: "engineering",
+					agentIds: agents.map((agent) => agent.id),
+				})
+			).channels[0],
+		);
+
+		await service.send({
+			conversation: { kind: "channel", id: channel.id },
+			text: "Talk together and agree on the boundary.",
+		});
+		await service.whenIdle();
+
+		expect(runAgent.mock.calls.map((call) => call[0].agent.id)).toEqual([
+			"backend",
+			"infrastructure",
+			"frontend",
+		]);
+		expect(runAgent.mock.calls[1]?.[0].message).toBe(
+			"From Backend:\n\nNeed runtime input first.\n\n@infrastructure inspect the boundary.\n\nYour relay assignment:\n\nValidate the runtime boundary.",
+		);
+	});
+
+	it("allows one final-mention return and stops a repeated edge visibly", async () => {
 		const root = await mkdtemp(join(tmpdir(), "commonspace-a2a-room-"));
 		roots.push(root);
 		const workspace = join(root, "workspace");
 		await mkdir(workspace);
 		const runAgent = vi.fn(async (input: AgentRunInput) =>
 			input.agent.id === "backend"
-				? "API is ready. @frontend connect the configuration view."
+				? "API is ready.\n\n@frontend connect the configuration view."
 				: "@backend UI connected and verified.",
 		);
 		const agents = [
@@ -1119,16 +1834,28 @@ describe("Commonspace host authority", () => {
 		expect(runAgent.mock.calls.map((call) => call[0].agent.id)).toEqual([
 			"backend",
 			"frontend",
+			"backend",
 		]);
 		expect(runAgent.mock.calls[1]?.[0].message).toBe(
-			"API is ready. @frontend connect the configuration view.",
+			"From Backend:\n\nAPI is ready.\n\n@frontend connect the configuration view.",
+		);
+		expect(runAgent.mock.calls[2]?.[0].message).toBe(
+			"From Frontend:\n\n@backend UI connected and verified.",
 		);
 		const messages = service.snapshot().messages[`channel:${channel.id}`] ?? [];
 		expect(
 			messages
 				.filter((message) => message.authorType === "agent")
 				.map((message) => message.authorId),
-		).toEqual(["backend", "frontend"]);
+		).toEqual(["backend", "frontend", "backend"]);
+		expect(
+			messages.some(
+				(message) =>
+					message.authorType === "system" &&
+					message.text ===
+						"Commonspace stopped the @backend to @frontend handoff because that relay edge already ran.",
+			),
+		).toBe(true);
 	});
 
 	it("exposes peer responsibilities and handoff guidance in channel context", async () => {
@@ -1199,7 +1926,7 @@ describe("Commonspace host authority", () => {
 			},
 		]);
 		expect(context.collaboration).toMatchObject({
-			handoff: expect.stringContaining("final reply"),
+			handoff: expect.stringContaining("commonspace_handoff"),
 			limits: expect.stringContaining("one peer"),
 		});
 	});
@@ -1670,13 +2397,92 @@ describe("Commonspace host authority", () => {
 		expect(service.routing().apiKeyConfigured).toBe(false);
 	});
 
+	it("retries provider-reported truncation before dispatching once", async () => {
+		const root = await mkdtemp(
+			join(tmpdir(), "commonspace-routing-truncated-"),
+		);
+		roots.push(root);
+		const agents = [
+			{
+				id: "backend",
+				displayName: "Backend",
+				adapter: "hermes" as const,
+				model: "test",
+				status: "stopped" as const,
+			},
+			{
+				id: "frontend",
+				displayName: "Frontend",
+				adapter: "hermes" as const,
+				model: "test",
+				status: "stopped" as const,
+			},
+		];
+		let attempt = 0;
+		const provider = vi.fn<typeof fetch>(async () => {
+			attempt += 1;
+			return Response.json({
+				choices: [
+					attempt === 1
+						? {
+								finish_reason: "length",
+								message: { content: '{"assignments":[' },
+							}
+						: {
+								finish_reason: "stop",
+								message: {
+									content:
+										'{"mode":"parallel","assignments":[{"agentId":"frontend","subRequest":"Fix the UI only.","projectIds":[]}],"reason":"UI ownership"}',
+								},
+							},
+				],
+			});
+		});
+		vi.stubGlobal("fetch", provider);
+		const runAgent = vi.fn(async () => ({ text: "Handled once." }));
+		const service = new CommonspaceHostService(
+			{},
+			{ root },
+			{ discoverAgents: async () => agents, runAgent },
+		);
+		await service.initialize();
+		await addDiscoveredAgents(service, "backend", "frontend");
+		const channel = mustExist(
+			(
+				await service.mutate({
+					action: "create-channel",
+					name: "engineering",
+					agentIds: ["backend", "frontend"],
+				})
+			).channels[0],
+		);
+		await service.updateRoutingConfiguration({
+			provider: "openai-compatible",
+			model: "local-router",
+			baseUrl: "http://127.0.0.1:11434/v1",
+		});
+
+		await service.send({
+			conversation: { kind: "channel", id: channel.id },
+			text: "Fix the UI.",
+		});
+		await service.whenIdle();
+
+		expect(provider).toHaveBeenCalledTimes(2);
+		expect(runAgent).toHaveBeenCalledTimes(1);
+		expect(runAgent.mock.calls[0]?.[0]).toMatchObject({
+			agent: expect.objectContaining({ id: "frontend" }),
+			message: "Fix the UI only.",
+		});
+	});
+
 	it("excludes deterministic routing from configuration contracts", () => {
 		expectTypeOf<{
 			provider: "deterministic";
 		}>().not.toMatchTypeOf<UpdateRoutingConfigurationRequest>();
 	});
 
-	it("can use a configured agent harness as the shared Commonspace inference layer", async () => {
+	it("retries invalid harness routing before dispatching one validated assignment", async () => {
 		const root = await mkdtemp(join(tmpdir(), "commonspace-harness-router-"));
 		roots.push(root);
 		const agents = [
@@ -1697,11 +2503,16 @@ describe("Commonspace host authority", () => {
 				description: "Owns UI and CSS.",
 			},
 		];
-		const runAgent = vi.fn(async (input: AgentRunInput) =>
-			input.sessionName.startsWith("Commonspace Routing: ")
-				? '{"assignments":[{"agentId":"frontend","subRequest":"Fix the CSS layout.","projectIds":[]}],"confidence":0.93,"reason":"CSS work"}'
-				: "Handled.",
-		);
+		let routingAttempts = 0;
+		const runAgent = vi.fn(async (input: AgentRunInput) => {
+			if (input.sessionName.startsWith("Commonspace Routing: ")) {
+				routingAttempts += 1;
+				return routingAttempts === 1
+					? '{"assignments":['
+					: '{"mode":"parallel","assignments":[{"agentId":"frontend","subRequest":"Fix the CSS layout.","projectIds":[]}],"confidence":0.93,"reason":"CSS work"}';
+			}
+			return "Handled.";
+		});
 		const service = new CommonspaceHostService(
 			{},
 			{ root },
@@ -1735,7 +2546,99 @@ describe("Commonspace host authority", () => {
 			reasoning: "minimal",
 		});
 		expect(runAgent.mock.calls[0]?.[0].model).toBeUndefined();
-		expect(runAgent.mock.calls[1]?.[0].agent.id).toBe("frontend");
+		expect(runAgent.mock.calls[1]?.[0].sessionName).toBe(
+			`Commonspace Routing: ${channel.id}`,
+		);
+		expect(runAgent.mock.calls[0]?.[0].message).toContain(
+			"Output token budget: at most 768 tokens.",
+		);
+		expect(runAgent.mock.calls[0]?.[0].maxResponseChars).toBe(6_144);
+		expect(runAgent.mock.calls[1]?.[0].message).toContain(
+			"Output token budget: at most 1536 tokens.",
+		);
+		expect(runAgent.mock.calls[1]?.[0].maxResponseChars).toBe(12_288);
+		expect(
+			runAgent.mock.calls
+				.filter(
+					([input]) => !input.sessionName.startsWith("Commonspace Routing: "),
+				)
+				.map(([input]) => input.agent.id),
+		).toEqual(["frontend"]);
+	});
+
+	it("fails after one routing retry without dispatching agent work", async () => {
+		const root = await mkdtemp(
+			join(tmpdir(), "commonspace-harness-router-retry-exhausted-"),
+		);
+		roots.push(root);
+		const agents = [
+			{
+				id: "backend",
+				displayName: "Backend",
+				adapter: "hermes" as const,
+				model: "test",
+				status: "stopped" as const,
+				description: "Owns APIs.",
+			},
+			{
+				id: "frontend",
+				displayName: "Frontend",
+				adapter: "hermes" as const,
+				model: "test",
+				status: "stopped" as const,
+				description: "Owns UI and CSS.",
+			},
+		];
+		const runAgent = vi.fn(async (input: AgentRunInput) =>
+			input.sessionName.startsWith("Commonspace Routing: ")
+				? '{"assignments":['
+				: "Agent work must not run.",
+		);
+		const service = new CommonspaceHostService(
+			{},
+			{ root },
+			{ discoverAgents: async () => agents, runAgent },
+		);
+		await service.initialize();
+		await addDiscoveredAgents(service, "backend", "frontend");
+		const channel = mustExist(
+			(
+				await service.mutate({
+					action: "create-channel",
+					name: "engineering",
+					agentIds: ["backend", "frontend"],
+				})
+			).channels[0],
+		);
+		await service.updateRoutingConfiguration({
+			provider: "harness",
+			harnessAgentId: "backend",
+		});
+
+		const sent = await service.send({
+			conversation: { kind: "channel", id: channel.id },
+			text: "Fix the API and UI.",
+		});
+		await service.whenIdle();
+
+		const routingCalls = runAgent.mock.calls.filter(([input]) =>
+			input.sessionName.startsWith("Commonspace Routing: "),
+		);
+		const executionCalls = runAgent.mock.calls.filter(
+			([input]) => !input.sessionName.startsWith("Commonspace Routing: "),
+		);
+		expect(routingCalls).toHaveLength(2);
+		expect(executionCalls).toHaveLength(0);
+		expect(
+			service
+				.snapshot()
+				.messages[`channel:${channel.id}`]?.find(
+					(message) => message.id === sent.accepted.id,
+				),
+		).toMatchObject({
+			replyStatus: "failed",
+			routing: { status: "failed", assignments: [] },
+		});
 	});
 
 	it("reuses one native routing session across threads in the same channel", async () => {
@@ -1746,7 +2649,7 @@ describe("Commonspace host authority", () => {
 		vi.stubEnv("FAKE_ACP_SESSION_ID", "123e4567-e89b-42d3-a456-426614174000");
 		vi.stubEnv(
 			"FAKE_ACP_INFERENCE_RESPONSE",
-			'{"assignments":[{"agentId":"hermes","subRequest":"Handle it.","projectIds":[]}],"confidence":0.9,"reason":"Hermes owns the request."}',
+			'{"mode":"parallel","assignments":[{"agentId":"hermes","subRequest":"Handle it.","projectIds":[]}],"confidence":0.9,"reason":"Hermes owns the request."}',
 		);
 		const service = new CommonspaceHostService(
 			{},
@@ -1863,7 +2766,7 @@ describe("Commonspace host authority", () => {
 		vi.stubEnv("FAKE_ACP_SESSION_ID", "123e4567-e89b-42d3-a456-426614174000");
 		vi.stubEnv(
 			"FAKE_ACP_INFERENCE_RESPONSE",
-			'{"assignments":[{"agentId":"hermes","subRequest":"Handle it.","projectIds":[]}],"confidence":0.9,"reason":"Hermes owns the request."}',
+			'{"mode":"parallel","assignments":[{"agentId":"hermes","subRequest":"Handle it.","projectIds":[]}],"confidence":0.9,"reason":"Hermes owns the request."}',
 		);
 		vi.stubEnv(
 			"FAKE_ACP_COMPACTION_RESPONSE",
@@ -1933,7 +2836,7 @@ describe("Commonspace host authority", () => {
 		vi.stubEnv("FAKE_ACP_SESSION_ID", "123e4567-e89b-42d3-a456-426614174000");
 		vi.stubEnv(
 			"FAKE_ACP_INFERENCE_RESPONSE",
-			'{"assignments":[{"agentId":"hermes","subRequest":"Handle it.","projectIds":[]}],"confidence":0.9,"reason":"Hermes owns the request."}',
+			'{"mode":"parallel","assignments":[{"agentId":"hermes","subRequest":"Handle it.","projectIds":[]}],"confidence":0.9,"reason":"Hermes owns the request."}',
 		);
 		const service = new CommonspaceHostService(
 			{ warn: () => undefined },
@@ -1993,7 +2896,7 @@ describe("Commonspace host authority", () => {
 		}
 	});
 
-	it("marks an accepted channel message failed when inference routing fails", async () => {
+	it("rejects an invalid partial routing result before any assignment dispatch", async () => {
 		const root = await mkdtemp(join(tmpdir(), "commonspace-routing-fallback-"));
 		roots.push(root);
 		const agents = [
@@ -2021,9 +2924,21 @@ describe("Commonspace host authority", () => {
 			{
 				discoverAgents: async () => agents,
 				runAgent,
-				routeAgents: async () => {
-					throw new Error("router unavailable");
-				},
+				routeAgents: async () => ({
+					assignments: [
+						{
+							agentId: "backend",
+							subRequest: "Change the API.",
+							projectIds: [],
+						},
+						{
+							agentId: "not-a-channel-agent",
+							subRequest: "Do unrelated work.",
+							projectIds: [],
+						},
+					],
+					reason: "Two assignments.",
+				}),
 			},
 		);
 		await service.initialize();
@@ -2062,11 +2977,13 @@ describe("Commonspace host authority", () => {
 			assignments: [],
 			corrections: [],
 			inferredProjectIds: [],
-			reason: "inference routing failed: router unavailable",
+			reason:
+				"inference routing failed: inference routing returned an invalid assignment",
 		});
 		expect(failed).toMatchObject({
 			replyStatus: "failed",
-			replyError: "inference routing failed: router unavailable",
+			replyError:
+				"inference routing failed: inference routing returned an invalid assignment",
 		});
 		expect(deriveCommonspaceInboxItems(service.snapshot())).toEqual(
 			expect.arrayContaining([

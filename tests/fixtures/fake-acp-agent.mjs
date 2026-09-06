@@ -396,6 +396,23 @@ for await (const line of lines) {
 				name: "commonspace_get_context",
 				arguments: {},
 			});
+			const handoffTrigger = process.env.FAKE_ACP_HANDOFF_TRIGGER;
+			const handoffTarget = process.env.FAKE_ACP_HANDOFF_TARGET;
+			const handoffRequest = process.env.FAKE_ACP_HANDOFF_REQUEST;
+			if (
+				handoffTrigger !== undefined &&
+				handoffTarget !== undefined &&
+				handoffRequest !== undefined &&
+				promptText.includes(handoffTrigger)
+			) {
+				await client.callTool({
+					name: "commonspace_handoff",
+					arguments: {
+						targetAgentId: handoffTarget,
+						request: handoffRequest,
+					},
+				});
+			}
 			await client.close();
 			const context = result.structuredContent;
 			contextPrefix =

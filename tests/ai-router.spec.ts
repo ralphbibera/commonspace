@@ -4,6 +4,7 @@ import {
 	buildRoutingPrompt,
 	parseRoutingResponse,
 	routeWithOpenAICompatible,
+	routingOutputTokenBudget,
 } from "../server/src/ai-router.ts";
 
 const input = {
@@ -32,6 +33,7 @@ const input = {
 };
 const requestBodySchema = z.object({
 	model: z.string(),
+	max_tokens: z.number(),
 	response_format: z.object({ type: z.string() }),
 });
 
@@ -61,6 +63,14 @@ function expectEmptyRoutingDecisionRejected(): void {
 }
 
 describe("Commonspace AI router", () => {
+	it("scales a bounded output budget with requested assignment complexity", () => {
+		expect(routingOutputTokenBudget(1)).toBe(512);
+		expect(routingOutputTokenBudget(2)).toBe(768);
+		expect(routingOutputTokenBudget(8)).toBe(2_304);
+		expect(routingOutputTokenBudget(8, 1)).toBe(4_096);
+		expect(routingOutputTokenBudget(100)).toBe(2_304);
+	});
+
 	it("builds a bounded classifier prompt with candidate responsibilities", () => {
 		const prompt = buildRoutingPrompt(input);
 		expect(prompt).toContain("Select one owner by default");
@@ -71,6 +81,20 @@ describe("Commonspace AI router", () => {
 		expect(prompt).toContain("one bounded sub-request per selected agent");
 		expect(prompt).toContain("useful evidence");
 		expect(prompt).toContain("Fix the login screen CSS.");
+	});
+
+	it("defines peer discussion as an ordered relay instead of parallel fan-out", () => {
+		const prompt = buildRoutingPrompt({
+			...input,
+			text: "Talk to each other and agree on the ownership boundary.",
+		});
+
+		expect(prompt).toContain('Use mode "relay"');
+		expect(prompt).toContain("first assignment starts the conversation");
+		expect(prompt).toContain('"mode":"parallel"');
+		expect(prompt).toContain(
+			"Talk to each other and agree on the ownership boundary.",
+		);
 	});
 
 	it("includes compacted explicit correction knowledge in later routing prompts", () => {
@@ -92,9 +116,10 @@ describe("Commonspace AI router", () => {
 	it("parses strict or fenced JSON routing results", () => {
 		expect(
 			parseRoutingResponse(
-				'```json\n{"assignments":[{"agentId":"frontend","subRequest":"Fix the login CSS only.","projectIds":["web"]}],"confidence":0.96,"reason":"UI work"}\n```',
+				'```json\n{"mode":"parallel","assignments":[{"agentId":"frontend","subRequest":"Fix the login CSS only.","projectIds":["web"]}],"confidence":0.96,"reason":"UI work"}\n```',
 			),
 		).toEqual({
+			mode: "parallel",
 			assignments: [
 				{
 					agentId: "frontend",
@@ -105,6 +130,76 @@ describe("Commonspace AI router", () => {
 			confidence: 0.96,
 			reason: "UI work",
 		});
+	});
+
+	it("preserves relay mode for sequential peer discussion", () => {
+		expect(
+			parseRoutingResponse(
+				'{"mode":"relay","assignments":[{"agentId":"frontend","subRequest":"Start the discussion.","projectIds":[]},{"agentId":"backend","subRequest":"Respond to the frontend boundary.","projectIds":[]}],"confidence":0.94,"reason":"The user asked agents to talk together."}',
+			),
+		).toEqual({
+			mode: "relay",
+			assignments: [
+				{
+					agentId: "frontend",
+					subRequest: "Start the discussion.",
+					projectIds: [],
+				},
+				{
+					agentId: "backend",
+					subRequest: "Respond to the frontend boundary.",
+					projectIds: [],
+				},
+			],
+			confidence: 0.94,
+			reason: "The user asked agents to talk together.",
+		});
+	});
+
+	it("rejects a valid-looking routing response without an explicit mode", () => {
+		expect(() =>
+			parseRoutingResponse(
+				'{"assignments":[{"agentId":"frontend","subRequest":"Handle it.","projectIds":[]}],"reason":"UI work"}',
+			),
+		).toThrow("routing response mode must be parallel or relay");
+	});
+
+	it("rejects a relay without two speakers", () => {
+		expect(() =>
+			parseRoutingResponse(
+				'{"mode":"relay","assignments":[{"agentId":"frontend","subRequest":"Start the discussion.","projectIds":[]}],"reason":"Peer discussion"}',
+			),
+		).toThrow("relay routing requires at least two assignments");
+	});
+
+	it("round-trips a deterministic multi-assignment routing contract", () => {
+		expect(
+			parseRoutingResponse(
+				'{"mode":"parallel","assignments":[{"agentId":"backend","subRequest":"Implement API validation; preserve existing callers.","projectIds":["api"]},{"agentId":"frontend","subRequest":"Update UI error handling; do not change API code.","projectIds":["web","design"]}],"confidence":0.89,"reason":"Independent API and UI responsibilities"}',
+			),
+		).toEqual({
+			mode: "parallel",
+			assignments: [
+				{
+					agentId: "backend",
+					subRequest: "Implement API validation; preserve existing callers.",
+					projectIds: ["api"],
+				},
+				{
+					agentId: "frontend",
+					subRequest: "Update UI error handling; do not change API code.",
+					projectIds: ["web", "design"],
+				},
+			],
+			confidence: 0.89,
+			reason: "Independent API and UI responsibilities",
+		});
+	});
+
+	it("rejects malformed JSON before a routing result is available", () => {
+		expect(() => parseRoutingResponse('{"assignments":[')).toThrow(
+			"routing response did not match the required shape",
+		);
 	});
 
 	it(
@@ -125,7 +220,7 @@ describe("Commonspace AI router provider boundary", () => {
 							{
 								message: {
 									content:
-										'{"assignments":[{"agentId":"frontend","subRequest":"Fix CSS.","projectIds":["web"]}],"confidence":0.91,"reason":"CSS is frontend work"}',
+										'{"mode":"parallel","assignments":[{"agentId":"frontend","subRequest":"Fix CSS.","projectIds":["web"]}],"confidence":0.91,"reason":"CSS is frontend work"}',
 								},
 							},
 						],
@@ -146,6 +241,7 @@ describe("Commonspace AI router provider boundary", () => {
 				input,
 			),
 		).resolves.toEqual({
+			mode: "parallel",
 			assignments: [
 				{ agentId: "frontend", subRequest: "Fix CSS.", projectIds: ["web"] },
 			],
@@ -167,8 +263,33 @@ describe("Commonspace AI router provider boundary", () => {
 		);
 		expect(body).toMatchObject({
 			model: "gpt-router",
+			max_tokens: 768,
 			response_format: { type: "json_object" },
 		});
+	});
+
+	it("rejects a provider response explicitly truncated by its output limit", async () => {
+		const request = vi.fn<typeof fetch>(async () =>
+			Response.json({
+				choices: [
+					{
+						finish_reason: "length",
+						message: { content: '{"assignments":[' },
+					},
+				],
+			}),
+		);
+
+		await expect(
+			routeWithOpenAICompatible(
+				{
+					baseUrl: "https://example.test/v1",
+					model: "gpt-router",
+					fetch: request,
+				},
+				input,
+			),
+		).rejects.toThrow("inference provider truncated its response");
 	});
 
 	it("aborts an oversized provider response without buffering the remaining body", async () => {

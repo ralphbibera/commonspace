@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { deriveCommonspaceInboxItems } from "@commonspace/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	type AgentRunInput,
@@ -67,6 +68,21 @@ describe("native permission requests", () => {
 			]);
 		});
 		const permission = mustExist(service.snapshot().permissions[0]);
+		expect(
+			service
+				.snapshot()
+				.messages["dm:codex"]?.find(
+					(message) => message.id === codex.accepted.id,
+				)?.replyStatus,
+		).toBe("needs_input");
+		const permissionAttention = deriveCommonspaceInboxItems(
+			service.snapshot(),
+		).filter((item) => item.messageId === codex.accepted.id);
+		expect(permissionAttention).toHaveLength(1);
+		expect(permissionAttention[0]).toMatchObject({
+			kind: "permission-request",
+			messageId: codex.accepted.id,
+		});
 
 		await service.send({
 			conversation: { kind: "dm", id: "hermes" },

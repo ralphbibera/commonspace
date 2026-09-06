@@ -52,6 +52,15 @@ describe("Commonspace MCP gateway", () => {
 				messageId: `posted:${text}`,
 			}),
 		);
+		const handoff = vi.fn(
+			async (
+				_scope: CommonspaceMcpScope,
+				input: { targetAgentId: string; request: string },
+			) => ({
+				targetAgentId: input.targetAgentId,
+				targetDisplayName: "Frontend",
+			}),
+		);
 		const gateway = new CommonspaceMcpGateway({
 			readContext: async (scope) => ({
 				agent: {
@@ -83,12 +92,19 @@ describe("Commonspace MCP gateway", () => {
 			}),
 			readMessages,
 			searchMessages,
+			handoff,
 			postProgress,
 		});
 		const credential = gateway.issue({
 			agentId: "codex-review-bot",
 			conversation: { kind: "channel", id: "channel-1" },
 			threadId: "thread-1",
+			peers: [
+				{
+					id: "frontend",
+					displayName: "Frontend",
+				},
+			],
 		});
 		const root = await mkdtemp(join(tmpdir(), "commonspace-mcp-gateway-"));
 		const service = new CommonspaceHostService(
@@ -147,8 +163,26 @@ describe("Commonspace MCP gateway", () => {
 			"commonspace_get_context",
 			"commonspace_read_messages",
 			"commonspace_search",
+			"commonspace_handoff",
 			"commonspace_post_progress",
 		]);
+		expect(
+			tools.tools.find((tool) => tool.name === "commonspace_handoff"),
+		).toMatchObject({
+			description: expect.stringContaining(
+				'{"targetAgentId":"frontend","displayName":"Frontend"}',
+			),
+			inputSchema: {
+				properties: {
+					targetAgentId: { enum: ["frontend"] },
+				},
+			},
+		});
+		const contextTool = tools.tools.find(
+			(tool) => tool.name === "commonspace_get_context",
+		);
+		expect(contextTool?.description).toContain("when needed");
+		expect(contextTool?.description).not.toContain("Call once");
 		const context = await client.callTool({
 			name: "commonspace_get_context",
 			arguments: {},
@@ -187,6 +221,27 @@ describe("Commonspace MCP gateway", () => {
 				threadId: "thread-1",
 			}),
 			{ query: '"session recovery" -failed', limit: 9 },
+		);
+		const handoffResult = await client.callTool({
+			name: "commonspace_handoff",
+			arguments: {
+				targetAgentId: "frontend",
+				request: "Review the client boundary and return blocking concerns.",
+			},
+		});
+		expect(handoffResult.structuredContent).toEqual({
+			targetAgentId: "frontend",
+			targetDisplayName: "Frontend",
+		});
+		expect(handoff).toHaveBeenCalledWith(
+			expect.objectContaining({
+				agentId: "codex-review-bot",
+				threadId: "thread-1",
+			}),
+			{
+				targetAgentId: "frontend",
+				request: "Review the client boundary and return blocking concerns.",
+			},
 		);
 		const progress = await client.callTool({
 			name: "commonspace_post_progress",

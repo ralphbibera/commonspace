@@ -20,8 +20,24 @@ export interface CommonspaceMcpScope {
 	threadId?: string;
 	sessionName?: string;
 	projectIds?: string[];
+	peers?: CommonspaceMcpPeer[];
 	/** @deprecated Compatibility mirror of the first projectIds entry. */
 	projectId?: string;
+}
+
+export interface CommonspaceMcpPeer {
+	id: string;
+	displayName: string;
+}
+
+export interface CommonspaceMcpHandoffRequest {
+	targetAgentId: string;
+	request: string;
+}
+
+export interface CommonspaceMcpHandoffResponse {
+	targetAgentId: string;
+	targetDisplayName: string;
 }
 
 export interface CommonspaceMcpProvider {
@@ -34,6 +50,10 @@ export interface CommonspaceMcpProvider {
 		scope: CommonspaceMcpScope,
 		input: { query: string; limit: number },
 	): Promise<McpSearchMessagesResponse>;
+	handoff(
+		scope: CommonspaceMcpScope,
+		input: CommonspaceMcpHandoffRequest,
+	): Promise<CommonspaceMcpHandoffResponse>;
 	postProgress(
 		scope: CommonspaceMcpScope,
 		text: string,
@@ -203,7 +223,7 @@ export class CommonspaceMcpGateway {
 				title: "Get Commonspace context",
 				description:
 					scope.conversation.kind === "channel"
-						? "Call once at the start of every Commonspace channel turn. Reads bounded room/thread instructions, memory, participants, and recent messages without replaying them in the user prompt."
+						? "Read bounded Channel and Thread instructions, memory, participants, and recent messages when needed beyond the current assignment or handoff."
 						: "Read bounded Commonspace project and recent-message context when the direct message needs workspace state beyond the provider-native session.",
 				inputSchema: {},
 				annotations: { readOnlyHint: true, openWorldHint: false },
@@ -250,12 +270,46 @@ export class CommonspaceMcpGateway {
 					await this.#provider.searchMessages(scope, { query, limit }),
 				),
 		);
+		const peerIds = [
+			...new Set(
+				(scope.peers ?? [])
+					.map((peer) => peer.id)
+					.filter((peerId) => peerId !== scope.agentId),
+			),
+		];
+		const [firstPeerId, ...remainingPeerIds] = peerIds;
+		if (scope.conversation.kind === "channel" && firstPeerId !== undefined) {
+			const peerDirectory = (scope.peers ?? []).map((peer) => ({
+				targetAgentId: peer.id,
+				displayName: peer.displayName,
+			}));
+			server.registerTool(
+				"commonspace_handoff",
+				{
+					title: "Hand off to a Channel peer",
+					description: `Queue one concrete request for one current Channel peer. Commonspace delivers it after this turn and keeps the handoff visible in the Thread. Current peer identifiers: ${JSON.stringify(peerDirectory)}.`,
+					inputSchema: {
+						targetAgentId: z.enum([firstPeerId, ...remainingPeerIds]),
+						request: z.string().trim().min(1).max(4_000),
+					},
+					annotations: {
+						readOnlyHint: false,
+						destructiveHint: false,
+						openWorldHint: false,
+					},
+				},
+				async ({ targetAgentId, request }) =>
+					toolResult(
+						await this.#provider.handoff(scope, { targetAgentId, request }),
+					),
+			);
+		}
 		server.registerTool(
 			"commonspace_post_progress",
 			{
 				title: "Post Commonspace progress",
 				description:
-					"Post one visible progress note to the current Commonspace conversation/thread. Peer handoffs remain part of the final reply so the relay can route them exactly once.",
+					"Post one visible progress note to the current Commonspace conversation/thread. Use commonspace_handoff instead for peer delivery.",
 				inputSchema: {
 					text: z.string().trim().min(1).max(4_000),
 				},
