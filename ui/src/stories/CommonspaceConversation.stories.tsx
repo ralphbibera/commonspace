@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { expect, fn, userEvent, within } from "storybook/test";
 import { CommonspaceConversation } from "../CommonspaceConversation";
 import type { CommonspaceStore } from "../commonspace-store";
+import { COMMONSPACE_RESIZABLE_PANEL } from "../design-system/useResizablePanel";
 import {
 	createStoryStore,
 	denseStoryBootstrap,
@@ -29,6 +30,37 @@ type Story = StoryObj<typeof meta>;
 
 const channel = { kind: "channel" as const, id: "channel-design" };
 const directMessage = { kind: "dm" as const, id: "agent-hermes" };
+
+function ChannelSettingsPreview() {
+	const [settingsOpen, setSettingsOpen] = useState(true);
+	const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
+	const store = useMemo(
+		() =>
+			createStoryStore(storyBootstrap, {
+				activeConversation: channel,
+				activeProjectId: primaryProject.id,
+				activeThreadId,
+			}),
+		[activeThreadId],
+	);
+	return (
+		<CommonspaceConversation
+			store={store}
+			settingsRequest={
+				settingsOpen
+					? { kind: "channel", id: "channel-design", token: 1 }
+					: null
+			}
+			onOpenSettings={() => {
+				setSettingsOpen(true);
+			}}
+			onThreadChange={setActiveThreadId}
+			onSettingsClosed={() => {
+				setSettingsOpen(false);
+			}}
+		/>
+	);
+}
 
 function FocusTransitionPreview() {
 	const [conversationKind, setConversationKind] = useState<"channel" | "dm">(
@@ -257,12 +289,71 @@ export const FocusedReply: Story = {
 };
 
 export const ChannelSettings: Story = {
+	render: () => <ChannelSettingsPreview />,
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		const settings = await canvas.findByRole("complementary", {
+			name: "Channel settings",
+		});
+		await expect(settings).toBeVisible();
+		const resizer = canvas.queryByRole("separator", {
+			name: "Resize settings",
+		});
+		if (resizer === null) {
+			return;
+		}
+		const initial = Number(resizer.getAttribute("aria-valuenow"));
+		resizer.focus();
+		await userEvent.keyboard("{ArrowLeft}");
+		await expect(resizer).toHaveAttribute(
+			"aria-valuenow",
+			String(
+				Math.min(
+					COMMONSPACE_RESIZABLE_PANEL.max,
+					initial + COMMONSPACE_RESIZABLE_PANEL.step,
+				),
+			),
+		);
+		const resizedWidth = await resizer.getAttribute("aria-valuenow");
+		await userEvent.click(
+			canvas.getByRole("button", { name: "Close channel settings" }),
+		);
+		await userEvent.click(
+			canvas.getByRole("button", { name: "1 reply, 1 unread" }),
+		);
+		const threadResizer = await canvas.findByRole("separator", {
+			name: "Resize thread",
+		});
+		await expect(threadResizer).toHaveAttribute(
+			"aria-valuenow",
+			resizedWidth ?? String(COMMONSPACE_RESIZABLE_PANEL.defaultValue),
+		);
+		await userEvent.click(canvas.getByRole("button", { name: "Close thread" }));
+		await userEvent.click(
+			canvas.getByRole("button", { name: "Open channel settings" }),
+		);
+		const reopenedSettingsResizer = await canvas.findByRole("separator", {
+			name: "Resize settings",
+		});
+		await expect(reopenedSettingsResizer).toHaveAttribute(
+			"aria-valuenow",
+			resizedWidth ?? String(COMMONSPACE_RESIZABLE_PANEL.defaultValue),
+		);
+		await userEvent.dblClick(reopenedSettingsResizer);
+		await expect(reopenedSettingsResizer).toHaveAttribute(
+			"aria-valuenow",
+			String(COMMONSPACE_RESIZABLE_PANEL.defaultValue),
+		);
+	},
+};
+
+export const AgentSettings: Story = {
 	args: {
 		store: createStoryStore(storyBootstrap, {
-			activeConversation: channel,
+			activeConversation: directMessage,
 			activeProjectId: primaryProject.id,
 		}),
-		settingsRequest: { kind: "channel", id: "channel-design", token: 1 },
+		settingsRequest: { kind: "agent", id: "agent-hermes", token: 1 },
 	},
 };
 

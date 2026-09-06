@@ -46,6 +46,11 @@ import {
 import type { CommonspaceStore } from "./commonspace-store.ts";
 import { AgentAvatar } from "./design-system/AgentAvatar.tsx";
 import { MessageActionMenu } from "./design-system/MessageActionMenu.tsx";
+import { ResizablePanelHandle } from "./design-system/ResizablePanelHandle.tsx";
+import {
+	COMMONSPACE_RESIZABLE_PANEL,
+	useResizablePanel,
+} from "./design-system/useResizablePanel.ts";
 import { LiveAgentActivity } from "./LiveAgentActivity.tsx";
 import { RunAttribution } from "./RunAttribution.tsx";
 import {
@@ -425,21 +430,6 @@ function conversationDateLabel(
 			? "Today"
 			: date.toLocaleDateString([], { month: "short", day: "numeric" });
 	return `${prefix} · ${date.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" })}`;
-}
-
-function initialThreadWidth(): number {
-	if (typeof window !== "undefined") {
-		try {
-			const value = Number(
-				window.localStorage.getItem("commonspace-thread-width"),
-			);
-			if (Number.isFinite(value) && value >= 25 && value <= 75)
-				return Math.round(value);
-		} catch {
-			// Use the default width when storage is unavailable.
-		}
-	}
-	return 50;
 }
 
 function MessageRow({
@@ -1086,10 +1076,15 @@ export function CommonspaceConversation({
 		string | null
 	>(targetMessageId ?? null);
 	const previousFocusScopeKey = useRef(activeFocusScopeKey);
-	const [threadWidth, setThreadWidth] = useState(initialThreadWidth);
-	const [resizingThread, setResizingThread] = useState(false);
 	const [contextSettingsOpen, setContextSettingsOpen] = useState(false);
 	const conversationLayout = useRef<HTMLDivElement>(null);
+	const {
+		width: panelWidth,
+		resizing: resizingPanel,
+		setWidth: setPanelWidth,
+		startResizing: startPanelResize,
+		resetWidth: resetPanelWidth,
+	} = useResizablePanel(conversationLayout, COMMONSPACE_RESIZABLE_PANEL);
 	const bottom = useRef<HTMLDivElement>(null);
 	const threadMessages = useRef<HTMLDivElement>(null);
 	const composer = useRef<HTMLTextAreaElement>(null);
@@ -1437,36 +1432,6 @@ export function CommonspaceConversation({
 		}
 		scrollThreadToBottom();
 	}, [replies.length, snapshot.activeThreadId, scrollThreadToBottom]);
-	useEffect(() => {
-		if (!resizingThread) return;
-
-		const resize = (event: PointerEvent) => {
-			const bounds = conversationLayout.current?.getBoundingClientRect();
-			if (bounds === undefined || bounds.width === 0) return;
-			const nextWidth = ((bounds.right - event.clientX) / bounds.width) * 100;
-			setThreadWidth(Math.min(75, Math.max(25, Math.round(nextWidth))));
-		};
-		const stopResizing = () => {
-			setResizingThread(false);
-		};
-		window.addEventListener("pointermove", resize);
-		window.addEventListener("pointerup", stopResizing, { once: true });
-		return () => {
-			window.removeEventListener("pointermove", resize);
-			window.removeEventListener("pointerup", stopResizing);
-		};
-	}, [resizingThread]);
-	useEffect(() => {
-		try {
-			window.localStorage.setItem(
-				"commonspace-thread-width",
-				String(threadWidth),
-			);
-		} catch {
-			// Thread resizing remains available for this session.
-		}
-	}, [threadWidth]);
-
 	const attachPastedImages = async (
 		files: readonly File[],
 		setImages: Dispatch<SetStateAction<SendImageAttachment[]>>,
@@ -2103,16 +2068,16 @@ export function CommonspaceConversation({
 					ref={conversationLayout}
 					className={cn(
 						"commonspace-conversation-layout relative grid min-h-0 flex-1 overflow-hidden",
-						resizingThread && "select-none",
+						resizingPanel && "select-none",
 					)}
 					style={
 						activeThread !== undefined
 							? {
-									gridTemplateColumns: `${String(100 - threadWidth)}fr 8px ${String(threadWidth)}fr`,
+									gridTemplateColumns: `${String(100 - panelWidth)}fr 8px ${String(panelWidth)}fr`,
 								}
 							: contextSettingsOpen
 								? {
-										gridTemplateColumns: "minmax(0,1fr) minmax(340px,420px)",
+										gridTemplateColumns: `${String(100 - panelWidth)}fr 8px minmax(340px, ${String(panelWidth)}fr)`,
 									}
 								: undefined
 					}
@@ -2635,35 +2600,16 @@ export function CommonspaceConversation({
 					</section>
 
 					{activeThread !== undefined && (
-						<hr
-							className="commonspace-thread-resizer relative z-20 h-full w-2 cursor-col-resize border-0 bg-transparent after:absolute after:inset-y-0 after:left-[3px] after:w-px after:bg-border hover:after:w-0.5 hover:after:bg-primary"
-							aria-label="Resize thread"
-							aria-orientation="vertical"
-							aria-valuemin={25}
-							aria-valuemax={75}
-							aria-valuenow={threadWidth}
-							tabIndex={0}
-							onDoubleClick={() => {
-								setThreadWidth(50);
-							}}
-							onPointerDown={(event) => {
-								event.preventDefault();
-								setResizingThread(true);
-							}}
-							onKeyDown={(event) => {
-								if (event.key !== "ArrowLeft" && event.key !== "ArrowRight")
-									return;
-								event.preventDefault();
-								setThreadWidth((current) =>
-									Math.min(
-										75,
-										Math.max(
-											25,
-											current + (event.key === "ArrowLeft" ? 5 : -5),
-										),
-									),
-								);
-							}}
+						<ResizablePanelHandle
+							className="commonspace-thread-resizer relative z-20"
+							ariaLabel="Resize thread"
+							value={panelWidth}
+							min={COMMONSPACE_RESIZABLE_PANEL.min}
+							max={COMMONSPACE_RESIZABLE_PANEL.max}
+							step={COMMONSPACE_RESIZABLE_PANEL.step}
+							onChange={setPanelWidth}
+							onStartResize={startPanelResize}
+							onReset={resetPanelWidth}
 						/>
 					)}
 
@@ -3211,28 +3157,54 @@ export function CommonspaceConversation({
 					{contextSettingsOpen &&
 						bootstrap !== null &&
 						snapshot.activeConversation?.kind === "channel" && (
-							<ChannelSettingsPane
-								bootstrap={bootstrap}
-								id={snapshot.activeConversation.id}
-								store={store}
-								onClose={() => {
-									setContextSettingsOpen(false);
-									onSettingsClosed?.();
-								}}
-							/>
+							<>
+								<ResizablePanelHandle
+									className="commonspace-settings-resizer relative z-20"
+									ariaLabel="Resize settings"
+									value={panelWidth}
+									min={COMMONSPACE_RESIZABLE_PANEL.min}
+									max={COMMONSPACE_RESIZABLE_PANEL.max}
+									step={COMMONSPACE_RESIZABLE_PANEL.step}
+									onChange={setPanelWidth}
+									onStartResize={startPanelResize}
+									onReset={resetPanelWidth}
+								/>
+								<ChannelSettingsPane
+									bootstrap={bootstrap}
+									id={snapshot.activeConversation.id}
+									store={store}
+									onClose={() => {
+										setContextSettingsOpen(false);
+										onSettingsClosed?.();
+									}}
+								/>
+							</>
 						)}
 					{contextSettingsOpen &&
 						bootstrap !== null &&
 						snapshot.activeConversation?.kind === "dm" && (
-							<AgentSettingsPane
-								bootstrap={bootstrap}
-								id={snapshot.activeConversation.id}
-								store={store}
-								onClose={() => {
-									setContextSettingsOpen(false);
-									onSettingsClosed?.();
-								}}
-							/>
+							<>
+								<ResizablePanelHandle
+									className="commonspace-settings-resizer relative z-20"
+									ariaLabel="Resize settings"
+									value={panelWidth}
+									min={COMMONSPACE_RESIZABLE_PANEL.min}
+									max={COMMONSPACE_RESIZABLE_PANEL.max}
+									step={COMMONSPACE_RESIZABLE_PANEL.step}
+									onChange={setPanelWidth}
+									onStartResize={startPanelResize}
+									onReset={resetPanelWidth}
+								/>
+								<AgentSettingsPane
+									bootstrap={bootstrap}
+									id={snapshot.activeConversation.id}
+									store={store}
+									onClose={() => {
+										setContextSettingsOpen(false);
+										onSettingsClosed?.();
+									}}
+								/>
+							</>
 						)}
 				</div>
 			)}
