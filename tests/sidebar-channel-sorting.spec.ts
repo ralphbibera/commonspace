@@ -3,6 +3,7 @@ import {
 	moveChannelAfter,
 	moveChannelBefore,
 	sortChannelSections,
+	sortSidebarSections,
 } from "../ui/src/channel-sorting.ts";
 
 const channels = [
@@ -20,6 +21,29 @@ const lastActiveAt = new Map([
 ]);
 
 describe("shared channel sorting", () => {
+	it("sorts any sidebar collection alphabetically within pinned sections", () => {
+		const projects = [
+			{ id: "platform", name: "Platform" },
+			{ id: "commonspace", name: "Commonspace" },
+			{ id: "agents", name: "Agents" },
+		];
+
+		const result = sortSidebarSections({
+			items: projects,
+			pinnedIds: new Set(["platform"]),
+			mode: "alphabetical",
+			customOrder: [],
+			recentOrder: [],
+			getName: (project) => project.name,
+		});
+
+		expect(result.pinned.map((project) => project.id)).toEqual(["platform"]);
+		expect(result.unpinned.map((project) => project.id)).toEqual([
+			"agents",
+			"commonspace",
+		]);
+	});
+
 	it("applies A–Z to pinned and unpinned sections", () => {
 		const result = sortChannelSections({
 			channels,
