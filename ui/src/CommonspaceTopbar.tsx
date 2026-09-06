@@ -26,7 +26,7 @@ export function CommonspaceTopbar({ onOpenSearch }: CommonspaceTopbarProps) {
 					⌘K
 				</kbd>
 			</button>
-			<span className="flex items-center justify-end gap-2 font-mono text-[11px] text-sidebar-foreground/60 max-[780px]:hidden">
+			<span className="flex items-center justify-end gap-2 font-mono text-[11px] text-sidebar-foreground max-[780px]:hidden">
 				<i
 					className="size-2 rounded-full bg-[var(--status-success)]"
 					aria-hidden="true"
