@@ -21,6 +21,7 @@ Copy this template into a proposal or pull request. Replace every placeholder wi
 | Permissions and Full access | Advertised native modes/options; normal default; policy changes and revocation during active or queued work |
 | Model and reasoning controls | Advertised config IDs and values; unsupported-setting behavior |
 | Emitted activity, tools, images, files | Observed capabilities; gaps |
+| Read-only capability inventory | Native sources, profile/user scope, supported categories, empty/unavailable/error states, bounded extraction, and privacy evidence |
 | Scoped Commonspace MCP | Context read, progress, host-private bearer capability |
 | Cancellation and independent concurrency | Stop, timeout, reset, shutdown, independent sessions |
 

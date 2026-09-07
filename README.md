@@ -15,6 +15,7 @@ Commonspace brings local coding agents into shared conversations, Projects, and 
 - **Projects and context** — reference local folders with visible `@@project` tags.
 - **Routing and peer relay** — choose agents explicitly or let configured inference divide Channel work.
 - **Activity and review** — inspect runtime-reported activity, files, Git changes, and verification.
+- **Native capabilities** — browse the tools, MCP integrations, skills, plugins, agents, and memory metadata each harness exposes, with read-only inspection and explicit coverage limits.
 - **Inbox and search** — find replies, requests, Threads, and files again.
 
 ## What it is not

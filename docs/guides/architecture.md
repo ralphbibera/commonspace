@@ -34,6 +34,8 @@ Two protocols connect agent work to the workspace. Agent Client Protocol (ACP) c
 
 A coordinator can call another feature's capability, but should not duplicate its rules or state.
 
+Native capability browsing uses `GET /api/agents/:agentId/capabilities` for an added agent. The shared `HarnessCapabilityInventory` contract contains only display metadata. Each adapter owns native inventory extraction; the service applies host redaction, and the endpoint is same-origin with `Cache-Control: no-store`. Inspection is lazy and separate from bootstrap, saved agent profiles, and portable exports. Per-category failures do not erase categories that were successfully inspected. The browser owns loading, refresh, and unavailable states; it has no native capability editing controls.
+
 ## Request path
 
 A typical Channel send follows this sequence:

@@ -20,6 +20,7 @@ import {
 	type CommonspaceTraceEntry,
 	type ConversationRef,
 	DEFAULT_COMMONSPACE_NOTIFICATION_SETTINGS,
+	type HarnessCapabilityInventory,
 	type ProjectDirectoryResponse,
 	type ProjectGitDiffResponse,
 	type ProjectGitStatusResponse,
@@ -636,6 +637,7 @@ export function createStoryStore(
 		error?: string | null;
 		notificationVerification?: CommonspaceNotificationVerification;
 		send?: CommonspaceStore["send"];
+		inspectAgentCapabilities?: CommonspaceStore["inspectAgentCapabilities"];
 	} = {},
 ): CommonspaceStore {
 	const snapshot: CommonspaceClientSnapshot = {
@@ -658,6 +660,11 @@ export function createStoryStore(
 			if (property === "getSnapshot") return () => snapshot;
 			if (property === "send" && options.send !== undefined)
 				return options.send;
+			if (
+				property === "inspectAgentCapabilities" &&
+				options.inspectAgentCapabilities !== undefined
+			)
+				return options.inspectAgentCapabilities;
 			if (property === "messages") {
 				return () => {
 					const conversation = snapshot.activeConversation;
@@ -686,6 +693,45 @@ export function createStoryStore(
 		},
 	});
 }
+
+export const populatedCapabilityInventory: HarnessCapabilityInventory = {
+	agentId: hermesAgent.id,
+	checkedAt: now,
+	groups: [
+		{
+			id: "tools",
+			status: "available",
+			source: "Hermes native tool registry",
+			notice: "Names reflect current configuration, not runtime approval.",
+			items: [
+				{
+					name: "read_file",
+					description: "Read workspace files",
+					status: "enabled",
+				},
+				{
+					name: "write_file",
+					description: "Modify workspace files",
+					status: "configured",
+				},
+			],
+		},
+		{
+			id: "mcp",
+			status: "unavailable",
+			source: "Hermes native MCP registry",
+			notice: "This harness version does not expose MCP server names.",
+			items: [],
+		},
+		{
+			id: "skills",
+			status: "error",
+			source: "Hermes native skill registry",
+			notice: "Skill metadata could not be inspected.",
+			items: [],
+		},
+	],
+};
 
 interface StoryErrorResponse {
 	error: string;

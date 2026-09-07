@@ -52,6 +52,8 @@ import type {
 	CommonspaceWorkspaceArchive,
 	EditMessageRequest,
 	FollowupQueueResponse,
+	HarnessCapabilityInventory,
+	HarnessCapabilityItem,
 	RemoveFollowupRequest,
 	ReorderFollowupRequest,
 	RerouteAssignmentRequest,
@@ -4182,6 +4184,39 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 		}
 		this.broadcastRevision();
 		return outcome;
+	}
+
+	async inspectAgentCapabilities(
+		agentId: string,
+	): Promise<HarnessCapabilityInventory | undefined> {
+		const agent = this.state.agents.find(
+			(candidate) => candidate.id === agentId,
+		);
+		if (agent === undefined) return undefined;
+		const groups =
+			await this.adapters[agent.adapter].inspectCapabilities(agent);
+		return {
+			agentId,
+			checkedAt: now(),
+			groups: groups.map((group) => ({
+				id: group.id,
+				status: group.status,
+				source: this.redactHostDetails(group.source, 200),
+				notice: this.redactHostDetails(group.notice, 1_000),
+				items: group.items.map((item) => {
+					const metadata: HarnessCapabilityItem = {
+						name: this.redactHostDetails(item.name, 200),
+						status: item.status,
+					};
+					if (item.description !== undefined)
+						metadata.description = this.redactHostDetails(
+							item.description,
+							1_000,
+						);
+					return metadata;
+				}),
+			})),
+		};
 	}
 
 	async discoverAgents(

@@ -1,10 +1,16 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect, fn, within } from "storybook/test";
+import { useState } from "react";
+import { expect, fn, userEvent, waitFor, within } from "storybook/test";
 import {
 	AgentSettingsPane,
 	ChannelSettingsPane,
+	HarnessCapabilities,
 } from "../CommonspaceContextSettings";
-import { createStoryStore, storyBootstrap } from "./story-fixtures";
+import {
+	createStoryStore,
+	populatedCapabilityInventory,
+	storyBootstrap,
+} from "./story-fixtures";
 
 const meta = {
 	title: "Pages/CommonspaceContextSettings",
@@ -46,10 +52,134 @@ export const AgentSettings: Story = {
 		<AgentSettingsPane
 			bootstrap={storyBootstrap}
 			id="agent-hermes"
-			store={createStoryStore(storyBootstrap)}
+			store={createStoryStore(storyBootstrap, {
+				inspectAgentCapabilities: async () => populatedCapabilityInventory,
+			})}
 			onClose={fn()}
 		/>
 	),
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		await expect(await canvas.findByText("read_file")).toBeVisible();
+		await expect(canvas.getByText("Unavailable")).toBeVisible();
+		await expect(canvas.getByText("Inspection failed")).toBeVisible();
+		await userEvent.type(canvas.getByLabelText("Search capabilities"), "write");
+		await expect(canvas.getByText("write_file")).toBeVisible();
+		await expect(canvas.queryByText("read_file")).not.toBeInTheDocument();
+	},
+};
+
+export const AgentCapabilitiesPopulatedVisual: Story = {
+	render: () => (
+		<AgentSettingsPane
+			bootstrap={storyBootstrap}
+			id="agent-hermes"
+			store={createStoryStore(storyBootstrap, {
+				inspectAgentCapabilities: async () => populatedCapabilityInventory,
+			})}
+			onClose={fn()}
+		/>
+	),
+};
+
+export const AgentCapabilitiesLoading: Story = {
+	render: () => (
+		<AgentSettingsPane
+			bootstrap={storyBootstrap}
+			id="agent-hermes"
+			store={createStoryStore(storyBootstrap, {
+				inspectAgentCapabilities: () => new Promise(() => undefined),
+			})}
+			onClose={fn()}
+		/>
+	),
+	play: async ({ canvasElement }) => {
+		await expect(
+			within(canvasElement).getByText("Inspecting native capabilities…"),
+		).toBeVisible();
+	},
+};
+
+export const AgentCapabilitiesError: Story = {
+	render: () => (
+		<AgentSettingsPane
+			bootstrap={storyBootstrap}
+			id="agent-hermes"
+			store={createStoryStore(storyBootstrap, {
+				inspectAgentCapabilities: async () => {
+					throw new Error("Native harness did not answer.");
+				},
+			})}
+			onClose={fn()}
+		/>
+	),
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		await expect(
+			await canvas.findByText("Capability inspection failed"),
+		).toBeVisible();
+		await expect(
+			canvas.getByText("Native harness did not answer."),
+		).toBeVisible();
+	},
+};
+
+let resolveOldAgentRequest:
+	| ((inventory: typeof populatedCapabilityInventory) => void)
+	| undefined;
+
+function StaleAgentResponseScenario() {
+	const [agentId, setAgentId] = useState("agent-hermes");
+	const [store] = useState(() =>
+		createStoryStore(storyBootstrap, {
+			inspectAgentCapabilities: (requestedAgentId) => {
+				if (requestedAgentId === "agent-hermes") {
+					return new Promise((resolve) => {
+						resolveOldAgentRequest = resolve;
+					});
+				}
+				return Promise.resolve({
+					...populatedCapabilityInventory,
+					agentId: requestedAgentId,
+					groups: [
+						{
+							id: "tools" as const,
+							status: "available" as const,
+							source: "Codex native tool registry",
+							notice: "Names reflect current configuration.",
+							items: [{ name: "new_agent_tool", status: "enabled" }],
+						},
+					],
+				});
+			},
+		}),
+	);
+	return (
+		<div className="w-[420px] p-5">
+			<button type="button" onClick={() => setAgentId("agent-codex")}>
+				Switch test agent
+			</button>
+			<HarnessCapabilities key={agentId} agentId={agentId} store={store} />
+		</div>
+	);
+}
+
+export const AgentCapabilitiesIgnoreLateAgentResponse: Story = {
+	render: () => <StaleAgentResponseScenario />,
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		if (resolveOldAgentRequest === undefined) {
+			throw new Error("old agent capability request was not started");
+		}
+		await userEvent.click(
+			canvas.getByRole("button", { name: "Switch test agent" }),
+		);
+		await expect(await canvas.findByText("new_agent_tool")).toBeVisible();
+		resolveOldAgentRequest(populatedCapabilityInventory);
+		await waitFor(() =>
+			expect(canvas.queryByText("read_file")).not.toBeInTheDocument(),
+		);
+	},
 };
 
 export const MissingChannel: Story = {

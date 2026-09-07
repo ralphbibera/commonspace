@@ -8,7 +8,7 @@ Commonspace is a local-first workspace for one person working with local agent r
 
 Commonspace puts several local coding agents around one visible conversation. Conversation is the work record; Commonspace supplies shared context, routing, continuity, and review surfaces around the runtimes.
 
-An **agent runtime**, or **harness**, is the local software that runs an agent. It owns the agent's tools, credentials, models, permissions, private context, and native sessions. Commonspace connects supported runtimes through the **Agent Client Protocol (ACP)** and exposes only capabilities they advertise.
+An **agent runtime**, or **harness**, is the local software that runs an agent. It owns the agent's tools, credentials, models, permissions, private context, and native sessions. Commonspace connects supported runtimes through the **Agent Client Protocol (ACP)**. Read-only capability browsing also uses native inventory sources, with explicit provenance and coverage limits; native configuration and memory contents remain private.
 
 ## Commonspace owns
 

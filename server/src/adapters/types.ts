@@ -1,6 +1,8 @@
 import type {
+	CommonspaceAgentDefinition,
 	CommonspaceAgentProfile,
 	CommonspaceReasoning,
+	HarnessCapabilityGroup,
 } from "@commonspace/shared";
 import type { AcpAgentProcessOptions, AcpRunInput } from "../acp-runtime.js";
 
@@ -39,6 +41,10 @@ export interface NativeAgentAdapter {
 	readonly privatePaths: readonly string[];
 	/** Read existing identities without starting a model turn or changing native config. */
 	discover(): Promise<CommonspaceAgentProfile[]>;
+	/** Inspect browser-safe native metadata without starting a model turn. */
+	inspectCapabilities(
+		agent: CommonspaceAgentDefinition,
+	): Promise<HarnessCapabilityGroup[]>;
 	launch(
 		agent: CommonspaceAgentProfile,
 		fullAccess: boolean,

@@ -1,10 +1,26 @@
 import type {
 	CommonspaceAgentProfile,
 	CommonspaceBootstrap,
+	HarnessCapabilityGroup,
+	HarnessCapabilityInventory,
 } from "@commonspace/shared";
 import { AGENT_ADAPTERS } from "@commonspace/shared";
-import { CheckIcon, ChevronDownIcon, SearchIcon, XIcon } from "lucide-react";
-import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import {
+	CheckIcon,
+	ChevronDownIcon,
+	LoaderCircleIcon,
+	RefreshCwIcon,
+	SearchIcon,
+	XIcon,
+} from "lucide-react";
+import {
+	type FormEvent,
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import { Button } from "@/components/ui/button";
 import { ConfirmActionDialog } from "@/design-system/ConfirmActionDialog";
 import { cn } from "@/lib/utils";
@@ -599,12 +615,241 @@ export function ChannelSettingsPane({
 	);
 }
 
-const capabilityGroups = [
-	["Tools", "Executable toolsets"],
-	["MCP integrations", "Native configured servers"],
-	["Skills", "Profile knowledge and workflows"],
-	["Connected services", "Service-class toolsets"],
-] as const;
+const capabilityGroupLabels = {
+	tools: "Tools",
+	mcp: "MCP servers",
+	skills: "Skills",
+	plugins: "Plugins",
+	memory: "Memory",
+	agents: "Agents",
+} satisfies Record<HarnessCapabilityGroup["id"], string>;
+
+enum CapabilityRequestStatus {
+	Loading = "loading",
+	Success = "success",
+	Error = "error",
+}
+
+interface LoadingCapabilities {
+	status: CapabilityRequestStatus.Loading;
+}
+
+interface LoadedCapabilities {
+	status: CapabilityRequestStatus.Success;
+	inventory: HarnessCapabilityInventory;
+}
+
+interface FailedCapabilities {
+	status: CapabilityRequestStatus.Error;
+	message: string;
+}
+
+type CapabilityRequest =
+	| LoadingCapabilities
+	| LoadedCapabilities
+	| FailedCapabilities;
+
+function capabilityStatusLabel(
+	status: HarnessCapabilityGroup["status"],
+): string {
+	switch (status) {
+		case "available":
+			return "Available";
+		case "unavailable":
+			return "Unavailable";
+		case "error":
+			return "Inspection failed";
+	}
+}
+
+export function HarnessCapabilities({
+	agentId,
+	store,
+}: {
+	agentId: string;
+	store: CommonspaceStore;
+}) {
+	const [request, setRequest] = useState<CapabilityRequest>({
+		status: CapabilityRequestStatus.Loading,
+	});
+	const [query, setQuery] = useState("");
+	const requestId = useRef(0);
+
+	const inspect = useCallback(() => {
+		const currentRequest = ++requestId.current;
+		setRequest({ status: CapabilityRequestStatus.Loading });
+		void store
+			.inspectAgentCapabilities(agentId)
+			.then((inventory) => {
+				if (
+					requestId.current === currentRequest &&
+					inventory.agentId === agentId
+				) {
+					setRequest({
+						status: CapabilityRequestStatus.Success,
+						inventory,
+					});
+				}
+			})
+			.catch((cause: unknown) => {
+				if (requestId.current === currentRequest) {
+					setRequest({
+						status: CapabilityRequestStatus.Error,
+						message: cause instanceof Error ? cause.message : String(cause),
+					});
+				}
+			});
+	}, [agentId, store]);
+
+	useEffect(() => {
+		inspect();
+		return () => {
+			requestId.current += 1;
+		};
+	}, [inspect]);
+
+	if (request.status === CapabilityRequestStatus.Loading) {
+		return (
+			<div
+				className="mt-4 flex min-h-24 items-center justify-center gap-2 rounded-md border bg-muted text-xs text-muted-foreground"
+				role="status"
+			>
+				<LoaderCircleIcon className="size-4 animate-spin" aria-hidden="true" />
+				Inspecting native capabilities…
+			</div>
+		);
+	}
+
+	if (request.status === CapabilityRequestStatus.Error) {
+		return (
+			<div className="mt-4 rounded-md border bg-muted p-3 text-xs" role="alert">
+				<strong className="block text-foreground">
+					Capability inspection failed
+				</strong>
+				<p className="mt-1 text-muted-foreground">{request.message}</p>
+				<Button className="mt-3" size="sm" variant="outline" onClick={inspect}>
+					<RefreshCwIcon data-icon="inline-start" aria-hidden="true" />
+					Try again
+				</Button>
+			</div>
+		);
+	}
+
+	const normalized = query.trim().toLocaleLowerCase();
+	const groups = request.inventory.groups.map((group) => ({
+		...group,
+		items: group.items.filter((item) =>
+			normalized === ""
+				? true
+				: `${item.name} ${item.description ?? ""} ${item.status}`
+						.toLocaleLowerCase()
+						.includes(normalized),
+		),
+	}));
+	const itemCount = request.inventory.groups.reduce(
+		(total, group) => total + group.items.length,
+		0,
+	);
+
+	return (
+		<div className="mt-4 grid gap-3">
+			<div className="flex items-center gap-2">
+				<label className="relative min-w-0 flex-1">
+					<SearchIcon
+						className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+						aria-hidden="true"
+					/>
+					<input
+						className="min-h-10 w-full rounded-sm border bg-background pr-3 pl-9 text-xs"
+						type="search"
+						aria-label="Search capabilities"
+						placeholder={`Search ${String(itemCount)} capabilities`}
+						value={query}
+						onChange={(event) => setQuery(event.target.value)}
+					/>
+				</label>
+				<Button
+					size="icon"
+					variant="outline"
+					aria-label="Refresh capabilities"
+					onClick={inspect}
+				>
+					<RefreshCwIcon aria-hidden="true" />
+				</Button>
+			</div>
+			<p className="text-[11px] leading-4 text-muted-foreground">
+				Read-only metadata from native harness. Configured entries may still
+				require runtime approval or authentication.
+			</p>
+			<div className="grid gap-2">
+				{groups.map((group, index) => (
+					<details
+						key={group.id}
+						open={normalized !== "" || index === 0}
+						className="rounded-md border bg-background p-3"
+					>
+						<summary className="cursor-pointer list-none">
+							<span className="flex items-center justify-between gap-3">
+								<span>
+									<strong className="block text-[13px]">
+										{capabilityGroupLabels[group.id]}
+									</strong>
+									<small className="block text-xs text-muted-foreground">
+										{group.source}
+									</small>
+								</span>
+								<span className="text-right">
+									<b className="block font-mono text-[10px] text-muted-foreground">
+										{group.status === "available"
+											? `${String(group.items.length)} items`
+											: "— items"}
+									</b>
+									<small className="text-[10px] text-muted-foreground">
+										{capabilityStatusLabel(group.status)}
+									</small>
+								</span>
+							</span>
+						</summary>
+						<div className="mt-3 grid gap-2 border-t pt-3 text-xs">
+							<p className="text-muted-foreground">{group.notice}</p>
+							{group.items.length > 0 ? (
+								group.items.map((item) => (
+									<div
+										key={item.name}
+										className="flex items-start justify-between gap-3 rounded-sm bg-muted px-2.5 py-2"
+									>
+										<span className="min-w-0">
+											<strong className="block break-words text-foreground">
+												{item.name}
+											</strong>
+											{item.description === undefined ? null : (
+												<small className="mt-0.5 block leading-4 text-muted-foreground">
+													{item.description}
+												</small>
+											)}
+										</span>
+										<span className="shrink-0 rounded-full border px-2 py-0.5 font-mono text-[10px] text-muted-foreground">
+											{item.status}
+										</span>
+									</div>
+								))
+							) : (
+								<p className="rounded-sm bg-muted px-2.5 py-2 text-muted-foreground">
+									{normalized === ""
+										? "No capability names reported."
+										: "No capabilities match this search."}
+								</p>
+							)}
+						</div>
+					</details>
+				))}
+			</div>
+			<small className="font-mono text-[10px] text-muted-foreground">
+				Checked {new Date(request.inventory.checkedAt).toLocaleString()}
+			</small>
+		</div>
+	);
+}
 
 export function AgentSettingsPane({
 	bootstrap,
@@ -842,38 +1087,11 @@ export function AgentSettingsPane({
 						Commonspace shows capability ownership without recreating a second
 						permission system.
 					</p>
-					<div className="mt-4 grid gap-2">
-						{capabilityGroups.map(([title, description], index) => (
-							<details
-								key={title}
-								open={index === 0}
-								className="rounded-md border bg-background p-3"
-							>
-								<summary className="cursor-pointer list-none">
-									<span className="flex items-center justify-between gap-3">
-										<span>
-											<strong className="block text-[13px]">{title}</strong>
-											<small className="block text-xs text-muted-foreground">
-												{description}
-											</small>
-										</span>
-										<b className="font-mono text-[10px] text-muted-foreground">
-											Native
-										</b>
-									</span>
-								</summary>
-								<div className="mt-3 grid gap-1 border-t pt-3 text-xs text-muted-foreground">
-									<span>Source</span>
-									<strong className="text-foreground">
-										{runtimeLabel(agent)} native inventory
-									</strong>
-									<em className="not-italic">
-										Enabled and blocked states remain owned by the harness
-									</em>
-								</div>
-							</details>
-						))}
-					</div>
+					<HarnessCapabilities
+						key={agent.id}
+						agentId={agent.id}
+						store={store}
+					/>
 				</section>
 
 				<section className="p-5">

@@ -83,7 +83,7 @@ A user can open Commonspace, talk naturally in a Channel or DM, and trust that:
 4. **Native continuity is exact.** A thread or DM resumes its mapped native session whenever the harness supports it.
 5. **Agents are peers.** A visible mention is the handoff. No coordinator is required.
 6. **Inference is a service function.** One configured provider chooses agents, divides requests, identifies Projects, and summarizes shared context and routing corrections.
-7. **Harness capabilities are authoritative.** Commonspace exposes only models, reasoning modes, tools, permissions, and controls advertised through ACP.
+7. **Harness capabilities are authoritative.** Runtime controls come from ACP. Read-only capability browsing may also use native inventory commands or native configuration metadata, with the source and scope visible. Configured capabilities are not proof of availability in a particular session.
 8. **Parallel by default.** Different native sessions may run concurrently. Only work targeting the same native session is serialized.
 9. **Local authority.** Commonspace stores workspace data and native-session references locally. Connected runtimes control their own model-service traffic and credentials. Commonspace inference may also use an explicitly configured remote endpoint.
 10. **Outcomes are honest.** Commonspace must not hide routing failures, rewrite delivered history, invent permissions, or imply that an interrupted run completed.
@@ -120,6 +120,8 @@ flowchart TD
 | Activity | Normalized ACP reasoning summaries, plans, tools, results, usage, permissions, and controls. | Raw terminal output remains in the harness. |
 
 ### Authority boundary
+
+Agent settings provide an on-demand, read-only native capability browser for every supported adapter. Categories cover tools, MCP integrations, skills, plugins, native agents, and memory metadata. Each category identifies its source and reports available inventory, unavailable inspection, or a read failure separately. Empty inventory is distinct from unavailable inspection. Refresh does not run a model turn, change native configuration, or persist inventory in workspace data. Native credentials, launch arguments, server endpoints, host paths, and memory contents are excluded. A profile-level inventory must not imply that every item is enabled in every Project or native session.
 
 | Commonspace owns | The harness owns |
 | --- | --- |
@@ -499,6 +501,7 @@ Workspace archives are unencrypted private user data. Removing Commonspace-manag
 | E2E-10 | Receive a permission request while the client is closed | The service keeps the request pending, other sessions continue, and reopening shows an exact attention item with harness-provided choices. |
 | E2E-11 | Restart after a conversation exceeds the legacy 500-message boundary | Every accepted message and its context restore, resumable sessions continue exactly, and unrecoverable in-flight work is marked interrupted. |
 | E2E-12 | Export and import into a clean workspace | Conversation data and exact attachment bytes import safely. Managed private fields are omitted from the archive, and local Project roots require explicit remapping. |
+| E2E-13 | Open an added Agent's capabilities and refresh | Native metadata loads on demand with source, scope, and inspection time. Search reveals matching items; unavailable inspection differs from empty inventory. No native configuration, private memory content, or workspace data is changed. |
 
 ## v0.0.1 definition of done
 

@@ -1,3 +1,9 @@
+import { access, readdir } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import type { HarnessCapabilityGroup } from "@commonspace/shared";
+import { unavailableGroup } from "./capability-inventory.js";
+import { inspectMcpMetadata } from "./capability-metadata.js";
 import { readHarnessCommand } from "./discovery.js";
 import type { AgentAdapterConfig, NativeAgentAdapter } from "./types.js";
 
@@ -27,6 +33,34 @@ export function createGeminiAdapter(
 				process.env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH,
 			].filter((path): path is string => path !== undefined),
 		],
+		inspectCapabilities() {
+			const source = "Gemini CLI user configuration";
+			const root = join(process.env.GEMINI_CLI_HOME ?? homedir(), ".gemini");
+			return Promise.all([
+				unavailableGroup(
+					"tools",
+					source,
+					"This verified Gemini CLI version has no bounded read-only tool listing.",
+				),
+				inspectMcpMetadata(
+					[join(root, "settings.json")],
+					"mcpServers",
+					"Gemini CLI user settings metadata",
+				),
+				inspectGeminiDirectory("skills", join(root, "skills")),
+				inspectGeminiDirectory("plugins", join(root, "extensions")),
+				unavailableGroup(
+					"memory",
+					source,
+					"Memory contents and host paths remain private.",
+				),
+				unavailableGroup(
+					"agents",
+					source,
+					"Gemini CLI does not expose a configured-agent inventory.",
+				),
+			]);
+		},
 		async discover() {
 			assertGeminiAcpVersion(await readHarnessCommand(cliPath, ["--version"]));
 			return [
@@ -55,4 +89,61 @@ export function createGeminiAdapter(
 			return settings;
 		},
 	};
+}
+
+async function inspectGeminiDirectory(
+	id: "skills" | "plugins",
+	path: string,
+): Promise<HarnessCapabilityGroup> {
+	try {
+		const entries = await readdir(path, { withFileTypes: true });
+		const marker = id === "skills" ? "SKILL.md" : "gemini-extension.json";
+		const names = await Promise.all(
+			entries
+				.filter(
+					(entry) => entry.isDirectory() && isSafeMetadataName(entry.name),
+				)
+				.map(async (entry) => {
+					try {
+						await access(join(path, entry.name, marker));
+						return entry.name;
+					} catch {
+						return undefined;
+					}
+				}),
+		);
+		return {
+			id,
+			status: "available",
+			source: `Gemini CLI user ${id} metadata`,
+			notice: `Configured user ${id} names only; contents and host paths remain private.`,
+			items: names
+				.filter((name): name is string => name !== undefined)
+				.map((name) => ({ name, status: "configured" })),
+		};
+	} catch (error) {
+		if (error instanceof Error && isMissing(error))
+			return {
+				id,
+				status: "available",
+				source: `Gemini CLI user ${id} metadata`,
+				notice: `No user ${id} directory is present.`,
+				items: [],
+			};
+		return {
+			id,
+			status: "error",
+			source: `Gemini CLI user ${id} metadata`,
+			notice: `Native ${id} metadata could not be inspected.`,
+			items: [],
+		};
+	}
+}
+
+function isSafeMetadataName(name: string): boolean {
+	return /^[\p{L}\p{N}][\p{L}\p{N} ._:@()+-]{0,119}$/u.test(name);
+}
+
+function isMissing(error: Error): boolean {
+	return error instanceof Error && "code" in error && error.code === "ENOENT";
 }

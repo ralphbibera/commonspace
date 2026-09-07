@@ -868,6 +868,38 @@ export function createCommonspaceApp({
 		},
 	);
 
+	app.get(
+		"/api/agents/:agentId/capabilities",
+		requireSameOrigin,
+		async (req, res) => {
+			res.setHeader("cache-control", "no-store");
+			try {
+				const agentId = req.params.agentId;
+				if (typeof agentId !== "string") {
+					res
+						.status(400)
+						.json({ code: "invalid_agent_id", error: "Agent ID is required." });
+					return;
+				}
+				const inventory = await service.inspectAgentCapabilities(agentId);
+				if (inventory === undefined) {
+					res.status(404).json({
+						code: "agent_not_found",
+						error: "Agent is not in this workspace.",
+					});
+					return;
+				}
+				res.json(inventory);
+			} catch {
+				res.status(500).json({
+					code: "capability_inspection_failed",
+					error:
+						"Native capability inspection failed. Retry from the agent settings.",
+				});
+			}
+		},
+	);
+
 	app.post("/api/discover-agents", requireSameOrigin, async (req, res) => {
 		try {
 			const body = discoverAgentsRequestSchema.parse(req.body);

@@ -1,4 +1,12 @@
 import { createRequire } from "node:module";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import {
+	inspectCommandCapabilities,
+	parseNamedJsonInventory,
+	unavailableGroup,
+} from "./capability-inventory.js";
+import { inspectUserSkills } from "./capability-metadata.js";
 import { readHarnessCommand } from "./discovery.js";
 import type { AgentAdapterConfig, NativeAgentAdapter } from "./types.js";
 
@@ -17,6 +25,57 @@ export function createCodexAdapter(
 			: [...config.codexAcpArgs];
 	return {
 		privatePaths: [cliPath, command, ...args],
+		async inspectCapabilities() {
+			const source = "Codex user configuration";
+			const codexHome = process.env.CODEX_HOME ?? join(homedir(), ".codex");
+			const skills = await inspectUserSkills(
+				[
+					join(codexHome, "skills"),
+					join(codexHome, "skills", ".system"),
+					join(homedir(), ".agents", "skills"),
+				],
+				"Codex user skill directory metadata",
+			);
+			return inspectCommandCapabilities(
+				cliPath,
+				[
+					{
+						id: "mcp",
+						args: ["mcp", "list", "--json"],
+						source: "codex mcp list --json",
+						notice:
+							"Server names and enabled state from the native Codex user configuration.",
+						parse: parseNamedJsonInventory,
+					},
+					{
+						id: "plugins",
+						args: ["plugin", "list", "--json"],
+						source: "codex plugin list --json",
+						notice:
+							"Plugin names and installation state from configured marketplace snapshots.",
+						parse: parseNamedJsonInventory,
+					},
+				],
+				[
+					unavailableGroup(
+						"tools",
+						source,
+						"Codex has no read-only command for its effective tool inventory.",
+					),
+					skills,
+					unavailableGroup(
+						"memory",
+						source,
+						"Memory contents and host paths remain private.",
+					),
+					unavailableGroup(
+						"agents",
+						source,
+						"Codex has no read-only native command for configured agents.",
+					),
+				],
+			);
+		},
 		async discover() {
 			await readHarnessCommand(cliPath, ["--version"]);
 			return [

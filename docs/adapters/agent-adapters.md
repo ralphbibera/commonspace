@@ -38,10 +38,25 @@ Every configured adapter implements these members:
 | --- | --- |
 | `privatePaths` | List configured executable paths and argument paths for the host's redaction boundary. Never send them to the browser. |
 | `discover()` | Return existing `CommonspaceAgentProfile` identities. Use bounded commands; do not authenticate, start a model turn, inspect credentials, or mutate native profiles. Throw installation failures; the host logs once and reports no candidates. |
+| `inspectCapabilities(agent)` | Return browser-safe native inventory groups for the selected identity. Use bounded read-only sources; preserve source and scope, distinguish empty inventory from unsupported inspection and failure, and exclude native secrets, paths, endpoints, and memory contents. Never start a model turn or change native configuration. |
 | `launch(agent, fullAccess, signal)` | Return executable, argument array, and environment, synchronously or asynchronously. Honor cancellation during preflight checks and select the exact native identity. Never construct shell command strings. |
 | `sessionSettings(input)` | Return native ACP mode, model, and config IDs. Leave unsupported settings absent. `AcpAgentProcess` applies controls only when the session advertises them. Model selection precedes model-dependent settings; finite choices are checked against refreshed options, while native model aliases remain available. |
 
 The adapter does not implement its own message queue, subprocess pool, permission UI, transcript parser, or session persistence. `AcpAgentProcess` owns ACP framing, session setup, updates, cancellation, and process disposal. `CommonspaceHostService` owns durable acceptance, per-session serialization, independent concurrency, context scope, private session references, and recovery.
+
+### Read-only capability sources
+
+Open an added Agent's settings to browse and refresh inventory. This is user/profile metadata, not a promise of effective capability in every Project or session. Unsupported categories remain visible as unavailable; malformed or failed reads are shown separately from empty inventory.
+
+| Harness | Inventory sources |
+| --- | --- |
+| Hermes | Native MCP servers, skills, plugin capabilities, and memory status commands, with the selected profile passed to every command; tool listing is unavailable because it executes plugin hooks |
+| Codex | Native MCP/plugin JSON listings and user skill folders, including system skill markers |
+| Claude Code | Native plugin/agent listings, user skill folders, and global MCP configuration names without running MCP health checks |
+| Gemini CLI | User MCP settings and skill/extension folders with native marker files; no CLI initialization or MCP connections |
+| OpenCode | Global MCP configuration names, including JSONC, and global skill folders; environment/project overrides are excluded |
+
+Skill directory readers expose folder labels only when `SKILL.md` exists; they do not read prompts or establish that a skill is enabled. Native tool inventories are not universally available through ACP, so adapters without a safe tool source report that category as unavailable. Memory browsing is limited to native status metadata where supplied; private memory contents are never read into the browser. Inventory is not persisted or exported.
 
 ## Implementation checklist
 

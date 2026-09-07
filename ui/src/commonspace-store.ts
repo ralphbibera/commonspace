@@ -19,6 +19,7 @@ import type {
 	ConversationRef,
 	EditMessageRequest,
 	FollowupQueueResponse,
+	HarnessCapabilityInventory,
 	RerouteAssignmentRequest,
 	RerouteAssignmentResponse,
 	SelectDirectoryResponse,
@@ -474,6 +475,14 @@ export class CommonspaceClientStore {
 		return requestJson<CommonspaceDiagnostics["inference"]>(
 			"/api/routing/validate",
 			{ method: "POST", body: JSON.stringify(request) },
+		);
+	}
+
+	async inspectAgentCapabilities(
+		agentId: string,
+	): Promise<HarnessCapabilityInventory> {
+		return requestJson<HarnessCapabilityInventory>(
+			`/api/agents/${encodeURIComponent(agentId)}/capabilities`,
 		);
 	}
 

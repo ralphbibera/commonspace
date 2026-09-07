@@ -1,3 +1,13 @@
+import { homedir } from "node:os";
+import { join } from "node:path";
+import {
+	inspectCommandCapabilities,
+	unavailableGroup,
+} from "./capability-inventory.js";
+import {
+	inspectMcpMetadata,
+	inspectUserSkills,
+} from "./capability-metadata.js";
 import { readHarnessCommand } from "./discovery.js";
 import type { AgentAdapterConfig, NativeAgentAdapter } from "./types.js";
 
@@ -21,6 +31,58 @@ export function createOpenCodeAdapter(
 				process.env.OPENCODE_CONFIG_DIR,
 			].filter((path): path is string => path !== undefined),
 		],
+		async inspectCapabilities() {
+			const source = "OpenCode user configuration";
+			const configRoot = join(
+				process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config"),
+				"opencode",
+			);
+			const mcp = await inspectMcpMetadata(
+				[
+					join(configRoot, "config.json"),
+					join(configRoot, "opencode.json"),
+					join(configRoot, "opencode.jsonc"),
+				],
+				"mcp",
+				"OpenCode global MCP metadata (environment and project overrides excluded)",
+			);
+			const skills = await inspectUserSkills(
+				[
+					join(configRoot, "skills"),
+					join(homedir(), ".claude", "skills"),
+					join(homedir(), ".agents", "skills"),
+				],
+				"OpenCode global skill directory metadata",
+			);
+			return inspectCommandCapabilities(
+				cliPath,
+				[],
+				[
+					unavailableGroup(
+						"tools",
+						source,
+						"OpenCode has no bounded read-only effective tool listing.",
+					),
+					mcp,
+					skills,
+					unavailableGroup(
+						"plugins",
+						source,
+						"OpenCode has no bounded read-only plugin listing.",
+					),
+					unavailableGroup(
+						"memory",
+						source,
+						"OpenCode has no bounded read-only memory status listing.",
+					),
+					unavailableGroup(
+						"agents",
+						source,
+						"OpenCode has no bounded read-only configured-agent listing.",
+					),
+				],
+			);
+		},
 		async discover() {
 			await readHarnessCommand(cliPath, ["--version"]);
 			return [
