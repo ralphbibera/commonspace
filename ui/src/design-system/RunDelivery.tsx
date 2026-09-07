@@ -48,56 +48,87 @@ const deliveryOptions = {
 	}
 >;
 
+type DeliveryMode = CommonspaceQueuedFollowup["delivery"];
+
+function DeliveryOptionButton({
+	delivery,
+	disabled,
+	thread,
+	steeringAvailable,
+}: {
+	delivery: DeliveryMode;
+	disabled: boolean;
+	thread: boolean;
+	steeringAvailable: boolean;
+}) {
+	const option = deliveryOptions[delivery];
+	const Icon = option.icon;
+	const unavailableReason =
+		delivery === "steer" && !steeringAvailable
+			? "Live steering requires agent-scoped backend support"
+			: thread && delivery === "stop-and-send"
+				? "Target one agent before interrupting a Thread run"
+				: undefined;
+	const label =
+		thread && delivery === "stop-and-send"
+			? "Interrupt and send thread follow-up"
+			: option.label;
+	return (
+		<Tooltip>
+			<TooltipTrigger
+				render={
+					<Button
+						type="submit"
+						name="delivery"
+						value={delivery}
+						variant={delivery === "queue" ? "outline" : "ghost"}
+						size={delivery === "queue" ? "sm" : "icon-xs"}
+						className={delivery === "queue" ? "h-8" : "size-8"}
+						disabled={disabled || unavailableReason !== undefined}
+						title={unavailableReason}
+					/>
+				}
+				aria-label={label}
+			>
+				<Icon data-icon="inline-start" aria-hidden="true" />
+				{delivery === "queue" && "Queue"}
+			</TooltipTrigger>
+			<TooltipContent>
+				<strong>{option.label}</strong>
+				<br />
+				{unavailableReason ?? option.description}
+			</TooltipContent>
+		</Tooltip>
+	);
+}
+
 export function RunDeliveryControls({
 	disabled,
 	thread = false,
 	onStop,
 	stopping = false,
+	steeringAvailable = false,
 }: {
 	disabled: boolean;
 	thread?: boolean;
 	onStop?: () => void;
 	stopping?: boolean;
+	steeringAvailable?: boolean;
 }) {
 	return (
 		<fieldset
 			aria-label={thread ? "Active thread run delivery" : "Active run delivery"}
 			className="order-2 m-0 ml-auto flex shrink-0 items-center gap-0.5 rounded-md border-0 bg-muted p-0.5"
 		>
-			{(["queue", "steer", "stop-and-send"] as const).map((delivery) => {
-				const option = deliveryOptions[delivery];
-				const Icon = option.icon;
-				const label =
-					thread && delivery === "stop-and-send"
-						? "Interrupt and send thread follow-up"
-						: option.label;
-				return (
-					<Tooltip key={delivery}>
-						<TooltipTrigger
-							render={
-								<Button
-									type="submit"
-									name="delivery"
-									value={delivery}
-									variant={delivery === "queue" ? "outline" : "ghost"}
-									size={delivery === "queue" ? "sm" : "icon-xs"}
-									className={delivery === "queue" ? "h-8" : "size-8"}
-									disabled={disabled}
-								/>
-							}
-							aria-label={label}
-						>
-							<Icon data-icon="inline-start" aria-hidden="true" />
-							{delivery === "queue" && "Queue"}
-						</TooltipTrigger>
-						<TooltipContent>
-							<strong>{option.label}</strong>
-							<br />
-							{option.description}
-						</TooltipContent>
-					</Tooltip>
-				);
-			})}
+			{(["queue", "steer", "stop-and-send"] as const).map((delivery) => (
+				<DeliveryOptionButton
+					key={delivery}
+					delivery={delivery}
+					disabled={disabled}
+					thread={thread}
+					steeringAvailable={steeringAvailable}
+				/>
+			))}
 			{onStop !== undefined && (
 				<Tooltip>
 					<TooltipTrigger

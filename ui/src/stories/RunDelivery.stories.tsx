@@ -71,7 +71,7 @@ export const StopAndSend: Story = {
 export const DeliveryActions: Story = {
 	render: () => (
 		<div className="flex">
-			<RunDeliveryControls disabled={false} onStop={fn()} />
+			<RunDeliveryControls disabled={false} steeringAvailable onStop={fn()} />
 		</div>
 	),
 };
@@ -81,6 +81,23 @@ export const DisabledActions: Story = {
 			<RunDeliveryControls disabled />
 		</div>
 	),
+};
+export const ThreadInterruptionSafety: Story = {
+	render: () => (
+		<div className="flex">
+			<RunDeliveryControls thread disabled={false} />
+		</div>
+	),
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		await expect(canvas.getByRole("button", { name: "Queue" })).toBeEnabled();
+		await expect(canvas.getByRole("button", { name: "Steer" })).toBeDisabled();
+		await expect(
+			canvas.getByRole("button", {
+				name: "Interrupt and send thread follow-up",
+			}),
+		).toBeDisabled();
+	},
 };
 export const QueueActions: Story = {
 	play: async ({ canvasElement, args }) => {

@@ -52,8 +52,8 @@ import {
 } from "./CommonspaceContextSettings.tsx";
 import {
 	type CommonspacePendingSubmission,
-	CommonspaceSubmissionError,
 	type CommonspaceStore,
+	CommonspaceSubmissionError,
 } from "./commonspace-store.ts";
 import { AgentAvatar } from "./design-system/AgentAvatar.tsx";
 import { MessageActionMenu } from "./design-system/MessageActionMenu.tsx";
@@ -143,6 +143,21 @@ function pendingAdmissionItem(
 	if (submission.error !== undefined) item.error = submission.error;
 	if (submission.delivery !== undefined) item.delivery = submission.delivery;
 	return item;
+}
+
+async function stopAgentActivities(
+	store: CommonspaceStore,
+	activities: CommonspaceLiveAgentActivity[],
+): Promise<Set<string>> {
+	const stopped = new Set<string>();
+	for (const activity of activities) {
+		for (const agentId of await store.stopAgentRuns(
+			activity.sourceMessageId,
+			activity.agentId,
+		))
+			stopped.add(agentId);
+	}
+	return stopped;
 }
 
 const messageActionButtonClassName =
@@ -482,6 +497,150 @@ function routingDurationLabel(durationMs: number | undefined): string | null {
 	return `routed in ${(durationMs / 1_000).toFixed(durationMs < 10_000 ? 1 : 0)}s`;
 }
 
+function routingAgentName(
+	agentId: string,
+	bootstrap?: CommonspaceBootstrap | null,
+): string {
+	return (
+		bootstrap?.agents.find((agent) => agent.id === agentId)?.displayName ??
+		agentId
+	);
+}
+
+function routingOutcome(
+	message: CommonspaceMessage,
+	bootstrap?: CommonspaceBootstrap | null,
+): "Routing" | "Queued" | "Running" | "Completed" | "Cancelled" | "Failed" {
+	const responses = Object.values(bootstrap?.state.messages ?? {})
+		.flat()
+		.filter((candidate) => candidate.sourceMessageId === message.id);
+	if (message.replyStatus === "cancelled") return "Cancelled";
+	if (
+		message.replyStatus === "failed" ||
+		message.replyStatus === "error" ||
+		message.replyStatus === "timeout" ||
+		message.replyStatus === "silent" ||
+		message.routing?.status === "failed" ||
+		(message.routing?.agentIds.length === 0 &&
+			message.routing.status !== "pending") ||
+		responses.some(
+			(response) =>
+				response.replyStatus === "failed" ||
+				response.replyStatus === "error" ||
+				response.replyStatus === "timeout" ||
+				response.replyStatus === "silent" ||
+				(response.authorType === "system" &&
+					/\brun failed:/iu.test(response.text)),
+		)
+	)
+		return "Failed";
+	if (
+		message.replyStatus === "running" ||
+		bootstrap?.liveActivities?.some(
+			(activity) => activity.sourceMessageId === message.id,
+		) === true
+	)
+		return "Running";
+	if (message.replyStatus === "complete") return "Completed";
+	if (responses.length > 0) return "Completed";
+	if (message.routing?.status === "pending") return "Routing";
+	return "Queued";
+}
+
+function RoutingReceipt({
+	message,
+	bootstrap,
+}: {
+	message: CommonspaceMessage;
+	bootstrap: CommonspaceBootstrap | null | undefined;
+}) {
+	const routing = message.routing;
+	if (message.authorType !== "user" || routing === undefined) return null;
+	const agents = routing.agentIds.map((agentId) =>
+		routingAgentName(agentId, bootstrap),
+	);
+	const destination =
+		agents.length === 0 ? "No agent selected" : agents.join(", ");
+	const source =
+		routing.source === "explicit"
+			? "explicit mention"
+			: routing.source === "ai"
+				? "AI selected"
+				: "local routing";
+	const outcome = routingOutcome(message, bootstrap);
+	const duration = routingDurationLabel(routing.durationMs);
+	return (
+		<details className="mt-2 rounded-sm border bg-muted/35 px-2.5 py-1.5 text-xs">
+			<summary
+				className={cn(
+					"cursor-pointer list-none font-medium marker:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+					outcome === "Failed" && "text-destructive",
+				)}
+				role={outcome === "Failed" ? "alert" : "status"}
+			>
+				Routed to {destination} · {source} · {outcome}
+			</summary>
+			<div className="mt-2 grid gap-2 border-t pt-2 text-muted-foreground">
+				{message.replyError !== undefined && (
+					<p>
+						<strong className="text-foreground">Outcome:</strong>{" "}
+						{message.replyError}
+					</p>
+				)}
+				<p>
+					<strong className="text-foreground">Reason:</strong> {routing.reason}
+					{duration === null ? "" : ` · ${duration}`}
+				</p>
+				{routing.assignments.length > 0 && (
+					<ul className="grid gap-1" aria-label="Routing assignments">
+						{routing.assignments.map((assignment) => {
+							const projects = assignment.projectIds.map(
+								(projectId) =>
+									bootstrap?.state.projects.find(
+										(project) => project.id === projectId,
+									)?.name ?? projectId,
+							);
+							return (
+								<li key={assignment.id}>
+									<strong className="text-foreground">
+										{routingAgentName(assignment.agentId, bootstrap)}:
+									</strong>{" "}
+									{assignment.subRequest}
+									{projects.length === 0 ? "" : ` · ${projects.join(", ")}`}
+								</li>
+							);
+						})}
+					</ul>
+				)}
+				{routing.corrections.length > 0 && (
+					<ul className="grid gap-1" aria-label="Routing corrections">
+						{routing.corrections.map((correction) => {
+							const from = routing.assignments.find(
+								(assignment) => assignment.id === correction.fromAssignmentId,
+							);
+							const to = routing.assignments.find(
+								(assignment) => assignment.id === correction.toAssignmentId,
+							);
+							return (
+								<li key={correction.id}>
+									Rerouted{" "}
+									{from === undefined
+										? correction.fromAssignmentId
+										: routingAgentName(from.agentId, bootstrap)}{" "}
+									→{" "}
+									{to === undefined
+										? correction.toAssignmentId
+										: routingAgentName(to.agentId, bootstrap)}
+								</li>
+							);
+						})}
+					</ul>
+				)}
+			</div>
+		</details>
+	);
+}
+
 function conversationDateLabel(
 	messages: readonly CommonspaceMessage[],
 ): string | null {
@@ -749,26 +908,7 @@ function MessageRow({
 						</div>
 					</form>
 				)}
-				{message.routing?.status === "pending" && (
-					<div
-						className="mt-2 text-xs text-muted-foreground"
-						role="status"
-						aria-label="Routing message"
-					>
-						Routing…
-					</div>
-				)}
-				{message.routing?.status === "failed" && (
-					<div
-						className="mt-2 rounded-sm border border-destructive/30 bg-destructive/5 p-2 text-xs text-destructive"
-						role="alert"
-					>
-						Routing failed · {message.routing.reason}
-						{routingDurationLabel(message.routing.durationMs) === null
-							? ""
-							: ` · ${routingDurationLabel(message.routing.durationMs)}`}
-					</div>
-				)}
+				<RoutingReceipt message={message} bootstrap={bootstrap} />
 				{message.attachments !== undefined &&
 					message.attachments.length > 0 && (
 						<div className="mt-3 flex flex-wrap gap-2">
@@ -1845,14 +1985,7 @@ export function CommonspaceConversation({
 		if (activities.length === 0 || stoppingScope) return;
 		setStoppingScope(true);
 		try {
-			const stopped = new Set<string>();
-			for (const activity of activities) {
-				for (const agentId of await store.stopAgentRuns(
-					activity.sourceMessageId,
-					activity.agentId,
-				))
-					stopped.add(agentId);
-			}
+			const stopped = await stopAgentActivities(store, activities);
 			setCommandFeedback({
 				tone: stopped.size === 0 ? "info" : "success",
 				title: stopped.size === 0 ? "Nothing to stop" : "Run stopped",
@@ -2604,7 +2737,7 @@ export function CommonspaceConversation({
 													!isChannel &&
 													(event.metaKey || event.ctrlKey)
 														? form?.querySelector<HTMLButtonElement>(
-																'button[name="delivery"][value="steer"]',
+																'button[name="delivery"][value="steer"]:not(:disabled)',
 															)
 														: undefined;
 												form?.requestSubmit(steer);
@@ -3133,7 +3266,7 @@ export function CommonspaceConversation({
 														threadReplyTarget === null &&
 														(event.metaKey || event.ctrlKey)
 															? form?.querySelector<HTMLButtonElement>(
-																	'button[name="delivery"][value="steer"]',
+																	'button[name="delivery"][value="steer"]:not(:disabled)',
 																)
 															: undefined;
 													form?.requestSubmit(steer);
@@ -3178,10 +3311,6 @@ export function CommonspaceConversation({
 													pendingThreadImages.length === 0 &&
 													pendingThreadFiles.length === 0
 												}
-												stopping={stoppingScope}
-												onStop={() => {
-													void stopActivities(activeThreadActivities);
-												}}
 											/>
 										)}
 									<label className="relative inline-flex min-h-9 w-fit items-center rounded-sm border px-2 text-xs font-semibold">

@@ -137,14 +137,61 @@ export const ChannelConversation: Story = {
 			),
 		).toBeVisible();
 		await expect(
-			canvas.queryByText("Inspect only the desktop UI boundary."),
-		).not.toBeInTheDocument();
+			canvas.getByText("Routed to Review Bot · AI selected · Completed"),
+		).toBeVisible();
+		const routingReason = canvas.getByText("Design review matches Hermes.");
+		await expect(routingReason).not.toBeVisible();
 		await expect(
-			canvas.queryByText("Design review matches Hermes."),
-		).not.toBeInTheDocument();
+			canvas.getByRole("list", { name: "Routing assignments" }),
+		).not.toBeVisible();
+		await userEvent.click(
+			canvas.getByText("Routed to Review Bot · AI selected · Completed"),
+		);
+		await expect(routingReason).toBeVisible();
 		await expect(
-			canvas.queryByRole("list", { name: "Routing assignments" }),
-		).not.toBeInTheDocument();
+			canvas.getByText(/Inspect only the desktop UI boundary\./u),
+		).toBeVisible();
+	},
+};
+
+const cancelledRoutingBootstrap = structuredClone(storyBootstrap);
+const cancelledRoutingMessage =
+	cancelledRoutingBootstrap.state.messages["channel:channel-design"]?.[0];
+if (cancelledRoutingMessage !== undefined) {
+	cancelledRoutingMessage.replyStatus = "cancelled";
+	cancelledRoutingMessage.replyError =
+		"No destination agent was available for this routing attempt.";
+	cancelledRoutingMessage.routing = {
+		source: "explicit",
+		status: "resolved",
+		startedAt: "2026-09-03T09:58:00.000Z",
+		agentIds: [],
+		assignments: [],
+		corrections: [],
+		inferredProjectIds: [],
+		reason: "The explicit destination could not be resolved.",
+	};
+}
+
+export const CancelledRoutingOutcome: Story = {
+	args: {
+		store: createStoryStore(cancelledRoutingBootstrap, {
+			activeConversation: channel,
+			activeProjectId: primaryProject.id,
+		}),
+	},
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		const receipt = canvas.getByText(
+			"Routed to No agent selected · explicit mention · Cancelled",
+		);
+		await expect(receipt).toBeVisible();
+		await userEvent.click(receipt);
+		await expect(
+			canvas.getByText(
+				"No destination agent was available for this routing attempt.",
+			),
+		).toBeVisible();
 	},
 };
 
@@ -221,11 +268,60 @@ export const DirectMessage: Story = {
 	},
 };
 
+export const PendingAdmissionRecovery: Story = {
+	args: {
+		store: createStoryStore(runtimeStoryBootstrap, {
+			activeConversation: directMessage,
+			activeProjectId: primaryProject.id,
+			pendingSubmissions: [
+				{
+					id: "submission-admitting",
+					conversation: directMessage,
+					text: "Queue this while the current run continues.",
+					attachments: [],
+					files: [],
+					delivery: "queue",
+					createdAt: "2026-09-03T10:00:10.000Z",
+					status: "admitting",
+				},
+				{
+					id: "submission-failed",
+					conversation: directMessage,
+					text: "Restore this failed direction.",
+					attachments: [],
+					files: [],
+					delivery: "steer",
+					createdAt: "2026-09-03T10:00:11.000Z",
+					status: "failed",
+					error: "Connection closed before admission",
+				},
+			],
+		}),
+	},
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		const composer = canvas.getByRole("textbox", {
+			name: "Message Review Bot",
+		});
+		await expect(composer).toBeEnabled();
+		await expect(canvas.getByText("Admitting · Queued")).toBeVisible();
+		await userEvent.click(canvas.getByRole("button", { name: "Restore" }));
+		await expect(composer).toHaveValue("Restore this failed direction.");
+		await expect(canvas.getByRole("button", { name: "Queue" })).toBeEnabled();
+	},
+};
+
 const activeRunSend = fn<CommonspaceStore["send"]>();
-const activeRunStore = createStoryStore(runtimeStoryBootstrap, {
+const activeRunStop = fn<CommonspaceStore["stopAgentRuns"]>(async () => [
+	"agent-hermes",
+]);
+const activeRunBaseStore = createStoryStore(runtimeStoryBootstrap, {
 	activeConversation: directMessage,
 	activeProjectId: primaryProject.id,
 	send: activeRunSend,
+});
+const activeRunStore = Object.assign(activeRunBaseStore, {
+	stopAgentRuns: activeRunStop,
 });
 
 export const NarrowActiveRunComposer: Story = {
@@ -239,13 +335,14 @@ export const NarrowActiveRunComposer: Story = {
 	],
 	play: async ({ canvasElement }) => {
 		activeRunSend.mockClear();
+		activeRunStop.mockClear();
 		const canvas = within(canvasElement);
 		const composer = canvas.getByRole("textbox", {
 			name: "Message Review Bot",
 		});
 		await userEvent.type(composer, "Use the new direction instead.");
 		await userEvent.click(
-			canvas.getByRole("button", { name: "Stop and send" }),
+			canvas.getByRole("button", { name: "Interrupt and send" }),
 		);
 		await expect(activeRunSend).toHaveBeenNthCalledWith(
 			1,
@@ -265,14 +362,28 @@ export const NarrowActiveRunComposer: Story = {
 			"queue",
 		);
 
-		await userEvent.type(composer, "Adjust the current direction.");
-		await userEvent.click(canvas.getByRole("button", { name: "Steer" }));
+		const steer = canvas.getByRole("button", { name: "Steer" });
+		await expect(steer).toBeDisabled();
+		await expect(steer).toHaveAttribute(
+			"title",
+			"Live steering requires agent-scoped backend support",
+		);
+		await userEvent.type(composer, "Queue from the keyboard.");
+		await userEvent.keyboard("{Meta>}{Enter}{/Meta}");
 		await expect(activeRunSend).toHaveBeenNthCalledWith(
 			3,
-			"Adjust the current direction.",
+			"Queue from the keyboard.",
 			undefined,
 			[],
-			"steer",
+			"queue",
+		);
+
+		await userEvent.click(
+			canvas.getByRole("button", { name: "Stop current run" }),
+		);
+		await expect(activeRunStop).toHaveBeenCalledWith(
+			"message-dm-user",
+			"agent-hermes",
 		);
 	},
 };
