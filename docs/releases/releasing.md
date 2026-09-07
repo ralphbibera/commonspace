@@ -66,7 +66,7 @@ The `commonspace` npm name has prior unpublished registry history, so do not ass
 
 After the package exists, configure npm trusted publishing for this repository, `release.yml`, and the `npm-release` GitHub environment; then disable token-based package publication. Create the repository variable `NPM_RELEASE_ENABLED=true` only after those controls are live. Non-dry runs fail closed while the variable is absent.
 
-Create the exact version tag on a reviewed `main` commit and push it, then start **Actions → Release → Run workflow**. Supply that existing tag. Leave `dry_run` enabled first.
+Create the exact version tag on a reviewed `main` commit and push it, then create and publish a GitHub Release for that tag. The `published` release event starts the Release workflow automatically. The workflow also supports manual dispatch for dry-run and recovery; leave `dry_run` enabled first for that path.
 
 The workflow:
 
@@ -75,7 +75,9 @@ The workflow:
 3. Builds one npm tarball and installs it into a clean prefix for runtime smoke testing.
 4. Previews `npm publish` during a dry run.
 5. After an approved non-dry run, rechecks the remote tag commit and publishes with npm provenance.
-6. Creates a GitHub Release containing generated notes and no duplicate package asset.
+6. For a published GitHub Release, leaves the existing release in place; for manual dispatch, creates the GitHub Release after publishing.
+
+The first `commonspace` package version needs a one-time maintainer-authenticated bootstrap because npm trusted-publisher configuration requires the package to exist. Publish the verified `0.0.1` tarball once with npm 2FA, then configure the GitHub Actions trusted publisher. If the published GitHub Release event sees that exact version already present, the workflow skips a duplicate npm publish and completes the GitHub-side release automation. Future versions use the published-release trigger end to end.
 
 The workflow does not run package creation on every pull request. Normal CI still builds the CLI, server, shared package, and UI through `pnpm build`; npm installation smoke belongs to the release boundary.
 

@@ -1,6 +1,8 @@
 name: Release
 
 on:
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       tag:
@@ -14,7 +16,7 @@ on:
         type: boolean
 
 concurrency:
-  group: release-${{ inputs.tag }}
+  group: release-${{ github.event.release.tag_name || inputs.tag }}
   cancel-in-progress: false
 
 permissions:
@@ -32,9 +34,10 @@ jobs:
       prerelease: ${{ steps.version.outputs.prerelease }}
       sha: ${{ steps.version.outputs.sha }}
     env:
-      RELEASE_TAG: ${{ inputs.tag }}
+      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
     steps:
       - name: Require workflow dispatch from main
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         env:
           WORKFLOW_REF: ${{ github.ref }}
         run: |
@@ -44,7 +47,7 @@ jobs:
           fi
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: refs/tags/${{ env.RELEASE_TAG }}
+          ref: refs/tags/${{ github.event.release.tag_name || inputs.tag }}
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -60,7 +63,7 @@ jobs:
           fi
           printf 'sha=%s\n' "$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - name: Require publication to be explicitly enabled
-        if: ${{ ! inputs.dry_run }}
+        if: ${{ github.event_name == 'release' || ! inputs.dry_run }}
         env:
           NPM_RELEASE_ENABLED: ${{ vars.NPM_RELEASE_ENABLED }}
         run: |
@@ -89,7 +92,7 @@ jobs:
       - run: pnpm package:npm
       - run: pnpm verify:npm-package
       - name: Preview npm publish
-        if: inputs.dry_run
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
         run: npm publish artifacts/npm/*.tgz --dry-run
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
@@ -99,7 +102,7 @@ jobs:
           retention-days: 1
 
   publish:
-    if: ${{ ! inputs.dry_run && github.repository == 'ralphbibera/commonspace' }}
+    if: ${{ github.repository == 'ralphbibera/commonspace' && (github.event_name == 'release' || ! inputs.dry_run) }}
     needs: [resolve, verify]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -108,7 +111,7 @@ jobs:
       contents: write
       id-token: write
     env:
-      RELEASE_TAG: ${{ inputs.tag }}
+      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
       RELEASE_PRERELEASE: ${{ needs.resolve.outputs.prerelease }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -117,8 +120,10 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 22
+          node-version: 24
           registry-url: https://registry.npmjs.org
+      - name: Install trusted-publishing npm CLI
+        run: npm install --global npm@11.5.1
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: commonspace-npm-package
@@ -139,8 +144,31 @@ jobs:
           if [[ "$RELEASE_PRERELEASE" == "true" ]]; then
             dist_tag=next
           fi
+          package_name="$(node -p "require('./cli/package.json').name")"
+          package_version="${RELEASE_TAG#v}"
+          registry_error="$(mktemp)"
+          trap 'rm -f "$registry_error"' EXIT
+          set +e
+          existing_version="$(npm view "${package_name}@${package_version}" version --json 2>"$registry_error")"
+          view_status=$?
+          set -e
+          existing_version="${existing_version//\"/}"
+          if [[ "$view_status" -eq 0 ]]; then
+            if [[ "$existing_version" == "$package_version" ]]; then
+              echo "${package_name}@${package_version} is already published; skipping duplicate publish."
+              exit 0
+            fi
+            echo "::error::Registry returned unexpected version ${existing_version} for ${package_name}@${package_version}."
+            exit 1
+          fi
+          if ! grep -Eq 'E404|404' "$registry_error"; then
+            echo "::error::Unable to check ${package_name}@${package_version} before publishing."
+            cat "$registry_error"
+            exit 1
+          fi
           npm publish artifacts/npm/*.tgz --access public --provenance --tag "$dist_tag"
-      - name: Create GitHub release
+      - name: Create GitHub release for manual dispatch
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
