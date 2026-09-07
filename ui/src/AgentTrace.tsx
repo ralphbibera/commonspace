@@ -214,9 +214,12 @@ export function AgentTraceTimeline({
 }: {
 	entries: readonly CommonspaceTraceEntry[];
 }) {
+	const newestFirst = entries.toSorted((left, right) =>
+		right.updatedAt.localeCompare(left.updatedAt),
+	);
 	return (
 		<ol className="grid">
-			{entries.map((entry) => (
+			{newestFirst.map((entry) => (
 				<TraceEntry key={`${entry.type}-${entry.id}`} entry={entry} />
 			))}
 		</ol>
