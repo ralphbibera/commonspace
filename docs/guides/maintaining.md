@@ -40,7 +40,7 @@ Keep these repository controls enabled:
 - use GitHub-hosted runners only for untrusted pull request code;
 - keep secret scanning, push protection, Dependabot alerts, and Dependabot security updates enabled.
 
-The `npm-release` environment requires owner approval and accepts deployments only from `main`. The release workflow also rejects dispatches from another ref, rechecks its tag before publication, and cannot publish while `NPM_RELEASE_ENABLED` is absent. Add that variable only after npm package ownership and trusted publishing are configured.
+The `npm-release` environment requires owner approval and accepts deployments from `main` and `v*` tags. Release events run against their tag; manual dispatch must run from `main`. The workflow verifies that the tagged commit belongs to `main`, rechecks its tag before publication, and cannot publish while `NPM_RELEASE_ENABLED` is absent. Add that variable only after npm package ownership and trusted publishing are configured.
 
 ## Configure GitHub
 
