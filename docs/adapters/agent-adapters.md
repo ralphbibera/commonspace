@@ -50,7 +50,7 @@ Open an added Agent's settings to browse and refresh inventory. This is user/pro
 
 | Harness | Inventory sources |
 | --- | --- |
-| Hermes | Native MCP servers, skills, plugin capabilities, and memory status commands, with the selected profile passed to every command; tool listing is unavailable because it executes plugin hooks |
+| Hermes | Inventory unavailable: native commands can initialize files or execute plugin/provider hooks, so read-only browsing does not invoke them |
 | Codex | Native MCP/plugin JSON listings and user skill folders, including system skill markers |
 | Claude Code | Native plugin/agent listings, user skill folders, and global MCP configuration names without running MCP health checks |
 | Gemini CLI | User MCP settings and skill/extension folders with native marker files; no CLI initialization or MCP connections |

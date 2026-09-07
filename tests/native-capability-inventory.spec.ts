@@ -49,7 +49,7 @@ describe("native capability inventory", () => {
 		]);
 	});
 
-	it("uses the selected Hermes profile for every native probe", async () => {
+	it("does not execute Hermes inventory commands during read-only browsing", async () => {
 		const root = await mkdtemp(join(tmpdir(), "commonspace-capabilities-"));
 		roots.push(root);
 		const executable = join(root, "hermes");
@@ -70,17 +70,11 @@ describe("native capability inventory", () => {
 		});
 		expect(groups).toHaveLength(6);
 		expect(groups.filter((group) => group.status === "available")).toHaveLength(
-			4,
+			0,
 		);
-		const calls = (await readFile(log, "utf8")).trim().split("\n");
-		expect(calls.sort()).toEqual(
-			[
-				"-p reviewer mcp list",
-				"-p reviewer skills list",
-				"-p reviewer memory status",
-				"-p reviewer plugins capabilities",
-			].sort(),
-		);
+		await expect(readFile(log, "utf8")).rejects.toMatchObject({
+			code: "ENOENT",
+		});
 	});
 
 	it("isolates failed categories and never exposes raw Codex configuration", async () => {

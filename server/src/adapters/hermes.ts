@@ -2,11 +2,7 @@ import {
 	parseHermesProfileDescription,
 	parseHermesProfileList,
 } from "../relay.js";
-import {
-	inspectCommandCapabilities,
-	parseTerminalInventory,
-	unavailableGroup,
-} from "./capability-inventory.js";
+import { unavailableGroup } from "./capability-inventory.js";
 import { readHarnessCommand } from "./discovery.js";
 import type { AgentAdapterConfig, NativeAgentAdapter } from "./types.js";
 
@@ -18,55 +14,15 @@ export function createHermesAdapter(
 	const args = [...(config.hermesAcpArgs ?? [])];
 	return {
 		privatePaths: [cliPath, command, ...args],
-		inspectCapabilities(agent) {
-			const profileArgs = agent.id === "hermes" ? [] : ["-p", agent.id];
-			const probe = (
-				id: "mcp" | "skills" | "plugins" | "memory",
-				args: readonly string[],
-				notice: string,
-			) => ({
-				id,
-				args: [...profileArgs, ...args],
-				source: `hermes ${args.join(" ")}`,
-				notice,
-				parse: parseTerminalInventory,
-			});
-			return inspectCommandCapabilities(
-				cliPath,
-				[
-					probe(
-						"mcp",
-						["mcp", "list"],
-						"MCP server names and native enabled state for this Hermes profile.",
-					),
-					probe(
-						"skills",
-						["skills", "list"],
-						"Installed skill names and native state for this Hermes profile.",
-					),
-					probe(
-						"memory",
-						["memory", "status"],
-						"Memory provider status only; memory contents and host paths remain private.",
-					),
-					probe(
-						"plugins",
-						["plugins", "capabilities"],
-						"Plugin capability names reported by Hermes for this profile.",
-					),
-				],
-				[
-					unavailableGroup(
-						"tools",
-						"Hermes profile configuration",
-						"Tool listing can execute native plugin hooks; unavailable during read-only inspection.",
-					),
-					unavailableGroup(
-						"agents",
-						"Hermes profile configuration",
-						"Hermes profiles do not expose a nested agent inventory.",
-					),
-				],
+		async inspectCapabilities() {
+			return (
+				["tools", "mcp", "skills", "plugins", "memory", "agents"] as const
+			).map((id) =>
+				unavailableGroup(
+					id,
+					"Hermes native configuration",
+					"Native inventory commands can initialize files or execute provider hooks. Read-only inspection is unavailable; native configuration and memory remain untouched.",
+				),
 			);
 		},
 		async discover() {
