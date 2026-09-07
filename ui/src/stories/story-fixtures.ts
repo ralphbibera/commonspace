@@ -636,6 +636,7 @@ export function createStoryStore(
 		loading?: boolean;
 		error?: string | null;
 		notificationVerification?: CommonspaceNotificationVerification;
+		pendingSubmissions?: CommonspaceClientSnapshot["pendingSubmissions"];
 		send?: CommonspaceStore["send"];
 		inspectAgentCapabilities?: CommonspaceStore["inspectAgentCapabilities"];
 	} = {},
@@ -643,6 +644,7 @@ export function createStoryStore(
 	const snapshot: CommonspaceClientSnapshot = {
 		bootstrap,
 		loading: options.loading ?? false,
+		pendingSubmissions: options.pendingSubmissions ?? [],
 		sending: false,
 		error: options.error ?? null,
 		activeConversation: options.activeConversation ?? null,

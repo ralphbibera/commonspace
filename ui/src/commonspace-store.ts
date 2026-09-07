@@ -38,11 +38,37 @@ import type { WorkspaceArchiveSource } from "./workspace-import.ts";
 export interface CommonspaceClientSnapshot {
 	bootstrap: CommonspaceBootstrap | null;
 	loading: boolean;
+	pendingSubmissions: CommonspacePendingSubmission[];
 	sending: boolean;
 	error: string | null;
 	activeConversation: ConversationRef | null;
 	activeProjectId: string | null;
 	activeThreadId: string | null;
+}
+
+export interface CommonspacePendingSubmission {
+	id: string;
+	conversation: ConversationRef;
+	threadId?: string;
+	targetAgentId?: string;
+	text: string;
+	attachments: SendImageAttachment[];
+	files: SendFileAttachment[];
+	delivery?: SendMessageRequest["delivery"];
+	projectIds?: string[];
+	createdAt: string;
+	status: "admitting" | "failed";
+	error?: string;
+}
+
+export class CommonspaceSubmissionError extends Error {
+	readonly submissionId: string;
+
+	constructor(message: string, submissionId: string, cause: unknown) {
+		super(message, { cause });
+		this.name = "CommonspaceSubmissionError";
+		this.submissionId = submissionId;
+	}
 }
 
 type Listener = () => void;
@@ -312,6 +338,7 @@ export class CommonspaceClientStore {
 	private snapshot: CommonspaceClientSnapshot = {
 		bootstrap: null,
 		loading: false,
+		pendingSubmissions: [],
 		sending: false,
 		error: null,
 		activeConversation: null,
@@ -319,6 +346,7 @@ export class CommonspaceClientStore {
 		activeThreadId: null,
 	};
 	private readonly listeners = new Set<Listener>();
+	private submissionRequest = 0;
 	private refreshPromise: Promise<void> | null = null;
 	private discoveryRequest = 0;
 	private pendingRevision = -1;
@@ -621,6 +649,21 @@ export class CommonspaceClientStore {
 			projectIds,
 			files,
 		);
+	}
+
+	dismissPendingSubmission(submissionId: string): void {
+		const pendingSubmissions = this.snapshot.pendingSubmissions.filter(
+			(submission) => submission.id !== submissionId,
+		);
+		if (pendingSubmissions.length === this.snapshot.pendingSubmissions.length)
+			return;
+		this.set({
+			...this.snapshot,
+			pendingSubmissions,
+			sending: pendingSubmissions.some(
+				(submission) => submission.status === "admitting",
+			),
+		});
 	}
 
 	async rerouteAssignment(request: RerouteAssignmentRequest): Promise<void> {
@@ -971,7 +1014,7 @@ export class CommonspaceClientStore {
 		files: readonly SendFileAttachment[] = [],
 	): Promise<void> {
 		const conversation = this.snapshot.activeConversation;
-		if (conversation === null || this.snapshot.sending) return;
+		if (conversation === null) return;
 		const request: SendMessageRequest = {
 			conversation,
 			text,
@@ -982,12 +1025,33 @@ export class CommonspaceClientStore {
 		if (attachments.length > 0) request.attachments = [...attachments];
 		if (files.length > 0) request.files = [...files];
 		if (delivery !== undefined) request.delivery = delivery;
-		this.set({ ...this.snapshot, sending: true, error: null });
+		const submission: CommonspacePendingSubmission = {
+			id: `submission-${String(++this.submissionRequest)}`,
+			conversation,
+			text,
+			attachments: [...attachments],
+			files: [...files],
+			createdAt: new Date().toISOString(),
+			status: "admitting",
+		};
+		if (threadId !== undefined) submission.threadId = threadId;
+		if (targetAgentId !== undefined) submission.targetAgentId = targetAgentId;
+		if (delivery !== undefined) submission.delivery = delivery;
+		if (projectIds !== undefined) submission.projectIds = [...projectIds];
+		this.set({
+			...this.snapshot,
+			pendingSubmissions: [...this.snapshot.pendingSubmissions, submission],
+			sending: true,
+			error: null,
+		});
 		try {
 			const result = await requestJson<SendMessageResponse>("/api/send", {
 				method: "POST",
 				body: JSON.stringify(request),
 			});
+			const pendingSubmissions = this.snapshot.pendingSubmissions.filter(
+				(candidate) => candidate.id !== submission.id,
+			);
 			const bootstrap = this.snapshot.bootstrap;
 			if (bootstrap !== null) {
 				const merged = this.mergeBootstrap({
@@ -996,22 +1060,45 @@ export class CommonspaceClientStore {
 				});
 				this.set({
 					...this.snapshot,
-					sending: false,
+					pendingSubmissions,
+					sending: pendingSubmissions.some(
+						(candidate) => candidate.status === "admitting",
+					),
 					bootstrap: merged,
 					activeProjectId: this.resolveActiveProject(merged),
-					activeThreadId: result.thread?.id ?? this.snapshot.activeThreadId,
+					activeThreadId:
+						this.snapshot.activeConversation?.kind === conversation.kind &&
+						this.snapshot.activeConversation.id === conversation.id
+							? (result.thread?.id ?? this.snapshot.activeThreadId)
+							: this.snapshot.activeThreadId,
 				});
 			} else {
 				await this.refresh();
-				this.set({ ...this.snapshot, sending: false });
+				this.set({
+					...this.snapshot,
+					pendingSubmissions,
+					sending: pendingSubmissions.some(
+						(candidate) => candidate.status === "admitting",
+					),
+				});
 			}
 		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			const pendingSubmissions = this.snapshot.pendingSubmissions.map(
+				(candidate): CommonspacePendingSubmission =>
+					candidate.id === submission.id
+						? { ...candidate, status: "failed", error: message }
+						: candidate,
+			);
 			this.set({
 				...this.snapshot,
-				sending: false,
-				error: error instanceof Error ? error.message : String(error),
+				pendingSubmissions,
+				sending: pendingSubmissions.some(
+					(candidate) => candidate.status === "admitting",
+				),
+				error: message,
 			});
-			throw error;
+			throw new CommonspaceSubmissionError(message, submission.id, error);
 		}
 	}
 

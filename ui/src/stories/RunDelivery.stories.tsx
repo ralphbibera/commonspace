@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, fn, userEvent, within } from "storybook/test";
 import {
+	PendingAdmissions,
 	QueuedFollowups,
 	RunDeliveryControls,
 } from "../design-system/RunDelivery";
@@ -70,7 +71,7 @@ export const StopAndSend: Story = {
 export const DeliveryActions: Story = {
 	render: () => (
 		<div className="flex">
-			<RunDeliveryControls disabled={false} />
+			<RunDeliveryControls disabled={false} onStop={fn()} />
 		</div>
 	),
 };
@@ -102,5 +103,48 @@ export const QueueActions: Story = {
 			first.getByRole("button", { name: "Remove queued follow-up" }),
 		);
 		await expect(args.onRemove).toHaveBeenCalledWith("followup-responsive");
+	},
+};
+
+const restoreAdmission = fn();
+const dismissAdmission = fn();
+
+export const OptimisticAdmissions: Story = {
+	render: () => (
+		<PendingAdmissions
+			items={[
+				{
+					id: "admitting-message",
+					text: "Check the focused message flow next.",
+					status: "admitting",
+					delivery: "queue",
+				},
+				{
+					id: "failed-message",
+					text: "Preserve this draft and its attachment.",
+					status: "failed",
+					delivery: "steer",
+					error: "Connection closed before admission",
+					attachmentCount: 1,
+				},
+			]}
+			onRestore={restoreAdmission}
+			onDismiss={dismissAdmission}
+		/>
+	),
+	play: async ({ canvasElement }) => {
+		restoreAdmission.mockClear();
+		dismissAdmission.mockClear();
+		const canvas = within(canvasElement);
+		await expect(canvas.getByText("Admitting · Queued")).toBeVisible();
+		await expect(canvas.getByRole("alert")).toHaveTextContent(
+			"Send failed · Connection closed before admission",
+		);
+		await userEvent.click(canvas.getByRole("button", { name: "Restore" }));
+		await expect(restoreAdmission).toHaveBeenCalledWith("failed-message");
+		await userEvent.click(
+			canvas.getByRole("button", { name: "Dismiss failed message" }),
+		);
+		await expect(dismissAdmission).toHaveBeenCalledWith("failed-message");
 	},
 };

@@ -37,6 +37,8 @@ import {
 } from "react";
 import { Button } from "@/components/ui/button";
 import {
+	type PendingAdmissionItem,
+	PendingAdmissions,
 	QueuedFollowups,
 	RunDeliveryControls,
 } from "@/design-system/RunDelivery";
@@ -48,7 +50,11 @@ import {
 	AgentSettingsPane,
 	ChannelSettingsPane,
 } from "./CommonspaceContextSettings.tsx";
-import type { CommonspaceStore } from "./commonspace-store.ts";
+import {
+	type CommonspacePendingSubmission,
+	CommonspaceSubmissionError,
+	type CommonspaceStore,
+} from "./commonspace-store.ts";
 import { AgentAvatar } from "./design-system/AgentAvatar.tsx";
 import { MessageActionMenu } from "./design-system/MessageActionMenu.tsx";
 import { ResizablePanelHandle } from "./design-system/ResizablePanelHandle.tsx";
@@ -83,6 +89,61 @@ const messageMarkdownFallback = (
 		Formatting message…
 	</p>
 );
+
+function restoreText(current: string, restored: string): string {
+	if (restored === "" || current === restored) return current;
+	return current === "" ? restored : `${restored}\n\n${current}`;
+}
+
+function restoreImages(
+	current: SendImageAttachment[],
+	restored: SendImageAttachment[],
+): SendImageAttachment[] {
+	return [
+		...restored,
+		...current.filter(
+			(candidate) =>
+				!restored.some(
+					(item) =>
+						item.name === candidate.name &&
+						item.mimeType === candidate.mimeType &&
+						item.data === candidate.data,
+				),
+		),
+	];
+}
+
+function restoreFiles(
+	current: SendFileAttachment[],
+	restored: SendFileAttachment[],
+): SendFileAttachment[] {
+	return [
+		...restored,
+		...current.filter(
+			(candidate) =>
+				!restored.some(
+					(item) =>
+						item.name === candidate.name &&
+						item.mimeType === candidate.mimeType &&
+						item.data === candidate.data,
+				),
+		),
+	];
+}
+
+function pendingAdmissionItem(
+	submission: CommonspacePendingSubmission,
+): PendingAdmissionItem {
+	const item: PendingAdmissionItem = {
+		id: submission.id,
+		text: submission.text,
+		status: submission.status,
+		attachmentCount: submission.attachments.length + submission.files.length,
+	};
+	if (submission.error !== undefined) item.error = submission.error;
+	if (submission.delivery !== undefined) item.delivery = submission.delivery;
+	return item;
+}
 
 const messageActionButtonClassName =
 	"grid size-7 place-items-center rounded-sm border-0 bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40";
@@ -1073,6 +1134,7 @@ export function CommonspaceConversation({
 	const [selectedThreadSuggestion, setSelectedThreadSuggestion] = useState(0);
 	const [commandFeedback, setCommandFeedback] =
 		useState<CommandFeedback | null>(null);
+	const [stoppingScope, setStoppingScope] = useState(false);
 	const [focusedMessageId, setFocusedMessageId] = useState<string | null>(
 		targetMessageId,
 	);
@@ -1093,10 +1155,24 @@ export function CommonspaceConversation({
 	const threadMessages = useRef<HTMLDivElement>(null);
 	const composer = useRef<HTMLTextAreaElement>(null);
 	const threadComposer = useRef<HTMLTextAreaElement>(null);
+	const rootInputOccupied = useRef(false);
+	const threadInputOccupied = useRef(false);
+	rootInputOccupied.current =
+		draft !== "" || pendingImages.length > 0 || pendingFiles.length > 0;
+	threadInputOccupied.current =
+		threadDraft !== "" ||
+		pendingThreadImages.length > 0 ||
+		pendingThreadFiles.length > 0;
 	const handledComposerInsertToken = useRef<number | null>(null);
 	const suppressThreadAutoScroll = useRef(false);
 	const bootstrap = snapshot.bootstrap;
 	const messages = store.messages();
+	const conversationPendingSubmissions = snapshot.pendingSubmissions.filter(
+		(submission) =>
+			snapshot.activeConversation !== null &&
+			submission.conversation.kind === snapshot.activeConversation.kind &&
+			submission.conversation.id === snapshot.activeConversation.id,
+	);
 	const unreadMessageIds = new Set(
 		bootstrap === null
 			? []
@@ -1238,6 +1314,9 @@ export function CommonspaceConversation({
 						item.conversation.id === snapshot.activeConversation?.id,
 				)
 			: [];
+	const rootPendingSubmissions = conversationPendingSubmissions.filter(
+		(submission) => submission.threadId === undefined,
+	);
 	const directMessagePermissions =
 		snapshot.activeConversation?.kind === "dm"
 			? (bootstrap?.state.permissions ?? []).filter(
@@ -1275,6 +1354,12 @@ export function CommonspaceConversation({
 			? []
 			: (bootstrap?.queuedFollowups ?? []).filter(
 					(item) => item.threadId === activeThread.id,
+				);
+	const activeThreadPendingSubmissions =
+		activeThread === undefined
+			? []
+			: conversationPendingSubmissions.filter(
+					(submission) => submission.threadId === activeThread.id,
 				);
 	const activeThreadPermissions =
 		activeThread === undefined
@@ -1756,6 +1841,70 @@ export function CommonspaceConversation({
 		}
 	};
 
+	const stopActivities = async (activities: CommonspaceLiveAgentActivity[]) => {
+		if (activities.length === 0 || stoppingScope) return;
+		setStoppingScope(true);
+		try {
+			const stopped = new Set<string>();
+			for (const activity of activities) {
+				for (const agentId of await store.stopAgentRuns(
+					activity.sourceMessageId,
+					activity.agentId,
+				))
+					stopped.add(agentId);
+			}
+			setCommandFeedback({
+				tone: stopped.size === 0 ? "info" : "success",
+				title: stopped.size === 0 ? "Nothing to stop" : "Run stopped",
+				body:
+					stopped.size === 0
+						? "The active run has already finished."
+						: "Queued follow-ups are preserved and will run next.",
+			});
+		} catch (error) {
+			setCommandFeedback({
+				tone: "error",
+				title: "Could not stop the run",
+				body: error instanceof Error ? error.message : String(error),
+			});
+		} finally {
+			setStoppingScope(false);
+		}
+	};
+
+	const restorePendingSubmission = (
+		submission: CommonspacePendingSubmission,
+	) => {
+		const thread = submission.threadId !== undefined;
+		if (thread) {
+			setThreadDraft((current) => restoreText(current, submission.text));
+			setPendingThreadImages((current) =>
+				restoreImages(current, submission.attachments),
+			);
+			setPendingThreadFiles((current) =>
+				restoreFiles(current, submission.files),
+			);
+			if (submission.targetAgentId !== undefined) {
+				const agent = bootstrap?.agents.find(
+					(candidate) => candidate.id === submission.targetAgentId,
+				);
+				setThreadReplyTarget({
+					agentId: submission.targetAgentId,
+					agentName: agent?.displayName ?? submission.targetAgentId,
+				});
+			}
+			threadComposer.current?.focus();
+		} else {
+			setDraft((current) => restoreText(current, submission.text));
+			setPendingImages((current) =>
+				restoreImages(current, submission.attachments),
+			);
+			setPendingFiles((current) => restoreFiles(current, submission.files));
+			composer.current?.focus();
+		}
+		store.dismissPendingSubmission(submission.id);
+	};
+
 	const sendRoot = async (event: FormEvent<HTMLFormElement>) => {
 		event.preventDefault();
 		const text = draft.trim();
@@ -1790,10 +1939,14 @@ export function CommonspaceConversation({
 			else if (attachments.length > 0)
 				await store.send(text, undefined, attachments);
 			else await store.send(text);
-		} catch {
-			setDraft(text);
-			setPendingImages(attachments);
-			setPendingFiles(files);
+		} catch (error) {
+			if (!rootInputOccupied.current) {
+				setDraft(text);
+				setPendingImages(attachments);
+				setPendingFiles(files);
+				if (error instanceof CommonspaceSubmissionError)
+					store.dismissPendingSubmission(error.submissionId);
+			}
 		}
 	};
 
@@ -1856,10 +2009,14 @@ export function CommonspaceConversation({
 					);
 			}
 			setThreadReplyTarget(null);
-		} catch {
-			setThreadDraft(text);
-			setPendingThreadImages(attachments);
-			setPendingThreadFiles(files);
+		} catch (error) {
+			if (!threadInputOccupied.current) {
+				setThreadDraft(text);
+				setPendingThreadImages(attachments);
+				setPendingThreadFiles(files);
+				if (error instanceof CommonspaceSubmissionError)
+					store.dismissPendingSubmission(error.submissionId);
+			}
 		}
 	};
 
@@ -2279,6 +2436,20 @@ export function CommonspaceConversation({
 							<div ref={bottom} />
 						</div>
 
+						<PendingAdmissions
+							items={rootPendingSubmissions.map(pendingAdmissionItem)}
+							className="mx-auto mb-2 w-[min(920px,calc(100%-48px))]"
+							onRestore={(submissionId) => {
+								const submission = rootPendingSubmissions.find(
+									(candidate) => candidate.id === submissionId,
+								);
+								if (submission !== undefined)
+									restorePendingSubmission(submission);
+							}}
+							onDismiss={(submissionId) => {
+								store.dismissPendingSubmission(submissionId);
+							}}
+						/>
 						<QueuedFollowups
 							followups={directMessageFollowups}
 							className="mx-auto mb-2 w-[min(920px,calc(100%-48px))]"
@@ -2372,7 +2543,6 @@ export function CommonspaceConversation({
 											: `Message ${heading.title}`
 									}
 									value={draft}
-									disabled={snapshot.sending}
 									onChange={(event) => {
 										setDraft(event.target.value);
 										setSelectedSuggestion(0);
@@ -2428,7 +2598,16 @@ export function CommonspaceConversation({
 												if (suggestion !== undefined)
 													selectSuggestion(suggestion);
 											} else {
-												event.currentTarget.form?.requestSubmit();
+												const form = event.currentTarget.form;
+												const steer =
+													directMessageActivities.length > 0 &&
+													!isChannel &&
+													(event.metaKey || event.ctrlKey)
+														? form?.querySelector<HTMLButtonElement>(
+																'button[name="delivery"][value="steer"]',
+															)
+														: undefined;
+												form?.requestSubmit(steer);
 											}
 										}
 									}}
@@ -2464,11 +2643,14 @@ export function CommonspaceConversation({
 								{directMessageActivities.length > 0 && !isChannel && (
 									<RunDeliveryControls
 										disabled={
-											snapshot.sending ||
-											(draft.trim() === "" &&
-												pendingImages.length === 0 &&
-												pendingFiles.length === 0)
+											draft.trim() === "" &&
+											pendingImages.length === 0 &&
+											pendingFiles.length === 0
 										}
+										stopping={stoppingScope}
+										onStop={() => {
+											void stopActivities(directMessageActivities);
+										}}
 									/>
 								)}
 								<label className="relative inline-flex min-h-9 items-center rounded-sm border px-2 text-xs font-semibold">
@@ -2512,10 +2694,9 @@ export function CommonspaceConversation({
 										}
 										className="inline-flex min-h-9 min-w-[72px] items-center justify-center rounded-sm border-0 bg-primary px-3 text-sm font-semibold text-primary-foreground disabled:opacity-45"
 										disabled={
-											snapshot.sending ||
-											(draft.trim() === "" &&
-												pendingImages.length === 0 &&
-												pendingFiles.length === 0)
+											draft.trim() === "" &&
+											pendingImages.length === 0 &&
+											pendingFiles.length === 0
 										}
 									>
 										<span className="sr-only" aria-hidden="true">
@@ -2818,6 +2999,21 @@ export function CommonspaceConversation({
 									}
 								/>
 							</div>
+							<PendingAdmissions
+								items={activeThreadPendingSubmissions.map(pendingAdmissionItem)}
+								thread
+								className="mx-3 mb-2"
+								onRestore={(submissionId) => {
+									const submission = activeThreadPendingSubmissions.find(
+										(candidate) => candidate.id === submissionId,
+									);
+									if (submission !== undefined)
+										restorePendingSubmission(submission);
+								}}
+								onDismiss={(submissionId) => {
+									store.dismissPendingSubmission(submissionId);
+								}}
+							/>
 							<QueuedFollowups
 								followups={activeThreadFollowups}
 								thread
@@ -2870,7 +3066,6 @@ export function CommonspaceConversation({
 										className="block min-h-11 max-h-40 w-full resize-none border-0 bg-transparent px-1 py-1 text-sm leading-6 outline-none"
 										placeholder="Reply in thread, tag context, or type /"
 										value={threadDraft}
-										disabled={snapshot.sending}
 										onChange={(event) => {
 											setThreadDraft(event.target.value);
 											setSelectedThreadSuggestion(0);
@@ -2932,7 +3127,16 @@ export function CommonspaceConversation({
 													if (suggestion !== undefined)
 														selectThreadSuggestion(suggestion);
 												} else {
-													event.currentTarget.form?.requestSubmit();
+													const form = event.currentTarget.form;
+													const steer =
+														activeThreadActivities.length > 0 &&
+														threadReplyTarget === null &&
+														(event.metaKey || event.ctrlKey)
+															? form?.querySelector<HTMLButtonElement>(
+																	'button[name="delivery"][value="steer"]',
+																)
+															: undefined;
+													form?.requestSubmit(steer);
 												}
 											}
 										}}
@@ -2970,11 +3174,14 @@ export function CommonspaceConversation({
 											<RunDeliveryControls
 												thread
 												disabled={
-													snapshot.sending ||
-													(threadDraft.trim() === "" &&
-														pendingThreadImages.length === 0 &&
-														pendingThreadFiles.length === 0)
+													threadDraft.trim() === "" &&
+													pendingThreadImages.length === 0 &&
+													pendingThreadFiles.length === 0
 												}
+												stopping={stoppingScope}
+												onStop={() => {
+													void stopActivities(activeThreadActivities);
+												}}
 											/>
 										)}
 									<label className="relative inline-flex min-h-9 w-fit items-center rounded-sm border px-2 text-xs font-semibold">
@@ -2998,10 +3205,9 @@ export function CommonspaceConversation({
 											className="min-h-9 justify-self-end rounded-sm border-0 bg-primary px-3 text-sm font-semibold text-primary-foreground disabled:opacity-45"
 											type="submit"
 											disabled={
-												snapshot.sending ||
-												(threadDraft.trim() === "" &&
-													pendingThreadImages.length === 0 &&
-													pendingThreadFiles.length === 0)
+												threadDraft.trim() === "" &&
+												pendingThreadImages.length === 0 &&
+												pendingThreadFiles.length === 0
 											}
 										>
 											{threadIsCommand ? "Run" : "Reply"}

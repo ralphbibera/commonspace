@@ -2,8 +2,10 @@ import type { CommonspaceQueuedFollowup } from "@commonspace/shared";
 import {
 	ArrowDownIcon,
 	ArrowUpIcon,
+	CircleStopIcon,
 	CornerUpRightIcon,
 	ListPlusIcon,
+	RotateCcwIcon,
 	SquareArrowUpIcon,
 	XIcon,
 } from "lucide-react";
@@ -27,12 +29,12 @@ const deliveryOptions = {
 	steer: {
 		label: "Steer",
 		status: "Steer",
-		description: "Interrupt with new guidance",
+		description: "Prioritize new guidance for the active run",
 		icon: CornerUpRightIcon,
 	},
 	"stop-and-send": {
-		label: "Stop and send",
-		status: "Stop and send",
+		label: "Interrupt and send",
+		status: "Interrupt",
 		description: "Stop the current run and send this next",
 		icon: SquareArrowUpIcon,
 	},
@@ -49,14 +51,17 @@ const deliveryOptions = {
 export function RunDeliveryControls({
 	disabled,
 	thread = false,
+	onStop,
+	stopping = false,
 }: {
 	disabled: boolean;
 	thread?: boolean;
+	onStop?: () => void;
+	stopping?: boolean;
 }) {
 	return (
 		<fieldset
 			aria-label={thread ? "Active thread run delivery" : "Active run delivery"}
-			disabled={disabled}
 			className="order-2 m-0 ml-auto flex shrink-0 items-center gap-0.5 rounded-md border-0 bg-muted p-0.5"
 		>
 			{(["queue", "steer", "stop-and-send"] as const).map((delivery) => {
@@ -64,7 +69,7 @@ export function RunDeliveryControls({
 				const Icon = option.icon;
 				const label =
 					thread && delivery === "stop-and-send"
-						? "Stop and send thread follow-up"
+						? "Interrupt and send thread follow-up"
 						: option.label;
 				return (
 					<Tooltip key={delivery}>
@@ -93,7 +98,142 @@ export function RunDeliveryControls({
 					</Tooltip>
 				);
 			})}
+			{onStop !== undefined && (
+				<Tooltip>
+					<TooltipTrigger
+						render={
+							<Button
+								type="button"
+								variant="ghost"
+								size="icon-xs"
+								className="size-8 text-destructive hover:text-destructive"
+								disabled={stopping}
+								onClick={onStop}
+							/>
+						}
+						aria-label={thread ? "Stop thread run" : "Stop current run"}
+					>
+						<CircleStopIcon aria-hidden="true" />
+					</TooltipTrigger>
+					<TooltipContent>
+						<strong>Stop</strong>
+						<br />
+						Stop the current run and keep queued follow-ups
+					</TooltipContent>
+				</Tooltip>
+			)}
 		</fieldset>
+	);
+}
+
+export interface PendingAdmissionItem {
+	id: string;
+	text: string;
+	status: "admitting" | "failed";
+	error?: string;
+	delivery?: CommonspaceQueuedFollowup["delivery"];
+	attachmentCount?: number;
+}
+
+function PendingAdmissionRow({
+	item,
+	onRestore,
+	onDismiss,
+}: {
+	item: PendingAdmissionItem;
+	onRestore: (id: string) => void;
+	onDismiss: (id: string) => void;
+}) {
+	const failed = item.status === "failed";
+	const delivery = item.delivery ?? "queue";
+	const attachmentCount = item.attachmentCount ?? 0;
+	const status = failed
+		? `Send failed${item.error === undefined ? "" : ` · ${item.error}`}`
+		: `Admitting · ${deliveryOptions[delivery].status}`;
+	return (
+		<li className="flex min-w-0 items-start gap-3 px-3 py-2">
+			<div className="min-w-0 flex-1">
+				<p className="line-clamp-2 whitespace-pre-wrap text-xs leading-5 [overflow-wrap:anywhere]">
+					{item.text || "Message with attachments"}
+				</p>
+				<p
+					className={cn(
+						"mt-0.5 text-[10px] text-muted-foreground",
+						failed && "text-destructive",
+					)}
+					role={failed ? "alert" : "status"}
+				>
+					{status}
+					{attachmentCount > 0
+						? ` · ${String(attachmentCount)} attachment${attachmentCount === 1 ? "" : "s"}`
+						: ""}
+				</p>
+			</div>
+			{failed && (
+				<div className="flex shrink-0 items-center gap-1">
+					<Button
+						size="xs"
+						variant="outline"
+						onClick={() => onRestore(item.id)}
+					>
+						<RotateCcwIcon data-icon="inline-start" aria-hidden="true" />
+						Restore
+					</Button>
+					<Button
+						size="icon-xs"
+						variant="ghost"
+						aria-label="Dismiss failed message"
+						onClick={() => onDismiss(item.id)}
+					>
+						<XIcon aria-hidden="true" />
+					</Button>
+				</div>
+			)}
+		</li>
+	);
+}
+
+export function PendingAdmissions({
+	items,
+	thread = false,
+	className,
+	onRestore,
+	onDismiss,
+}: {
+	items: PendingAdmissionItem[];
+	thread?: boolean;
+	className?: string;
+	onRestore: (id: string) => void;
+	onDismiss: (id: string) => void;
+}) {
+	if (items.length === 0) return null;
+	return (
+		<section
+			aria-label={thread ? "Pending thread messages" : "Pending messages"}
+			className={cn(
+				"min-w-0 overflow-hidden rounded-md border bg-background",
+				className,
+			)}
+		>
+			<header className="flex min-h-9 items-center gap-2 border-b bg-muted/50 px-3">
+				<SquareArrowUpIcon
+					className="size-3.5 text-muted-foreground"
+					aria-hidden="true"
+				/>
+				<h2 className="text-xs font-medium">Sending</h2>
+				<Badge variant="outline">{items.length}</Badge>
+			</header>
+			<ul className="max-h-44 divide-y overflow-y-auto overscroll-contain">
+				{items.map((item) => (
+					<PendingAdmissionRow
+						key={item.id}
+						item={item}
+						onRestore={onRestore}
+						onDismiss={onDismiss}
+					/>
+				))}
+			</ul>
+		</section>
 	);
 }
 
