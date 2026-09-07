@@ -3253,11 +3253,12 @@ export function CommonspaceSidebar({
 										type="button"
 										{...sortableCollectionButtonProps("agent", agent.id)}
 										className={cn(
-											"relative grid min-h-8 w-full min-w-0 grid-cols-[20px_minmax(0,1fr)] items-center gap-2 rounded-l-sm border-0 bg-transparent px-2 text-left text-sidebar-foreground/80 aria-pressed:text-sidebar-foreground",
+											"relative grid min-h-10 w-full min-w-0 grid-cols-[20px_minmax(0,1fr)] items-center gap-2 rounded-l-sm border-0 bg-transparent px-2 text-left text-sidebar-foreground/80 aria-pressed:text-sidebar-foreground",
 											preferences.sortModes.agent === "custom" &&
 												"cursor-grab pr-6 active:cursor-grabbing",
 										)}
 										aria-label={`Message agent ${agent.displayName}`}
+										aria-describedby={`agent-${agent.id}-model`}
 										aria-pressed={
 											conversationActive &&
 											activeProjectViewId === null &&
@@ -3281,12 +3282,12 @@ export function CommonspaceSidebar({
 											<strong className="block truncate text-[13px] font-medium">
 												{agent.displayName}
 											</strong>
-											<small className="sr-only">
-												{runtimeLabel(agent.adapter)} ·{" "}
-												{agent.model ?? "default model"} ·{" "}
-												<span data-status={effectiveStatus}>
-													{agentStatusLabel(effectiveStatus)}
-												</span>
+											<small
+												id={`agent-${agent.id}-model`}
+												className="block truncate text-[11px] leading-4 text-sidebar-foreground/70"
+												title={agent.model ?? "Profile default"}
+											>
+												{agent.model ?? "Profile default"}
 											</small>
 										</span>
 										{preferences.sortModes.agent === "custom" && (

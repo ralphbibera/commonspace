@@ -116,6 +116,10 @@ const allCollectionSortingBootstrap = createStoryBootstrap({
 	},
 });
 
+const configuredModelBootstrap = createStoryBootstrap({
+	agents: [hermesAgent, { ...codexAgent, model: null }],
+});
+
 function channelNames(canvasElement: HTMLElement): string[] {
 	return within(canvasElement)
 		.getAllByRole("button", { name: /^Open channel /u })
@@ -161,6 +165,29 @@ async function prepareChannelSorting(canvasElement: HTMLElement) {
 }
 
 export const Expanded: Story = {};
+
+export const AgentModelsVisible: Story = {
+	args: {
+		...meta.args,
+		store: createStoryStore(configuredModelBootstrap),
+	},
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		const configuredAgent = canvas.getByRole("button", {
+			name: "Message agent Review Bot",
+		});
+		const defaultAgent = canvas.getByRole("button", {
+			name: "Message agent Build Smith",
+		});
+
+		await expect(
+			within(configuredAgent).getByText("gpt-5.6-sol"),
+		).toBeVisible();
+		await expect(
+			within(defaultAgent).getByText("Profile default"),
+		).toBeVisible();
+	},
+};
 
 export const ChannelsByRecentActivity: Story = {
 	args: {
