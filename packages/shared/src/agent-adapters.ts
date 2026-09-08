@@ -1,10 +1,10 @@
 /** Supported, built-in harnesses. Never populate this from user-supplied commands. */
 export const AGENT_ADAPTER_KINDS = [
 	"codex",
+	"hermes",
 	"claude-code",
 	"gemini",
 	"opencode",
-	"hermes",
 ] as const;
 
 export type AgentAdapterKind = (typeof AGENT_ADAPTER_KINDS)[number];
@@ -20,7 +20,7 @@ export const AGENT_ADAPTERS = {
 		label: "Hermes",
 		monogram: "H",
 		recovery:
-			"Run hermes --version, authenticate with Hermes, verify hermes acp starts, then retry from Commonspace.",
+			"Run hermes --version and hermes acp --check, authenticate with Hermes, then retry from Commonspace.",
 	},
 	"claude-code": {
 		label: "Claude Code",

@@ -639,6 +639,7 @@ export function createStoryStore(
 		pendingSubmissions?: CommonspaceClientSnapshot["pendingSubmissions"];
 		send?: CommonspaceStore["send"];
 		retryRouting?: CommonspaceStore["retryRouting"];
+		discoverAgents?: CommonspaceStore["discoverAgents"];
 		inspectAgentCapabilities?: CommonspaceStore["inspectAgentCapabilities"];
 	} = {},
 ): CommonspaceStore {
@@ -665,6 +666,8 @@ export function createStoryStore(
 				return options.send;
 			if (property === "retryRouting" && options.retryRouting !== undefined)
 				return options.retryRouting;
+			if (property === "discoverAgents" && options.discoverAgents !== undefined)
+				return options.discoverAgents;
 			if (
 				property === "inspectAgentCapabilities" &&
 				options.inspectAgentCapabilities !== undefined

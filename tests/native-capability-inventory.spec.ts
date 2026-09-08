@@ -49,7 +49,7 @@ describe("native capability inventory", () => {
 		]);
 	});
 
-	it("does not execute Hermes inventory commands during read-only browsing", async () => {
+	it("reports the Hermes ACP tool surface without executing inventory commands", async () => {
 		const root = await mkdtemp(join(tmpdir(), "commonspace-capabilities-"));
 		roots.push(root);
 		const executable = join(root, "hermes");
@@ -69,8 +69,19 @@ describe("native capability inventory", () => {
 			createdAt: "2026-01-01T00:00:00.000Z",
 		});
 		expect(groups).toHaveLength(6);
+		expect(groups.find((group) => group.id === "tools")).toMatchObject({
+			status: "available",
+			source: "Hermes ACP default surface",
+			items: expect.arrayContaining([
+				{ name: "read_file", status: "configured" },
+				{ name: "terminal", status: "configured" },
+				{ name: "browser_exec", status: "configured" },
+				{ name: "skills_list", status: "configured" },
+				{ name: "delegate_task", status: "configured" },
+			]),
+		});
 		expect(groups.filter((group) => group.status === "available")).toHaveLength(
-			0,
+			1,
 		);
 		await expect(readFile(log, "utf8")).rejects.toMatchObject({
 			code: "ENOENT",

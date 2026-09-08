@@ -14,7 +14,7 @@ An adapter connects an installed agent to the workspace. It discovers existing i
 | `gemini` | `gemini --version`, supported-version check | Installed `gemini --acp` | Installed Gemini CLI harness |
 | `opencode` | `opencode --version` | Installed `opencode acp` | Installed OpenCode harness |
 
-The initial general-purpose baseline is Codex, Claude Code, Gemini CLI, and OpenCode; Hermes remains supported. Pi coding agent is a follow-up: its adapter must pass the same scoped MCP and native-session checks before registration. See the [support matrix](../start/support.md#agent-runtimes) for version limits.
+The built-in general-purpose harnesses are Codex, Hermes, Claude Code, Gemini CLI, and OpenCode. Pi coding agent is a follow-up: its adapter must pass the same scoped MCP and native-session checks before registration. See the [support matrix](../start/support.md#agent-runtimes) for version limits.
 
 Discovery checks installation, not authentication or model access. Diagnostics report those separately as run readiness. Discovery is explicit: startup and bootstrap never launch a discovery command. The Add Agent flow sends both adapter and native ID, so matching IDs across harnesses cannot select a different runtime. Legacy ID-only requests are rejected when ambiguous. Existing roster IDs remain unique. The flow probes only the chosen harness; diagnostics and explicit addition without a cached candidate can probe the registered set.
 
@@ -50,7 +50,7 @@ Open an added Agent's settings to browse and refresh inventory. This is user/pro
 
 | Harness | Inventory sources |
 | --- | --- |
-| Hermes | Inventory unavailable: native commands can initialize files or execute plugin/provider hooks, so read-only browsing does not invoke them |
+| Hermes | The documented default `hermes-acp` tool surface; profile-specific MCP, skill, plugin, agent, and memory inventory remains unavailable because native inventory commands can initialize files or execute plugin/provider hooks |
 | Codex | Native MCP/plugin JSON listings and user skill folders, including system skill markers |
 | Claude Code | Native plugin/agent listings, user skill folders, and global MCP configuration names without running MCP health checks |
 | Gemini CLI | User MCP settings and skill/extension folders with native marker files; no CLI initialization or MCP connections |
@@ -78,6 +78,20 @@ Skill directory readers expose folder labels only when `SKILL.md` exists; they d
 - Expose only emitted activity, supported controls, and native permission options. Do not invent tools, models, reasoning levels, or approval choices.
 - Full access must be an explicit workspace choice or documented operator setting. Ordinary operation uses the adapter's native permission configuration. Permission requests block only their session. Changing effective access replaces cached processes while retaining native session references; either access change cancels that agent's active work and pending permissions. Queued work reads the current access policy before launch.
 - No shell interpolation, credential copies, global native configuration writes, or native-session paths in bootstrap, activity, errors, or portable archives.
+
+## Hermes setup
+
+Install and configure [Hermes Agent](https://hermes-agent.nousresearch.com/docs/quickstart), then verify its dedicated ACP host surface without starting a model turn:
+
+```bash
+hermes --version
+hermes acp --check
+hermes profile list
+```
+
+In Commonspace, choose **Add Agent → Hermes**, then add the discovered native profile. Commonspace discovers identities with `hermes profile list` and invokes the selected profile as `hermes [-p <profile>] acp`; it does not copy credentials or rewrite Hermes configuration. The optional executable overrides are `COMMONSPACE_HERMES_PATH` for discovery and `COMMONSPACE_HERMES_ACP_PATH` for launch.
+
+The Agent settings capability browser lists the documented default `hermes-acp` tool names as the supported integration surface. It deliberately does not run Hermes inventory commands: local dependencies, profile configuration, and session policy still determine whether a configured tool is available during a turn.
 
 ## Claude Code setup
 

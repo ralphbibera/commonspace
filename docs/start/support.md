@@ -38,9 +38,9 @@ Start with [Contributing](../../CONTRIBUTING.md) for a fresh checkout and [Devel
 | Claude Code | Installed CLI through bundled `@agentclientprotocol/claude-agent-acp` 0.75.0; account-free fixture verifies bundled CLI 2.1.257. |
 | Gemini CLI | Native `gemini --acp`; requires stable `>=0.39.1` and `<0.44.0`. Use tested version **0.43.0**. Later tested releases regress exact session resume and are rejected during discovery and launch. |
 | OpenCode | Native `opencode acp`; account-free fixture verifies **1.18.29**. |
-| Hermes | Installed `hermes acp`, using existing native profiles. |
+| Hermes | Installed `hermes acp`, using existing native profiles. Verify with `hermes acp --check`; Commonspace discovers profiles with `hermes profile list`. |
 
-Codex, Claude Code, Gemini CLI, and OpenCode form the initial baseline. Pi coding agent remains planned until its integration passes the same native-session and scoped MCP requirements. See the [adapter guide](../adapters/agent-adapters.md) for setup, compatibility evidence, and the format for adding another runtime.
+Codex, Hermes, Claude Code, Gemini CLI, and OpenCode are built-in harnesses. Pi coding agent remains planned until its integration passes the same native-session and scoped MCP requirements. See the [adapter guide](../adapters/agent-adapters.md#hermes-setup) for Hermes setup, compatibility evidence, and the format for adding another runtime.
 
 ## What the checks cover
 

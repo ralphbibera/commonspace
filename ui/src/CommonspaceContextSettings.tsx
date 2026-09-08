@@ -869,6 +869,8 @@ export function AgentSettingsPane({
 		"Unsaved changes stay local until verified.",
 	);
 	const [removeConfirmOpen, setRemoveConfirmOpen] = useState(false);
+	const agentAdapter = agent?.adapter;
+	const agentId = agent?.id;
 
 	useEffect(() => {
 		if (agent === undefined) return;
@@ -877,6 +879,11 @@ export function AgentSettingsPane({
 		setAccentColor(agent.accentColor ?? "#4a154b");
 		setFullAccess(agent.fullAccess === true);
 	}, [agent]);
+
+	useEffect(() => {
+		if (agentAdapter === undefined || agentId === undefined) return;
+		void store.discoverAgents(agentAdapter);
+	}, [agentAdapter, agentId, store]);
 
 	if (agent === undefined) return null;
 	const previewAgent: CommonspaceAgentProfile = {

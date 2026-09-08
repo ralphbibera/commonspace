@@ -69,6 +69,41 @@ export const AgentSettings: Story = {
 	},
 };
 
+function ConfiguredModelScenario() {
+	const staleBootstrap = {
+		...storyBootstrap,
+		agents: storyBootstrap.agents.map((agent) =>
+			agent.id === "agent-hermes" ? { ...agent, model: null } : agent,
+		),
+	};
+	const [bootstrap, setBootstrap] = useState(staleBootstrap);
+	const [store] = useState(() =>
+		createStoryStore(staleBootstrap, {
+			discoverAgents: async () => {
+				setBootstrap(storyBootstrap);
+			},
+			inspectAgentCapabilities: async () => populatedCapabilityInventory,
+		}),
+	);
+	return (
+		<AgentSettingsPane
+			bootstrap={bootstrap}
+			id="agent-hermes"
+			store={store}
+			onClose={fn()}
+		/>
+	);
+}
+
+export const AgentConfiguredModel: Story = {
+	render: () => <ConfiguredModelScenario />,
+	play: async ({ canvasElement }) => {
+		await expect(
+			await within(canvasElement).findByLabelText("Native model"),
+		).toHaveValue("gpt-5.6-sol");
+	},
+};
+
 export const AgentCapabilitiesPopulatedVisual: Story = {
 	render: () => (
 		<AgentSettingsPane
