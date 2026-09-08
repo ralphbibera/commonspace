@@ -17,6 +17,8 @@ const inheritedEnv = Object.fromEntries(
 export default defineConfig({
 	testDir: ".",
 	testMatch: "**/*.spec.ts",
+	// Storybook fixtures use playwright.messaging.config.ts and its own server.
+	testIgnore: ["**/storybook-messaging.spec.ts"],
 	globalTeardown: "./global-teardown.mjs",
 	timeout: 60_000,
 	forbidOnly: Boolean(process.env.CI),

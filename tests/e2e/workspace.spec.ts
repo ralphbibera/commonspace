@@ -94,7 +94,7 @@ test("boots with the seeded projects, channels, agents, and messages", async ({
 	await openVerificationChannel(page);
 	await expect(
 		verificationPosts(page).getByText(VERIFICATION_MESSAGE_SNIPPET, {
-			exact: false,
+			exact: true,
 		}),
 	).toBeVisible();
 	await expect(page.getByLabel("Post in verification")).toBeVisible();
@@ -444,7 +444,9 @@ test("opens a seeded thread, replies, and uses thread context", async ({
 		.locator("form")
 		.getByRole("button", { name: "Reply" })
 		.click();
-	await expect(threadPanel.getByText(threadReply)).toBeVisible();
+	await expect(
+		threadPanel.getByText(threadReply, { exact: true }),
+	).toBeVisible();
 
 	await threadPanel
 		.getByRole("button", { name: "Open thread context" })
