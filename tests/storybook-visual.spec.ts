@@ -1,23 +1,38 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { openStory } from "./storybook-helpers";
 
 type StoryReady = (page: Page) => Promise<void>;
 
-const stories: Array<{ id: string; name: string; ready?: StoryReady }> = [
+const stories: Array<{
+	id: string;
+	title: string;
+	storyName: string;
+	name: string;
+	ready?: StoryReady;
+}> = [
 	{
 		id: "design-system-agentavatar--size-and-status-matrix",
+		title: "Design System/AgentAvatar",
+		storyName: "Size And Status Matrix",
 		name: "agent-avatar-status-and-sizes",
 	},
 	{
 		id: "design-system-collectionactionmenu--rest",
+		title: "Design System/CollectionActionMenu",
+		storyName: "Rest",
 		name: "collection-action-menu-rest",
 	},
 	{
 		id: "design-system-collectionactionmenu--long-metadata",
+		title: "Design System/CollectionActionMenu",
+		storyName: "Long Metadata",
 		name: "collection-action-menu-long-metadata",
 	},
 	{
 		id: "design-system-collectionactionmenu--open-menu",
+		title: "Design System/CollectionActionMenu",
+		storyName: "Open Menu",
 		name: "collection-action-menu-open",
 		ready: async (page) => {
 			await expect(page.getByRole("menu")).toBeVisible();
@@ -25,10 +40,14 @@ const stories: Array<{ id: string; name: string; ready?: StoryReady }> = [
 	},
 	{
 		id: "design-system-messageactionmenu--rest",
+		title: "Design System/MessageActionMenu",
+		storyName: "Rest",
 		name: "message-action-menu-rest",
 	},
 	{
 		id: "design-system-messageactionmenu--open-menu",
+		title: "Design System/MessageActionMenu",
+		storyName: "Open Menu",
 		name: "message-action-menu-open",
 		ready: async (page) => {
 			await expect(page.getByRole("menu")).toBeVisible();
@@ -36,22 +55,32 @@ const stories: Array<{ id: string; name: string; ready?: StoryReady }> = [
 	},
 	{
 		id: "design-system-messageactionmenu--attachment-only",
+		title: "Design System/MessageActionMenu",
+		storyName: "Attachment Only",
 		name: "message-action-menu-attachment-only",
 	},
 	{
 		id: "design-system-workspaceheader--default",
+		title: "Design System/WorkspaceHeader",
+		storyName: "Default",
 		name: "workspace-header-default",
 	},
 	{
 		id: "design-system-workspaceheader--with-visible-close-action",
+		title: "Design System/WorkspaceHeader",
+		storyName: "With Visible Close Action",
 		name: "workspace-header-with-close-action",
 	},
 	{
 		id: "design-system-workspaceheader--long-title",
+		title: "Design System/WorkspaceHeader",
+		storyName: "Long Title",
 		name: "workspace-header-long-title",
 	},
 	{
 		id: "workspace-commonspacesearch--browse",
+		title: "Workspace/CommonspaceSearch",
+		storyName: "Browse",
 		name: "commonspace-search-browse",
 		ready: async (page) => {
 			await expect(
@@ -64,8 +93,13 @@ const stories: Array<{ id: string; name: string; ready?: StoryReady }> = [
 	},
 	{
 		id: "workspace-commonspacesearch--query-and-keyboard-selection",
+		title: "Workspace/CommonspaceSearch",
+		storyName: "Query And Keyboard Selection",
 		name: "commonspace-search-query-and-keyboard-selection",
 		ready: async (page) => {
+			const input = page.getByRole("searchbox", { name: "Search Commonspace" });
+			await input.fill("verification");
+			await input.press("ArrowDown");
 			await expect(
 				page.getByRole("option", {
 					name: /Open Message: Review the visual baseline/iu,
@@ -79,8 +113,10 @@ for (const story of stories) {
 	test(`${story.name} matches the reviewed Storybook baseline`, async ({
 		page,
 	}) => {
-		await page.goto(`/iframe.html?id=${story.id}&viewMode=story`, {
-			waitUntil: "domcontentloaded",
+		await openStory(page, {
+			id: story.id,
+			title: story.title,
+			name: story.storyName,
 		});
 		if (story.id.startsWith("workspace-commonspacesearch--")) {
 			await expect(

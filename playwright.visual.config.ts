@@ -41,9 +41,9 @@ export default defineConfig({
 	},
 	webServer: {
 		command:
-			"pnpm --filter @commonspace/ui exec storybook dev --ci --no-open --port 6006",
+			"pnpm --filter @commonspace/ui exec vite preview --host 127.0.0.1 --port 6006 --strictPort --outDir storybook-static",
 		url: "http://127.0.0.1:6006/index.json",
-		reuseExistingServer: true,
+		reuseExistingServer: false,
 		timeout: 120_000,
 	},
 });

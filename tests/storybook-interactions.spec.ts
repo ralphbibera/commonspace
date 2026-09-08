@@ -1,13 +1,16 @@
 import { expect, test } from "@playwright/test";
+import { openStory } from "./storybook-helpers";
 
 test.use({ viewport: { width: 1280, height: 720 } });
 
 test("long confirmation details scroll by keyboard while actions remain visible", async ({
 	page,
 }) => {
-	await page.goto(
-		"/iframe.html?id=foundations-alertdialog--long-content&viewMode=story",
-	);
+	await openStory(page, {
+		id: "foundations-alertdialog--long-content",
+		title: "Foundations/AlertDialog",
+		name: "Long Content",
+	});
 	const dialog = page.getByRole("alertdialog");
 	const cancel = dialog.getByRole("button", { name: "Cancel" });
 	await cancel.focus();
@@ -25,9 +28,11 @@ test("long confirmation details scroll by keyboard while actions remain visible"
 });
 
 test("long dialog content responds to wheel scrolling", async ({ page }) => {
-	await page.goto(
-		"/iframe.html?id=foundations-dialog--long-content&viewMode=story",
-	);
+	await openStory(page, {
+		id: "foundations-dialog--long-content",
+		title: "Foundations/Dialog",
+		name: "Long Content",
+	});
 	const dialog = page.getByRole("dialog", { name: "Shared context" });
 	await expect(dialog).toBeVisible();
 	await dialog.hover();
@@ -41,9 +46,11 @@ test("long dialog content responds to wheel scrolling", async ({ page }) => {
 test("search scrolls results while input, filters, and footer remain fixed", async ({
 	page,
 }) => {
-	await page.goto(
-		"/iframe.html?id=workspace-commonspacesearch--dense-results&viewMode=story",
-	);
+	await openStory(page, {
+		id: "workspace-commonspacesearch--dense-results",
+		title: "Workspace/CommonspaceSearch",
+		name: "Dense Results",
+	});
 	const dialog = page.getByRole("dialog", { name: "Search Commonspace" });
 	const input = dialog.getByRole("searchbox", { name: "Search Commonspace" });
 	const first = dialog
@@ -51,6 +58,11 @@ test("search scrolls results while input, filters, and footer remain fixed", asy
 		.getByRole("option")
 		.first();
 	await expect(first).toBeVisible();
+	await dialog.evaluate(async (element) => {
+		await Promise.all(
+			element.getAnimations().map((animation) => animation.finished),
+		);
+	});
 	const inputTop = await input.evaluate(
 		(element) => element.getBoundingClientRect().top,
 	);
@@ -78,9 +90,11 @@ test("search scrolls results while input, filters, and footer remain fixed", asy
 test("search keyboard selection stays visible without moving its input", async ({
 	page,
 }) => {
-	await page.goto(
-		"/iframe.html?id=workspace-commonspacesearch--dense-results&viewMode=story",
-	);
+	await openStory(page, {
+		id: "workspace-commonspacesearch--dense-results",
+		title: "Workspace/CommonspaceSearch",
+		name: "Dense Results",
+	});
 	const dialog = page.getByRole("dialog", { name: "Search Commonspace" });
 	const input = dialog.getByRole("searchbox", { name: "Search Commonspace" });
 	await expect(

@@ -59,7 +59,7 @@ Run Storybook while editing components:
 pnpm storybook
 ```
 
-Open `http://localhost:6006`. Stories use local fixtures, so they do not need the Commonspace API. The testing panel can rerun the selected story's interactions and accessibility checks after an edit.
+Open `http://127.0.0.1:6006`. The development server is loopback-only, and fails instead of silently selecting another port. Stories use local fixtures, so they do not need the Commonspace API. The testing panel can rerun the selected story's interactions and accessibility checks after an edit.
 
 For a focused terminal loop, pass a story-file filter:
 
@@ -74,7 +74,7 @@ pnpm test:storybook:smoke
 pnpm check:ui
 ```
 
-Storybook's Vitest suite checks rendering, interactions, and accessibility in a real browser. Pixel comparisons use the separate `pnpm test:visual` command. The optional Chromatic integration also needs a configured project; it is not required for the local workflow.
+Storybook's Vitest suite checks rendering, interactions, and accessibility in a real browser. The watch command reruns the explicit one-shot browser suite when story source or Storybook configuration changes, and its runner removes package-manager separators so forwarded file and test-name filters stay attached to Vitest. Pixel comparisons use the separate `pnpm test:visual` command, which builds Storybook and serves that exact static output on an isolated loopback server before checking that every baseline points to the expected story metadata. The optional Chromatic integration also needs a configured project; it is not required for the local workflow.
 
 Use the Light / Dark toolbar to inspect the actual rendering, including overlays. Follow [Visual verification](../design/visual-verification.md) for Storybook states, screenshot review, and baseline changes. Keep component permutations in Storybook and use `verify:live` for behavior that depends on the assembled application.
 

@@ -9,10 +9,11 @@
 		"preview": "vite preview",
 		"typecheck": "tsc -p tsconfig.json --noEmit",
 		"clean": "rm -rf dist",
-		"storybook": "storybook dev -p 6006 --no-open --disable-telemetry",
+		"storybook": "storybook dev --host 127.0.0.1 --port 6006 --exact-port --no-open --disable-telemetry",
 		"build-storybook": "storybook build --disable-telemetry",
-		"test-storybook": "COMMONSPACE_STORYBOOK_TEST=1 STORYBOOK_DISABLE_TELEMETRY=1 vitest --config vitest.storybook.config.ts",
-		"test-storybook:smoke": "COMMONSPACE_STORYBOOK_TEST=1 COMMONSPACE_STORYBOOK_TAG=smoke STORYBOOK_DISABLE_TELEMETRY=1 vitest --config vitest.storybook.config.ts --run"
+		"test-storybook": "node ../scripts/run-storybook-tests.mjs run",
+		"test-storybook:watch": "node --watch-preserve-output --watch-path=src --watch-path=.storybook ../scripts/run-storybook-tests.mjs run",
+		"test-storybook:smoke": "COMMONSPACE_STORYBOOK_TAG=smoke node ../scripts/run-storybook-tests.mjs run"
 	},
 	"dependencies": {
 		"@base-ui/react": "1.7.0",
