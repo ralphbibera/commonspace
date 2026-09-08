@@ -2542,12 +2542,17 @@ describe("Commonspace host authority", () => {
 
 		expect(runAgent.mock.calls[0]?.[0]).toMatchObject({
 			agent: expect.objectContaining({ id: "backend" }),
-			sessionName: `Commonspace Routing: ${channel.id}`,
 			reasoning: "minimal",
 		});
+		expect(runAgent.mock.calls[0]?.[0].sessionName).toMatch(
+			new RegExp(`^Commonspace Routing: ${channel.id}: `, "u"),
+		);
 		expect(runAgent.mock.calls[0]?.[0].model).toBeUndefined();
-		expect(runAgent.mock.calls[1]?.[0].sessionName).toBe(
-			`Commonspace Routing: ${channel.id}`,
+		expect(runAgent.mock.calls[1]?.[0].sessionName).toMatch(
+			new RegExp(`^Commonspace Routing: ${channel.id}: `, "u"),
+		);
+		expect(runAgent.mock.calls[1]?.[0].sessionName).not.toBe(
+			runAgent.mock.calls[0]?.[0].sessionName,
 		);
 		expect(runAgent.mock.calls[0]?.[0].message).toContain(
 			"Output token budget: at most 768 tokens.",
@@ -2641,7 +2646,7 @@ describe("Commonspace host authority", () => {
 		});
 	});
 
-	it("reuses one native routing session across threads in the same channel", async () => {
+	it("isolates each harness routing decision from native session history", async () => {
 		const root = await mkdtemp(join(tmpdir(), "commonspace-shared-router-"));
 		roots.push(root);
 		const frameLog = join(root, "acp-frames.ndjson");
@@ -2695,10 +2700,11 @@ describe("Commonspace host authority", () => {
 			});
 			await service.whenIdle();
 
-			const routingSessionName = `Commonspace Routing: ${channel.id}`;
-			expect(service.snapshot().agentSessions.hermes).toMatchObject({
-				[routingSessionName]: "123e4567-e89b-42d3-a456-426614174000",
-			});
+			expect(
+				Object.keys(service.snapshot().agentSessions.hermes ?? {}).filter(
+					(name) => name.startsWith("Commonspace Routing: "),
+				),
+			).toEqual([]);
 			const frames = (await readFile(frameLog, "utf8"))
 				.trim()
 				.split("\n")
@@ -2706,6 +2712,9 @@ describe("Commonspace host authority", () => {
 			expect(frames.filter((frame) => frame.method === "session/load")).toEqual(
 				[],
 			);
+			expect(
+				frames.filter((frame) => frame.method === "session/new"),
+			).toHaveLength(5);
 			const routingPrompts = frames.filter((frame) => {
 				if (frame.method !== "session/prompt") return false;
 				return JSON.stringify(frame.params).includes(
@@ -2730,9 +2739,11 @@ describe("Commonspace host authority", () => {
 				{ discoverAgents: discoverTestHarnesses },
 			);
 			await restarted.initialize();
-			expect(restarted.snapshot().agentSessions.hermes).toMatchObject({
-				[routingSessionName]: "123e4567-e89b-42d3-a456-426614174000",
-			});
+			expect(
+				Object.keys(restarted.snapshot().agentSessions.hermes ?? {}).filter(
+					(name) => name.startsWith("Commonspace Routing: "),
+				),
+			).toEqual([]);
 			await restarted.send({
 				conversation: { kind: "channel", id: channel.id },
 				threadId: mustExist(first.thread).id,
@@ -2745,7 +2756,10 @@ describe("Commonspace host authority", () => {
 				.map((line) => acpFrameSchema.parse(JSON.parse(line)));
 			expect(
 				resumedFrames.filter((frame) => frame.method === "session/load"),
-			).toHaveLength(2);
+			).toHaveLength(1);
+			expect(
+				resumedFrames.filter((frame) => frame.method === "session/new"),
+			).toHaveLength(6);
 
 			await restarted.mutate({
 				action: "remove-channel",

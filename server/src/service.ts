@@ -4585,6 +4585,14 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 							`${ROUTING_SESSION_SCOPE_PREFIX}${mutation.channelId}`,
 						])
 					: undefined;
+			const removedChannelRoutingSessionPrefix =
+				mutation.action === "remove-channel"
+					? `${ROUTING_SESSION_SCOPE_PREFIX}${mutation.channelId}: `
+					: undefined;
+			const belongsToRemovedChannel = (sessionName: string): boolean =>
+				removedChannelSessionNames?.has(sessionName) === true ||
+				(removedChannelRoutingSessionPrefix !== undefined &&
+					sessionName.startsWith(removedChannelRoutingSessionPrefix));
 			const activeRemovedChannelSessions =
 				removedChannelSessionNames === undefined
 					? []
@@ -4593,7 +4601,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 								const separator = key.indexOf("\u0000");
 								if (
 									separator < 1 ||
-									!removedChannelSessionNames.has(key.slice(separator + 1))
+									!belongsToRemovedChannel(key.slice(separator + 1))
 								)
 									return [];
 								return [{ key, agentId: key.slice(0, separator), sessionId }];
@@ -4721,7 +4729,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 						const separator = key.indexOf("\u0000");
 						return (
 							separator >= 1 &&
-							removedChannelSessionNames?.has(key.slice(separator + 1)) === true
+							belongsToRemovedChannel(key.slice(separator + 1))
 						);
 					},
 				);
@@ -7549,7 +7557,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 				throw new Error("routing harness is unavailable");
 			const sessionName =
 				scope.kind === "channel-routing"
-					? `${ROUTING_SESSION_SCOPE_PREFIX}${scope.channelId}`
+					? `${ROUTING_SESSION_SCOPE_PREFIX}${scope.channelId}: ${crypto.randomUUID()}`
 					: `Commonspace Inference: ${crypto.randomUUID()}`;
 			const signal = AbortSignal.timeout(30_000);
 			const scopeIsActive = (): boolean =>
@@ -7574,28 +7582,24 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 					reasoning: "minimal",
 					signal,
 				};
-				if (scope.kind === "channel-routing") {
-					const sessionId = this.state.agentSessions[agent.id]?.[sessionName];
-					if (sessionId !== undefined) runInput.sessionId = sessionId;
-				}
 				const result = await this.runAgentWithSessionRecovery(
 					runInput,
 					scopeIsActive,
 				);
 				if (result === null || !scopeIsActive()) throw scopeExpiredError();
-				if (
-					scope.kind === "channel-routing" &&
-					result.sessionId !== undefined
-				) {
-					this.rememberAgentSession(agent.id, sessionName, result.sessionId);
-					await this.persist();
-				}
 				return result.text;
 			};
-			if (scope.kind === "channel-routing")
-				return this.withAgentSessionLock(agent.id, sessionName, run);
+			const invoke =
+				scope.kind === "channel-routing"
+					? () =>
+							this.withAgentSessionLock(
+								agent.id,
+								`${ROUTING_SESSION_SCOPE_PREFIX}${scope.channelId}`,
+								run,
+							)
+					: run;
 			try {
-				return await run();
+				return await invoke();
 			} finally {
 				const scopeKey = `${agent.id}\u0000${sessionName}`;
 				const processClient = this.acpProcesses.get(scopeKey);
