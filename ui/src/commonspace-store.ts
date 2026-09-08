@@ -22,6 +22,8 @@ import type {
 	HarnessCapabilityInventory,
 	RerouteAssignmentRequest,
 	RerouteAssignmentResponse,
+	RetryRoutingRequest,
+	RetryRoutingResponse,
 	SelectDirectoryResponse,
 	SendFileAttachment,
 	SendImageAttachment,
@@ -670,6 +672,36 @@ export class CommonspaceClientStore {
 		try {
 			const result = await requestJson<RerouteAssignmentResponse>(
 				"/api/reroute",
+				{
+					method: "POST",
+					body: JSON.stringify(request),
+				},
+			);
+			const bootstrap = this.snapshot.bootstrap;
+			if (bootstrap === null) {
+				await this.refresh();
+				return;
+			}
+			const merged = this.mergeBootstrap({ ...bootstrap, state: result.state });
+			this.set({
+				...this.snapshot,
+				bootstrap: merged,
+				activeProjectId: this.resolveActiveProject(merged),
+				error: null,
+			});
+		} catch (error) {
+			this.set({
+				...this.snapshot,
+				error: error instanceof Error ? error.message : String(error),
+			});
+			throw error;
+		}
+	}
+
+	async retryRouting(request: RetryRoutingRequest): Promise<void> {
+		try {
+			const result = await requestJson<RetryRoutingResponse>(
+				"/api/routing/retry",
 				{
 					method: "POST",
 					body: JSON.stringify(request),

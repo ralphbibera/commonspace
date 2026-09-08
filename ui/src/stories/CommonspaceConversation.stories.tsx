@@ -7,6 +7,7 @@ import { COMMONSPACE_RESIZABLE_PANEL } from "../design-system/useResizablePanel"
 import {
 	createStoryStore,
 	denseStoryBootstrap,
+	hermesAgent,
 	primaryProject,
 	runtimeStoryBootstrap,
 	storyBootstrap,
@@ -192,6 +193,60 @@ export const CancelledRoutingOutcome: Story = {
 				"No destination agent was available for this routing attempt.",
 			),
 		).toBeVisible();
+	},
+};
+
+const failedRoutingBootstrap = structuredClone(storyBootstrap);
+const failedRoutingMessage =
+	failedRoutingBootstrap.state.messages["channel:channel-design"]?.[0];
+if (failedRoutingMessage !== undefined) {
+	failedRoutingMessage.routing = {
+		source: "ai",
+		status: "failed",
+		startedAt: "2026-09-03T09:58:00.000Z",
+		resolvedAt: "2026-09-03T09:58:29.810Z",
+		durationMs: 29_810,
+		agentIds: [],
+		assignments: [],
+		corrections: [],
+		inferredProjectIds: [],
+		reason: "Routing response did not match the required shape.",
+	};
+}
+failedRoutingBootstrap.state.messages["channel:channel-design"] =
+	failedRoutingMessage === undefined ? [] : [failedRoutingMessage];
+const retryRouting = fn(async () => undefined);
+const failedRoutingStore = createStoryStore(failedRoutingBootstrap, {
+	activeConversation: channel,
+	activeProjectId: primaryProject.id,
+	retryRouting,
+});
+
+export const FailedRoutingRecovery: Story = {
+	args: { store: failedRoutingStore },
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		await userEvent.click(
+			canvas.getByText("Routed to No agent selected · AI selected · Failed"),
+		);
+		await userEvent.click(
+			canvas.getByRole("button", { name: "Retry AI routing" }),
+		);
+		await expect(retryRouting).toHaveBeenCalledWith({
+			sourceMessageId: "message-root",
+			mode: "ai",
+		});
+
+		await userEvent.selectOptions(
+			canvas.getByLabelText("Manual routing agent"),
+			hermesAgent.id,
+		);
+		await userEvent.click(canvas.getByRole("button", { name: "Route" }));
+		await expect(retryRouting).toHaveBeenLastCalledWith({
+			sourceMessageId: "message-root",
+			mode: "manual",
+			agentId: hermesAgent.id,
+		});
 	},
 };
 

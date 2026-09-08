@@ -17,6 +17,157 @@ afterEach(async () => {
 });
 
 describe("routing correction", () => {
+	it("retries a failed AI routing decision without duplicating the message", async () => {
+		const root = await mkdtemp(join(tmpdir(), "commonspace-routing-retry-"));
+		roots.push(root);
+		const routeAgents = vi
+			.fn()
+			.mockRejectedValueOnce(new Error("invalid routing response"))
+			.mockResolvedValueOnce({
+				assignments: [
+					{
+						agentId: "frontend",
+						subRequest: "Fix the failed-routing controls.",
+						projectIds: [],
+					},
+				],
+				reason: "Frontend owns the routing controls.",
+			});
+		const runAgent = vi.fn(async () => "Recovered.");
+		const service = new CommonspaceHostService(
+			{},
+			{ root },
+			{
+				discoverAgents: async () => [
+					{
+						id: "frontend",
+						displayName: "Frontend",
+						adapter: "hermes" as const,
+						model: null,
+						status: "stopped" as const,
+					},
+				],
+				routeAgents,
+				runAgent,
+			},
+		);
+		await service.initialize();
+		await service.mutate({
+			action: "add-discovered-agent",
+			agentId: "frontend",
+		});
+		const channel = mustExist(
+			(
+				await service.mutate({
+					action: "create-channel",
+					name: "engineering",
+					agentIds: ["frontend"],
+				})
+			).channels[0],
+		);
+		const sent = await service.send({
+			conversation: { kind: "channel", id: channel.id },
+			text: "Fix the routing controls.",
+		});
+		await service.whenIdle();
+		expect(sent.thread).toBeDefined();
+		expect(
+			service.snapshot().messages[`channel:${channel.id}`]?.[0]?.routing
+				?.status,
+		).toBe("failed");
+
+		await service.retryRouting({
+			sourceMessageId: sent.accepted.id,
+			mode: "ai",
+		});
+		await service.whenIdle();
+
+		const messages = service.snapshot().messages[`channel:${channel.id}`] ?? [];
+		expect(
+			messages.filter((message) => message.authorType === "user"),
+		).toHaveLength(1);
+		expect(messages[0]).toMatchObject({
+			id: sent.accepted.id,
+			routing: {
+				status: "resolved",
+				agentIds: ["frontend"],
+			},
+		});
+		expect(runAgent).toHaveBeenCalledOnce();
+	});
+
+	it("manually routes a failed decision to a selected channel agent", async () => {
+		const root = await mkdtemp(join(tmpdir(), "commonspace-routing-manual-"));
+		roots.push(root);
+		const runAgent = vi.fn(
+			async (input: AgentRunInput) => `${input.agent.id}: done`,
+		);
+		const service = new CommonspaceHostService(
+			{},
+			{ root },
+			{
+				discoverAgents: async () => [
+					{
+						id: "frontend",
+						displayName: "Frontend",
+						adapter: "hermes" as const,
+						model: null,
+						status: "stopped" as const,
+					},
+				],
+				routeAgents: async () => {
+					throw new Error("invalid routing response");
+				},
+				runAgent,
+			},
+		);
+		await service.initialize();
+		await service.mutate({
+			action: "add-discovered-agent",
+			agentId: "frontend",
+		});
+		const channel = mustExist(
+			(
+				await service.mutate({
+					action: "create-channel",
+					name: "engineering",
+					agentIds: ["frontend"],
+				})
+			).channels[0],
+		);
+		const sent = await service.send({
+			conversation: { kind: "channel", id: channel.id },
+			text: "Fix the routing controls.",
+		});
+		await service.whenIdle();
+
+		await service.retryRouting({
+			sourceMessageId: sent.accepted.id,
+			mode: "manual",
+			agentId: "frontend",
+		});
+		await service.whenIdle();
+
+		const messages = service.snapshot().messages[`channel:${channel.id}`] ?? [];
+		expect(
+			messages.filter((message) => message.authorType === "user"),
+		).toHaveLength(1);
+		expect(messages[0]).toMatchObject({
+			id: sent.accepted.id,
+			routing: {
+				source: "explicit",
+				agentIds: ["frontend"],
+			},
+		});
+		expect(messages.some((message) => message.text === "frontend: done")).toBe(
+			true,
+		);
+		expect(runAgent.mock.calls[0]?.[0]).toMatchObject({
+			agent: { id: "frontend" },
+			message: "Fix the routing controls.",
+		});
+	});
+
 	it("reroutes only one assignment while preserving every attempt and reply", async () => {
 		const root = await mkdtemp(
 			join(tmpdir(), "commonspace-routing-correction-"),

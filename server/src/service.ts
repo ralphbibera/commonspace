@@ -58,6 +58,8 @@ import type {
 	ReorderFollowupRequest,
 	RerouteAssignmentRequest,
 	RerouteAssignmentResponse,
+	RetryRoutingRequest,
+	RetryRoutingResponse,
 	SendMessageRequest,
 	SendMessageResponse,
 	StopAgentRunsRequest,
@@ -4973,6 +4975,114 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 		return response;
 	}
 
+	async retryRouting(
+		request: RetryRoutingRequest,
+	): Promise<RetryRoutingResponse> {
+		return this.withAdmission(async () => {
+			if (
+				typeof request.sourceMessageId !== "string" ||
+				request.sourceMessageId.trim() === ""
+			)
+				throw new Error("source message id is required");
+			if (
+				request.mode === "manual" &&
+				(typeof request.agentId !== "string" || request.agentId.trim() === "")
+			)
+				throw new Error("manual routing requires an agent id");
+
+			const keyAndSource = Object.entries(this.state.messages).flatMap(
+				([key, messages]) => {
+					const source = messages.find(
+						(message) => message.id === request.sourceMessageId,
+					);
+					return source === undefined ? [] : [{ key, source }];
+				},
+			)[0];
+			if (
+				keyAndSource === undefined ||
+				keyAndSource.source.authorType !== "user" ||
+				keyAndSource.source.conversation.kind !== "channel" ||
+				keyAndSource.source.routing?.status !== "failed" ||
+				keyAndSource.source.threadId === undefined
+			)
+				throw new Error("failed routing source message not found");
+			const { key, source } = keyAndSource;
+			const thread = this.state.threads.find(
+				(candidate) => candidate.id === source.threadId,
+			);
+			if (thread === undefined || thread.channelId !== source.conversation.id)
+				throw new Error("routing source thread not found");
+
+			const sendRequest: SendMessageRequest = {
+				conversation: source.conversation,
+				text: source.text,
+				threadId: thread.id,
+			};
+			const projectIds = referencedProjectIds(source);
+			if (projectIds.length > 0) sendRequest.projectIds = projectIds;
+			if (request.mode === "manual")
+				sendRequest.targetAgentId = request.agentId;
+			const prepared = await this.prepareSend(sendRequest);
+			if (prepared.routing === undefined)
+				throw new Error("routing retry did not produce a routing decision");
+			prepared.attachments = await Promise.all(
+				(source.attachments ?? []).map(async (attachment) => {
+					const { data } = await this.readImageAttachment(attachment.id);
+					return { metadata: attachment, data };
+				}),
+			);
+			prepared.files = await Promise.all(
+				(source.files ?? []).map(async (file) => {
+					const { data } = await this.readFileAttachment(file.id);
+					return { metadata: file, data };
+				}),
+			);
+			const accepted: CommonspaceMessage = {
+				...source,
+				routing: prepared.routing,
+			};
+			delete accepted.replyStatus;
+			delete accepted.replyError;
+			const updatedThread = prepared.thread ?? thread;
+			const previousState = this.state;
+			this.state = {
+				...this.state,
+				revision: this.state.revision + 1,
+				messages: {
+					...this.state.messages,
+					[key]: (this.state.messages[key] ?? []).map((message) =>
+						message.id === accepted.id ? accepted : message,
+					),
+				},
+				threads: this.state.threads.map((candidate) =>
+					candidate.id === updatedThread.id ? updatedThread : candidate,
+				),
+			};
+			try {
+				await this.persist();
+			} catch (error) {
+				this.state = previousState;
+				throw error;
+			}
+			this.broadcastRevision();
+			const response: RetryRoutingResponse = {
+				accepted,
+				thread: updatedThread,
+				state: this.publicSnapshot(),
+			};
+			const pending = { prepared, response, delivery: "queue" as const };
+			const scopeKey = this.followupScopeKey(source.conversation, thread.id);
+			if (this.activeConversationRuns.has(scopeKey)) {
+				const queue = this.pendingFollowups.get(scopeKey) ?? [];
+				queue.push(pending);
+				this.pendingFollowups.set(scopeKey, queue);
+			} else {
+				this.startConversationRun(scopeKey, pending);
+			}
+			return response;
+		});
+	}
+
 	async rerouteAssignment(
 		request: RerouteAssignmentRequest,
 	): Promise<RerouteAssignmentResponse> {
@@ -6656,7 +6766,9 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 		try {
 			const routingThread = prepared.thread ?? response.thread;
 			const memberIds =
-				prepared.thread?.agentIds ?? prepared.channel?.agentIds ?? [];
+				prepared.thread !== undefined && prepared.thread.agentIds.length > 0
+					? prepared.thread.agentIds
+					: (prepared.channel?.agentIds ?? []);
 			const decision = await this.routeChannelMessage(
 				prepared.text,
 				prepared.request,

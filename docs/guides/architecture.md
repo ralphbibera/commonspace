@@ -73,7 +73,7 @@ The HTTP boundary is implemented in [`server/src/app.ts`](../../server/src/app.t
 | Capability | Endpoints |
 | --- | --- |
 | Health and state | `GET /api/health`, `GET /api/bootstrap`, `GET /api/diagnostics`, `GET /api/events` |
-| Conversation | `POST /api/send`, `POST /api/mutate`, `POST /api/stop`, `POST /api/reroute` |
+| Conversation | `POST /api/send`, `POST /api/mutate`, `POST /api/stop`, `POST /api/reroute`, `POST /api/routing/retry` |
 | Message history | `POST /api/messages/:messageId/edit`, `POST /api/messages/:messageId/delete` |
 | Context | `GET` and `PUT /api/channels/:channelId/context`, `GET` and `PUT /api/threads/:threadId/context`; `POST` to either path with `/compact` |
 | Routing configuration | `GET` and `PUT /api/routing` |
@@ -175,7 +175,7 @@ For a new root without `@@project` tags, inference may select from all configure
 
 A service-level correction can replace the Agent or wording of one assignment. The target Agent must already belong to the Channel, and the inferred Project subset is preserved. Commonspace retains both attempts, binds replies to their assignment IDs, and does not restart unrelated Agents. Corrections contribute to bounded per-Channel routing memory without rewriting historical decisions.
 
-Routing stores its own start time, resolution time, and duration separately from harness execution. The conversation shows pending and failed routing, while resolved assignments, reasons, timings, and inline correction controls stay outside the current UI. A failed decision marks the accepted source failed and creates a durable retryable Inbox item; it never silently broadcasts the message.
+Routing stores its own start time, resolution time, and duration separately from harness execution. The conversation shows pending and failed routing, while resolved assignments, reasons, timings, and inline correction controls stay outside the current UI. A failed decision marks the accepted source failed, creates a durable retryable Inbox item, and exposes controls to retry inference or select a Channel Agent manually without duplicating the original message; it never silently broadcasts the message.
 
 One Commonspace inference layer handles routing, routing-memory compaction, and Channel/Thread context compaction. It supports a configured agent harness or an OpenAI-compatible endpoint. Routing output budgets scale within a fixed bound according to the visible Agent fan-out limit. OpenAI-compatible requests enforce that value through `max_tokens`. ACP exposes no provider-neutral token control, so harness prompts state the token budget and the ACP client enforces a scaled request-specific character ceiling capped by its process-wide response limit. Provider-reported output truncation and invalid JSON may receive one bounded inference retry; the complete decision is validated before any assignment is dispatched. Harness-backed routing keeps one durable session per Channel, shared across its Threads; each request still supplies only that Thread's bounded context. There is no deterministic provider mode.
 

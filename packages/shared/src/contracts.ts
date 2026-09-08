@@ -722,6 +722,16 @@ export interface RerouteAssignmentResponse {
 	state: CommonspaceState;
 }
 
+export type RetryRoutingRequest =
+	| { sourceMessageId: string; mode: "ai" }
+	| { sourceMessageId: string; mode: "manual"; agentId: string };
+
+export interface RetryRoutingResponse {
+	accepted: CommonspaceMessage;
+	thread: CommonspaceThread;
+	state: CommonspaceState;
+}
+
 export interface StopAgentRunsRequest {
 	messageId: string;
 	/** When omitted, stop every agent run initiated by the message. */

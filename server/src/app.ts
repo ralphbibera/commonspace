@@ -13,6 +13,7 @@ import {
 	type RemoveFollowupRequest,
 	type ReorderFollowupRequest,
 	type RerouteAssignmentRequest,
+	type RetryRoutingRequest,
 	type SelectDirectoryResponse,
 	type SendMessageRequest,
 	type StopAgentRunsRequest,
@@ -254,6 +255,14 @@ const rerouteAssignmentSchema = z.object({
 	subRequest: z.string(),
 	projectIds: z.array(z.string()),
 }) satisfies z.ZodType<RerouteAssignmentRequest>;
+const retryRoutingSchema = z.discriminatedUnion("mode", [
+	z.object({ sourceMessageId: z.string(), mode: z.literal("ai") }),
+	z.object({
+		sourceMessageId: z.string(),
+		mode: z.literal("manual"),
+		agentId: z.string(),
+	}),
+]) satisfies z.ZodType<RetryRoutingRequest>;
 const editMessageBodySchema = z.object({
 	text: z.string(),
 	projectIds: z.array(z.string()).optional(),
@@ -988,6 +997,19 @@ export function createCommonspaceApp({
 		} catch (error) {
 			res.status(400).json({
 				code: "reroute_failed",
+				error: requestErrorMessage(error),
+			});
+		}
+	});
+
+	app.post("/api/routing/retry", requireSameOrigin, async (req, res) => {
+		try {
+			res
+				.status(202)
+				.json(await service.retryRouting(retryRoutingSchema.parse(req.body)));
+		} catch (error) {
+			res.status(400).json({
+				code: "routing_retry_failed",
 				error: requestErrorMessage(error),
 			});
 		}

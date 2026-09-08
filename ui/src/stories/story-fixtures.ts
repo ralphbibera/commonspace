@@ -638,6 +638,7 @@ export function createStoryStore(
 		notificationVerification?: CommonspaceNotificationVerification;
 		pendingSubmissions?: CommonspaceClientSnapshot["pendingSubmissions"];
 		send?: CommonspaceStore["send"];
+		retryRouting?: CommonspaceStore["retryRouting"];
 		inspectAgentCapabilities?: CommonspaceStore["inspectAgentCapabilities"];
 	} = {},
 ): CommonspaceStore {
@@ -662,6 +663,8 @@ export function createStoryStore(
 			if (property === "getSnapshot") return () => snapshot;
 			if (property === "send" && options.send !== undefined)
 				return options.send;
+			if (property === "retryRouting" && options.retryRouting !== undefined)
+				return options.retryRouting;
 			if (
 				property === "inspectAgentCapabilities" &&
 				options.inspectAgentCapabilities !== undefined

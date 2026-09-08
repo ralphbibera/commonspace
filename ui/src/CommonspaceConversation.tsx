@@ -550,12 +550,28 @@ function routingOutcome(
 function RoutingReceipt({
 	message,
 	bootstrap,
+	onRetryRouting,
 }: {
 	message: CommonspaceMessage;
 	bootstrap: CommonspaceBootstrap | null | undefined;
+	onRetryRouting?: (
+		message: CommonspaceMessage,
+		choice: { mode: "ai" } | { mode: "manual"; agentId: string },
+	) => Promise<void>;
 }) {
 	const routing = message.routing;
+	const [manualAgentId, setManualAgentId] = useState("");
+	const [retrying, setRetrying] = useState<"ai" | "manual" | null>(null);
 	if (message.authorType !== "user" || routing === undefined) return null;
+	const channelAgents =
+		message.conversation.kind === "channel"
+			? (bootstrap?.state.channels
+					.find((channel) => channel.id === message.conversation.id)
+					?.agentIds.map((agentId) =>
+						bootstrap.agents.find((agent) => agent.id === agentId),
+					)
+					.filter((agent) => agent !== undefined) ?? [])
+			: [];
 	const agents = routing.agentIds.map((agentId) =>
 		routingAgentName(agentId, bootstrap),
 	);
@@ -636,6 +652,61 @@ function RoutingReceipt({
 						})}
 					</ul>
 				)}
+				{routing.status === "failed" && onRetryRouting !== undefined && (
+					<div className="flex flex-wrap items-center gap-2 border-t pt-2">
+						<Button
+							type="button"
+							size="sm"
+							variant="outline"
+							disabled={retrying !== null}
+							onClick={async () => {
+								setRetrying("ai");
+								try {
+									await onRetryRouting(message, { mode: "ai" });
+								} finally {
+									setRetrying(null);
+								}
+							}}
+						>
+							{retrying === "ai" ? "Retrying…" : "Retry AI routing"}
+						</Button>
+						<select
+							aria-label="Manual routing agent"
+							className="h-8 rounded-sm border bg-background px-2 text-xs text-foreground"
+							value={manualAgentId}
+							disabled={retrying !== null}
+							onChange={(event) => {
+								setManualAgentId(event.target.value);
+							}}
+						>
+							<option value="">Route manually…</option>
+							{channelAgents.map((agent) => (
+								<option key={agent.id} value={agent.id}>
+									{agent.displayName}
+								</option>
+							))}
+						</select>
+						<Button
+							type="button"
+							size="sm"
+							disabled={manualAgentId === "" || retrying !== null}
+							onClick={async () => {
+								if (manualAgentId === "") return;
+								setRetrying("manual");
+								try {
+									await onRetryRouting(message, {
+										mode: "manual",
+										agentId: manualAgentId,
+									});
+								} finally {
+									setRetrying(null);
+								}
+							}}
+						>
+							{retrying === "manual" ? "Routing…" : "Route"}
+						</Button>
+					</div>
+				)}
 			</div>
 		</details>
 	);
@@ -672,6 +743,7 @@ function MessageRow({
 	onToggleSaved,
 	onMarkUnread,
 	onCopyLink,
+	onRetryRouting,
 }: {
 	message: CommonspaceMessage;
 	elementId?: string;
@@ -691,6 +763,10 @@ function MessageRow({
 	) => Promise<void>;
 	onMarkUnread?: (message: CommonspaceMessage) => Promise<void>;
 	onCopyLink?: (message: CommonspaceMessage) => void;
+	onRetryRouting?: (
+		message: CommonspaceMessage,
+		choice: { mode: "ai" } | { mode: "manual"; agentId: string },
+	) => Promise<void>;
 }) {
 	const supersedesMessageId = message.supersedesMessageId;
 	const [editing, setEditing] = useState(false);
@@ -908,7 +984,11 @@ function MessageRow({
 						</div>
 					</form>
 				)}
-				<RoutingReceipt message={message} bootstrap={bootstrap} />
+				<RoutingReceipt
+					message={message}
+					bootstrap={bootstrap}
+					{...(onRetryRouting === undefined ? {} : { onRetryRouting })}
+				/>
 				{message.attachments !== undefined &&
 					message.attachments.length > 0 && (
 						<div className="mt-3 flex flex-wrap gap-2">
@@ -2232,6 +2312,20 @@ export function CommonspaceConversation({
 	) => {
 		await store.editMessage(message.id, { text });
 	};
+	const retryFailedRouting = async (
+		message: CommonspaceMessage,
+		choice: { mode: "ai" } | { mode: "manual"; agentId: string },
+	) => {
+		await store.retryRouting(
+			choice.mode === "ai"
+				? { sourceMessageId: message.id, mode: "ai" }
+				: {
+						sourceMessageId: message.id,
+						mode: "manual",
+						agentId: choice.agentId,
+					},
+		);
+	};
 
 	const deleteDeliveredMessage = async (message: CommonspaceMessage) => {
 		await store.deleteMessage(message.id);
@@ -2459,6 +2553,7 @@ export function CommonspaceConversation({
 														onToggleSaved={toggleSavedMessage}
 														onMarkUnread={markMessageUnread}
 														onCopyLink={copyMessageLink}
+														onRetryRouting={retryFailedRouting}
 														{...(thread === undefined
 															? {}
 															: {
@@ -2546,6 +2641,7 @@ export function CommonspaceConversation({
 											onToggleSaved={toggleSavedMessage}
 											onMarkUnread={markMessageUnread}
 											onCopyLink={copyMessageLink}
+											onRetryRouting={retryFailedRouting}
 										/>
 									))}
 							{directMessagePhase !== null && (
@@ -3090,6 +3186,7 @@ export function CommonspaceConversation({
 										onToggleSaved={toggleSavedMessage}
 										onMarkUnread={markMessageUnread}
 										onCopyLink={copyMessageLink}
+										onRetryRouting={retryFailedRouting}
 									/>
 								)}
 								<div className="my-3 flex items-center gap-3 text-xs text-muted-foreground after:h-px after:flex-1 after:bg-border">
@@ -3111,6 +3208,7 @@ export function CommonspaceConversation({
 										onToggleSaved={toggleSavedMessage}
 										onMarkUnread={markMessageUnread}
 										onCopyLink={copyMessageLink}
+										onRetryRouting={retryFailedRouting}
 									/>
 								))}
 								{activeThreadActivities.length > 0 && (

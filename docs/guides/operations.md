@@ -164,7 +164,7 @@ Authenticate through the affected native runtime installation and retry. Commons
 
 The Channel message is persisted before inference. If routing fails, the accepted message remains visible with a failed state and a durable Inbox item; Commonspace does not broadcast it to every agent.
 
-Configure a working inference harness or OpenAI-compatible endpoint in Workspace settings. Open the affected conversation or Thread from Inbox, then use `/retry` to send your most recent message there again. You can also send a new message explicitly addressing the intended `@agent`. After changing an endpoint origin, enter its key again. The `OPENAI_API_KEY` fallback applies only to the canonical OpenAI origin.
+Configure a working inference harness or OpenAI-compatible endpoint in Workspace settings. Open the affected conversation or Thread from Inbox, expand the failed routing receipt, then choose **Retry AI routing** or select a Channel Agent and choose **Route**. Recovery reuses the persisted message instead of adding a duplicate. After changing an endpoint origin, enter its key again. The `OPENAI_API_KEY` fallback applies only to the canonical OpenAI origin.
 
 ### A Project file is marked sensitive
 
