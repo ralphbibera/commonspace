@@ -1,10 +1,11 @@
 import { renameSync, symlinkSync } from "node:fs";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+	credentialBearingFileName,
 	prepareAgentFileAttachments,
 	readBoundedAttachmentBytes,
 } from "../server/src/file-attachments.ts";
@@ -18,6 +19,50 @@ afterEach(async () => {
 });
 
 describe("Agent file attachment copy boundary", () => {
+	it("normalizes credential-bearing names before applying policy", () => {
+		expect(credentialBearingFileName("auth．json")).toBe(true);
+		expect(credentialBearingFileName("report.txt")).toBe(false);
+	});
+
+	it("rejects credential-bearing artifact names while accepting a safe file", async () => {
+		const root = await mkdtemp(
+			join(tmpdir(), "commonspace-agent-file-policy-"),
+		);
+		roots.push(root);
+		const workspace = join(root, "workspace");
+		await mkdir(workspace);
+		const names = [
+			".pypirc",
+			"auth.json",
+			"id_ecdsa",
+			"serviceaccountprod.json",
+			"report.txt",
+		];
+		await Promise.all(
+			names.map((name) =>
+				writeFile(join(workspace, name), "synthetic test value"),
+			),
+		);
+
+		const prepared = await prepareAgentFileAttachments(
+			names.map((name) => ({
+				name,
+				uri: pathToFileURL(join(workspace, name)).href,
+				mimeType: "text/plain",
+			})),
+			[await realpath(workspace)],
+			() => undefined,
+		);
+
+		expect(prepared).toHaveLength(1);
+		expect(prepared[0]?.metadata).toMatchObject({
+			name: "report.txt",
+			mimeType: "text/plain",
+			size: 20,
+		});
+		expect(prepared[0]?.data.toString("utf8")).toBe("synthetic test value");
+	});
+
 	it("rejects a file that grows after its validated size", async () => {
 		const requestedLengths: number[] = [];
 		await expect(

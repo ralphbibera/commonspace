@@ -47,6 +47,8 @@ Allowed results: `Pass`, `Fail`, or `Not run — <exact reason>`. Link local or 
 | `pnpm verify:acp` | | Authenticated runtime/model access required |
 | `pnpm verify:acp:mcp` | | Scoped context, progress, final reply |
 | Export and HTTP import restoration with exact attachment bytes | | Use clean destination and explicit Project mappings |
+| Credential files blocked in previews, tracked/deleted/renamed diffs, and attachments | | Include an in-root symlink alias; use synthetic credentials |
+| Git preview and browser embedding protections | | Configured textconv/fsmonitor/filter commands remain unexecuted; installed HTML sends framing-denial headers |
 | Candidate npm package startup on a clean machine | | Not established by repository-local smoke alone |
 | Actual macOS service status, update, failed-update recovery, rollback | | |
 

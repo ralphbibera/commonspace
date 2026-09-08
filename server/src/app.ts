@@ -808,7 +808,11 @@ export function createCommonspaceApp({
 					queryRootIndex(req.query.root),
 					queryString(req.query.path),
 				);
-				await streamProjectFile(req, res, file);
+				try {
+					await streamProjectFile(req, res, file);
+				} finally {
+					await file.handle.close();
+				}
 			} catch (error) {
 				if (res.headersSent) {
 					res.destroy();
@@ -1195,6 +1199,8 @@ export function createCommonspaceApp({
 
 	if (uiRoot !== undefined) {
 		app.use((_req, res, next) => {
+			res.setHeader("content-security-policy", "frame-ancestors 'none'");
+			res.setHeader("x-frame-options", "DENY");
 			res.setHeader("x-content-type-options", "nosniff");
 			next();
 		});

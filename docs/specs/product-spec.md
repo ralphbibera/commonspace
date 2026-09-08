@@ -467,7 +467,8 @@ These states explain what happened to a message or agent turn. They belong to th
 - Commonspace-managed native session references, absolute host paths, capabilities, and credential fields remain private to the service.
 - Persisted activity and error data is bounded and sanitized.
 - Attachments are stored locally with private metadata and served only through authorized loopback requests.
-- Known credential-bearing filenames and unsafe preview types are rejected. This does not scan or remove sensitive information from arbitrary conversation text or file contents.
+- Project previews, Git diffs, and attachments share one known credential-filename policy. Previews check requested and canonical names; Git diffs also check deleted paths and rename sources. Preview delivery and untracked text diffs read through the validated file descriptor. This does not scan or remove sensitive information from arbitrary conversation text or file contents.
+- Git previews disable external diff programs, text converters, filesystem monitor commands, and configured clean/process/smudge filters without rewriting repository configuration. Filter-backed files are compared as stored on disk. The installed browser UI rejects framing by other pages.
 - Portable exports omit managed credential, native-session, capability, and absolute-path fields. Conversation text and exact attachment bytes remain in the archive and may contain sensitive information supplied by their authors.
 
 Workspace archives are unencrypted private user data. Removing Commonspace-managed metadata does not make their content safe to publish. See [Workspace archive format](workspace-archive-format.md#privacy-boundary) for the exact export boundary.

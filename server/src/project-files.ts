@@ -1,7 +1,15 @@
 import { execFile } from "node:child_process";
-import { createReadStream } from "node:fs";
-import { open, readdir, readFile, realpath, stat } from "node:fs/promises";
+import { constants } from "node:fs";
+import {
+	type FileHandle,
+	open,
+	readdir,
+	realpath,
+	stat,
+} from "node:fs/promises";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import { basename, extname, isAbsolute, join, relative, sep } from "node:path";
+import { pipeline } from "node:stream/promises";
 import { promisify } from "node:util";
 import type {
 	CommonspaceState,
@@ -13,7 +21,7 @@ import type {
 	ProjectGitFileStatus,
 	ProjectGitStatusResponse,
 } from "@commonspace/shared";
-import type { Request, Response } from "express";
+import { credentialBearingFileName } from "./credential-files.js";
 
 const execFileAsync = promisify(execFile);
 const MAX_DIRECTORY_ENTRIES = 500;
@@ -107,32 +115,6 @@ const VIDEO_CONTENT_TYPES = new Map([
 	[".ogv", "video/ogg"],
 	[".webm", "video/webm"],
 ]);
-const SENSITIVE_FILE_NAMES = new Set([
-	".netrc",
-	".npmrc",
-	".pypirc",
-	"credentials",
-	"credentials.json",
-	"id_dsa",
-	"id_ecdsa",
-	"id_ed25519",
-	"id_rsa",
-]);
-
-function isSensitiveFileName(name: string): boolean {
-	const lowerName = name.toLocaleLowerCase();
-	return (
-		lowerName === ".env" ||
-		lowerName.startsWith(".env.") ||
-		SENSITIVE_FILE_NAMES.has(lowerName) ||
-		/^(?:auth|credential|credentials|secret|secrets)(?:\.[^.]+)*$/u.test(
-			lowerName,
-		) ||
-		/^(?:service[-_]?account).+\.json$/u.test(lowerName) ||
-		/\.(?:key|pem|p12|pfx)$/u.test(lowerName)
-	);
-}
-
 export class ProjectFileError extends Error {
 	constructor(
 		readonly status: number,
@@ -150,6 +132,8 @@ interface ProjectPath {
 }
 
 export interface OpenProjectFile extends ProjectPath {
+	/** Caller closes this descriptor after preview or diff consumption. */
+	handle: FileHandle;
 	name: string;
 	size: number;
 	preview: ProjectFilePreview;
@@ -291,12 +275,23 @@ async function resolveProjectPath(
 			"Project path resolves outside its folder",
 		);
 	}
+	safeRelativePath(relative(root, absolutePath), allowRoot);
 	return { root, absolutePath, relativePath };
+}
+
+function assertSafeFileName(path: string): void {
+	if (credentialBearingFileName(basename(path))) {
+		throw new ProjectFileError(
+			403,
+			"project_file_sensitive",
+			"Sensitive files cannot be previewed",
+		);
+	}
 }
 
 function namedClassification(name: string): FileClassification {
 	const lowerName = name.toLocaleLowerCase();
-	if (isSensitiveFileName(lowerName))
+	if (credentialBearingFileName(basename(lowerName)))
 		return { preview: "blocked", contentType: "application/octet-stream" };
 	const extension = extname(lowerName);
 	const image = IMAGE_CONTENT_TYPES.get(extension);
@@ -328,13 +323,28 @@ async function inspectClassification(
 	name: string,
 	size: number,
 ): Promise<FileClassification> {
+	const handle = await open(
+		path,
+		constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+	);
+	try {
+		return await classifyOpenFile(handle, name, size);
+	} finally {
+		await handle.close();
+	}
+}
+
+async function classifyOpenFile(
+	handle: FileHandle,
+	name: string,
+	size: number,
+): Promise<FileClassification> {
 	const named = namedClassification(name);
 	if (named.preview !== "binary" || size === 0) {
 		return size === 0 && named.preview === "binary"
 			? { preview: "text", contentType: "text/plain; charset=utf-8" }
 			: named;
 	}
-	const handle = await open(path, "r");
 	try {
 		const probe = Buffer.alloc(Math.min(size, 1_024));
 		const { bytesRead } = await handle.read(probe, 0, probe.length, 0);
@@ -345,8 +355,6 @@ async function inspectClassification(
 	} catch (error) {
 		if (error instanceof TypeError) return named;
 		throw error;
-	} finally {
-		await handle.close();
 	}
 }
 
@@ -436,57 +444,81 @@ export async function openProjectFile(
 		path,
 		false,
 	);
-	const file = await stat(resolved.absolutePath);
-	if (!file.isFile())
-		throw new ProjectFileError(
-			400,
-			"project_path_not_file",
-			"Project path is not a file",
-		);
-	const name = basename(resolved.relativePath);
-	const classification = await inspectClassification(
+	assertSafeFileName(resolved.relativePath);
+	assertSafeFileName(resolved.absolutePath);
+	const handle = await open(
 		resolved.absolutePath,
-		name,
-		file.size,
+		constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
 	);
-	if (classification.preview === "blocked") {
-		throw new ProjectFileError(
-			403,
-			"project_file_sensitive",
-			"Sensitive files cannot be previewed",
-		);
+	try {
+		const file = await handle.stat();
+		const canonical = await realpath(resolved.absolutePath);
+		const current = await stat(resolved.absolutePath);
+		if (
+			canonical !== resolved.absolutePath ||
+			current.dev !== file.dev ||
+			current.ino !== file.ino
+		) {
+			throw new ProjectFileError(
+				409,
+				"project_file_changed",
+				"Project file changed while opening; retry the preview",
+			);
+		}
+		if (!file.isFile())
+			throw new ProjectFileError(
+				400,
+				"project_path_not_file",
+				"Project path is not a file",
+			);
+		const name = basename(resolved.relativePath);
+		const classification = await classifyOpenFile(handle, name, file.size);
+		if (classification.preview === "blocked") {
+			throw new ProjectFileError(
+				403,
+				"project_file_sensitive",
+				"Sensitive files cannot be previewed",
+			);
+		}
+		if (classification.preview === "binary") {
+			throw new ProjectFileError(
+				415,
+				"project_file_not_previewable",
+				"Only text, image, and video files can be previewed",
+			);
+		}
+		if (
+			classification.preview === "text" &&
+			file.size > MAX_TEXT_PREVIEW_BYTES
+		) {
+			throw new ProjectFileError(
+				413,
+				"project_file_too_large",
+				"Text preview exceeds 1 MiB",
+			);
+		}
+		if (
+			classification.preview === "image" &&
+			file.size > MAX_IMAGE_PREVIEW_BYTES
+		) {
+			throw new ProjectFileError(
+				413,
+				"project_file_too_large",
+				"Image preview exceeds 25 MiB",
+			);
+		}
+		return {
+			...resolved,
+			handle,
+			name,
+			size: file.size,
+			preview: classification.preview,
+			contentType: classification.contentType,
+		};
+	} catch (error) {
+		await handle.close();
+		throw error;
 	}
-	if (classification.preview === "binary") {
-		throw new ProjectFileError(
-			415,
-			"project_file_not_previewable",
-			"Only text, image, and video files can be previewed",
-		);
-	}
-	if (classification.preview === "text" && file.size > MAX_TEXT_PREVIEW_BYTES) {
-		throw new ProjectFileError(
-			413,
-			"project_file_too_large",
-			"Text preview exceeds 1 MiB",
-		);
-	}
-	if (
-		classification.preview === "image" &&
-		file.size > MAX_IMAGE_PREVIEW_BYTES
-	) {
-		throw new ProjectFileError(
-			413,
-			"project_file_too_large",
-			"Image preview exceeds 25 MiB",
-		);
-	}
-	return {
-		...resolved,
-		name,
-		size: file.size,
-		preview: classification.preview,
-		contentType: classification.contentType,
-	};
 }
 
 function byteRange(
@@ -536,8 +568,8 @@ function byteRange(
 }
 
 export async function streamProjectFile(
-	req: Request,
-	res: Response,
+	req: IncomingMessage,
+	res: ServerResponse,
 	file: OpenProjectFile,
 ): Promise<void> {
 	res.setHeader("accept-ranges", file.preview === "video" ? "bytes" : "none");
@@ -557,7 +589,7 @@ export async function streamProjectFile(
 		const range = byteRange(req.headers.range, file.size);
 		start = range.start;
 		end = range.end;
-		res.status(206);
+		res.statusCode = 206;
 		res.setHeader(
 			"content-range",
 			`bytes ${String(start)}-${String(end)}/${String(file.size)}`,
@@ -569,25 +601,49 @@ export async function streamProjectFile(
 		res.end();
 		return;
 	}
-	await new Promise<void>((resolveStream, rejectStream) => {
-		const stream = createReadStream(file.absolutePath, { start, end });
-		stream.once("error", rejectStream);
-		res.once("finish", resolveStream);
-		res.once("close", resolveStream);
-		stream.pipe(res);
-	});
+	await pipeline(
+		file.handle.createReadStream({ start, end, autoClose: false }),
+		res,
+	);
 }
 
 async function runGit(root: string, args: string[]): Promise<string> {
+	const baseArgs = [
+		"-c",
+		"color.ui=false",
+		"-c",
+		"core.quotepath=false",
+		"-c",
+		"core.fsmonitor=false",
+		"--no-optional-locks",
+		"-C",
+		root,
+	];
+	const options = {
+		encoding: "utf8" as const,
+		maxBuffer: GIT_MAX_BUFFER_BYTES,
+		timeout: 5_000,
+		windowsHide: true,
+	};
+	// Read names only: never collect credential-bearing configuration values.
+	const config = await execFileAsync(
+		"git",
+		[...baseArgs, "config", "--null", "--name-only", "--list"],
+		options,
+	);
+	const filterOverrides: string[] = [];
+	for (const key of new Set(config.stdout.split("\0"))) {
+		if (/^filter\..+\.(?:clean|smudge|process|required)$/iu.test(key)) {
+			const value = key.toLocaleLowerCase().endsWith(".required")
+				? "false"
+				: "";
+			filterOverrides.push("-c", `${key}=${value}`);
+		}
+	}
 	const { stdout } = await execFileAsync(
 		"git",
-		["-c", "color.ui=false", "-c", "core.quotepath=false", "-C", root, ...args],
-		{
-			encoding: "utf8",
-			maxBuffer: GIT_MAX_BUFFER_BYTES,
-			timeout: 5_000,
-			windowsHide: true,
-		},
+		[...baseArgs, ...filterOverrides, ...args],
+		options,
 	);
 	return stdout;
 }
@@ -683,21 +739,23 @@ function lineCount(text: string): number {
 }
 
 async function untrackedCounts(
-	root: string,
+	state: CommonspaceState,
+	projectId: string,
+	rootIndex: number,
 	path: string,
 	preview: ProjectFilePreview,
 ): Promise<{ additions: number | null; deletions: number | null }> {
 	if (preview !== "text") return { additions: null, deletions: null };
 	try {
-		const file = await stat(join(root, ...path.split("/")));
-		if (!file.isFile() || file.size > MAX_TEXT_PREVIEW_BYTES)
-			return { additions: null, deletions: 0 };
-		return {
-			additions: lineCount(
-				await readFile(join(root, ...path.split("/")), "utf8"),
-			),
-			deletions: 0,
-		};
+		const file = await openProjectFile(state, projectId, rootIndex, path);
+		try {
+			return {
+				additions: lineCount(await readProjectText(file)),
+				deletions: 0,
+			};
+		} finally {
+			await file.handle.close();
+		}
 	} catch {
 		return { additions: null, deletions: 0 };
 	}
@@ -740,16 +798,33 @@ export async function projectGitStatus(
 					{ additions: number | null; deletions: number | null }
 				>()
 			: parseNumstat(
-					await runGit(gitRoot, ["diff", "--numstat", "HEAD", "--"]),
+					await runGit(gitRoot, [
+						"diff",
+						"--no-ext-diff",
+						"--no-textconv",
+						"--numstat",
+						"HEAD",
+						"--",
+					]),
 				);
 	const files = await Promise.all(
 		parsed
 			.slice(0, MAX_GIT_FILES)
 			.map(async (change): Promise<ProjectGitFileChange> => {
-				const preview = namedClassification(change.path).preview;
+				const preview =
+					change.oldPath !== undefined &&
+					credentialBearingFileName(basename(change.oldPath))
+						? "blocked"
+						: namedClassification(change.path).preview;
 				const counts =
 					change.status === "untracked"
-						? await untrackedCounts(gitRoot, change.path, preview)
+						? await untrackedCounts(
+								state,
+								projectId,
+								rootIndex,
+								change.path,
+								preview,
+							)
 						: (numstat.get(change.path) ?? {
 								additions: null,
 								deletions: null,
@@ -783,13 +858,41 @@ function truncatePatch(patch: string): { patch: string; truncated: boolean } {
 	return { patch: lines.slice(0, MAX_PATCH_LINES).join("\n"), truncated: true };
 }
 
+async function readProjectText(file: OpenProjectFile): Promise<string> {
+	if (file.preview !== "text" || file.size > MAX_TEXT_PREVIEW_BYTES)
+		throw new ProjectFileError(
+			415,
+			"project_file_not_previewable",
+			"Only bounded text files can be read as text",
+		);
+	const buffer = Buffer.alloc(file.size + 1);
+	let offset = 0;
+	while (offset < buffer.length) {
+		const { bytesRead } = await file.handle.read(
+			buffer,
+			offset,
+			buffer.length - offset,
+			offset,
+		);
+		if (bytesRead === 0) break;
+		offset += bytesRead;
+	}
+	if (offset !== file.size || (await file.handle.stat()).size !== file.size)
+		throw new ProjectFileError(
+			409,
+			"project_file_changed",
+			"Project file changed while reading; retry the preview",
+		);
+	return buffer.subarray(0, offset).toString("utf8");
+}
+
 async function untrackedPatch(
 	file: OpenProjectFile,
 	path: string,
 ): Promise<ProjectGitDiffResponse> {
 	if (file.preview !== "text")
 		return { path, patch: "", binary: true, truncated: false };
-	const text = await readFile(file.absolutePath, "utf8");
+	const text = await readProjectText(file);
 	const contentLines = text === "" ? [] : text.replace(/\n$/u, "").split("\n");
 	const patch = [
 		"--- /dev/null",
@@ -808,6 +911,7 @@ export async function projectGitDiff(
 	path: string,
 ): Promise<ProjectGitDiffResponse> {
 	const relativePath = safeRelativePath(path, false);
+	assertSafeFileName(relativePath);
 	const status = await projectGitStatus(state, projectId, rootIndex);
 	if (!status.available)
 		throw new ProjectFileError(409, "git_unavailable", status.reason);
@@ -820,6 +924,7 @@ export async function projectGitDiff(
 			"git_change_not_found",
 			"Changed file not found",
 		);
+	if (change.oldPath !== undefined) assertSafeFileName(change.oldPath);
 	const resolved = await resolveProjectPath(
 		state,
 		projectId,
@@ -834,11 +939,16 @@ export async function projectGitDiff(
 			rootIndex,
 			relativePath,
 		);
-		return untrackedPatch(file, relativePath);
+		try {
+			return await untrackedPatch(file, relativePath);
+		} finally {
+			await file.handle.close();
+		}
 	}
 	const patch = await runGit(resolved.root, [
 		"diff",
 		"--no-ext-diff",
+		"--no-textconv",
 		"--no-color",
 		"--find-renames",
 		"--unified=5",

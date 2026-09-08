@@ -101,36 +101,39 @@ describe("general file attachments", () => {
 		await restarted.close();
 	});
 
-	it("refuses credential-bearing files before accepting a message", async () => {
-		const root = await mkdtemp(join(tmpdir(), "commonspace-secret-file-"));
-		roots.push(root);
-		const runAgent = vi.fn(async () => ({ text: "Should not run." }));
-		const service = new CommonspaceHostService(
-			{},
-			{ root },
-			{
-				discoverAgents: discoverTestHarnesses,
-				runAgent,
-			},
-		);
-		await service.initialize();
-		await addTestHarness(service, "codex", "Review Bot");
+	it.each([".pypirc", "auth.json", "id_ecdsa"])(
+		"refuses credential-bearing file %s before accepting a message",
+		async (name) => {
+			const root = await mkdtemp(join(tmpdir(), "commonspace-secret-file-"));
+			roots.push(root);
+			const runAgent = vi.fn(async () => ({ text: "Should not run." }));
+			const service = new CommonspaceHostService(
+				{},
+				{ root },
+				{
+					discoverAgents: discoverTestHarnesses,
+					runAgent,
+				},
+			);
+			await service.initialize();
+			await addTestHarness(service, "codex", "Review Bot");
 
-		await expect(
-			service.send({
-				conversation: { kind: "dm", id: "codex" },
-				text: "Inspect this.",
-				files: [
-					{
-						name: ".env",
-						mimeType: "text/plain",
-						data: Buffer.from("TOKEN=secret").toString("base64"),
-					},
-				],
-			}),
-		).rejects.toThrow("credential-bearing files cannot be attached");
-		expect(service.snapshot().messages["dm:codex"]).toBeUndefined();
-		expect(runAgent).not.toHaveBeenCalled();
-		await service.close();
-	});
+			await expect(
+				service.send({
+					conversation: { kind: "dm", id: "codex" },
+					text: "Inspect this.",
+					files: [
+						{
+							name,
+							mimeType: "text/plain",
+							data: Buffer.from("synthetic test value").toString("base64"),
+						},
+					],
+				}),
+			).rejects.toThrow("credential-bearing files cannot be attached");
+			expect(service.snapshot().messages["dm:codex"]).toBeUndefined();
+			expect(runAgent).not.toHaveBeenCalled();
+			await service.close();
+		},
+	);
 });

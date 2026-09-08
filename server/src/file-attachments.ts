@@ -3,6 +3,9 @@ import { open, realpath, stat } from "node:fs/promises";
 import { basename, isAbsolute, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { CommonspaceFileAttachment } from "@commonspace/shared";
+import { credentialBearingFileName } from "./credential-files.js";
+
+export { credentialBearingFileName } from "./credential-files.js";
 
 export const MAX_FILE_ATTACHMENTS = 8;
 export const MAX_FILE_ATTACHMENT_BYTES = 8 * 1024 * 1024;
@@ -28,22 +31,6 @@ export interface BoundedAttachmentReader {
 		position: number,
 	): Promise<number>;
 	size(): Promise<number>;
-}
-
-export function credentialBearingFileName(name: string): boolean {
-	const lower = name.toLocaleLowerCase();
-	return (
-		/^\.env(?:\.|$)/u.test(lower) ||
-		lower === ".npmrc" ||
-		lower === ".netrc" ||
-		/^(?:id_rsa|id_ed25519|credentials?|secrets?|tokens?)(?:\.|$)/u.test(
-			lower,
-		) ||
-		/(?:^|[._-])(?:service-account|credentials?|secrets?|tokens?)(?:[._-]|$)/u.test(
-			lower,
-		) ||
-		/\.(?:pem|key|p12|pfx|kdbx)$/u.test(lower)
-	);
 }
 
 export async function readBoundedAttachmentBytes(

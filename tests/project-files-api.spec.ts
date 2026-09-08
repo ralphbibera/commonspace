@@ -6,10 +6,12 @@ import {
 	mkdtemp,
 	readFile,
 	realpath,
+	rename,
 	rm,
 	symlink,
 	writeFile,
 } from "node:fs/promises";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -19,6 +21,10 @@ import {
 	type RunningCommonspaceServer,
 	startCommonspaceServer,
 } from "../server/src/index.ts";
+import {
+	openProjectFile,
+	streamProjectFile,
+} from "../server/src/project-files.ts";
 
 const execFileAsync = promisify(execFile);
 const listingSchema = z.object({
@@ -130,6 +136,120 @@ function projectUrl(
 }
 
 describe("project file API", () => {
+	it("streams the validated descriptor when its path is replaced before delivery", async () => {
+		const { running, projectId, workspace, outside } = await fixture();
+		const file = await openProjectFile(
+			running.service.snapshot(),
+			projectId,
+			0,
+			"README.md",
+		);
+		const server = createServer((req, res) => {
+			void streamProjectFile(req, res, file).catch(() => res.destroy());
+		});
+		try {
+			await rename(
+				join(workspace, "README.md"),
+				join(workspace, "original.md"),
+			);
+			await symlink(outside, join(workspace, "README.md"));
+			await new Promise<void>((resolve) =>
+				server.listen(0, "127.0.0.1", resolve),
+			);
+			const address = server.address();
+			if (address === null || typeof address === "string")
+				throw new Error("missing listener");
+			const response = await fetch(`http://127.0.0.1:${String(address.port)}`);
+			expect(response.status).toBe(200);
+			await expect(response.text()).resolves.toBe("after\nsame\n");
+		} finally {
+			await new Promise<void>((resolve) => server.close(() => resolve()));
+			await file.handle.close();
+		}
+	});
+
+	it("blocks credential aliases inside the Project root", async () => {
+		const { running, projectId, workspace } = await fixture();
+		await symlink(".env.local", join(workspace, "innocent.txt"));
+		for (const endpoint of ["file", "diff"]) {
+			const response = await fetch(
+				projectUrl(running, projectId, endpoint, { path: "innocent.txt" }),
+				{ headers: { origin: running.url } },
+			);
+			expect(response.status).toBe(403);
+			await expect(response.json()).resolves.toMatchObject({
+				code: "project_file_sensitive",
+			});
+		}
+	});
+
+	it("blocks tracked, deleted, and renamed credential diffs", async () => {
+		const { running, projectId, workspace } = await fixture();
+		await mkdir(join(workspace, "config"));
+		await writeFile(
+			join(workspace, "config", "auth.json"),
+			"SYNTHETIC_SECRET\n",
+		);
+		await git(workspace, [
+			"add",
+			".env.local",
+			"credentials.json",
+			"config/auth.json",
+		]);
+		await git(workspace, ["commit", "-m", "test: synthetic credentials"]);
+		await writeFile(join(workspace, ".env.local"), "SYNTHETIC_CHANGED\n");
+		await rm(join(workspace, "credentials.json"));
+		await git(workspace, ["mv", "config/auth.json", "config/notes.txt"]);
+		for (const path of [".env.local", "credentials.json", "config/notes.txt"]) {
+			const response = await fetch(
+				projectUrl(running, projectId, "diff", { path }),
+				{
+					headers: { origin: running.url },
+				},
+			);
+			expect(response.status, path).toBe(403);
+			await expect(response.json()).resolves.toMatchObject({
+				code: "project_file_sensitive",
+			});
+		}
+	});
+
+	it.each([
+		"diff.review.textconv",
+		"filter.review.clean",
+		"filter.review.process",
+		"core.fsmonitor",
+	])(
+		"does not execute configured %s commands during previews",
+		async (setting) => {
+			const { running, projectId, workspace } = await fixture();
+			const converter = join(workspace, "converter.sh");
+			const marker = join(workspace, "executed.marker");
+			await writeFile(
+				converter,
+				'#!/bin/sh\nprintf executed > "$(dirname "$0")/executed.marker"\nprintf converted\n',
+			);
+			await chmod(converter, 0o755);
+			await writeFile(
+				join(workspace, ".gitattributes"),
+				"*.md diff=review filter=review\n",
+			);
+			await git(workspace, ["config", setting, converter]);
+			if (setting.startsWith("filter."))
+				await git(workspace, ["config", "filter.review.required", "true"]);
+			const response = await fetch(
+				projectUrl(running, projectId, "diff", { path: "README.md" }),
+				{
+					headers: { origin: running.url },
+				},
+			);
+			expect(response.status).toBe(200);
+			const diff = diffSchema.parse(await response.json());
+			expect(diff.patch).toContain("+after");
+			await expect(readFile(marker)).rejects.toMatchObject({ code: "ENOENT" });
+		},
+	);
+
 	it("opens a validated project file at a requested line in the configured editor", async () => {
 		const { running, projectId, workspace } = await fixture();
 		const editorLog = join(workspace, "editor.log");
