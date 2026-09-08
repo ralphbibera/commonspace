@@ -205,6 +205,19 @@ function boundedText(value: string, limit: number): string {
 	return `${value.slice(0, Math.max(0, limit - 14))}\n…[truncated]`;
 }
 
+const hermesCompactionMetadataSchema = z.object({
+	"hermes.dev/compaction": z.object({
+		status: z.enum(["in_progress", "completed", "failed", "cancelled"]),
+	}),
+});
+
+function hermesCompactionStatus(
+	update: SessionNotification["update"],
+): Extract<CommonspaceTraceEntry, { type: "compaction" }>["status"] | null {
+	const parsed = hermesCompactionMetadataSchema.safeParse(update._meta);
+	return parsed.success ? parsed.data["hermes.dev/compaction"].status : null;
+}
+
 function displayValue(value: JsonValue | undefined): string | undefined {
 	if (value === undefined || value === null) return undefined;
 	if (typeof value === "string")
@@ -942,6 +955,33 @@ export class AcpAgentProcess {
 		}
 
 		const changedAt = timestamp();
+		if (
+			update.sessionUpdate === "agent_thought_chunk" &&
+			update.content.type === "text"
+		) {
+			const compactionStatus = hermesCompactionStatus(update);
+			if (compactionStatus !== null) {
+				const id =
+					"messageId" in update && typeof update.messageId === "string"
+						? update.messageId
+						: "compaction";
+				const existing = turn.traceEntries.find(
+					(
+						entry,
+					): entry is Extract<CommonspaceTraceEntry, { type: "compaction" }> =>
+						entry.type === "compaction" && entry.id === id,
+				);
+				this.#setTraceEntry(turn, {
+					type: "compaction",
+					id,
+					status: compactionStatus,
+					text: boundedText(update.content.text, MAX_REASONING_CHARS),
+					createdAt: existing?.createdAt ?? changedAt,
+					updatedAt: changedAt,
+				});
+				return;
+			}
+		}
 		if (
 			update.sessionUpdate === "agent_thought_chunk" &&
 			update.content.type === "text"

@@ -1,3 +1,4 @@
+import type { CommonspaceTraceEntry } from "@commonspace/shared";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, userEvent, within } from "storybook/test";
 import { AgentTrace, AgentTraceTimeline } from "../AgentTrace";
@@ -45,6 +46,33 @@ export const TimelineOnly: Story = {
 			<strong className="mb-3 block">Timeline states</strong>
 			<AgentTraceTimeline entries={traceEntries} />
 		</section>
+	),
+};
+
+const compactionEntry = {
+	type: "compaction",
+	id: "compaction-1",
+	status: "in_progress",
+	text: "Compacting context — summarizing earlier conversation so I can continue...",
+	createdAt: "2026-09-08T08:00:00.000Z",
+	updatedAt: "2026-09-08T08:00:01.000Z",
+} satisfies CommonspaceTraceEntry;
+
+export const CompactionInProgress: Story = {
+	render: () => <AgentTraceTimeline entries={[compactionEntry]} />,
+};
+
+export const CompactionCompleted: Story = {
+	render: () => (
+		<AgentTraceTimeline
+			entries={[
+				{
+					...compactionEntry,
+					status: "completed",
+					text: "Context compaction complete — continuing turn...",
+				},
+			]}
+		/>
 	),
 };
 

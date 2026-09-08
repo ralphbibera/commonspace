@@ -1104,6 +1104,7 @@ function sanitizeAgentTrace(
 			entry === null ||
 			id === null ||
 			(type !== "reasoning" &&
+				type !== "compaction" &&
 				type !== "plan" &&
 				type !== "tool" &&
 				type !== "usage")
@@ -1114,10 +1115,28 @@ function sanitizeAgentTrace(
 		if (seen.has(key)) continue;
 		const createdAt = loadedString(entry.createdAt, 100, startedAt);
 		const updatedAt = loadedString(entry.updatedAt, 100, createdAt);
-		if (type === "reasoning") {
+		if (type === "reasoning" || type === "compaction") {
 			const text = take(entry.text, 64_000);
 			if (text === "") continue;
-			entries.push({ type, id: normalizedId, text, createdAt, updatedAt });
+			if (type === "reasoning") {
+				entries.push({ type, id: normalizedId, text, createdAt, updatedAt });
+			} else {
+				const status =
+					entry.status === "in_progress" ||
+					entry.status === "completed" ||
+					entry.status === "failed" ||
+					entry.status === "cancelled"
+						? entry.status
+						: "in_progress";
+				entries.push({
+					type,
+					id: normalizedId,
+					status,
+					text,
+					createdAt,
+					updatedAt,
+				});
+			}
 		} else if (type === "plan") {
 			const steps = Array.isArray(entry.steps)
 				? entry.steps.slice(0, 64).flatMap((rawStep) => {
@@ -4431,7 +4450,7 @@ export class CommonspaceHostService implements CommonspaceMcpProvider {
 		const trace = sanitizeAgentTrace(traceValue);
 		if (trace === undefined) return undefined;
 		const entries = trace.entries.map((entry): CommonspaceTraceEntry => {
-			if (entry.type === "reasoning") {
+			if (entry.type === "reasoning" || entry.type === "compaction") {
 				return { ...entry, text: this.redactHostDetails(entry.text, 64_000) };
 			}
 			if (entry.type === "plan") {

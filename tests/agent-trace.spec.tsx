@@ -43,4 +43,22 @@ describe("AgentTraceTimeline", () => {
 		]);
 		expect(entries.map((entry) => entry.id)).toEqual(["oldest", "newest"]);
 	});
+
+	it("shows context compaction as a first-class activity event", () => {
+		const entries: CommonspaceTraceEntry[] = [
+			{
+				type: "compaction",
+				id: "compaction-1",
+				status: "completed",
+				text: "Context compaction complete",
+				createdAt: "2026-09-08T08:00:00.000Z",
+				updatedAt: "2026-09-08T08:00:01.000Z",
+			},
+		];
+
+		render(<AgentTraceTimeline entries={entries} />);
+
+		expect(screen.getByText("Context compacted")).toBeDefined();
+		expect(screen.getByText("Context compaction complete")).toBeDefined();
+	});
 });

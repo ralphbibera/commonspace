@@ -127,7 +127,7 @@ A native turn receives the newly delivered message or assigned sub-request and A
 
 Each active native-session scope has one long-lived ACP process. Commonspace closes it on reset, removal, shutdown, or stale-session recovery. Graceful closure lets the bridge flush and stop its native child before bounded forced termination; an intentional transport close must not trigger the protocol-error kill path. `/new` is a hard context boundary: cancellation and generation checks prevent an old reply from entering the replacement conversation.
 
-Resumption uses the saved opaque native-session reference through ACP `session/load`. ACP frames and responses are bounded. Activity, reasoning summaries, plans, tool calls, usage, artifact links, and permission requests come from the harness. Commonspace normalizes those updates without synthesizing missing output or permission choices. A pending permission blocks only its own session. Native turn cancellation covers reset, Channel or Agent removal, timeout, and shutdown.
+Resumption uses the saved opaque native-session reference through ACP `session/load`. ACP frames and responses are bounded. Activity, reasoning summaries, plans, tool calls, native context-compaction lifecycle, usage, artifact links, and permission requests come from the harness. Commonspace normalizes those updates without synthesizing missing output or permission choices. A pending permission blocks only its own session. Native turn cancellation covers reset, Channel or Agent removal, timeout, and shutdown.
 
 ## UI
 

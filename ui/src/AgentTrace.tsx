@@ -47,6 +47,37 @@ function planStatusLabel(
 }
 
 function TraceEntry({ entry }: { entry: CommonspaceTraceEntry }) {
+	if (entry.type === "compaction") {
+		const label =
+			entry.status === "in_progress"
+				? "Compacting context"
+				: entry.status === "completed"
+					? "Context compacted"
+					: entry.status === "cancelled"
+						? "Context compaction cancelled"
+						: "Context compaction failed";
+		return (
+			<li
+				className="grid grid-cols-[28px_minmax(0,1fr)] gap-3 border-b py-3 last:border-b-0"
+				data-trace-kind="compaction"
+			>
+				<span
+					className="grid size-7 place-items-center rounded-full border bg-background font-mono text-xs text-muted-foreground"
+					aria-hidden="true"
+				>
+					↻
+				</span>
+				<div className="min-w-0 [&>header]:flex [&>header]:items-center [&>header]:justify-between [&>header]:gap-2 [&>header]:text-xs [&>header_span]:text-muted-foreground">
+					<header>
+						<strong>{label}</strong>
+						<span>Session context</span>
+					</header>
+					<p className="mt-2 text-[13px] leading-5">{entry.text}</p>
+				</div>
+			</li>
+		);
+	}
+
 	if (entry.type === "reasoning") {
 		return (
 			<li

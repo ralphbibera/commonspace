@@ -222,7 +222,11 @@ describe("ACP agent process", () => {
 			command: process.execPath,
 			args: [fixturePath],
 			cwd: root,
-			env: { ...process.env, FAKE_ACP_TRACE: "1" },
+			env: {
+				...process.env,
+				FAKE_ACP_TRACE: "1",
+				FAKE_ACP_COMPACTION_TRACE: "1",
+			},
 		});
 
 		try {
@@ -237,6 +241,12 @@ describe("ACP agent process", () => {
 					startedAt: expect.any(String),
 					completedAt: expect.any(String),
 					entries: [
+						expect.objectContaining({
+							type: "compaction",
+							id: "123e4567-e89b-42d3-a456-426614174001",
+							status: "completed",
+							text: "Context compaction complete",
+						}),
 						expect.objectContaining({
 							type: "reasoning",
 							text: "Inspecting the workspace. Choosing the smallest safe change.",

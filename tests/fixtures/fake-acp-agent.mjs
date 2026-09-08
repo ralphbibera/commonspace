@@ -421,6 +421,28 @@ for await (const line of lines) {
 					: `Context: ${context.conversation.name}; instructions: ${context.instructions}\n`;
 		}
 		if (process.env.FAKE_ACP_TRACE === "1") {
+			if (process.env.FAKE_ACP_COMPACTION_TRACE === "1") {
+				for (const [status, text] of [
+					["in_progress", "Compacting context"],
+					["completed", "Context compaction complete"],
+				]) {
+					await writeFrame({
+						jsonrpc: "2.0",
+						method: "session/update",
+						params: {
+							sessionId: frame.params.sessionId,
+							update: {
+								sessionUpdate: "agent_thought_chunk",
+								messageId: "123e4567-e89b-42d3-a456-426614174001",
+								_meta: {
+									"hermes.dev/compaction": { status },
+								},
+								content: { type: "text", text },
+							},
+						},
+					});
+				}
+			}
 			await writeFrame({
 				jsonrpc: "2.0",
 				method: "session/update",

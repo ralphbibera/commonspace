@@ -40,6 +40,14 @@ function liveActivityDetail(activity: CommonspaceLiveAgentActivity): {
 		return { kind: "Waiting", text: waitingActivityText(activity.adapter) };
 	if (entry.type === "reasoning")
 		return { kind: "Reasoning", text: entry.text };
+	if (entry.type === "compaction")
+		return {
+			kind:
+				entry.status === "in_progress"
+					? "Compacting context"
+					: "Context compacted",
+			text: entry.text,
+		};
 	if (entry.type === "plan") {
 		const step =
 			entry.steps.findLast((candidate) => candidate.status === "in_progress") ??

@@ -117,7 +117,7 @@ flowchart TD
 | Shared context | Conversation information made available by Commonspace separately from the runtime's private session context. | Users can inspect, edit, and manually compact it. |
 | Routing memory | Compacted knowledge derived from explicit routing corrections. | It influences later routing without altering historical decisions. |
 | Attachment | A durable file associated with a specific message version. | Humans and supported harnesses can attach files. |
-| Activity | Normalized ACP reasoning summaries, plans, tools, results, usage, permissions, and controls. | Raw terminal output remains in the harness. |
+| Activity | Normalized ACP reasoning summaries, plans, tools, results, native context compaction, usage, permissions, and controls. | Raw terminal output remains in the harness. |
 
 ### Authority boundary
 
@@ -335,7 +335,7 @@ Each row gives a stable requirement ID, its release target, the required behavio
 
 | ID | Target | Requirement | Acceptance condition |
 | --- | --- | --- | --- |
-| ACT-01 | Capability-dependent | Stream and persist normalized ACP reasoning summaries, plans, tool calls/results, usage, and model information. | Activity stays expandable and collapsed by default; raw terminal output is not synthesized into it. |
+| ACT-01 | Capability-dependent | Stream and persist normalized ACP reasoning summaries, plans, tool calls/results, native context-compaction lifecycle, usage, and model information. | Activity stays expandable and collapsed by default; raw terminal output is not synthesized into it. |
 | ACT-02 | Capability-dependent | Render native permission requests with only harness-provided choices. | Selecting a choice returns that exact response to the affected harness session. |
 | ACT-03 | Capability-dependent | Support native stop and steering controls. | Unsupported controls are absent, not disabled promises. |
 | ACT-04 | v0.0.1 | Bind results and evidence to the originating request and sub-request. | Replies can expose changed files, Project/root attribution, activity, and harness-emitted validation evidence. |

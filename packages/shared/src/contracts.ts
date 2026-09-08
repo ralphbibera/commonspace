@@ -238,6 +238,14 @@ export interface CommonspaceTracePlanStep {
 
 export type CommonspaceTraceEntry =
 	| {
+			type: "compaction";
+			id: string;
+			status: "in_progress" | "completed" | "failed" | "cancelled";
+			text: string;
+			createdAt: string;
+			updatedAt: string;
+	  }
+	| {
 			type: "reasoning";
 			id: string;
 			text: string;
