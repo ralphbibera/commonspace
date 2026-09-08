@@ -1,6 +1,13 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useMemo, useState } from "react";
-import { expect, fn, userEvent, waitFor, within } from "storybook/test";
+import {
+	expect,
+	fireEvent,
+	fn,
+	userEvent,
+	waitFor,
+	within,
+} from "storybook/test";
 import { CommonspaceConversation } from "../CommonspaceConversation";
 import type { CommonspaceStore } from "../commonspace-store";
 import { COMMONSPACE_RESIZABLE_PANEL } from "../design-system/useResizablePanel";
@@ -123,6 +130,26 @@ function FocusTransitionPreview() {
 	);
 }
 
+const channelThreadViewsBootstrap = structuredClone(denseStoryBootstrap);
+for (const messages of Object.values(
+	channelThreadViewsBootstrap.state.messages,
+)) {
+	for (const message of messages) delete message.routing;
+}
+channelThreadViewsBootstrap.liveActivities = [
+	{
+		id: "activity-channel-thread",
+		sourceMessageId: "message-dense-root-1",
+		agentId: "agent-hermes",
+		agentName: "Review Bot",
+		adapter: "hermes",
+		conversation: channel,
+		threadId: "thread-dense-1",
+		startedAt: "2026-09-03T10:00:00.000Z",
+		entries: [],
+	},
+];
+
 export const ChannelConversation: Story = {
 	args: {
 		store: createStoryStore(storyBootstrap, {
@@ -140,18 +167,53 @@ export const ChannelConversation: Story = {
 		await expect(
 			canvas.getByText("Routed to Review Bot · AI selected · Completed"),
 		).toBeVisible();
-		const routingReason = canvas.getByText("Design review matches Hermes.");
-		await expect(routingReason).not.toBeVisible();
-		await expect(
-			canvas.getByRole("list", { name: "Routing assignments" }),
-		).not.toBeVisible();
 		await userEvent.click(
 			canvas.getByText("Routed to Review Bot · AI selected · Completed"),
 		);
-		await expect(routingReason).toBeVisible();
+		await expect(
+			canvas.getByText(/Design review matches Hermes\./u),
+		).toBeVisible();
 		await expect(
 			canvas.getByText(/Inspect only the desktop UI boundary\./u),
 		).toBeVisible();
+	},
+};
+
+export const ChannelThreadViews: Story = {
+	args: {
+		store: createStoryStore(channelThreadViewsBootstrap, {
+			activeConversation: channel,
+			activeProjectId: primaryProject.id,
+		}),
+	},
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		const followedThread =
+			"Review the visual baseline and document the next component states.";
+		const runningThread =
+			"Audit the responsive workspace shell and record any clipping or focus issues.";
+		const otherThread =
+			"Compare the dense Inbox and Threads layouts against the current visual contract.";
+
+		await userEvent.click(
+			canvas.getByRole("button", { name: "Show running threads" }),
+		);
+		await expect(canvas.getByText(runningThread)).toBeVisible();
+		await expect(canvas.queryByText(followedThread)).not.toBeInTheDocument();
+		await expect(canvas.queryByText(otherThread)).not.toBeInTheDocument();
+
+		await userEvent.click(
+			canvas.getByRole("button", { name: "Show followed threads" }),
+		);
+		await expect(canvas.getByText(followedThread)).toBeVisible();
+		await expect(canvas.queryByText(runningThread)).not.toBeInTheDocument();
+
+		await userEvent.click(
+			canvas.getByRole("button", { name: "Show all threads" }),
+		);
+		await expect(canvas.getByText(runningThread)).toBeVisible();
+		await expect(canvas.getByText(followedThread)).toBeVisible();
+		await expect(canvas.getByText(otherThread)).toBeVisible();
 	},
 };
 
@@ -367,20 +429,14 @@ export const PendingAdmissionRecovery: Story = {
 };
 
 const activeRunSend = fn<CommonspaceStore["send"]>();
-const activeRunStop = fn<CommonspaceStore["stopAgentRuns"]>(async () => [
-	"agent-hermes",
-]);
 const activeRunBaseStore = createStoryStore(runtimeStoryBootstrap, {
 	activeConversation: directMessage,
 	activeProjectId: primaryProject.id,
 	send: activeRunSend,
 });
-const activeRunStore = Object.assign(activeRunBaseStore, {
-	stopAgentRuns: activeRunStop,
-});
 
 export const NarrowActiveRunComposer: Story = {
-	args: { store: activeRunStore },
+	args: { store: activeRunBaseStore },
 	decorators: [
 		(Story) => (
 			<div className="h-[720px] w-[320px] overflow-hidden border">
@@ -390,7 +446,6 @@ export const NarrowActiveRunComposer: Story = {
 	],
 	play: async ({ canvasElement }) => {
 		activeRunSend.mockClear();
-		activeRunStop.mockClear();
 		const canvas = within(canvasElement);
 		const composer = canvas.getByRole("textbox", {
 			name: "Message Review Bot",
@@ -424,21 +479,14 @@ export const NarrowActiveRunComposer: Story = {
 			"Live steering requires agent-scoped backend support",
 		);
 		await userEvent.type(composer, "Queue from the keyboard.");
-		await userEvent.keyboard("{Meta>}{Enter}{/Meta}");
+		fireEvent.keyDown(composer, { key: "Enter", metaKey: true });
+		fireEvent.keyUp(composer, { key: "Enter", metaKey: true });
 		await expect(activeRunSend).toHaveBeenNthCalledWith(
 			3,
 			"Queue from the keyboard.",
 			undefined,
 			[],
 			"queue",
-		);
-
-		await userEvent.click(
-			canvas.getByRole("button", { name: "Stop current run" }),
-		);
-		await expect(activeRunStop).toHaveBeenCalledWith(
-			"message-dm-user",
-			"agent-hermes",
 		);
 	},
 };

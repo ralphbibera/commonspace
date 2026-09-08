@@ -75,6 +75,8 @@ import {
 	tagSuggestions,
 } from "./tagging.ts";
 
+type ChannelThreadView = "running" | "followed" | "all";
+
 const LazyMessageMarkdown = lazy(async () => {
 	const module = await import("./MessageMarkdown.tsx");
 	return { default: module.MessageMarkdown };
@@ -587,14 +589,13 @@ function RoutingReceipt({
 	const duration = routingDurationLabel(routing.durationMs);
 	return (
 		<details className="mt-2 rounded-sm border bg-muted/35 px-2.5 py-1.5 text-xs">
-			<summary
-				className={cn(
-					"cursor-pointer list-none font-medium marker:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-					outcome === "Failed" && "text-destructive",
-				)}
-				role={outcome === "Failed" ? "alert" : "status"}
-			>
-				Routed to {destination} · {source} · {outcome}
+			<summary className="cursor-pointer list-none font-medium marker:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40">
+				<span
+					className={cn(outcome === "Failed" && "text-destructive")}
+					role={outcome === "Failed" ? "alert" : "status"}
+				>
+					Routed to {destination} · {source} · {outcome}
+				</span>
 			</summary>
 			<div className="mt-2 grid gap-2 border-t pt-2 text-muted-foreground">
 				{message.replyError !== undefined && (
@@ -1350,6 +1351,8 @@ export function CommonspaceConversation({
 	const [threadContextSaving, setThreadContextSaving] = useState(false);
 	const [threadContextCompacting, setThreadContextCompacting] = useState(false);
 	const [threadPinNote, setThreadPinNote] = useState("");
+	const [channelThreadView, setChannelThreadView] =
+		useState<ChannelThreadView>("all");
 	const [selectedSuggestion, setSelectedSuggestion] = useState(0);
 	const [selectedThreadSuggestion, setSelectedThreadSuggestion] = useState(0);
 	const [commandFeedback, setCommandFeedback] =
@@ -1494,6 +1497,37 @@ export function CommonspaceConversation({
 					message.parentMessageId === undefined,
 			)
 		: messages;
+	const channelThreadByRoot = new Map(
+		channelThreads.map((thread) => [thread.rootMessageId, thread]),
+	);
+	const runningThreadIds = new Set(
+		sessions
+			.filter((session) => session.status === "running")
+			.flatMap((session) =>
+				session.threadId === undefined ? [] : [session.threadId],
+			),
+	);
+	const followedThreadIds = new Set(
+		sessions
+			.filter((session) => session.followed)
+			.flatMap((session) =>
+				session.threadId === undefined ? [] : [session.threadId],
+			),
+	);
+	const rootsForChannelThreadView = roots.filter((root) => {
+		if (!isChannel || channelThreadView === "all") return true;
+		const threadId = channelThreadByRoot.get(root.id)?.id;
+		if (threadId === undefined) return false;
+		return channelThreadView === "running"
+			? runningThreadIds.has(threadId)
+			: followedThreadIds.has(threadId);
+	});
+	const runningThreadCount = channelThreads.filter((thread) =>
+		runningThreadIds.has(thread.id),
+	).length;
+	const followedThreadCount = channelThreads.filter((thread) =>
+		followedThreadIds.has(thread.id),
+	).length;
 	const conversationUnreadMessages = messages.filter((message) =>
 		unreadMessageIds.has(message.id),
 	);
@@ -2390,7 +2424,7 @@ export function CommonspaceConversation({
 	const nextUnreadMessage = messages.find((message) =>
 		unreadMessageIds.has(message.id),
 	);
-	const dateLabel = conversationDateLabel(roots);
+	const dateLabel = conversationDateLabel(rootsForChannelThreadView);
 
 	return (
 		<main
@@ -2405,12 +2439,40 @@ export function CommonspaceConversation({
 				}
 				actions={
 					<div className="flex items-center gap-1">
+						{isChannel && (
+							<fieldset
+								aria-label="Channel thread view"
+								className="m-0 flex items-center gap-0.5 rounded-md border bg-muted/40 p-0.5"
+							>
+								{(
+									[
+										["running", "Running", runningThreadCount],
+										["followed", "Followed", followedThreadCount],
+										["all", "All", roots.length],
+									] as const
+								).map(([view, label, count]) => (
+									<button
+										key={view}
+										type="button"
+										className="min-h-7 rounded-sm border-0 bg-transparent px-2 text-[11px] font-semibold text-muted-foreground hover:bg-background hover:text-foreground aria-pressed:bg-background aria-pressed:text-foreground aria-pressed:shadow-sm"
+										aria-label={`Show ${view} threads`}
+										aria-pressed={channelThreadView === view}
+										onClick={() => {
+											setChannelThreadView(view);
+										}}
+									>
+										{label} {String(count)}
+									</button>
+								))}
+							</fieldset>
+						)}
 						{nextUnreadMessage !== undefined && (
 							<button
 								type="button"
 								className="min-h-8 rounded-sm border-0 bg-transparent px-3 text-xs font-semibold text-muted-foreground hover:bg-muted hover:text-foreground"
 								aria-label="Jump to next unread message"
 								onClick={() => {
+									if (isChannel) setChannelThreadView("all");
 									openMessageVersion(nextUnreadMessage.id);
 								}}
 							>
@@ -2477,9 +2539,13 @@ export function CommonspaceConversation({
 						}
 					>
 						<div className="min-h-0 flex-1 overflow-y-auto px-3 pt-4 pb-3 max-[640px]:px-2">
-							{roots.length === 0 && (
+							{rootsForChannelThreadView.length === 0 && (
 								<div className="p-10 text-center text-sm text-muted-foreground">
-									No messages yet. Start the conversation.
+									{roots.length === 0
+										? "No messages yet. Start the conversation."
+										: channelThreadView === "running"
+											? "No threads are running."
+											: "No followed threads."}
 								</div>
 							)}
 							{dateLabel !== null && (
@@ -2488,7 +2554,7 @@ export function CommonspaceConversation({
 								</div>
 							)}
 							{isChannel
-								? roots.map((root) => {
+								? rootsForChannelThreadView.map((root) => {
 										const thread = channelThreads.find(
 											(candidate) => candidate.rootMessageId === root.id,
 										);
@@ -2611,7 +2677,7 @@ export function CommonspaceConversation({
 																				})}
 																	/>
 																)}
-																<span className="rounded-full bg-[color-mix(in_oklch,var(--status-warning)_11%,var(--background))] px-2 py-1 text-[10px] text-[var(--status-warning)]">
+																<span className="rounded-full bg-[color-mix(in_oklch,var(--status-warning)_11%,var(--background))] px-2 py-1 text-[10px] text-foreground">
 																	Agents working
 																</span>
 															</span>
